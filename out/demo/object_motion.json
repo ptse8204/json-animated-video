@@ -1,0 +1,1406 @@
+{
+  "schema": "motionjson.object_motion.v0.1",
+  "objectId": "object_0",
+  "fps": 12.0,
+  "motion": [
+    {
+      "frame": 1,
+      "sourceFrameIndex": 0,
+      "t": 0.0,
+      "visible": true,
+      "x": 29,
+      "y": 129,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.196,
+        50.779
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000001.png",
+      "mask": "masks/object_0/mask_000001.png",
+      "centroid": [
+        80.1964954023843,
+        179.77891788732742
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 0,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 2,
+      "sourceFrameIndex": 2,
+      "t": 0.083333,
+      "visible": true,
+      "x": 39,
+      "y": 138,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.021,
+        50.9
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000002.png",
+      "mask": "masks/object_0/mask_000002.png",
+      "centroid": [
+        90.02133652384157,
+        188.89954884219446
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 0,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 3,
+      "sourceFrameIndex": 4,
+      "t": 0.166667,
+      "visible": true,
+      "x": 49,
+      "y": 148,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.627,
+        51.127
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000003.png",
+      "mask": "masks/object_0/mask_000003.png",
+      "centroid": [
+        99.62699741287476,
+        199.12697204890173
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 0,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 4,
+      "sourceFrameIndex": 6,
+      "t": 0.25,
+      "visible": true,
+      "x": 60,
+      "y": 157,
+      "w": 100,
+      "h": 102,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.173,
+        51.079
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000004.png",
+      "mask": "masks/object_0/mask_000004.png",
+      "centroid": [
+        110.17317079404022,
+        208.07907178818778
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 0,
+        "w": 100,
+        "h": 102
+      }
+    },
+    {
+      "frame": 5,
+      "sourceFrameIndex": 8,
+      "t": 0.333333,
+      "visible": true,
+      "x": 69,
+      "y": 164,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.784,
+        50.729
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000005.png",
+      "mask": "masks/object_0/mask_000005.png",
+      "centroid": [
+        119.7844527363184,
+        214.72925373134328
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 0,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 6,
+      "sourceFrameIndex": 10,
+      "t": 0.416667,
+      "visible": true,
+      "x": 79,
+      "y": 172,
+      "w": 102,
+      "h": 102,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.168,
+        49.903
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000006.png",
+      "mask": "masks/object_0/mask_000006.png",
+      "centroid": [
+        130.1681437898761,
+        221.9033291129813
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 0,
+        "w": 102,
+        "h": 102
+      }
+    },
+    {
+      "frame": 7,
+      "sourceFrameIndex": 12,
+      "t": 0.5,
+      "visible": true,
+      "x": 90,
+      "y": 178,
+      "w": 102,
+      "h": 100,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.146,
+        48.429
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000007.png",
+      "mask": "masks/object_0/mask_000007.png",
+      "centroid": [
+        140.14577633168182,
+        226.42852917252088
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 0,
+        "w": 102,
+        "h": 100
+      }
+    },
+    {
+      "frame": 8,
+      "sourceFrameIndex": 14,
+      "t": 0.583333,
+      "visible": true,
+      "x": 99,
+      "y": 178,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.17,
+        51.295
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000008.png",
+      "mask": "masks/object_0/mask_000008.png",
+      "centroid": [
+        150.16990496042084,
+        229.29467232437528
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 103,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 9,
+      "sourceFrameIndex": 16,
+      "t": 0.666667,
+      "visible": true,
+      "x": 110,
+      "y": 178,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.214,
+        51.123
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000009.png",
+      "mask": "masks/object_0/mask_000009.png",
+      "centroid": [
+        160.21435720362308,
+        229.12337987289195
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 103,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 10,
+      "sourceFrameIndex": 18,
+      "t": 0.75,
+      "visible": true,
+      "x": 120,
+      "y": 177,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.332,
+        51.261
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000010.png",
+      "mask": "masks/object_0/mask_000010.png",
+      "centroid": [
+        170.33230188679246,
+        228.26080503144652
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 103,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 11,
+      "sourceFrameIndex": 20,
+      "t": 0.833333,
+      "visible": true,
+      "x": 131,
+      "y": 174,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.167,
+        51.196
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000011.png",
+      "mask": "masks/object_0/mask_000011.png",
+      "centroid": [
+        181.16721178469103,
+        225.19629319743413
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 103,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 12,
+      "sourceFrameIndex": 22,
+      "t": 0.916667,
+      "visible": true,
+      "x": 140,
+      "y": 169,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.593,
+        50.83
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000012.png",
+      "mask": "masks/object_0/mask_000012.png",
+      "centroid": [
+        190.59320677321728,
+        219.8301943423126
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 103,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 13,
+      "sourceFrameIndex": 24,
+      "t": 1.0,
+      "visible": true,
+      "x": 150,
+      "y": 162,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.047,
+        51.21
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000013.png",
+      "mask": "masks/object_0/mask_000013.png",
+      "centroid": [
+        201.04666666666665,
+        213.2102657004831
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 103,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 14,
+      "sourceFrameIndex": 26,
+      "t": 1.083333,
+      "visible": true,
+      "x": 160,
+      "y": 154,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.29,
+        50.997
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000014.png",
+      "mask": "masks/object_0/mask_000014.png",
+      "centroid": [
+        211.2901749464826,
+        204.99729337368666
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 103,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 15,
+      "sourceFrameIndex": 28,
+      "t": 1.166667,
+      "visible": true,
+      "x": 171,
+      "y": 145,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        49.861,
+        50.94
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000015.png",
+      "mask": "masks/object_0/mask_000015.png",
+      "centroid": [
+        220.8605931989288,
+        195.93977060279923
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 206,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 16,
+      "sourceFrameIndex": 30,
+      "t": 1.25,
+      "visible": true,
+      "x": 180,
+      "y": 136,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.979,
+        51.204
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000016.png",
+      "mask": "masks/object_0/mask_000016.png",
+      "centroid": [
+        230.97902327105865,
+        187.20411970854448
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 17,
+      "sourceFrameIndex": 32,
+      "t": 1.333333,
+      "visible": true,
+      "x": 190,
+      "y": 126,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.975,
+        50.364
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000017.png",
+      "mask": "masks/object_0/mask_000017.png",
+      "centroid": [
+        240.9753839894212,
+        176.36417963584577
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 18,
+      "sourceFrameIndex": 34,
+      "t": 1.416667,
+      "visible": true,
+      "x": 200,
+      "y": 116,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.026,
+        50.943
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000018.png",
+      "mask": "masks/object_0/mask_000018.png",
+      "centroid": [
+        251.02571256220781,
+        166.94251746845623
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 19,
+      "sourceFrameIndex": 36,
+      "t": 1.5,
+      "visible": true,
+      "x": 210,
+      "y": 106,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.01,
+        51.09
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000019.png",
+      "mask": "masks/object_0/mask_000019.png",
+      "centroid": [
+        261.00978306063047,
+        157.08968620833025
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 20,
+      "sourceFrameIndex": 38,
+      "t": 1.583333,
+      "visible": true,
+      "x": 221,
+      "y": 98,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.09,
+        50.948
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000020.png",
+      "mask": "masks/object_0/mask_000020.png",
+      "centroid": [
+        272.0902793023539,
+        148.94782290523236
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 21,
+      "sourceFrameIndex": 40,
+      "t": 1.666667,
+      "visible": true,
+      "x": 231,
+      "y": 91,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.118,
+        51.149
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000021.png",
+      "mask": "masks/object_0/mask_000021.png",
+      "centroid": [
+        282.11829981672565,
+        142.14882880168713
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 206,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 22,
+      "sourceFrameIndex": 42,
+      "t": 1.75,
+      "visible": true,
+      "x": 241,
+      "y": 85,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.269,
+        51.081
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000022.png",
+      "mask": "masks/object_0/mask_000022.png",
+      "centroid": [
+        292.26919214741173,
+        136.08063463372997
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 23,
+      "sourceFrameIndex": 44,
+      "t": 1.833333,
+      "visible": true,
+      "x": 251,
+      "y": 81,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.868,
+        51.259
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000023.png",
+      "mask": "masks/object_0/mask_000023.png",
+      "centroid": [
+        301.86781009197114,
+        132.2589609743972
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 24,
+      "sourceFrameIndex": 46,
+      "t": 1.916667,
+      "visible": true,
+      "x": 261,
+      "y": 79,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.11,
+        51.14
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000024.png",
+      "mask": "masks/object_0/mask_000024.png",
+      "centroid": [
+        312.1104655549687,
+        130.13994315752407
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 25,
+      "sourceFrameIndex": 48,
+      "t": 2.0,
+      "visible": true,
+      "x": 271,
+      "y": 79,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.082,
+        51.082
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000025.png",
+      "mask": "masks/object_0/mask_000025.png",
+      "centroid": [
+        322.08182531509,
+        130.08214408317394
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 26,
+      "sourceFrameIndex": 50,
+      "t": 2.083333,
+      "visible": true,
+      "x": 281,
+      "y": 81,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.85,
+        51.042
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000026.png",
+      "mask": "masks/object_0/mask_000026.png",
+      "centroid": [
+        331.84998151571165,
+        132.04152803450398
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 27,
+      "sourceFrameIndex": 52,
+      "t": 2.166667,
+      "visible": true,
+      "x": 291,
+      "y": 84,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.974,
+        51.053
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000027.png",
+      "mask": "masks/object_0/mask_000027.png",
+      "centroid": [
+        341.97428436419705,
+        135.05269964435823
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 309,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 28,
+      "sourceFrameIndex": 54,
+      "t": 2.25,
+      "visible": true,
+      "x": 301,
+      "y": 90,
+      "w": 103,
+      "h": 101,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.159,
+        50.835
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000028.png",
+      "mask": "masks/object_0/mask_000028.png",
+      "centroid": [
+        352.1594803758982,
+        140.83501683501683
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 309,
+        "w": 103,
+        "h": 101
+      }
+    },
+    {
+      "frame": 29,
+      "sourceFrameIndex": 56,
+      "t": 2.333333,
+      "visible": true,
+      "x": 311,
+      "y": 98,
+      "w": 103,
+      "h": 102,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.746,
+        50.1
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000029.png",
+      "mask": "masks/object_0/mask_000029.png",
+      "centroid": [
+        361.74596794580106,
+        148.10046008392737
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 412,
+        "w": 103,
+        "h": 102
+      }
+    },
+    {
+      "frame": 30,
+      "sourceFrameIndex": 58,
+      "t": 2.416667,
+      "visible": true,
+      "x": 322,
+      "y": 105,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.949,
+        50.918
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000030.png",
+      "mask": "masks/object_0/mask_000030.png",
+      "centroid": [
+        372.94946147473075,
+        155.9184052622329
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 412,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 31,
+      "sourceFrameIndex": 60,
+      "t": 2.5,
+      "visible": true,
+      "x": 332,
+      "y": 115,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.879,
+        51.321
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000031.png",
+      "mask": "masks/object_0/mask_000031.png",
+      "centroid": [
+        382.8785392895319,
+        166.32058070450194
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 412,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 32,
+      "sourceFrameIndex": 62,
+      "t": 2.583333,
+      "visible": true,
+      "x": 342,
+      "y": 124,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.814,
+        51.149
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000032.png",
+      "mask": "masks/object_0/mask_000032.png",
+      "centroid": [
+        392.8135567970205,
+        175.14857852265672
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 412,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 33,
+      "sourceFrameIndex": 64,
+      "t": 2.666667,
+      "visible": true,
+      "x": 352,
+      "y": 136,
+      "w": 103,
+      "h": 101,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.984,
+        49.408
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000033.png",
+      "mask": "masks/object_0/mask_000033.png",
+      "centroid": [
+        402.98447798742137,
+        185.40772327044021
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 412,
+        "w": 103,
+        "h": 101
+      }
+    },
+    {
+      "frame": 34,
+      "sourceFrameIndex": 66,
+      "t": 2.75,
+      "visible": true,
+      "x": 362,
+      "y": 144,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.599,
+        51.111
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000034.png",
+      "mask": "masks/object_0/mask_000034.png",
+      "centroid": [
+        412.5986750613163,
+        195.11110268274797
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 412,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 35,
+      "sourceFrameIndex": 68,
+      "t": 2.833333,
+      "visible": true,
+      "x": 372,
+      "y": 153,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.836,
+        50.483
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000035.png",
+      "mask": "masks/object_0/mask_000035.png",
+      "centroid": [
+        422.83594091201024,
+        203.4826461143224
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 412,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 36,
+      "sourceFrameIndex": 70,
+      "t": 2.916667,
+      "visible": true,
+      "x": 382,
+      "y": 161,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.758,
+        50.759
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000036.png",
+      "mask": "masks/object_0/mask_000036.png",
+      "centroid": [
+        432.75786764518506,
+        211.7591417577657
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 515,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 37,
+      "sourceFrameIndex": 72,
+      "t": 3.0,
+      "visible": true,
+      "x": 392,
+      "y": 168,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.807,
+        51.391
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000037.png",
+      "mask": "masks/object_0/mask_000037.png",
+      "centroid": [
+        442.8071692535107,
+        219.39108154717908
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 515,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 38,
+      "sourceFrameIndex": 74,
+      "t": 3.083333,
+      "visible": true,
+      "x": 402,
+      "y": 174,
+      "w": 101,
+      "h": 101,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.833,
+        49.875
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000038.png",
+      "mask": "masks/object_0/mask_000038.png",
+      "centroid": [
+        452.83282020475076,
+        223.8748466871918
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 515,
+        "w": 101,
+        "h": 101
+      }
+    },
+    {
+      "frame": 39,
+      "sourceFrameIndex": 76,
+      "t": 3.166667,
+      "visible": true,
+      "x": 413,
+      "y": 178,
+      "w": 103,
+      "h": 102,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.148,
+        49.975
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000039.png",
+      "mask": "masks/object_0/mask_000039.png",
+      "centroid": [
+        464.14820643485206,
+        227.97492006394882
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 515,
+        "w": 103,
+        "h": 102
+      }
+    },
+    {
+      "frame": 40,
+      "sourceFrameIndex": 78,
+      "t": 3.25,
+      "visible": true,
+      "x": 423,
+      "y": 178,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.405,
+        51.154
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000040.png",
+      "mask": "masks/object_0/mask_000040.png",
+      "centroid": [
+        473.404792404491,
+        229.15404516112824
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 515,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 41,
+      "sourceFrameIndex": 80,
+      "t": 3.333333,
+      "visible": true,
+      "x": 433,
+      "y": 178,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.341,
+        50.596
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000041.png",
+      "mask": "masks/object_0/mask_000041.png",
+      "centroid": [
+        484.34140611331884,
+        228.59553622753742
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 515,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 42,
+      "sourceFrameIndex": 82,
+      "t": 3.416667,
+      "visible": true,
+      "x": 443,
+      "y": 176,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.631,
+        50.756
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000042.png",
+      "mask": "masks/object_0/mask_000042.png",
+      "centroid": [
+        493.63075911596616,
+        226.75577808122185
+      ],
+      "sprite": {
+        "x": 618,
+        "y": 515,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 43,
+      "sourceFrameIndex": 84,
+      "t": 3.5,
+      "visible": true,
+      "x": 453,
+      "y": 171,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.617,
+        51.243
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000043.png",
+      "mask": "masks/object_0/mask_000043.png",
+      "centroid": [
+        503.61658183964005,
+        222.24262988370089
+      ],
+      "sprite": {
+        "x": 0,
+        "y": 618,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 44,
+      "sourceFrameIndex": 86,
+      "t": 3.583333,
+      "visible": true,
+      "x": 463,
+      "y": 166,
+      "w": 103,
+      "h": 102,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.815,
+        50.261
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000044.png",
+      "mask": "masks/object_0/mask_000044.png",
+      "centroid": [
+        514.8151718251876,
+        216.26096342596077
+      ],
+      "sprite": {
+        "x": 103,
+        "y": 618,
+        "w": 103,
+        "h": 102
+      }
+    },
+    {
+      "frame": 45,
+      "sourceFrameIndex": 88,
+      "t": 3.666667,
+      "visible": true,
+      "x": 473,
+      "y": 158,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.88,
+        51.218
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000045.png",
+      "mask": "masks/object_0/mask_000045.png",
+      "centroid": [
+        523.8799063558478,
+        209.21782227535363
+      ],
+      "sprite": {
+        "x": 206,
+        "y": 618,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 46,
+      "sourceFrameIndex": 90,
+      "t": 3.75,
+      "visible": true,
+      "x": 483,
+      "y": 149,
+      "w": 103,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.952,
+        51.222
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000046.png",
+      "mask": "masks/object_0/mask_000046.png",
+      "centroid": [
+        533.9519598952036,
+        200.22236497380086
+      ],
+      "sprite": {
+        "x": 309,
+        "y": 618,
+        "w": 103,
+        "h": 103
+      }
+    },
+    {
+      "frame": 47,
+      "sourceFrameIndex": 92,
+      "t": 3.833333,
+      "visible": true,
+      "x": 493,
+      "y": 140,
+      "w": 102,
+      "h": 103,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        51.053,
+        51.241
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000047.png",
+      "mask": "masks/object_0/mask_000047.png",
+      "centroid": [
+        544.0531167359275,
+        191.24080090668681
+      ],
+      "sprite": {
+        "x": 412,
+        "y": 618,
+        "w": 102,
+        "h": 103
+      }
+    },
+    {
+      "frame": 48,
+      "sourceFrameIndex": 94,
+      "t": 3.916667,
+      "visible": true,
+      "x": 503,
+      "y": 132,
+      "w": 103,
+      "h": 101,
+      "scale": 1.0,
+      "rotation": 0.0,
+      "opacity": 1.0,
+      "anchor": [
+        50.831,
+        49.507
+      ],
+      "asset": "objects/object_0/cutouts/cutout_000048.png",
+      "mask": "masks/object_0/mask_000048.png",
+      "centroid": [
+        553.8314258818866,
+        181.5069857312723
+      ],
+      "sprite": {
+        "x": 515,
+        "y": 618,
+        "w": 103,
+        "h": 101
+      }
+    }
+  ],
+  "quality": {
+    "maskStability": 0.9877,
+    "edgeComplexity": 0.5916,
+    "bboxStability": 0.9935,
+    "vectorSuitability": 0.7568
+  },
+  "recommendedOutput": "hybrid_vector_silhouette_plus_raster"
+}

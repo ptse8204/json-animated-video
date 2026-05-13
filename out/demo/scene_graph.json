@@ -1,0 +1,9058 @@
+{
+  "schema": "motionjson.scene_graph.v0.1",
+  "version": "0.1.0",
+  "source": {
+    "video": "examples/demo_red_ball.mp4",
+    "width": 640,
+    "height": 360,
+    "fps": 24.0,
+    "sampleFps": 12.0,
+    "totalSourceFrames": 96,
+    "sampledFrameCount": 48
+  },
+  "objects": [
+    {
+      "id": "object_0",
+      "label": "selected_object",
+      "renderMode": "raster_alpha_sequence",
+      "asset": "objects/object_0/cutouts/cutout_%06d.png",
+      "mask": "masks/object_0/mask_%06d.png",
+      "assets": {
+        "cutoutPattern": "objects/object_0/cutouts/cutout_%06d.png",
+        "spritesheet": {
+          "path": "objects/object_0/spritesheet.webp",
+          "width": 721,
+          "height": 721,
+          "columns": 7,
+          "rows": 7,
+          "cellWidth": 103,
+          "cellHeight": 103,
+          "frames": [
+            {
+              "x": 0,
+              "y": 0,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 0,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 0,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 0,
+              "w": 100,
+              "h": 102
+            },
+            {
+              "x": 412,
+              "y": 0,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 0,
+              "w": 102,
+              "h": 102
+            },
+            {
+              "x": 618,
+              "y": 0,
+              "w": 102,
+              "h": 100
+            },
+            {
+              "x": 0,
+              "y": 103,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 103,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 103,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 103,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 412,
+              "y": 103,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 103,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 618,
+              "y": 103,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 0,
+              "y": 206,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 412,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 618,
+              "y": 206,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 0,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 412,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 309,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 618,
+              "y": 309,
+              "w": 103,
+              "h": 101
+            },
+            {
+              "x": 0,
+              "y": 412,
+              "w": 103,
+              "h": 102
+            },
+            {
+              "x": 103,
+              "y": 412,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 412,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 412,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 412,
+              "y": 412,
+              "w": 103,
+              "h": 101
+            },
+            {
+              "x": 515,
+              "y": 412,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 618,
+              "y": 412,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 0,
+              "y": 515,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 515,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 206,
+              "y": 515,
+              "w": 101,
+              "h": 101
+            },
+            {
+              "x": 309,
+              "y": 515,
+              "w": 103,
+              "h": 102
+            },
+            {
+              "x": 412,
+              "y": 515,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 515,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 618,
+              "y": 515,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 0,
+              "y": 618,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 103,
+              "y": 618,
+              "w": 103,
+              "h": 102
+            },
+            {
+              "x": 206,
+              "y": 618,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 309,
+              "y": 618,
+              "w": 103,
+              "h": 103
+            },
+            {
+              "x": 412,
+              "y": 618,
+              "w": 102,
+              "h": 103
+            },
+            {
+              "x": 515,
+              "y": 618,
+              "w": 103,
+              "h": 101
+            }
+          ]
+        }
+      },
+      "zIndex": 10,
+      "motion": [
+        {
+          "frame": 1,
+          "sourceFrameIndex": 0,
+          "t": 0.0,
+          "visible": true,
+          "x": 29,
+          "y": 129,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.196,
+            50.779
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000001.png",
+          "mask": "masks/object_0/mask_000001.png",
+          "centroid": [
+            80.1964954023843,
+            179.77891788732742
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 2,
+          "sourceFrameIndex": 2,
+          "t": 0.083333,
+          "visible": true,
+          "x": 39,
+          "y": 138,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.021,
+            50.9
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000002.png",
+          "mask": "masks/object_0/mask_000002.png",
+          "centroid": [
+            90.02133652384157,
+            188.89954884219446
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 3,
+          "sourceFrameIndex": 4,
+          "t": 0.166667,
+          "visible": true,
+          "x": 49,
+          "y": 148,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.627,
+            51.127
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000003.png",
+          "mask": "masks/object_0/mask_000003.png",
+          "centroid": [
+            99.62699741287476,
+            199.12697204890173
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 4,
+          "sourceFrameIndex": 6,
+          "t": 0.25,
+          "visible": true,
+          "x": 60,
+          "y": 157,
+          "w": 100,
+          "h": 102,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.173,
+            51.079
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000004.png",
+          "mask": "masks/object_0/mask_000004.png",
+          "centroid": [
+            110.17317079404022,
+            208.07907178818778
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 0,
+            "w": 100,
+            "h": 102
+          }
+        },
+        {
+          "frame": 5,
+          "sourceFrameIndex": 8,
+          "t": 0.333333,
+          "visible": true,
+          "x": 69,
+          "y": 164,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.784,
+            50.729
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000005.png",
+          "mask": "masks/object_0/mask_000005.png",
+          "centroid": [
+            119.7844527363184,
+            214.72925373134328
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 6,
+          "sourceFrameIndex": 10,
+          "t": 0.416667,
+          "visible": true,
+          "x": 79,
+          "y": 172,
+          "w": 102,
+          "h": 102,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.168,
+            49.903
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000006.png",
+          "mask": "masks/object_0/mask_000006.png",
+          "centroid": [
+            130.1681437898761,
+            221.9033291129813
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 0,
+            "w": 102,
+            "h": 102
+          }
+        },
+        {
+          "frame": 7,
+          "sourceFrameIndex": 12,
+          "t": 0.5,
+          "visible": true,
+          "x": 90,
+          "y": 178,
+          "w": 102,
+          "h": 100,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.146,
+            48.429
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000007.png",
+          "mask": "masks/object_0/mask_000007.png",
+          "centroid": [
+            140.14577633168182,
+            226.42852917252088
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 0,
+            "w": 102,
+            "h": 100
+          }
+        },
+        {
+          "frame": 8,
+          "sourceFrameIndex": 14,
+          "t": 0.583333,
+          "visible": true,
+          "x": 99,
+          "y": 178,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.17,
+            51.295
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000008.png",
+          "mask": "masks/object_0/mask_000008.png",
+          "centroid": [
+            150.16990496042084,
+            229.29467232437528
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 9,
+          "sourceFrameIndex": 16,
+          "t": 0.666667,
+          "visible": true,
+          "x": 110,
+          "y": 178,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.214,
+            51.123
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000009.png",
+          "mask": "masks/object_0/mask_000009.png",
+          "centroid": [
+            160.21435720362308,
+            229.12337987289195
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 10,
+          "sourceFrameIndex": 18,
+          "t": 0.75,
+          "visible": true,
+          "x": 120,
+          "y": 177,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.332,
+            51.261
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000010.png",
+          "mask": "masks/object_0/mask_000010.png",
+          "centroid": [
+            170.33230188679246,
+            228.26080503144652
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 11,
+          "sourceFrameIndex": 20,
+          "t": 0.833333,
+          "visible": true,
+          "x": 131,
+          "y": 174,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.167,
+            51.196
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000011.png",
+          "mask": "masks/object_0/mask_000011.png",
+          "centroid": [
+            181.16721178469103,
+            225.19629319743413
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 12,
+          "sourceFrameIndex": 22,
+          "t": 0.916667,
+          "visible": true,
+          "x": 140,
+          "y": 169,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.593,
+            50.83
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000012.png",
+          "mask": "masks/object_0/mask_000012.png",
+          "centroid": [
+            190.59320677321728,
+            219.8301943423126
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 13,
+          "sourceFrameIndex": 24,
+          "t": 1.0,
+          "visible": true,
+          "x": 150,
+          "y": 162,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.047,
+            51.21
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000013.png",
+          "mask": "masks/object_0/mask_000013.png",
+          "centroid": [
+            201.04666666666665,
+            213.2102657004831
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 14,
+          "sourceFrameIndex": 26,
+          "t": 1.083333,
+          "visible": true,
+          "x": 160,
+          "y": 154,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.29,
+            50.997
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000014.png",
+          "mask": "masks/object_0/mask_000014.png",
+          "centroid": [
+            211.2901749464826,
+            204.99729337368666
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 15,
+          "sourceFrameIndex": 28,
+          "t": 1.166667,
+          "visible": true,
+          "x": 171,
+          "y": 145,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            49.861,
+            50.94
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000015.png",
+          "mask": "masks/object_0/mask_000015.png",
+          "centroid": [
+            220.8605931989288,
+            195.93977060279923
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 206,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 16,
+          "sourceFrameIndex": 30,
+          "t": 1.25,
+          "visible": true,
+          "x": 180,
+          "y": 136,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.979,
+            51.204
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000016.png",
+          "mask": "masks/object_0/mask_000016.png",
+          "centroid": [
+            230.97902327105865,
+            187.20411970854448
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 17,
+          "sourceFrameIndex": 32,
+          "t": 1.333333,
+          "visible": true,
+          "x": 190,
+          "y": 126,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.975,
+            50.364
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000017.png",
+          "mask": "masks/object_0/mask_000017.png",
+          "centroid": [
+            240.9753839894212,
+            176.36417963584577
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 18,
+          "sourceFrameIndex": 34,
+          "t": 1.416667,
+          "visible": true,
+          "x": 200,
+          "y": 116,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.026,
+            50.943
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000018.png",
+          "mask": "masks/object_0/mask_000018.png",
+          "centroid": [
+            251.02571256220781,
+            166.94251746845623
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 19,
+          "sourceFrameIndex": 36,
+          "t": 1.5,
+          "visible": true,
+          "x": 210,
+          "y": 106,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.01,
+            51.09
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000019.png",
+          "mask": "masks/object_0/mask_000019.png",
+          "centroid": [
+            261.00978306063047,
+            157.08968620833025
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 20,
+          "sourceFrameIndex": 38,
+          "t": 1.583333,
+          "visible": true,
+          "x": 221,
+          "y": 98,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.09,
+            50.948
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000020.png",
+          "mask": "masks/object_0/mask_000020.png",
+          "centroid": [
+            272.0902793023539,
+            148.94782290523236
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 21,
+          "sourceFrameIndex": 40,
+          "t": 1.666667,
+          "visible": true,
+          "x": 231,
+          "y": 91,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.118,
+            51.149
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000021.png",
+          "mask": "masks/object_0/mask_000021.png",
+          "centroid": [
+            282.11829981672565,
+            142.14882880168713
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 22,
+          "sourceFrameIndex": 42,
+          "t": 1.75,
+          "visible": true,
+          "x": 241,
+          "y": 85,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.269,
+            51.081
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000022.png",
+          "mask": "masks/object_0/mask_000022.png",
+          "centroid": [
+            292.26919214741173,
+            136.08063463372997
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 23,
+          "sourceFrameIndex": 44,
+          "t": 1.833333,
+          "visible": true,
+          "x": 251,
+          "y": 81,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.868,
+            51.259
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000023.png",
+          "mask": "masks/object_0/mask_000023.png",
+          "centroid": [
+            301.86781009197114,
+            132.2589609743972
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 24,
+          "sourceFrameIndex": 46,
+          "t": 1.916667,
+          "visible": true,
+          "x": 261,
+          "y": 79,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.11,
+            51.14
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000024.png",
+          "mask": "masks/object_0/mask_000024.png",
+          "centroid": [
+            312.1104655549687,
+            130.13994315752407
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 25,
+          "sourceFrameIndex": 48,
+          "t": 2.0,
+          "visible": true,
+          "x": 271,
+          "y": 79,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.082,
+            51.082
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000025.png",
+          "mask": "masks/object_0/mask_000025.png",
+          "centroid": [
+            322.08182531509,
+            130.08214408317394
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 26,
+          "sourceFrameIndex": 50,
+          "t": 2.083333,
+          "visible": true,
+          "x": 281,
+          "y": 81,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.85,
+            51.042
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000026.png",
+          "mask": "masks/object_0/mask_000026.png",
+          "centroid": [
+            331.84998151571165,
+            132.04152803450398
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 27,
+          "sourceFrameIndex": 52,
+          "t": 2.166667,
+          "visible": true,
+          "x": 291,
+          "y": 84,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.974,
+            51.053
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000027.png",
+          "mask": "masks/object_0/mask_000027.png",
+          "centroid": [
+            341.97428436419705,
+            135.05269964435823
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 28,
+          "sourceFrameIndex": 54,
+          "t": 2.25,
+          "visible": true,
+          "x": 301,
+          "y": 90,
+          "w": 103,
+          "h": 101,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.159,
+            50.835
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000028.png",
+          "mask": "masks/object_0/mask_000028.png",
+          "centroid": [
+            352.1594803758982,
+            140.83501683501683
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 309,
+            "w": 103,
+            "h": 101
+          }
+        },
+        {
+          "frame": 29,
+          "sourceFrameIndex": 56,
+          "t": 2.333333,
+          "visible": true,
+          "x": 311,
+          "y": 98,
+          "w": 103,
+          "h": 102,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.746,
+            50.1
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000029.png",
+          "mask": "masks/object_0/mask_000029.png",
+          "centroid": [
+            361.74596794580106,
+            148.10046008392737
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 412,
+            "w": 103,
+            "h": 102
+          }
+        },
+        {
+          "frame": 30,
+          "sourceFrameIndex": 58,
+          "t": 2.416667,
+          "visible": true,
+          "x": 322,
+          "y": 105,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.949,
+            50.918
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000030.png",
+          "mask": "masks/object_0/mask_000030.png",
+          "centroid": [
+            372.94946147473075,
+            155.9184052622329
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 31,
+          "sourceFrameIndex": 60,
+          "t": 2.5,
+          "visible": true,
+          "x": 332,
+          "y": 115,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.879,
+            51.321
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000031.png",
+          "mask": "masks/object_0/mask_000031.png",
+          "centroid": [
+            382.8785392895319,
+            166.32058070450194
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 32,
+          "sourceFrameIndex": 62,
+          "t": 2.583333,
+          "visible": true,
+          "x": 342,
+          "y": 124,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.814,
+            51.149
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000032.png",
+          "mask": "masks/object_0/mask_000032.png",
+          "centroid": [
+            392.8135567970205,
+            175.14857852265672
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 412,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 33,
+          "sourceFrameIndex": 64,
+          "t": 2.666667,
+          "visible": true,
+          "x": 352,
+          "y": 136,
+          "w": 103,
+          "h": 101,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.984,
+            49.408
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000033.png",
+          "mask": "masks/object_0/mask_000033.png",
+          "centroid": [
+            402.98447798742137,
+            185.40772327044021
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 412,
+            "w": 103,
+            "h": 101
+          }
+        },
+        {
+          "frame": 34,
+          "sourceFrameIndex": 66,
+          "t": 2.75,
+          "visible": true,
+          "x": 362,
+          "y": 144,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.599,
+            51.111
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000034.png",
+          "mask": "masks/object_0/mask_000034.png",
+          "centroid": [
+            412.5986750613163,
+            195.11110268274797
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 35,
+          "sourceFrameIndex": 68,
+          "t": 2.833333,
+          "visible": true,
+          "x": 372,
+          "y": 153,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.836,
+            50.483
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000035.png",
+          "mask": "masks/object_0/mask_000035.png",
+          "centroid": [
+            422.83594091201024,
+            203.4826461143224
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 36,
+          "sourceFrameIndex": 70,
+          "t": 2.916667,
+          "visible": true,
+          "x": 382,
+          "y": 161,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.758,
+            50.759
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000036.png",
+          "mask": "masks/object_0/mask_000036.png",
+          "centroid": [
+            432.75786764518506,
+            211.7591417577657
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 37,
+          "sourceFrameIndex": 72,
+          "t": 3.0,
+          "visible": true,
+          "x": 392,
+          "y": 168,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.807,
+            51.391
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000037.png",
+          "mask": "masks/object_0/mask_000037.png",
+          "centroid": [
+            442.8071692535107,
+            219.39108154717908
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 38,
+          "sourceFrameIndex": 74,
+          "t": 3.083333,
+          "visible": true,
+          "x": 402,
+          "y": 174,
+          "w": 101,
+          "h": 101,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.833,
+            49.875
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000038.png",
+          "mask": "masks/object_0/mask_000038.png",
+          "centroid": [
+            452.83282020475076,
+            223.8748466871918
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 515,
+            "w": 101,
+            "h": 101
+          }
+        },
+        {
+          "frame": 39,
+          "sourceFrameIndex": 76,
+          "t": 3.166667,
+          "visible": true,
+          "x": 413,
+          "y": 178,
+          "w": 103,
+          "h": 102,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.148,
+            49.975
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000039.png",
+          "mask": "masks/object_0/mask_000039.png",
+          "centroid": [
+            464.14820643485206,
+            227.97492006394882
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 515,
+            "w": 103,
+            "h": 102
+          }
+        },
+        {
+          "frame": 40,
+          "sourceFrameIndex": 78,
+          "t": 3.25,
+          "visible": true,
+          "x": 423,
+          "y": 178,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.405,
+            51.154
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000040.png",
+          "mask": "masks/object_0/mask_000040.png",
+          "centroid": [
+            473.404792404491,
+            229.15404516112824
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 41,
+          "sourceFrameIndex": 80,
+          "t": 3.333333,
+          "visible": true,
+          "x": 433,
+          "y": 178,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.341,
+            50.596
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000041.png",
+          "mask": "masks/object_0/mask_000041.png",
+          "centroid": [
+            484.34140611331884,
+            228.59553622753742
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 42,
+          "sourceFrameIndex": 82,
+          "t": 3.416667,
+          "visible": true,
+          "x": 443,
+          "y": 176,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.631,
+            50.756
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000042.png",
+          "mask": "masks/object_0/mask_000042.png",
+          "centroid": [
+            493.63075911596616,
+            226.75577808122185
+          ],
+          "sprite": {
+            "x": 618,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 43,
+          "sourceFrameIndex": 84,
+          "t": 3.5,
+          "visible": true,
+          "x": 453,
+          "y": 171,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.617,
+            51.243
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000043.png",
+          "mask": "masks/object_0/mask_000043.png",
+          "centroid": [
+            503.61658183964005,
+            222.24262988370089
+          ],
+          "sprite": {
+            "x": 0,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 44,
+          "sourceFrameIndex": 86,
+          "t": 3.583333,
+          "visible": true,
+          "x": 463,
+          "y": 166,
+          "w": 103,
+          "h": 102,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.815,
+            50.261
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000044.png",
+          "mask": "masks/object_0/mask_000044.png",
+          "centroid": [
+            514.8151718251876,
+            216.26096342596077
+          ],
+          "sprite": {
+            "x": 103,
+            "y": 618,
+            "w": 103,
+            "h": 102
+          }
+        },
+        {
+          "frame": 45,
+          "sourceFrameIndex": 88,
+          "t": 3.666667,
+          "visible": true,
+          "x": 473,
+          "y": 158,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.88,
+            51.218
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000045.png",
+          "mask": "masks/object_0/mask_000045.png",
+          "centroid": [
+            523.8799063558478,
+            209.21782227535363
+          ],
+          "sprite": {
+            "x": 206,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 46,
+          "sourceFrameIndex": 90,
+          "t": 3.75,
+          "visible": true,
+          "x": 483,
+          "y": 149,
+          "w": 103,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.952,
+            51.222
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000046.png",
+          "mask": "masks/object_0/mask_000046.png",
+          "centroid": [
+            533.9519598952036,
+            200.22236497380086
+          ],
+          "sprite": {
+            "x": 309,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          }
+        },
+        {
+          "frame": 47,
+          "sourceFrameIndex": 92,
+          "t": 3.833333,
+          "visible": true,
+          "x": 493,
+          "y": 140,
+          "w": 102,
+          "h": 103,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            51.053,
+            51.241
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000047.png",
+          "mask": "masks/object_0/mask_000047.png",
+          "centroid": [
+            544.0531167359275,
+            191.24080090668681
+          ],
+          "sprite": {
+            "x": 412,
+            "y": 618,
+            "w": 102,
+            "h": 103
+          }
+        },
+        {
+          "frame": 48,
+          "sourceFrameIndex": 94,
+          "t": 3.916667,
+          "visible": true,
+          "x": 503,
+          "y": 132,
+          "w": 103,
+          "h": 101,
+          "scale": 1.0,
+          "rotation": 0.0,
+          "opacity": 1.0,
+          "anchor": [
+            50.831,
+            49.507
+          ],
+          "asset": "objects/object_0/cutouts/cutout_000048.png",
+          "mask": "masks/object_0/mask_000048.png",
+          "centroid": [
+            553.8314258818866,
+            181.5069857312723
+          ],
+          "sprite": {
+            "x": 515,
+            "y": 618,
+            "w": 103,
+            "h": 101
+          }
+        }
+      ],
+      "frames": [
+        {
+          "source_frame_index": 0,
+          "frame": 1,
+          "out_index": 0,
+          "t": 0.0,
+          "visible": true,
+          "area": 6665.0,
+          "bbox": [
+            29,
+            129,
+            103,
+            103
+          ],
+          "centroid": [
+            80.1964954023843,
+            179.77891788732742
+          ],
+          "polygon": [
+            [
+              58.0,
+              138.0
+            ],
+            [
+              53.0,
+              144.0
+            ],
+            [
+              48.0,
+              144.0
+            ],
+            [
+              42.0,
+              159.0
+            ],
+            [
+              36.0,
+              161.0
+            ],
+            [
+              33.0,
+              182.0
+            ],
+            [
+              36.0,
+              197.0
+            ],
+            [
+              53.0,
+              219.0
+            ],
+            [
+              63.0,
+              217.0
+            ],
+            [
+              64.0,
+              225.0
+            ],
+            [
+              85.0,
+              227.0
+            ],
+            [
+              101.0,
+              223.0
+            ],
+            [
+              102.0,
+              219.0
+            ],
+            [
+              111.0,
+              216.0
+            ],
+            [
+              114.0,
+              207.0
+            ],
+            [
+              119.0,
+              207.0
+            ],
+            [
+              119.0,
+              200.0
+            ],
+            [
+              123.0,
+              199.0
+            ],
+            [
+              123.0,
+              194.0
+            ],
+            [
+              126.0,
+              193.0
+            ],
+            [
+              127.0,
+              171.0
+            ],
+            [
+              123.0,
+              169.0
+            ],
+            [
+              124.0,
+              161.0
+            ],
+            [
+              111.0,
+              144.0
+            ],
+            [
+              106.0,
+              144.0
+            ],
+            [
+              105.0,
+              140.0
+            ],
+            [
+              97.0,
+              138.0
+            ],
+            [
+              96.0,
+              135.0
+            ],
+            [
+              76.0,
+              133.0
+            ]
+          ],
+          "contour_points": 143,
+          "framePath": "frames/frame_000001.png",
+          "mask": "masks/object_0/mask_000001.png",
+          "asset": "objects/object_0/cutouts/cutout_000001.png",
+          "anchor": [
+            51.196,
+            50.779
+          ]
+        },
+        {
+          "source_frame_index": 2,
+          "frame": 2,
+          "out_index": 1,
+          "t": 0.083333,
+          "visible": true,
+          "area": 6601.5,
+          "bbox": [
+            39,
+            138,
+            102,
+            103
+          ],
+          "centroid": [
+            90.02133652384157,
+            188.89954884219446
+          ],
+          "polygon": [
+            [
+              86.0,
+              142.0
+            ],
+            [
+              68.0,
+              148.0
+            ],
+            [
+              52.0,
+              162.0
+            ],
+            [
+              50.0,
+              171.0
+            ],
+            [
+              46.0,
+              172.0
+            ],
+            [
+              43.0,
+              198.0
+            ],
+            [
+              48.0,
+              204.0
+            ],
+            [
+              50.0,
+              215.0
+            ],
+            [
+              62.0,
+              227.0
+            ],
+            [
+              71.0,
+              227.0
+            ],
+            [
+              74.0,
+              234.0
+            ],
+            [
+              95.0,
+              236.0
+            ],
+            [
+              117.0,
+              227.0
+            ],
+            [
+              126.0,
+              215.0
+            ],
+            [
+              130.0,
+              215.0
+            ],
+            [
+              136.0,
+              202.0
+            ],
+            [
+              135.0,
+              178.0
+            ],
+            [
+              131.0,
+              175.0
+            ],
+            [
+              131.0,
+              166.0
+            ],
+            [
+              114.0,
+              148.0
+            ],
+            [
+              103.0,
+              143.0
+            ]
+          ],
+          "contour_points": 153,
+          "framePath": "frames/frame_000002.png",
+          "mask": "masks/object_0/mask_000002.png",
+          "asset": "objects/object_0/cutouts/cutout_000002.png",
+          "anchor": [
+            51.021,
+            50.9
+          ]
+        },
+        {
+          "source_frame_index": 4,
+          "frame": 3,
+          "out_index": 2,
+          "t": 0.166667,
+          "visible": true,
+          "area": 6548.5,
+          "bbox": [
+            49,
+            148,
+            102,
+            103
+          ],
+          "centroid": [
+            99.62699741287476,
+            199.12697204890173
+          ],
+          "polygon": [
+            [
+              92.0,
+              152.0
+            ],
+            [
+              89.0,
+              156.0
+            ],
+            [
+              74.0,
+              160.0
+            ],
+            [
+              62.0,
+              172.0
+            ],
+            [
+              62.0,
+              177.0
+            ],
+            [
+              58.0,
+              178.0
+            ],
+            [
+              58.0,
+              189.0
+            ],
+            [
+              53.0,
+              192.0
+            ],
+            [
+              53.0,
+              208.0
+            ],
+            [
+              56.0,
+              210.0
+            ],
+            [
+              57.0,
+              220.0
+            ],
+            [
+              62.0,
+              222.0
+            ],
+            [
+              63.0,
+              229.0
+            ],
+            [
+              76.0,
+              239.0
+            ],
+            [
+              95.0,
+              243.0
+            ],
+            [
+              96.0,
+              246.0
+            ],
+            [
+              105.0,
+              246.0
+            ],
+            [
+              127.0,
+              237.0
+            ],
+            [
+              129.0,
+              232.0
+            ],
+            [
+              135.0,
+              231.0
+            ],
+            [
+              137.0,
+              224.0
+            ],
+            [
+              142.0,
+              222.0
+            ],
+            [
+              143.0,
+              194.0
+            ],
+            [
+              146.0,
+              191.0
+            ],
+            [
+              142.0,
+              176.0
+            ],
+            [
+              136.0,
+              169.0
+            ],
+            [
+              127.0,
+              165.0
+            ],
+            [
+              126.0,
+              159.0
+            ]
+          ],
+          "contour_points": 143,
+          "framePath": "frames/frame_000003.png",
+          "mask": "masks/object_0/mask_000003.png",
+          "asset": "objects/object_0/cutouts/cutout_000003.png",
+          "anchor": [
+            50.627,
+            51.127
+          ]
+        },
+        {
+          "source_frame_index": 6,
+          "frame": 4,
+          "out_index": 3,
+          "t": 0.25,
+          "visible": true,
+          "area": 6529.0,
+          "bbox": [
+            60,
+            157,
+            100,
+            102
+          ],
+          "centroid": [
+            110.17317079404022,
+            208.07907178818778
+          ],
+          "polygon": [
+            [
+              91.0,
+              164.0
+            ],
+            [
+              79.0,
+              176.0
+            ],
+            [
+              74.0,
+              177.0
+            ],
+            [
+              74.0,
+              187.0
+            ],
+            [
+              70.0,
+              188.0
+            ],
+            [
+              68.0,
+              197.0
+            ],
+            [
+              64.0,
+              198.0
+            ],
+            [
+              64.0,
+              219.0
+            ],
+            [
+              67.0,
+              220.0
+            ],
+            [
+              68.0,
+              229.0
+            ],
+            [
+              80.0,
+              238.0
+            ],
+            [
+              82.0,
+              245.0
+            ],
+            [
+              97.0,
+              254.0
+            ],
+            [
+              111.0,
+              253.0
+            ],
+            [
+              112.0,
+              249.0
+            ],
+            [
+              117.0,
+              249.0
+            ],
+            [
+              118.0,
+              253.0
+            ],
+            [
+              126.0,
+              253.0
+            ],
+            [
+              134.0,
+              245.0
+            ],
+            [
+              140.0,
+              245.0
+            ],
+            [
+              154.0,
+              227.0
+            ],
+            [
+              155.0,
+              192.0
+            ],
+            [
+              151.0,
+              191.0
+            ],
+            [
+              139.0,
+              170.0
+            ],
+            [
+              132.0,
+              170.0
+            ],
+            [
+              117.0,
+              162.0
+            ],
+            [
+              102.0,
+              161.0
+            ],
+            [
+              101.0,
+              164.0
+            ]
+          ],
+          "contour_points": 133,
+          "framePath": "frames/frame_000004.png",
+          "mask": "masks/object_0/mask_000004.png",
+          "asset": "objects/object_0/cutouts/cutout_000004.png",
+          "anchor": [
+            50.173,
+            51.079
+          ]
+        },
+        {
+          "source_frame_index": 8,
+          "frame": 5,
+          "out_index": 4,
+          "t": 0.333333,
+          "visible": true,
+          "area": 6686.0,
+          "bbox": [
+            69,
+            164,
+            103,
+            103
+          ],
+          "centroid": [
+            119.7844527363184,
+            214.72925373134328
+          ],
+          "polygon": [
+            [
+              112.0,
+              168.0
+            ],
+            [
+              111.0,
+              172.0
+            ],
+            [
+              93.0,
+              176.0
+            ],
+            [
+              89.0,
+              183.0
+            ],
+            [
+              82.0,
+              186.0
+            ],
+            [
+              77.0,
+              194.0
+            ],
+            [
+              78.0,
+              203.0
+            ],
+            [
+              73.0,
+              209.0
+            ],
+            [
+              73.0,
+              224.0
+            ],
+            [
+              84.0,
+              246.0
+            ],
+            [
+              93.0,
+              251.0
+            ],
+            [
+              96.0,
+              257.0
+            ],
+            [
+              115.0,
+              259.0
+            ],
+            [
+              118.0,
+              262.0
+            ],
+            [
+              124.0,
+              259.0
+            ],
+            [
+              136.0,
+              260.0
+            ],
+            [
+              153.0,
+              249.0
+            ],
+            [
+              155.0,
+              238.0
+            ],
+            [
+              163.0,
+              233.0
+            ],
+            [
+              163.0,
+              226.0
+            ],
+            [
+              167.0,
+              224.0
+            ],
+            [
+              166.0,
+              202.0
+            ],
+            [
+              161.0,
+              199.0
+            ],
+            [
+              160.0,
+              189.0
+            ],
+            [
+              154.0,
+              188.0
+            ],
+            [
+              153.0,
+              182.0
+            ],
+            [
+              143.0,
+              173.0
+            ],
+            [
+              127.0,
+              168.0
+            ]
+          ],
+          "contour_points": 138,
+          "framePath": "frames/frame_000005.png",
+          "mask": "masks/object_0/mask_000005.png",
+          "asset": "objects/object_0/cutouts/cutout_000005.png",
+          "anchor": [
+            50.784,
+            50.729
+          ]
+        },
+        {
+          "source_frame_index": 10,
+          "frame": 6,
+          "out_index": 5,
+          "t": 0.416667,
+          "visible": true,
+          "area": 6656.0,
+          "bbox": [
+            79,
+            172,
+            102,
+            102
+          ],
+          "centroid": [
+            130.1681437898761,
+            221.9033291129813
+          ],
+          "polygon": [
+            [
+              109.0,
+              179.0
+            ],
+            [
+              100.0,
+              185.0
+            ],
+            [
+              91.0,
+              201.0
+            ],
+            [
+              86.0,
+              203.0
+            ],
+            [
+              83.0,
+              221.0
+            ],
+            [
+              90.0,
+              246.0
+            ],
+            [
+              94.0,
+              247.0
+            ],
+            [
+              94.0,
+              253.0
+            ],
+            [
+              103.0,
+              261.0
+            ],
+            [
+              128.0,
+              269.0
+            ],
+            [
+              143.0,
+              268.0
+            ],
+            [
+              144.0,
+              265.0
+            ],
+            [
+              162.0,
+              257.0
+            ],
+            [
+              169.0,
+              247.0
+            ],
+            [
+              169.0,
+              242.0
+            ],
+            [
+              174.0,
+              241.0
+            ],
+            [
+              176.0,
+              209.0
+            ],
+            [
+              168.0,
+              193.0
+            ],
+            [
+              149.0,
+              178.0
+            ],
+            [
+              122.0,
+              176.0
+            ],
+            [
+              117.0,
+              180.0
+            ]
+          ],
+          "contour_points": 149,
+          "framePath": "frames/frame_000006.png",
+          "mask": "masks/object_0/mask_000006.png",
+          "asset": "objects/object_0/cutouts/cutout_000006.png",
+          "anchor": [
+            51.168,
+            49.903
+          ]
+        },
+        {
+          "source_frame_index": 12,
+          "frame": 7,
+          "out_index": 6,
+          "t": 0.5,
+          "visible": true,
+          "area": 6775.0,
+          "bbox": [
+            90,
+            178,
+            102,
+            100
+          ],
+          "centroid": [
+            140.14577633168182,
+            226.42852917252088
+          ],
+          "polygon": [
+            [
+              121.0,
+              182.0
+            ],
+            [
+              104.0,
+              195.0
+            ],
+            [
+              102.0,
+              205.0
+            ],
+            [
+              96.0,
+              208.0
+            ],
+            [
+              94.0,
+              239.0
+            ],
+            [
+              97.0,
+              247.0
+            ],
+            [
+              111.0,
+              264.0
+            ],
+            [
+              117.0,
+              264.0
+            ],
+            [
+              124.0,
+              271.0
+            ],
+            [
+              147.0,
+              273.0
+            ],
+            [
+              159.0,
+              270.0
+            ],
+            [
+              171.0,
+              262.0
+            ],
+            [
+              171.0,
+              258.0
+            ],
+            [
+              177.0,
+              255.0
+            ],
+            [
+              177.0,
+              250.0
+            ],
+            [
+              181.0,
+              249.0
+            ],
+            [
+              185.0,
+              242.0
+            ],
+            [
+              187.0,
+              220.0
+            ],
+            [
+              183.0,
+              219.0
+            ],
+            [
+              184.0,
+              208.0
+            ],
+            [
+              175.0,
+              194.0
+            ],
+            [
+              159.0,
+              182.0
+            ]
+          ],
+          "contour_points": 134,
+          "framePath": "frames/frame_000007.png",
+          "mask": "masks/object_0/mask_000007.png",
+          "asset": "objects/object_0/cutouts/cutout_000007.png",
+          "anchor": [
+            50.146,
+            48.429
+          ]
+        },
+        {
+          "source_frame_index": 14,
+          "frame": 8,
+          "out_index": 7,
+          "t": 0.583333,
+          "visible": true,
+          "area": 6703.5,
+          "bbox": [
+            99,
+            178,
+            103,
+            103
+          ],
+          "centroid": [
+            150.16990496042084,
+            229.29467232437528
+          ],
+          "polygon": [
+            [
+              141.0,
+              182.0
+            ],
+            [
+              126.0,
+              188.0
+            ],
+            [
+              121.0,
+              196.0
+            ],
+            [
+              116.0,
+              196.0
+            ],
+            [
+              114.0,
+              207.0
+            ],
+            [
+              108.0,
+              208.0
+            ],
+            [
+              106.0,
+              225.0
+            ],
+            [
+              103.0,
+              226.0
+            ],
+            [
+              104.0,
+              241.0
+            ],
+            [
+              108.0,
+              242.0
+            ],
+            [
+              112.0,
+              257.0
+            ],
+            [
+              121.0,
+              267.0
+            ],
+            [
+              127.0,
+              267.0
+            ],
+            [
+              129.0,
+              272.0
+            ],
+            [
+              137.0,
+              275.0
+            ],
+            [
+              159.0,
+              276.0
+            ],
+            [
+              173.0,
+              271.0
+            ],
+            [
+              182.0,
+              259.0
+            ],
+            [
+              189.0,
+              256.0
+            ],
+            [
+              189.0,
+              250.0
+            ],
+            [
+              194.0,
+              247.0
+            ],
+            [
+              197.0,
+              239.0
+            ],
+            [
+              193.0,
+              208.0
+            ],
+            [
+              187.0,
+              205.0
+            ],
+            [
+              184.0,
+              196.0
+            ],
+            [
+              178.0,
+              194.0
+            ],
+            [
+              171.0,
+              186.0
+            ],
+            [
+              160.0,
+              186.0
+            ],
+            [
+              157.0,
+              182.0
+            ]
+          ],
+          "contour_points": 130,
+          "framePath": "frames/frame_000008.png",
+          "mask": "masks/object_0/mask_000008.png",
+          "asset": "objects/object_0/cutouts/cutout_000008.png",
+          "anchor": [
+            51.17,
+            51.295
+          ]
+        },
+        {
+          "source_frame_index": 16,
+          "frame": 9,
+          "out_index": 8,
+          "t": 0.666667,
+          "visible": true,
+          "area": 6615.5,
+          "bbox": [
+            110,
+            178,
+            102,
+            103
+          ],
+          "centroid": [
+            160.21435720362308,
+            229.12337987289195
+          ],
+          "polygon": [
+            [
+              151.0,
+              182.0
+            ],
+            [
+              134.0,
+              189.0
+            ],
+            [
+              132.0,
+              197.0
+            ],
+            [
+              126.0,
+              198.0
+            ],
+            [
+              124.0,
+              205.0
+            ],
+            [
+              118.0,
+              208.0
+            ],
+            [
+              114.0,
+              241.0
+            ],
+            [
+              118.0,
+              242.0
+            ],
+            [
+              117.0,
+              250.0
+            ],
+            [
+              120.0,
+              255.0
+            ],
+            [
+              127.0,
+              255.0
+            ],
+            [
+              128.0,
+              264.0
+            ],
+            [
+              133.0,
+              265.0
+            ],
+            [
+              137.0,
+              271.0
+            ],
+            [
+              147.0,
+              275.0
+            ],
+            [
+              169.0,
+              276.0
+            ],
+            [
+              186.0,
+              269.0
+            ],
+            [
+              187.0,
+              264.0
+            ],
+            [
+              191.0,
+              263.0
+            ],
+            [
+              191.0,
+              258.0
+            ],
+            [
+              195.0,
+              257.0
+            ],
+            [
+              197.0,
+              249.0
+            ],
+            [
+              203.0,
+              247.0
+            ],
+            [
+              207.0,
+              238.0
+            ],
+            [
+              206.0,
+              217.0
+            ],
+            [
+              203.0,
+              216.0
+            ],
+            [
+              203.0,
+              208.0
+            ],
+            [
+              197.0,
+              205.0
+            ],
+            [
+              193.0,
+              195.0
+            ],
+            [
+              167.0,
+              182.0
+            ]
+          ],
+          "contour_points": 137,
+          "framePath": "frames/frame_000009.png",
+          "mask": "masks/object_0/mask_000009.png",
+          "asset": "objects/object_0/cutouts/cutout_000009.png",
+          "anchor": [
+            50.214,
+            51.123
+          ]
+        },
+        {
+          "source_frame_index": 18,
+          "frame": 10,
+          "out_index": 9,
+          "t": 0.75,
+          "visible": true,
+          "area": 6658.0,
+          "bbox": [
+            120,
+            177,
+            102,
+            103
+          ],
+          "centroid": [
+            170.33230188679246,
+            228.26080503144652
+          ],
+          "polygon": [
+            [
+              161.0,
+              181.0
+            ],
+            [
+              159.0,
+              186.0
+            ],
+            [
+              150.0,
+              186.0
+            ],
+            [
+              140.0,
+              192.0
+            ],
+            [
+              140.0,
+              197.0
+            ],
+            [
+              134.0,
+              198.0
+            ],
+            [
+              134.0,
+              203.0
+            ],
+            [
+              128.0,
+              205.0
+            ],
+            [
+              124.0,
+              239.0
+            ],
+            [
+              130.0,
+              246.0
+            ],
+            [
+              130.0,
+              253.0
+            ],
+            [
+              133.0,
+              253.0
+            ],
+            [
+              147.0,
+              270.0
+            ],
+            [
+              165.0,
+              275.0
+            ],
+            [
+              175.0,
+              275.0
+            ],
+            [
+              180.0,
+              271.0
+            ],
+            [
+              189.0,
+              272.0
+            ],
+            [
+              207.0,
+              257.0
+            ],
+            [
+              207.0,
+              252.0
+            ],
+            [
+              213.0,
+              247.0
+            ],
+            [
+              213.0,
+              240.0
+            ],
+            [
+              217.0,
+              237.0
+            ],
+            [
+              214.0,
+              209.0
+            ],
+            [
+              201.0,
+              194.0
+            ],
+            [
+              190.0,
+              190.0
+            ],
+            [
+              189.0,
+              184.0
+            ]
+          ],
+          "contour_points": 146,
+          "framePath": "frames/frame_000010.png",
+          "mask": "masks/object_0/mask_000010.png",
+          "asset": "objects/object_0/cutouts/cutout_000010.png",
+          "anchor": [
+            50.332,
+            51.261
+          ]
+        },
+        {
+          "source_frame_index": 20,
+          "frame": 11,
+          "out_index": 10,
+          "t": 0.833333,
+          "visible": true,
+          "area": 6551.0,
+          "bbox": [
+            131,
+            174,
+            102,
+            103
+          ],
+          "centroid": [
+            181.16721178469103,
+            225.19629319743413
+          ],
+          "polygon": [
+            [
+              193.0,
+              179.0
+            ],
+            [
+              180.0,
+              178.0
+            ],
+            [
+              172.0,
+              180.0
+            ],
+            [
+              171.0,
+              184.0
+            ],
+            [
+              160.0,
+              182.0
+            ],
+            [
+              160.0,
+              185.0
+            ],
+            [
+              138.0,
+              204.0
+            ],
+            [
+              140.0,
+              213.0
+            ],
+            [
+              136.0,
+              214.0
+            ],
+            [
+              138.0,
+              227.0
+            ],
+            [
+              135.0,
+              237.0
+            ],
+            [
+              138.0,
+              238.0
+            ],
+            [
+              139.0,
+              248.0
+            ],
+            [
+              143.0,
+              250.0
+            ],
+            [
+              144.0,
+              255.0
+            ],
+            [
+              149.0,
+              255.0
+            ],
+            [
+              154.0,
+              263.0
+            ],
+            [
+              172.0,
+              272.0
+            ],
+            [
+              191.0,
+              271.0
+            ],
+            [
+              211.0,
+              261.0
+            ],
+            [
+              223.0,
+              243.0
+            ],
+            [
+              223.0,
+              236.0
+            ],
+            [
+              228.0,
+              234.0
+            ],
+            [
+              223.0,
+              206.0
+            ],
+            [
+              219.0,
+              205.0
+            ],
+            [
+              217.0,
+              196.0
+            ],
+            [
+              210.0,
+              187.0
+            ]
+          ],
+          "contour_points": 155,
+          "framePath": "frames/frame_000011.png",
+          "mask": "masks/object_0/mask_000011.png",
+          "asset": "objects/object_0/cutouts/cutout_000011.png",
+          "anchor": [
+            50.167,
+            51.196
+          ]
+        },
+        {
+          "source_frame_index": 22,
+          "frame": 12,
+          "out_index": 11,
+          "t": 0.916667,
+          "visible": true,
+          "area": 6631.5,
+          "bbox": [
+            140,
+            169,
+            102,
+            103
+          ],
+          "centroid": [
+            190.59320677321728,
+            219.8301943423126
+          ],
+          "polygon": [
+            [
+              210.0,
+              176.0
+            ],
+            [
+              195.0,
+              173.0
+            ],
+            [
+              172.0,
+              176.0
+            ],
+            [
+              169.0,
+              182.0
+            ],
+            [
+              164.0,
+              182.0
+            ],
+            [
+              161.0,
+              190.0
+            ],
+            [
+              152.0,
+              193.0
+            ],
+            [
+              148.0,
+              207.0
+            ],
+            [
+              145.0,
+              208.0
+            ],
+            [
+              144.0,
+              223.0
+            ],
+            [
+              148.0,
+              241.0
+            ],
+            [
+              153.0,
+              249.0
+            ],
+            [
+              159.0,
+              249.0
+            ],
+            [
+              160.0,
+              255.0
+            ],
+            [
+              172.0,
+              264.0
+            ],
+            [
+              195.0,
+              267.0
+            ],
+            [
+              201.0,
+              265.0
+            ],
+            [
+              202.0,
+              261.0
+            ],
+            [
+              212.0,
+              261.0
+            ],
+            [
+              218.0,
+              255.0
+            ],
+            [
+              223.0,
+              255.0
+            ],
+            [
+              227.0,
+              244.0
+            ],
+            [
+              231.0,
+              243.0
+            ],
+            [
+              233.0,
+              232.0
+            ],
+            [
+              237.0,
+              231.0
+            ],
+            [
+              236.0,
+              204.0
+            ],
+            [
+              229.0,
+              199.0
+            ],
+            [
+              229.0,
+              192.0
+            ],
+            [
+              223.0,
+              191.0
+            ],
+            [
+              223.0,
+              185.0
+            ]
+          ],
+          "contour_points": 127,
+          "framePath": "frames/frame_000012.png",
+          "mask": "masks/object_0/mask_000012.png",
+          "asset": "objects/object_0/cutouts/cutout_000012.png",
+          "anchor": [
+            50.593,
+            50.83
+          ]
+        },
+        {
+          "source_frame_index": 24,
+          "frame": 13,
+          "out_index": 12,
+          "t": 1.0,
+          "visible": true,
+          "area": 6837.5,
+          "bbox": [
+            150,
+            162,
+            103,
+            103
+          ],
+          "centroid": [
+            201.04666666666665,
+            213.2102657004831
+          ],
+          "polygon": [
+            [
+              192.0,
+              166.0
+            ],
+            [
+              177.0,
+              172.0
+            ],
+            [
+              174.0,
+              179.0
+            ],
+            [
+              166.0,
+              182.0
+            ],
+            [
+              160.0,
+              189.0
+            ],
+            [
+              154.0,
+              206.0
+            ],
+            [
+              154.0,
+              222.0
+            ],
+            [
+              161.0,
+              239.0
+            ],
+            [
+              178.0,
+              255.0
+            ],
+            [
+              185.0,
+              255.0
+            ],
+            [
+              192.0,
+              260.0
+            ],
+            [
+              210.0,
+              260.0
+            ],
+            [
+              224.0,
+              255.0
+            ],
+            [
+              241.0,
+              239.0
+            ],
+            [
+              248.0,
+              222.0
+            ],
+            [
+              248.0,
+              206.0
+            ],
+            [
+              239.0,
+              184.0
+            ],
+            [
+              234.0,
+              182.0
+            ],
+            [
+              231.0,
+              176.0
+            ],
+            [
+              226.0,
+              176.0
+            ],
+            [
+              222.0,
+              170.0
+            ],
+            [
+              212.0,
+              167.0
+            ]
+          ],
+          "contour_points": 146,
+          "framePath": "frames/frame_000013.png",
+          "mask": "masks/object_0/mask_000013.png",
+          "asset": "objects/object_0/cutouts/cutout_000013.png",
+          "anchor": [
+            51.047,
+            51.21
+          ]
+        },
+        {
+          "source_frame_index": 26,
+          "frame": 14,
+          "out_index": 13,
+          "t": 1.083333,
+          "visible": true,
+          "area": 6703.0,
+          "bbox": [
+            160,
+            154,
+            103,
+            103
+          ],
+          "centroid": [
+            211.2901749464826,
+            204.99729337368666
+          ],
+          "polygon": [
+            [
+              202.0,
+              158.0
+            ],
+            [
+              193.0,
+              164.0
+            ],
+            [
+              185.0,
+              165.0
+            ],
+            [
+              182.0,
+              173.0
+            ],
+            [
+              172.0,
+              180.0
+            ],
+            [
+              164.0,
+              198.0
+            ],
+            [
+              165.0,
+              218.0
+            ],
+            [
+              170.0,
+              223.0
+            ],
+            [
+              172.0,
+              233.0
+            ],
+            [
+              198.0,
+              251.0
+            ],
+            [
+              220.0,
+              252.0
+            ],
+            [
+              222.0,
+              249.0
+            ],
+            [
+              234.0,
+              247.0
+            ],
+            [
+              241.0,
+              241.0
+            ],
+            [
+              242.0,
+              235.0
+            ],
+            [
+              250.0,
+              232.0
+            ],
+            [
+              250.0,
+              226.0
+            ],
+            [
+              255.0,
+              223.0
+            ],
+            [
+              258.0,
+              214.0
+            ],
+            [
+              258.0,
+              198.0
+            ],
+            [
+              255.0,
+              197.0
+            ],
+            [
+              256.0,
+              189.0
+            ],
+            [
+              247.0,
+              174.0
+            ],
+            [
+              236.0,
+              168.0
+            ],
+            [
+              232.0,
+              162.0
+            ],
+            [
+              220.0,
+              158.0
+            ]
+          ],
+          "contour_points": 144,
+          "framePath": "frames/frame_000014.png",
+          "mask": "masks/object_0/mask_000014.png",
+          "asset": "objects/object_0/cutouts/cutout_000014.png",
+          "anchor": [
+            51.29,
+            50.997
+          ]
+        },
+        {
+          "source_frame_index": 28,
+          "frame": 15,
+          "out_index": 14,
+          "t": 1.166667,
+          "visible": true,
+          "area": 6582.5,
+          "bbox": [
+            171,
+            145,
+            102,
+            103
+          ],
+          "centroid": [
+            220.8605931989288,
+            195.93977060279923
+          ],
+          "polygon": [
+            [
+              230.0,
+              149.0
+            ],
+            [
+              214.0,
+              150.0
+            ],
+            [
+              190.0,
+              160.0
+            ],
+            [
+              190.0,
+              165.0
+            ],
+            [
+              186.0,
+              166.0
+            ],
+            [
+              185.0,
+              170.0
+            ],
+            [
+              181.0,
+              170.0
+            ],
+            [
+              180.0,
+              180.0
+            ],
+            [
+              175.0,
+              184.0
+            ],
+            [
+              175.0,
+              209.0
+            ],
+            [
+              178.0,
+              210.0
+            ],
+            [
+              178.0,
+              215.0
+            ],
+            [
+              182.0,
+              216.0
+            ],
+            [
+              183.0,
+              225.0
+            ],
+            [
+              193.0,
+              229.0
+            ],
+            [
+              198.0,
+              237.0
+            ],
+            [
+              207.0,
+              239.0
+            ],
+            [
+              208.0,
+              242.0
+            ],
+            [
+              230.0,
+              243.0
+            ],
+            [
+              232.0,
+              239.0
+            ],
+            [
+              239.0,
+              239.0
+            ],
+            [
+              240.0,
+              235.0
+            ],
+            [
+              247.0,
+              235.0
+            ],
+            [
+              249.0,
+              228.0
+            ],
+            [
+              259.0,
+              221.0
+            ],
+            [
+              268.0,
+              205.0
+            ],
+            [
+              268.0,
+              188.0
+            ],
+            [
+              265.0,
+              187.0
+            ],
+            [
+              257.0,
+              166.0
+            ],
+            [
+              252.0,
+              160.0
+            ],
+            [
+              238.0,
+              156.0
+            ]
+          ],
+          "contour_points": 145,
+          "framePath": "frames/frame_000015.png",
+          "mask": "masks/object_0/mask_000015.png",
+          "asset": "objects/object_0/cutouts/cutout_000015.png",
+          "anchor": [
+            49.861,
+            50.94
+          ]
+        },
+        {
+          "source_frame_index": 30,
+          "frame": 16,
+          "out_index": 15,
+          "t": 1.25,
+          "visible": true,
+          "area": 6580.5,
+          "bbox": [
+            180,
+            136,
+            103,
+            103
+          ],
+          "centroid": [
+            230.97902327105865,
+            187.20411970854448
+          ],
+          "polygon": [
+            [
+              240.0,
+              140.0
+            ],
+            [
+              206.0,
+              148.0
+            ],
+            [
+              203.0,
+              154.0
+            ],
+            [
+              194.0,
+              158.0
+            ],
+            [
+              190.0,
+              173.0
+            ],
+            [
+              184.0,
+              178.0
+            ],
+            [
+              185.0,
+              200.0
+            ],
+            [
+              192.0,
+              214.0
+            ],
+            [
+              208.0,
+              229.0
+            ],
+            [
+              221.0,
+              229.0
+            ],
+            [
+              222.0,
+              233.0
+            ],
+            [
+              237.0,
+              234.0
+            ],
+            [
+              238.0,
+              231.0
+            ],
+            [
+              247.0,
+              231.0
+            ],
+            [
+              248.0,
+              227.0
+            ],
+            [
+              258.0,
+              224.0
+            ],
+            [
+              260.0,
+              217.0
+            ],
+            [
+              269.0,
+              215.0
+            ],
+            [
+              273.0,
+              204.0
+            ],
+            [
+              276.0,
+              203.0
+            ],
+            [
+              278.0,
+              178.0
+            ],
+            [
+              273.0,
+              166.0
+            ],
+            [
+              263.0,
+              157.0
+            ],
+            [
+              260.0,
+              149.0
+            ]
+          ],
+          "contour_points": 140,
+          "framePath": "frames/frame_000016.png",
+          "mask": "masks/object_0/mask_000016.png",
+          "asset": "objects/object_0/cutouts/cutout_000016.png",
+          "anchor": [
+            50.979,
+            51.204
+          ]
+        },
+        {
+          "source_frame_index": 32,
+          "frame": 17,
+          "out_index": 16,
+          "t": 1.333333,
+          "visible": true,
+          "area": 6481.5,
+          "bbox": [
+            190,
+            126,
+            103,
+            103
+          ],
+          "centroid": [
+            240.9753839894212,
+            176.36417963584577
+          ],
+          "polygon": [
+            [
+              225.0,
+              132.0
+            ],
+            [
+              212.0,
+              139.0
+            ],
+            [
+              210.0,
+              145.0
+            ],
+            [
+              205.0,
+              146.0
+            ],
+            [
+              199.0,
+              154.0
+            ],
+            [
+              202.0,
+              165.0
+            ],
+            [
+              196.0,
+              168.0
+            ],
+            [
+              194.0,
+              174.0
+            ],
+            [
+              195.0,
+              190.0
+            ],
+            [
+              202.0,
+              198.0
+            ],
+            [
+              202.0,
+              204.0
+            ],
+            [
+              221.0,
+              213.0
+            ],
+            [
+              222.0,
+              219.0
+            ],
+            [
+              235.0,
+              221.0
+            ],
+            [
+              236.0,
+              224.0
+            ],
+            [
+              247.0,
+              224.0
+            ],
+            [
+              252.0,
+              219.0
+            ],
+            [
+              261.0,
+              219.0
+            ],
+            [
+              262.0,
+              215.0
+            ],
+            [
+              271.0,
+              213.0
+            ],
+            [
+              274.0,
+              203.0
+            ],
+            [
+              281.0,
+              203.0
+            ],
+            [
+              281.0,
+              198.0
+            ],
+            [
+              286.0,
+              193.0
+            ],
+            [
+              288.0,
+              170.0
+            ],
+            [
+              285.0,
+              169.0
+            ],
+            [
+              281.0,
+              151.0
+            ],
+            [
+              271.0,
+              142.0
+            ],
+            [
+              260.0,
+              142.0
+            ],
+            [
+              259.0,
+              134.0
+            ],
+            [
+              245.0,
+              130.0
+            ]
+          ],
+          "contour_points": 139,
+          "framePath": "frames/frame_000017.png",
+          "mask": "masks/object_0/mask_000017.png",
+          "asset": "objects/object_0/cutouts/cutout_000017.png",
+          "anchor": [
+            50.975,
+            50.364
+          ]
+        },
+        {
+          "source_frame_index": 34,
+          "frame": 18,
+          "out_index": 17,
+          "t": 1.416667,
+          "visible": true,
+          "area": 6549.5,
+          "bbox": [
+            200,
+            116,
+            103,
+            103
+          ],
+          "centroid": [
+            251.02571256220781,
+            166.94251746845623
+          ],
+          "polygon": [
+            [
+              242.0,
+              120.0
+            ],
+            [
+              235.0,
+              126.0
+            ],
+            [
+              222.0,
+              129.0
+            ],
+            [
+              222.0,
+              138.0
+            ],
+            [
+              214.0,
+              137.0
+            ],
+            [
+              204.0,
+              160.0
+            ],
+            [
+              204.0,
+              175.0
+            ],
+            [
+              216.0,
+              199.0
+            ],
+            [
+              225.0,
+              199.0
+            ],
+            [
+              230.0,
+              207.0
+            ],
+            [
+              242.0,
+              214.0
+            ],
+            [
+              255.0,
+              214.0
+            ],
+            [
+              256.0,
+              211.0
+            ],
+            [
+              275.0,
+              207.0
+            ],
+            [
+              287.0,
+              197.0
+            ],
+            [
+              297.0,
+              179.0
+            ],
+            [
+              298.0,
+              160.0
+            ],
+            [
+              293.0,
+              153.0
+            ],
+            [
+              293.0,
+              146.0
+            ],
+            [
+              275.0,
+              128.0
+            ],
+            [
+              257.0,
+              120.0
+            ]
+          ],
+          "contour_points": 153,
+          "framePath": "frames/frame_000018.png",
+          "mask": "masks/object_0/mask_000018.png",
+          "asset": "objects/object_0/cutouts/cutout_000018.png",
+          "anchor": [
+            51.026,
+            50.943
+          ]
+        },
+        {
+          "source_frame_index": 36,
+          "frame": 19,
+          "out_index": 18,
+          "t": 1.5,
+          "visible": true,
+          "area": 6717.0,
+          "bbox": [
+            210,
+            106,
+            103,
+            103
+          ],
+          "centroid": [
+            261.00978306063047,
+            157.08968620833025
+          ],
+          "polygon": [
+            [
+              248.0,
+              111.0
+            ],
+            [
+              237.0,
+              120.0
+            ],
+            [
+              229.0,
+              122.0
+            ],
+            [
+              228.0,
+              127.0
+            ],
+            [
+              224.0,
+              128.0
+            ],
+            [
+              224.0,
+              133.0
+            ],
+            [
+              220.0,
+              134.0
+            ],
+            [
+              215.0,
+              144.0
+            ],
+            [
+              214.0,
+              163.0
+            ],
+            [
+              222.0,
+              184.0
+            ],
+            [
+              236.0,
+              197.0
+            ],
+            [
+              250.0,
+              203.0
+            ],
+            [
+              270.0,
+              204.0
+            ],
+            [
+              287.0,
+              197.0
+            ],
+            [
+              287.0,
+              194.0
+            ],
+            [
+              299.0,
+              185.0
+            ],
+            [
+              299.0,
+              178.0
+            ],
+            [
+              305.0,
+              175.0
+            ],
+            [
+              308.0,
+              163.0
+            ],
+            [
+              307.0,
+              144.0
+            ],
+            [
+              297.0,
+              128.0
+            ],
+            [
+              282.0,
+              114.0
+            ],
+            [
+              270.0,
+              110.0
+            ]
+          ],
+          "contour_points": 152,
+          "framePath": "frames/frame_000019.png",
+          "mask": "masks/object_0/mask_000019.png",
+          "asset": "objects/object_0/cutouts/cutout_000019.png",
+          "anchor": [
+            51.01,
+            51.09
+          ]
+        },
+        {
+          "source_frame_index": 38,
+          "frame": 20,
+          "out_index": 19,
+          "t": 1.583333,
+          "visible": true,
+          "area": 6784.0,
+          "bbox": [
+            221,
+            98,
+            103,
+            103
+          ],
+          "centroid": [
+            272.0902793023539,
+            148.94782290523236
+          ],
+          "polygon": [
+            [
+              268.0,
+              102.0
+            ],
+            [
+              245.0,
+              110.0
+            ],
+            [
+              244.0,
+              114.0
+            ],
+            [
+              232.0,
+              122.0
+            ],
+            [
+              230.0,
+              133.0
+            ],
+            [
+              226.0,
+              136.0
+            ],
+            [
+              225.0,
+              155.0
+            ],
+            [
+              230.0,
+              171.0
+            ],
+            [
+              234.0,
+              172.0
+            ],
+            [
+              234.0,
+              178.0
+            ],
+            [
+              241.0,
+              181.0
+            ],
+            [
+              243.0,
+              187.0
+            ],
+            [
+              264.0,
+              196.0
+            ],
+            [
+              288.0,
+              194.0
+            ],
+            [
+              292.0,
+              189.0
+            ],
+            [
+              298.0,
+              189.0
+            ],
+            [
+              310.0,
+              178.0
+            ],
+            [
+              313.0,
+              168.0
+            ],
+            [
+              316.0,
+              167.0
+            ],
+            [
+              315.0,
+              158.0
+            ],
+            [
+              319.0,
+              155.0
+            ],
+            [
+              319.0,
+              143.0
+            ],
+            [
+              315.0,
+              128.0
+            ],
+            [
+              311.0,
+              127.0
+            ],
+            [
+              309.0,
+              120.0
+            ],
+            [
+              295.0,
+              107.0
+            ],
+            [
+              281.0,
+              102.0
+            ]
+          ],
+          "contour_points": 149,
+          "framePath": "frames/frame_000020.png",
+          "mask": "masks/object_0/mask_000020.png",
+          "asset": "objects/object_0/cutouts/cutout_000020.png",
+          "anchor": [
+            51.09,
+            50.948
+          ]
+        },
+        {
+          "source_frame_index": 40,
+          "frame": 21,
+          "out_index": 20,
+          "t": 1.666667,
+          "visible": true,
+          "area": 6615.0,
+          "bbox": [
+            231,
+            91,
+            103,
+            103
+          ],
+          "centroid": [
+            282.11829981672565,
+            142.14882880168713
+          ],
+          "polygon": [
+            [
+              273.0,
+              95.0
+            ],
+            [
+              266.0,
+              98.0
+            ],
+            [
+              265.0,
+              104.0
+            ],
+            [
+              256.0,
+              102.0
+            ],
+            [
+              255.0,
+              107.0
+            ],
+            [
+              248.0,
+              110.0
+            ],
+            [
+              248.0,
+              115.0
+            ],
+            [
+              240.0,
+              119.0
+            ],
+            [
+              235.0,
+              149.0
+            ],
+            [
+              240.0,
+              154.0
+            ],
+            [
+              240.0,
+              163.0
+            ],
+            [
+              244.0,
+              164.0
+            ],
+            [
+              253.0,
+              180.0
+            ],
+            [
+              273.0,
+              189.0
+            ],
+            [
+              293.0,
+              188.0
+            ],
+            [
+              294.0,
+              185.0
+            ],
+            [
+              308.0,
+              182.0
+            ],
+            [
+              309.0,
+              178.0
+            ],
+            [
+              314.0,
+              177.0
+            ],
+            [
+              315.0,
+              172.0
+            ],
+            [
+              322.0,
+              168.0
+            ],
+            [
+              323.0,
+              154.0
+            ],
+            [
+              329.0,
+              149.0
+            ],
+            [
+              328.0,
+              129.0
+            ],
+            [
+              323.0,
+              125.0
+            ],
+            [
+              319.0,
+              112.0
+            ],
+            [
+              312.0,
+              110.0
+            ],
+            [
+              309.0,
+              104.0
+            ],
+            [
+              291.0,
+              96.0
+            ]
+          ],
+          "contour_points": 141,
+          "framePath": "frames/frame_000021.png",
+          "mask": "masks/object_0/mask_000021.png",
+          "asset": "objects/object_0/cutouts/cutout_000021.png",
+          "anchor": [
+            51.118,
+            51.149
+          ]
+        },
+        {
+          "source_frame_index": 42,
+          "frame": 22,
+          "out_index": 21,
+          "t": 1.75,
+          "visible": true,
+          "area": 6559.0,
+          "bbox": [
+            241,
+            85,
+            103,
+            103
+          ],
+          "centroid": [
+            292.26919214741173,
+            136.08063463372997
+          ],
+          "polygon": [
+            [
+              283.0,
+              89.0
+            ],
+            [
+              259.0,
+              104.0
+            ],
+            [
+              257.0,
+              112.0
+            ],
+            [
+              250.0,
+              113.0
+            ],
+            [
+              245.0,
+              127.0
+            ],
+            [
+              245.0,
+              143.0
+            ],
+            [
+              250.0,
+              144.0
+            ],
+            [
+              250.0,
+              157.0
+            ],
+            [
+              256.0,
+              158.0
+            ],
+            [
+              256.0,
+              165.0
+            ],
+            [
+              279.0,
+              182.0
+            ],
+            [
+              297.0,
+              183.0
+            ],
+            [
+              319.0,
+              175.0
+            ],
+            [
+              322.0,
+              167.0
+            ],
+            [
+              330.0,
+              165.0
+            ],
+            [
+              333.0,
+              154.0
+            ],
+            [
+              337.0,
+              152.0
+            ],
+            [
+              339.0,
+              138.0
+            ],
+            [
+              334.0,
+              113.0
+            ],
+            [
+              330.0,
+              111.0
+            ],
+            [
+              329.0,
+              106.0
+            ],
+            [
+              324.0,
+              106.0
+            ],
+            [
+              321.0,
+              100.0
+            ],
+            [
+              307.0,
+              92.0
+            ]
+          ],
+          "contour_points": 147,
+          "framePath": "frames/frame_000022.png",
+          "mask": "masks/object_0/mask_000022.png",
+          "asset": "objects/object_0/cutouts/cutout_000022.png",
+          "anchor": [
+            51.269,
+            51.081
+          ]
+        },
+        {
+          "source_frame_index": 44,
+          "frame": 23,
+          "out_index": 22,
+          "t": 1.833333,
+          "visible": true,
+          "area": 6660.0,
+          "bbox": [
+            251,
+            81,
+            103,
+            103
+          ],
+          "centroid": [
+            301.86781009197114,
+            132.2589609743972
+          ],
+          "polygon": [
+            [
+              294.0,
+              85.0
+            ],
+            [
+              286.0,
+              92.0
+            ],
+            [
+              278.0,
+              92.0
+            ],
+            [
+              263.0,
+              105.0
+            ],
+            [
+              258.0,
+              116.0
+            ],
+            [
+              258.0,
+              125.0
+            ],
+            [
+              255.0,
+              126.0
+            ],
+            [
+              257.0,
+              148.0
+            ],
+            [
+              264.0,
+              154.0
+            ],
+            [
+              264.0,
+              159.0
+            ],
+            [
+              270.0,
+              167.0
+            ],
+            [
+              289.0,
+              178.0
+            ],
+            [
+              309.0,
+              179.0
+            ],
+            [
+              310.0,
+              175.0
+            ],
+            [
+              328.0,
+              172.0
+            ],
+            [
+              342.0,
+              158.0
+            ],
+            [
+              346.0,
+              149.0
+            ],
+            [
+              345.0,
+              142.0
+            ],
+            [
+              349.0,
+              137.0
+            ],
+            [
+              349.0,
+              132.0
+            ],
+            [
+              345.0,
+              131.0
+            ],
+            [
+              346.0,
+              113.0
+            ],
+            [
+              328.0,
+              92.0
+            ],
+            [
+              320.0,
+              92.0
+            ],
+            [
+              319.0,
+              88.0
+            ]
+          ],
+          "contour_points": 143,
+          "framePath": "frames/frame_000023.png",
+          "mask": "masks/object_0/mask_000023.png",
+          "asset": "objects/object_0/cutouts/cutout_000023.png",
+          "anchor": [
+            50.868,
+            51.259
+          ]
+        },
+        {
+          "source_frame_index": 46,
+          "frame": 24,
+          "out_index": 23,
+          "t": 1.916667,
+          "visible": true,
+          "area": 6533.0,
+          "bbox": [
+            261,
+            79,
+            103,
+            103
+          ],
+          "centroid": [
+            312.1104655549687,
+            130.13994315752407
+          ],
+          "polygon": [
+            [
+              308.0,
+              83.0
+            ],
+            [
+              300.0,
+              86.0
+            ],
+            [
+              298.0,
+              90.0
+            ],
+            [
+              286.0,
+              92.0
+            ],
+            [
+              268.0,
+              111.0
+            ],
+            [
+              265.0,
+              123.0
+            ],
+            [
+              268.0,
+              133.0
+            ],
+            [
+              265.0,
+              134.0
+            ],
+            [
+              265.0,
+              139.0
+            ],
+            [
+              268.0,
+              140.0
+            ],
+            [
+              274.0,
+              157.0
+            ],
+            [
+              277.0,
+              157.0
+            ],
+            [
+              284.0,
+              167.0
+            ],
+            [
+              304.0,
+              177.0
+            ],
+            [
+              319.0,
+              177.0
+            ],
+            [
+              322.0,
+              173.0
+            ],
+            [
+              329.0,
+              173.0
+            ],
+            [
+              345.0,
+              163.0
+            ],
+            [
+              359.0,
+              139.0
+            ],
+            [
+              359.0,
+              124.0
+            ],
+            [
+              347.0,
+              100.0
+            ],
+            [
+              333.0,
+              87.0
+            ],
+            [
+              322.0,
+              88.0
+            ],
+            [
+              320.0,
+              83.0
+            ]
+          ],
+          "contour_points": 161,
+          "framePath": "frames/frame_000024.png",
+          "mask": "masks/object_0/mask_000024.png",
+          "asset": "objects/object_0/cutouts/cutout_000024.png",
+          "anchor": [
+            51.11,
+            51.14
+          ]
+        },
+        {
+          "source_frame_index": 48,
+          "frame": 25,
+          "out_index": 24,
+          "t": 2.0,
+          "visible": true,
+          "area": 6733.5,
+          "bbox": [
+            271,
+            79,
+            103,
+            103
+          ],
+          "centroid": [
+            322.08182531509,
+            130.08214408317394
+          ],
+          "polygon": [
+            [
+              296.0,
+              90.0
+            ],
+            [
+              295.0,
+              96.0
+            ],
+            [
+              289.0,
+              96.0
+            ],
+            [
+              289.0,
+              101.0
+            ],
+            [
+              284.0,
+              102.0
+            ],
+            [
+              282.0,
+              111.0
+            ],
+            [
+              278.0,
+              112.0
+            ],
+            [
+              275.0,
+              124.0
+            ],
+            [
+              277.0,
+              146.0
+            ],
+            [
+              284.0,
+              159.0
+            ],
+            [
+              293.0,
+              161.0
+            ],
+            [
+              294.0,
+              167.0
+            ],
+            [
+              306.0,
+              175.0
+            ],
+            [
+              325.0,
+              177.0
+            ],
+            [
+              341.0,
+              174.0
+            ],
+            [
+              346.0,
+              167.0
+            ],
+            [
+              352.0,
+              167.0
+            ],
+            [
+              359.0,
+              160.0
+            ],
+            [
+              359.0,
+              154.0
+            ],
+            [
+              366.0,
+              149.0
+            ],
+            [
+              369.0,
+              133.0
+            ],
+            [
+              367.0,
+              114.0
+            ],
+            [
+              359.0,
+              102.0
+            ],
+            [
+              353.0,
+              101.0
+            ],
+            [
+              351.0,
+              92.0
+            ],
+            [
+              338.0,
+              85.0
+            ],
+            [
+              316.0,
+              83.0
+            ]
+          ],
+          "contour_points": 142,
+          "framePath": "frames/frame_000025.png",
+          "mask": "masks/object_0/mask_000025.png",
+          "asset": "objects/object_0/cutouts/cutout_000025.png",
+          "anchor": [
+            51.082,
+            51.082
+          ]
+        },
+        {
+          "source_frame_index": 50,
+          "frame": 26,
+          "out_index": 25,
+          "t": 2.083333,
+          "visible": true,
+          "area": 6700.5,
+          "bbox": [
+            281,
+            81,
+            103,
+            103
+          ],
+          "centroid": [
+            331.84998151571165,
+            132.04152803450398
+          ],
+          "polygon": [
+            [
+              323.0,
+              85.0
+            ],
+            [
+              319.0,
+              90.0
+            ],
+            [
+              305.0,
+              94.0
+            ],
+            [
+              289.0,
+              111.0
+            ],
+            [
+              285.0,
+              124.0
+            ],
+            [
+              286.0,
+              145.0
+            ],
+            [
+              290.0,
+              146.0
+            ],
+            [
+              294.0,
+              161.0
+            ],
+            [
+              306.0,
+              171.0
+            ],
+            [
+              311.0,
+              171.0
+            ],
+            [
+              314.0,
+              176.0
+            ],
+            [
+              323.0,
+              179.0
+            ],
+            [
+              351.0,
+              176.0
+            ],
+            [
+              356.0,
+              169.0
+            ],
+            [
+              362.0,
+              169.0
+            ],
+            [
+              377.0,
+              148.0
+            ],
+            [
+              379.0,
+              128.0
+            ],
+            [
+              373.0,
+              125.0
+            ],
+            [
+              376.0,
+              113.0
+            ],
+            [
+              358.0,
+              92.0
+            ],
+            [
+              345.0,
+              86.0
+            ]
+          ],
+          "contour_points": 160,
+          "framePath": "frames/frame_000026.png",
+          "mask": "masks/object_0/mask_000026.png",
+          "asset": "objects/object_0/cutouts/cutout_000026.png",
+          "anchor": [
+            50.85,
+            51.042
+          ]
+        },
+        {
+          "source_frame_index": 52,
+          "frame": 27,
+          "out_index": 26,
+          "t": 2.166667,
+          "visible": true,
+          "area": 6659.0,
+          "bbox": [
+            291,
+            84,
+            103,
+            103
+          ],
+          "centroid": [
+            341.97428436419705,
+            135.05269964435823
+          ],
+          "polygon": [
+            [
+              355.0,
+              89.0
+            ],
+            [
+              342.0,
+              88.0
+            ],
+            [
+              332.0,
+              90.0
+            ],
+            [
+              331.0,
+              94.0
+            ],
+            [
+              319.0,
+              93.0
+            ],
+            [
+              311.0,
+              106.0
+            ],
+            [
+              303.0,
+              108.0
+            ],
+            [
+              295.0,
+              126.0
+            ],
+            [
+              295.0,
+              144.0
+            ],
+            [
+              300.0,
+              155.0
+            ],
+            [
+              304.0,
+              156.0
+            ],
+            [
+              309.0,
+              169.0
+            ],
+            [
+              329.0,
+              181.0
+            ],
+            [
+              341.0,
+              182.0
+            ],
+            [
+              367.0,
+              175.0
+            ],
+            [
+              374.0,
+              165.0
+            ],
+            [
+              380.0,
+              164.0
+            ],
+            [
+              385.0,
+              149.0
+            ],
+            [
+              388.0,
+              148.0
+            ],
+            [
+              389.0,
+              130.0
+            ],
+            [
+              385.0,
+              129.0
+            ],
+            [
+              386.0,
+              116.0
+            ],
+            [
+              371.0,
+              97.0
+            ],
+            [
+              356.0,
+              92.0
+            ]
+          ],
+          "contour_points": 126,
+          "framePath": "frames/frame_000027.png",
+          "mask": "masks/object_0/mask_000027.png",
+          "asset": "objects/object_0/cutouts/cutout_000027.png",
+          "anchor": [
+            50.974,
+            51.053
+          ]
+        },
+        {
+          "source_frame_index": 54,
+          "frame": 28,
+          "out_index": 27,
+          "t": 2.25,
+          "visible": true,
+          "area": 6589.0,
+          "bbox": [
+            301,
+            90,
+            103,
+            101
+          ],
+          "centroid": [
+            352.1594803758982,
+            140.83501683501683
+          ],
+          "polygon": [
+            [
+              336.0,
+              96.0
+            ],
+            [
+              335.0,
+              99.0
+            ],
+            [
+              329.0,
+              99.0
+            ],
+            [
+              328.0,
+              103.0
+            ],
+            [
+              322.0,
+              106.0
+            ],
+            [
+              320.0,
+              113.0
+            ],
+            [
+              316.0,
+              114.0
+            ],
+            [
+              314.0,
+              121.0
+            ],
+            [
+              310.0,
+              122.0
+            ],
+            [
+              310.0,
+              129.0
+            ],
+            [
+              305.0,
+              134.0
+            ],
+            [
+              308.0,
+              160.0
+            ],
+            [
+              314.0,
+              163.0
+            ],
+            [
+              314.0,
+              169.0
+            ],
+            [
+              318.0,
+              170.0
+            ],
+            [
+              321.0,
+              177.0
+            ],
+            [
+              335.0,
+              185.0
+            ],
+            [
+              368.0,
+              186.0
+            ],
+            [
+              370.0,
+              181.0
+            ],
+            [
+              378.0,
+              181.0
+            ],
+            [
+              389.0,
+              169.0
+            ],
+            [
+              389.0,
+              164.0
+            ],
+            [
+              395.0,
+              159.0
+            ],
+            [
+              395.0,
+              146.0
+            ],
+            [
+              399.0,
+              145.0
+            ],
+            [
+              396.0,
+              122.0
+            ],
+            [
+              389.0,
+              112.0
+            ],
+            [
+              384.0,
+              112.0
+            ],
+            [
+              380.0,
+              104.0
+            ],
+            [
+              371.0,
+              97.0
+            ],
+            [
+              351.0,
+              94.0
+            ]
+          ],
+          "contour_points": 133,
+          "framePath": "frames/frame_000028.png",
+          "mask": "masks/object_0/mask_000028.png",
+          "asset": "objects/object_0/cutouts/cutout_000028.png",
+          "anchor": [
+            51.159,
+            50.835
+          ]
+        },
+        {
+          "source_frame_index": 56,
+          "frame": 29,
+          "out_index": 28,
+          "t": 2.333333,
+          "visible": true,
+          "area": 6595.0,
+          "bbox": [
+            311,
+            98,
+            103,
+            102
+          ],
+          "centroid": [
+            361.74596794580106,
+            148.10046008392737
+          ],
+          "polygon": [
+            [
+              349.0,
+              102.0
+            ],
+            [
+              335.0,
+              109.0
+            ],
+            [
+              334.0,
+              117.0
+            ],
+            [
+              324.0,
+              120.0
+            ],
+            [
+              324.0,
+              126.0
+            ],
+            [
+              319.0,
+              127.0
+            ],
+            [
+              318.0,
+              139.0
+            ],
+            [
+              315.0,
+              142.0
+            ],
+            [
+              316.0,
+              158.0
+            ],
+            [
+              320.0,
+              169.0
+            ],
+            [
+              324.0,
+              170.0
+            ],
+            [
+              324.0,
+              176.0
+            ],
+            [
+              340.0,
+              189.0
+            ],
+            [
+              357.0,
+              191.0
+            ],
+            [
+              358.0,
+              195.0
+            ],
+            [
+              375.0,
+              194.0
+            ],
+            [
+              376.0,
+              191.0
+            ],
+            [
+              391.0,
+              186.0
+            ],
+            [
+              395.0,
+              178.0
+            ],
+            [
+              399.0,
+              177.0
+            ],
+            [
+              399.0,
+              168.0
+            ],
+            [
+              406.0,
+              167.0
+            ],
+            [
+              405.0,
+              158.0
+            ],
+            [
+              409.0,
+              153.0
+            ],
+            [
+              406.0,
+              129.0
+            ],
+            [
+              399.0,
+              125.0
+            ],
+            [
+              391.0,
+              112.0
+            ],
+            [
+              380.0,
+              110.0
+            ],
+            [
+              378.0,
+              103.0
+            ]
+          ],
+          "contour_points": 129,
+          "framePath": "frames/frame_000029.png",
+          "mask": "masks/object_0/mask_000029.png",
+          "asset": "objects/object_0/cutouts/cutout_000029.png",
+          "anchor": [
+            50.746,
+            50.1
+          ]
+        },
+        {
+          "source_frame_index": 58,
+          "frame": 30,
+          "out_index": 29,
+          "t": 2.416667,
+          "visible": true,
+          "area": 6580.0,
+          "bbox": [
+            322,
+            105,
+            103,
+            103
+          ],
+          "centroid": [
+            372.94946147473075,
+            155.9184052622329
+          ],
+          "polygon": [
+            [
+              364.0,
+              109.0
+            ],
+            [
+              347.0,
+              116.0
+            ],
+            [
+              340.0,
+              126.0
+            ],
+            [
+              336.0,
+              126.0
+            ],
+            [
+              336.0,
+              133.0
+            ],
+            [
+              332.0,
+              134.0
+            ],
+            [
+              330.0,
+              145.0
+            ],
+            [
+              326.0,
+              147.0
+            ],
+            [
+              326.0,
+              159.0
+            ],
+            [
+              330.0,
+              160.0
+            ],
+            [
+              329.0,
+              175.0
+            ],
+            [
+              350.0,
+              197.0
+            ],
+            [
+              359.0,
+              197.0
+            ],
+            [
+              360.0,
+              201.0
+            ],
+            [
+              368.0,
+              203.0
+            ],
+            [
+              385.0,
+              202.0
+            ],
+            [
+              386.0,
+              199.0
+            ],
+            [
+              400.0,
+              195.0
+            ],
+            [
+              411.0,
+              183.0
+            ],
+            [
+              411.0,
+              176.0
+            ],
+            [
+              417.0,
+              169.0
+            ],
+            [
+              420.0,
+              148.0
+            ],
+            [
+              417.0,
+              147.0
+            ],
+            [
+              417.0,
+              137.0
+            ],
+            [
+              407.0,
+              124.0
+            ],
+            [
+              392.0,
+              118.0
+            ],
+            [
+              389.0,
+              111.0
+            ]
+          ],
+          "contour_points": 143,
+          "framePath": "frames/frame_000030.png",
+          "mask": "masks/object_0/mask_000030.png",
+          "asset": "objects/object_0/cutouts/cutout_000030.png",
+          "anchor": [
+            50.949,
+            50.918
+          ]
+        },
+        {
+          "source_frame_index": 60,
+          "frame": 31,
+          "out_index": 30,
+          "t": 2.5,
+          "visible": true,
+          "area": 6694.5,
+          "bbox": [
+            332,
+            115,
+            103,
+            103
+          ],
+          "centroid": [
+            382.8785392895319,
+            166.32058070450194
+          ],
+          "polygon": [
+            [
+              376.0,
+              119.0
+            ],
+            [
+              375.0,
+              122.0
+            ],
+            [
+              367.0,
+              121.0
+            ],
+            [
+              362.0,
+              124.0
+            ],
+            [
+              361.0,
+              128.0
+            ],
+            [
+              343.0,
+              140.0
+            ],
+            [
+              337.0,
+              153.0
+            ],
+            [
+              336.0,
+              175.0
+            ],
+            [
+              342.0,
+              190.0
+            ],
+            [
+              350.0,
+              192.0
+            ],
+            [
+              353.0,
+              203.0
+            ],
+            [
+              359.0,
+              203.0
+            ],
+            [
+              360.0,
+              207.0
+            ],
+            [
+              368.0,
+              211.0
+            ],
+            [
+              387.0,
+              213.0
+            ],
+            [
+              402.0,
+              210.0
+            ],
+            [
+              408.0,
+              203.0
+            ],
+            [
+              417.0,
+              199.0
+            ],
+            [
+              419.0,
+              190.0
+            ],
+            [
+              425.0,
+              187.0
+            ],
+            [
+              430.0,
+              175.0
+            ],
+            [
+              430.0,
+              160.0
+            ],
+            [
+              425.0,
+              144.0
+            ],
+            [
+              422.0,
+              144.0
+            ],
+            [
+              405.0,
+              124.0
+            ]
+          ],
+          "contour_points": 143,
+          "framePath": "frames/frame_000031.png",
+          "mask": "masks/object_0/mask_000031.png",
+          "asset": "objects/object_0/cutouts/cutout_000031.png",
+          "anchor": [
+            50.879,
+            51.321
+          ]
+        },
+        {
+          "source_frame_index": 62,
+          "frame": 32,
+          "out_index": 31,
+          "t": 2.583333,
+          "visible": true,
+          "area": 6659.5,
+          "bbox": [
+            342,
+            124,
+            102,
+            103
+          ],
+          "centroid": [
+            392.8135567970205,
+            175.14857852265672
+          ],
+          "polygon": [
+            [
+              384.0,
+              128.0
+            ],
+            [
+              381.0,
+              132.0
+            ],
+            [
+              370.0,
+              134.0
+            ],
+            [
+              367.0,
+              140.0
+            ],
+            [
+              356.0,
+              145.0
+            ],
+            [
+              347.0,
+              162.0
+            ],
+            [
+              346.0,
+              184.0
+            ],
+            [
+              358.0,
+              205.0
+            ],
+            [
+              368.0,
+              211.0
+            ],
+            [
+              369.0,
+              216.0
+            ],
+            [
+              384.0,
+              222.0
+            ],
+            [
+              397.0,
+              222.0
+            ],
+            [
+              414.0,
+              218.0
+            ],
+            [
+              418.0,
+              211.0
+            ],
+            [
+              429.0,
+              206.0
+            ],
+            [
+              439.0,
+              185.0
+            ],
+            [
+              439.0,
+              172.0
+            ],
+            [
+              433.0,
+              152.0
+            ],
+            [
+              427.0,
+              142.0
+            ],
+            [
+              421.0,
+              141.0
+            ],
+            [
+              419.0,
+              135.0
+            ],
+            [
+              410.0,
+              134.0
+            ],
+            [
+              409.0,
+              130.0
+            ]
+          ],
+          "contour_points": 141,
+          "framePath": "frames/frame_000032.png",
+          "mask": "masks/object_0/mask_000032.png",
+          "asset": "objects/object_0/cutouts/cutout_000032.png",
+          "anchor": [
+            50.814,
+            51.149
+          ]
+        },
+        {
+          "source_frame_index": 64,
+          "frame": 33,
+          "out_index": 32,
+          "t": 2.666667,
+          "visible": true,
+          "area": 6595.5,
+          "bbox": [
+            352,
+            136,
+            103,
+            101
+          ],
+          "centroid": [
+            402.98447798742137,
+            185.40772327044021
+          ],
+          "polygon": [
+            [
+              386.0,
+              142.0
+            ],
+            [
+              378.0,
+              146.0
+            ],
+            [
+              377.0,
+              150.0
+            ],
+            [
+              369.0,
+              152.0
+            ],
+            [
+              359.0,
+              166.0
+            ],
+            [
+              356.0,
+              194.0
+            ],
+            [
+              362.0,
+              196.0
+            ],
+            [
+              364.0,
+              210.0
+            ],
+            [
+              375.0,
+              223.0
+            ],
+            [
+              381.0,
+              223.0
+            ],
+            [
+              385.0,
+              229.0
+            ],
+            [
+              394.0,
+              232.0
+            ],
+            [
+              419.0,
+              230.0
+            ],
+            [
+              422.0,
+              223.0
+            ],
+            [
+              432.0,
+              223.0
+            ],
+            [
+              443.0,
+              211.0
+            ],
+            [
+              447.0,
+              192.0
+            ],
+            [
+              450.0,
+              191.0
+            ],
+            [
+              450.0,
+              176.0
+            ],
+            [
+              447.0,
+              175.0
+            ],
+            [
+              441.0,
+              158.0
+            ],
+            [
+              435.0,
+              155.0
+            ],
+            [
+              430.0,
+              146.0
+            ],
+            [
+              409.0,
+              140.0
+            ]
+          ],
+          "contour_points": 125,
+          "framePath": "frames/frame_000033.png",
+          "mask": "masks/object_0/mask_000033.png",
+          "asset": "objects/object_0/cutouts/cutout_000033.png",
+          "anchor": [
+            50.984,
+            49.408
+          ]
+        },
+        {
+          "source_frame_index": 66,
+          "frame": 34,
+          "out_index": 33,
+          "t": 2.75,
+          "visible": true,
+          "area": 6523.0,
+          "bbox": [
+            362,
+            144,
+            103,
+            103
+          ],
+          "centroid": [
+            412.5986750613163,
+            195.11110268274797
+          ],
+          "polygon": [
+            [
+              404.0,
+              148.0
+            ],
+            [
+              403.0,
+              152.0
+            ],
+            [
+              396.0,
+              152.0
+            ],
+            [
+              386.0,
+              158.0
+            ],
+            [
+              372.0,
+              172.0
+            ],
+            [
+              366.0,
+              192.0
+            ],
+            [
+              367.0,
+              208.0
+            ],
+            [
+              372.0,
+              212.0
+            ],
+            [
+              372.0,
+              217.0
+            ],
+            [
+              376.0,
+              218.0
+            ],
+            [
+              376.0,
+              223.0
+            ],
+            [
+              382.0,
+              226.0
+            ],
+            [
+              384.0,
+              233.0
+            ],
+            [
+              389.0,
+              233.0
+            ],
+            [
+              394.0,
+              239.0
+            ],
+            [
+              405.0,
+              239.0
+            ],
+            [
+              406.0,
+              242.0
+            ],
+            [
+              432.0,
+              239.0
+            ],
+            [
+              442.0,
+              227.0
+            ],
+            [
+              451.0,
+              223.0
+            ],
+            [
+              453.0,
+              212.0
+            ],
+            [
+              458.0,
+              211.0
+            ],
+            [
+              460.0,
+              186.0
+            ],
+            [
+              451.0,
+              179.0
+            ],
+            [
+              451.0,
+              170.0
+            ],
+            [
+              441.0,
+              158.0
+            ],
+            [
+              428.0,
+              154.0
+            ],
+            [
+              422.0,
+              148.0
+            ]
+          ],
+          "contour_points": 153,
+          "framePath": "frames/frame_000034.png",
+          "mask": "masks/object_0/mask_000034.png",
+          "asset": "objects/object_0/cutouts/cutout_000034.png",
+          "anchor": [
+            50.599,
+            51.111
+          ]
+        },
+        {
+          "source_frame_index": 68,
+          "frame": 35,
+          "out_index": 34,
+          "t": 2.833333,
+          "visible": true,
+          "area": 6454.5,
+          "bbox": [
+            372,
+            153,
+            103,
+            103
+          ],
+          "centroid": [
+            422.83594091201024,
+            203.4826461143224
+          ],
+          "polygon": [
+            [
+              414.0,
+              157.0
+            ],
+            [
+              413.0,
+              160.0
+            ],
+            [
+              402.0,
+              162.0
+            ],
+            [
+              399.0,
+              168.0
+            ],
+            [
+              394.0,
+              168.0
+            ],
+            [
+              392.0,
+              173.0
+            ],
+            [
+              381.0,
+              181.0
+            ],
+            [
+              380.0,
+              191.0
+            ],
+            [
+              376.0,
+              195.0
+            ],
+            [
+              376.0,
+              207.0
+            ],
+            [
+              380.0,
+              212.0
+            ],
+            [
+              380.0,
+              220.0
+            ],
+            [
+              388.0,
+              228.0
+            ],
+            [
+              388.0,
+              235.0
+            ],
+            [
+              393.0,
+              235.0
+            ],
+            [
+              404.0,
+              248.0
+            ],
+            [
+              415.0,
+              247.0
+            ],
+            [
+              418.0,
+              251.0
+            ],
+            [
+              425.0,
+              251.0
+            ],
+            [
+              430.0,
+              247.0
+            ],
+            [
+              441.0,
+              247.0
+            ],
+            [
+              442.0,
+              241.0
+            ],
+            [
+              450.0,
+              243.0
+            ],
+            [
+              453.0,
+              234.0
+            ],
+            [
+              463.0,
+              229.0
+            ],
+            [
+              465.0,
+              214.0
+            ],
+            [
+              469.0,
+              211.0
+            ],
+            [
+              470.0,
+              195.0
+            ],
+            [
+              463.0,
+              189.0
+            ],
+            [
+              462.0,
+              178.0
+            ],
+            [
+              455.0,
+              177.0
+            ],
+            [
+              453.0,
+              168.0
+            ],
+            [
+              439.0,
+              160.0
+            ],
+            [
+              432.0,
+              160.0
+            ],
+            [
+              431.0,
+              157.0
+            ]
+          ],
+          "contour_points": 142,
+          "framePath": "frames/frame_000035.png",
+          "mask": "masks/object_0/mask_000035.png",
+          "asset": "objects/object_0/cutouts/cutout_000035.png",
+          "anchor": [
+            50.836,
+            50.483
+          ]
+        },
+        {
+          "source_frame_index": 70,
+          "frame": 36,
+          "out_index": 35,
+          "t": 2.916667,
+          "visible": true,
+          "area": 6537.0,
+          "bbox": [
+            382,
+            161,
+            103,
+            103
+          ],
+          "centroid": [
+            432.75786764518506,
+            211.7591417577657
+          ],
+          "polygon": [
+            [
+              424.0,
+              165.0
+            ],
+            [
+              406.0,
+              174.0
+            ],
+            [
+              406.0,
+              177.0
+            ],
+            [
+              400.0,
+              180.0
+            ],
+            [
+              400.0,
+              185.0
+            ],
+            [
+              390.0,
+              191.0
+            ],
+            [
+              386.0,
+              215.0
+            ],
+            [
+              392.0,
+              216.0
+            ],
+            [
+              390.0,
+              231.0
+            ],
+            [
+              398.0,
+              243.0
+            ],
+            [
+              408.0,
+              251.0
+            ],
+            [
+              413.0,
+              251.0
+            ],
+            [
+              415.0,
+              256.0
+            ],
+            [
+              435.0,
+              259.0
+            ],
+            [
+              440.0,
+              255.0
+            ],
+            [
+              457.0,
+              253.0
+            ],
+            [
+              458.0,
+              249.0
+            ],
+            [
+              467.0,
+              245.0
+            ],
+            [
+              469.0,
+              232.0
+            ],
+            [
+              478.0,
+              227.0
+            ],
+            [
+              480.0,
+              214.0
+            ],
+            [
+              477.0,
+              213.0
+            ],
+            [
+              475.0,
+              192.0
+            ],
+            [
+              470.0,
+              189.0
+            ],
+            [
+              468.0,
+              180.0
+            ],
+            [
+              458.0,
+              176.0
+            ],
+            [
+              457.0,
+              171.0
+            ],
+            [
+              452.0,
+              168.0
+            ]
+          ],
+          "contour_points": 146,
+          "framePath": "frames/frame_000036.png",
+          "mask": "masks/object_0/mask_000036.png",
+          "asset": "objects/object_0/cutouts/cutout_000036.png",
+          "anchor": [
+            50.758,
+            50.759
+          ]
+        },
+        {
+          "source_frame_index": 72,
+          "frame": 37,
+          "out_index": 36,
+          "t": 3.0,
+          "visible": true,
+          "area": 6735.0,
+          "bbox": [
+            392,
+            168,
+            103,
+            103
+          ],
+          "centroid": [
+            442.8071692535107,
+            219.39108154717908
+          ],
+          "polygon": [
+            [
+              434.0,
+              172.0
+            ],
+            [
+              405.0,
+              190.0
+            ],
+            [
+              396.0,
+              210.0
+            ],
+            [
+              396.0,
+              227.0
+            ],
+            [
+              399.0,
+              238.0
+            ],
+            [
+              403.0,
+              239.0
+            ],
+            [
+              406.0,
+              247.0
+            ],
+            [
+              422.0,
+              261.0
+            ],
+            [
+              434.0,
+              266.0
+            ],
+            [
+              456.0,
+              265.0
+            ],
+            [
+              471.0,
+              257.0
+            ],
+            [
+              486.0,
+              240.0
+            ],
+            [
+              490.0,
+              210.0
+            ],
+            [
+              481.0,
+              192.0
+            ],
+            [
+              476.0,
+              190.0
+            ],
+            [
+              471.0,
+              182.0
+            ],
+            [
+              466.0,
+              182.0
+            ],
+            [
+              462.0,
+              175.0
+            ]
+          ],
+          "contour_points": 165,
+          "framePath": "frames/frame_000037.png",
+          "mask": "masks/object_0/mask_000037.png",
+          "asset": "objects/object_0/cutouts/cutout_000037.png",
+          "anchor": [
+            50.807,
+            51.391
+          ]
+        },
+        {
+          "source_frame_index": 74,
+          "frame": 38,
+          "out_index": 37,
+          "t": 3.083333,
+          "visible": true,
+          "area": 6566.5,
+          "bbox": [
+            402,
+            174,
+            101,
+            101
+          ],
+          "centroid": [
+            452.83282020475076,
+            223.8748466871918
+          ],
+          "polygon": [
+            [
+              440.0,
+              178.0
+            ],
+            [
+              432.0,
+              182.0
+            ],
+            [
+              431.0,
+              186.0
+            ],
+            [
+              420.0,
+              190.0
+            ],
+            [
+              413.0,
+              198.0
+            ],
+            [
+              412.0,
+              211.0
+            ],
+            [
+              407.0,
+              212.0
+            ],
+            [
+              406.0,
+              233.0
+            ],
+            [
+              410.0,
+              234.0
+            ],
+            [
+              410.0,
+              243.0
+            ],
+            [
+              422.0,
+              256.0
+            ],
+            [
+              423.0,
+              261.0
+            ],
+            [
+              431.0,
+              261.0
+            ],
+            [
+              432.0,
+              265.0
+            ],
+            [
+              440.0,
+              270.0
+            ],
+            [
+              466.0,
+              270.0
+            ],
+            [
+              481.0,
+              261.0
+            ],
+            [
+              493.0,
+              247.0
+            ],
+            [
+              497.0,
+              238.0
+            ],
+            [
+              498.0,
+              210.0
+            ],
+            [
+              495.0,
+              209.0
+            ],
+            [
+              491.0,
+              195.0
+            ],
+            [
+              486.0,
+              194.0
+            ],
+            [
+              481.0,
+              186.0
+            ],
+            [
+              463.0,
+              178.0
+            ]
+          ],
+          "contour_points": 141,
+          "framePath": "frames/frame_000038.png",
+          "mask": "masks/object_0/mask_000038.png",
+          "asset": "objects/object_0/cutouts/cutout_000038.png",
+          "anchor": [
+            50.833,
+            49.875
+          ]
+        },
+        {
+          "source_frame_index": 76,
+          "frame": 39,
+          "out_index": 38,
+          "t": 3.166667,
+          "visible": true,
+          "area": 6607.0,
+          "bbox": [
+            413,
+            178,
+            103,
+            102
+          ],
+          "centroid": [
+            464.14820643485206,
+            227.97492006394882
+          ],
+          "polygon": [
+            [
+              451.0,
+              182.0
+            ],
+            [
+              433.0,
+              192.0
+            ],
+            [
+              428.0,
+              203.0
+            ],
+            [
+              424.0,
+              204.0
+            ],
+            [
+              424.0,
+              215.0
+            ],
+            [
+              420.0,
+              216.0
+            ],
+            [
+              417.0,
+              237.0
+            ],
+            [
+              420.0,
+              247.0
+            ],
+            [
+              423.0,
+              247.0
+            ],
+            [
+              426.0,
+              253.0
+            ],
+            [
+              432.0,
+              254.0
+            ],
+            [
+              432.0,
+              261.0
+            ],
+            [
+              437.0,
+              267.0
+            ],
+            [
+              451.0,
+              274.0
+            ],
+            [
+              469.0,
+              275.0
+            ],
+            [
+              495.0,
+              264.0
+            ],
+            [
+              495.0,
+              258.0
+            ],
+            [
+              501.0,
+              257.0
+            ],
+            [
+              507.0,
+              240.0
+            ],
+            [
+              511.0,
+              237.0
+            ],
+            [
+              511.0,
+              226.0
+            ],
+            [
+              507.0,
+              210.0
+            ],
+            [
+              495.0,
+              192.0
+            ],
+            [
+              473.0,
+              182.0
+            ]
+          ],
+          "contour_points": 138,
+          "framePath": "frames/frame_000039.png",
+          "mask": "masks/object_0/mask_000039.png",
+          "asset": "objects/object_0/cutouts/cutout_000039.png",
+          "anchor": [
+            51.148,
+            49.975
+          ]
+        },
+        {
+          "source_frame_index": 78,
+          "frame": 40,
+          "out_index": 39,
+          "t": 3.25,
+          "visible": true,
+          "area": 6652.0,
+          "bbox": [
+            423,
+            178,
+            103,
+            103
+          ],
+          "centroid": [
+            473.404792404491,
+            229.15404516112824
+          ],
+          "polygon": [
+            [
+              461.0,
+              183.0
+            ],
+            [
+              455.0,
+              190.0
+            ],
+            [
+              442.0,
+              194.0
+            ],
+            [
+              436.0,
+              200.0
+            ],
+            [
+              436.0,
+              207.0
+            ],
+            [
+              429.0,
+              213.0
+            ],
+            [
+              427.0,
+              238.0
+            ],
+            [
+              436.0,
+              257.0
+            ],
+            [
+              439.0,
+              257.0
+            ],
+            [
+              440.0,
+              262.0
+            ],
+            [
+              445.0,
+              263.0
+            ],
+            [
+              448.0,
+              269.0
+            ],
+            [
+              455.0,
+              273.0
+            ],
+            [
+              483.0,
+              276.0
+            ],
+            [
+              488.0,
+              271.0
+            ],
+            [
+              495.0,
+              271.0
+            ],
+            [
+              498.0,
+              266.0
+            ],
+            [
+              504.0,
+              266.0
+            ],
+            [
+              503.0,
+              258.0
+            ],
+            [
+              511.0,
+              257.0
+            ],
+            [
+              517.0,
+              242.0
+            ],
+            [
+              520.0,
+              241.0
+            ],
+            [
+              521.0,
+              226.0
+            ],
+            [
+              515.0,
+              223.0
+            ],
+            [
+              517.0,
+              208.0
+            ],
+            [
+              506.0,
+              194.0
+            ],
+            [
+              486.0,
+              188.0
+            ],
+            [
+              483.0,
+              182.0
+            ]
+          ],
+          "contour_points": 126,
+          "framePath": "frames/frame_000040.png",
+          "mask": "masks/object_0/mask_000040.png",
+          "asset": "objects/object_0/cutouts/cutout_000040.png",
+          "anchor": [
+            50.405,
+            51.154
+          ]
+        },
+        {
+          "source_frame_index": 80,
+          "frame": 41,
+          "out_index": 40,
+          "t": 3.333333,
+          "visible": true,
+          "area": 6617.0,
+          "bbox": [
+            433,
+            178,
+            103,
+            103
+          ],
+          "centroid": [
+            484.34140611331884,
+            228.59553622753742
+          ],
+          "polygon": [
+            [
+              471.0,
+              183.0
+            ],
+            [
+              448.0,
+              200.0
+            ],
+            [
+              447.0,
+              208.0
+            ],
+            [
+              442.0,
+              208.0
+            ],
+            [
+              439.0,
+              213.0
+            ],
+            [
+              437.0,
+              238.0
+            ],
+            [
+              442.0,
+              240.0
+            ],
+            [
+              442.0,
+              249.0
+            ],
+            [
+              450.0,
+              258.0
+            ],
+            [
+              450.0,
+              262.0
+            ],
+            [
+              461.0,
+              265.0
+            ],
+            [
+              463.0,
+              272.0
+            ],
+            [
+              489.0,
+              276.0
+            ],
+            [
+              490.0,
+              273.0
+            ],
+            [
+              506.0,
+              271.0
+            ],
+            [
+              519.0,
+              259.0
+            ],
+            [
+              519.0,
+              254.0
+            ],
+            [
+              523.0,
+              253.0
+            ],
+            [
+              531.0,
+              238.0
+            ],
+            [
+              529.0,
+              216.0
+            ],
+            [
+              522.0,
+              200.0
+            ],
+            [
+              518.0,
+              200.0
+            ],
+            [
+              513.0,
+              191.0
+            ],
+            [
+              493.0,
+              182.0
+            ]
+          ],
+          "contour_points": 133,
+          "framePath": "frames/frame_000041.png",
+          "mask": "masks/object_0/mask_000041.png",
+          "asset": "objects/object_0/cutouts/cutout_000041.png",
+          "anchor": [
+            51.341,
+            50.596
+          ]
+        },
+        {
+          "source_frame_index": 82,
+          "frame": 42,
+          "out_index": 41,
+          "t": 3.416667,
+          "visible": true,
+          "area": 6534.0,
+          "bbox": [
+            443,
+            176,
+            103,
+            103
+          ],
+          "centroid": [
+            493.63075911596616,
+            226.75577808122185
+          ],
+          "polygon": [
+            [
+              481.0,
+              181.0
+            ],
+            [
+              464.0,
+              190.0
+            ],
+            [
+              458.0,
+              196.0
+            ],
+            [
+              458.0,
+              202.0
+            ],
+            [
+              452.0,
+              204.0
+            ],
+            [
+              447.0,
+              236.0
+            ],
+            [
+              452.0,
+              247.0
+            ],
+            [
+              456.0,
+              248.0
+            ],
+            [
+              458.0,
+              257.0
+            ],
+            [
+              473.0,
+              265.0
+            ],
+            [
+              474.0,
+              269.0
+            ],
+            [
+              490.0,
+              274.0
+            ],
+            [
+              510.0,
+              272.0
+            ],
+            [
+              512.0,
+              267.0
+            ],
+            [
+              521.0,
+              265.0
+            ],
+            [
+              526.0,
+              255.0
+            ],
+            [
+              533.0,
+              254.0
+            ],
+            [
+              533.0,
+              248.0
+            ],
+            [
+              540.0,
+              239.0
+            ],
+            [
+              539.0,
+              230.0
+            ],
+            [
+              535.0,
+              229.0
+            ],
+            [
+              535.0,
+              224.0
+            ],
+            [
+              541.0,
+              223.0
+            ],
+            [
+              538.0,
+              208.0
+            ],
+            [
+              525.0,
+              195.0
+            ],
+            [
+              524.0,
+              190.0
+            ],
+            [
+              516.0,
+              190.0
+            ],
+            [
+              515.0,
+              186.0
+            ],
+            [
+              506.0,
+              186.0
+            ],
+            [
+              497.0,
+              180.0
+            ]
+          ],
+          "contour_points": 145,
+          "framePath": "frames/frame_000042.png",
+          "mask": "masks/object_0/mask_000042.png",
+          "asset": "objects/object_0/cutouts/cutout_000042.png",
+          "anchor": [
+            50.631,
+            50.756
+          ]
+        },
+        {
+          "source_frame_index": 84,
+          "frame": 43,
+          "out_index": 42,
+          "t": 3.5,
+          "visible": true,
+          "area": 6782.5,
+          "bbox": [
+            453,
+            171,
+            103,
+            103
+          ],
+          "centroid": [
+            503.61658183964005,
+            222.24262988370089
+          ],
+          "polygon": [
+            [
+              496.0,
+              175.0
+            ],
+            [
+              476.0,
+              184.0
+            ],
+            [
+              468.0,
+              191.0
+            ],
+            [
+              460.0,
+              206.0
+            ],
+            [
+              457.0,
+              231.0
+            ],
+            [
+              464.0,
+              248.0
+            ],
+            [
+              470.0,
+              255.0
+            ],
+            [
+              475.0,
+              255.0
+            ],
+            [
+              481.0,
+              264.0
+            ],
+            [
+              496.0,
+              269.0
+            ],
+            [
+              517.0,
+              268.0
+            ],
+            [
+              533.0,
+              260.0
+            ],
+            [
+              535.0,
+              254.0
+            ],
+            [
+              548.0,
+              241.0
+            ],
+            [
+              547.0,
+              230.0
+            ],
+            [
+              551.0,
+              229.0
+            ],
+            [
+              548.0,
+              203.0
+            ],
+            [
+              539.0,
+              197.0
+            ],
+            [
+              539.0,
+              190.0
+            ],
+            [
+              528.0,
+              184.0
+            ],
+            [
+              527.0,
+              180.0
+            ],
+            [
+              516.0,
+              180.0
+            ],
+            [
+              515.0,
+              176.0
+            ]
+          ],
+          "contour_points": 142,
+          "framePath": "frames/frame_000043.png",
+          "mask": "masks/object_0/mask_000043.png",
+          "asset": "objects/object_0/cutouts/cutout_000043.png",
+          "anchor": [
+            50.617,
+            51.243
+          ]
+        },
+        {
+          "source_frame_index": 86,
+          "frame": 44,
+          "out_index": 43,
+          "t": 3.583333,
+          "visible": true,
+          "area": 6626.0,
+          "bbox": [
+            463,
+            166,
+            103,
+            102
+          ],
+          "centroid": [
+            514.8151718251876,
+            216.26096342596077
+          ],
+          "polygon": [
+            [
+              525.0,
+              170.0
+            ],
+            [
+              498.0,
+              171.0
+            ],
+            [
+              489.0,
+              181.0
+            ],
+            [
+              478.0,
+              186.0
+            ],
+            [
+              474.0,
+              192.0
+            ],
+            [
+              476.0,
+              203.0
+            ],
+            [
+              470.0,
+              204.0
+            ],
+            [
+              470.0,
+              209.0
+            ],
+            [
+              467.0,
+              210.0
+            ],
+            [
+              467.0,
+              221.0
+            ],
+            [
+              472.0,
+              224.0
+            ],
+            [
+              476.0,
+              243.0
+            ],
+            [
+              479.0,
+              243.0
+            ],
+            [
+              491.0,
+              258.0
+            ],
+            [
+              505.0,
+              263.0
+            ],
+            [
+              523.0,
+              263.0
+            ],
+            [
+              524.0,
+              259.0
+            ],
+            [
+              540.0,
+              256.0
+            ],
+            [
+              552.0,
+              245.0
+            ],
+            [
+              555.0,
+              234.0
+            ],
+            [
+              560.0,
+              229.0
+            ],
+            [
+              561.0,
+              208.0
+            ],
+            [
+              557.0,
+              207.0
+            ],
+            [
+              556.0,
+              193.0
+            ],
+            [
+              535.0,
+              173.0
+            ]
+          ],
+          "contour_points": 148,
+          "framePath": "frames/frame_000044.png",
+          "mask": "masks/object_0/mask_000044.png",
+          "asset": "objects/object_0/cutouts/cutout_000044.png",
+          "anchor": [
+            51.815,
+            50.261
+          ]
+        },
+        {
+          "source_frame_index": 88,
+          "frame": 45,
+          "out_index": 44,
+          "t": 3.666667,
+          "visible": true,
+          "area": 6632.5,
+          "bbox": [
+            473,
+            158,
+            103,
+            103
+          ],
+          "centroid": [
+            523.8799063558478,
+            209.21782227535363
+          ],
+          "polygon": [
+            [
+              531.0,
+              162.0
+            ],
+            [
+              503.0,
+              166.0
+            ],
+            [
+              495.0,
+              178.0
+            ],
+            [
+              490.0,
+              178.0
+            ],
+            [
+              489.0,
+              182.0
+            ],
+            [
+              484.0,
+              183.0
+            ],
+            [
+              479.0,
+              193.0
+            ],
+            [
+              480.0,
+              201.0
+            ],
+            [
+              477.0,
+              203.0
+            ],
+            [
+              477.0,
+              215.0
+            ],
+            [
+              480.0,
+              216.0
+            ],
+            [
+              480.0,
+              225.0
+            ],
+            [
+              486.0,
+              238.0
+            ],
+            [
+              501.0,
+              247.0
+            ],
+            [
+              503.0,
+              252.0
+            ],
+            [
+              515.0,
+              256.0
+            ],
+            [
+              547.0,
+              251.0
+            ],
+            [
+              563.0,
+              236.0
+            ],
+            [
+              571.0,
+              209.0
+            ],
+            [
+              564.0,
+              183.0
+            ],
+            [
+              545.0,
+              168.0
+            ]
+          ],
+          "contour_points": 137,
+          "framePath": "frames/frame_000045.png",
+          "mask": "masks/object_0/mask_000045.png",
+          "asset": "objects/object_0/cutouts/cutout_000045.png",
+          "anchor": [
+            50.88,
+            51.218
+          ]
+        },
+        {
+          "source_frame_index": 90,
+          "frame": 46,
+          "out_index": 45,
+          "t": 3.75,
+          "visible": true,
+          "area": 6647.0,
+          "bbox": [
+            483,
+            149,
+            103,
+            103
+          ],
+          "centroid": [
+            533.9519598952036,
+            200.22236497380086
+          ],
+          "polygon": [
+            [
+              530.0,
+              153.0
+            ],
+            [
+              523.0,
+              158.0
+            ],
+            [
+              510.0,
+              160.0
+            ],
+            [
+              509.0,
+              164.0
+            ],
+            [
+              496.0,
+              171.0
+            ],
+            [
+              487.0,
+              192.0
+            ],
+            [
+              487.0,
+              209.0
+            ],
+            [
+              490.0,
+              210.0
+            ],
+            [
+              496.0,
+              227.0
+            ],
+            [
+              513.0,
+              239.0
+            ],
+            [
+              515.0,
+              244.0
+            ],
+            [
+              543.0,
+              247.0
+            ],
+            [
+              544.0,
+              243.0
+            ],
+            [
+              557.0,
+              242.0
+            ],
+            [
+              572.0,
+              229.0
+            ],
+            [
+              575.0,
+              216.0
+            ],
+            [
+              580.0,
+              213.0
+            ],
+            [
+              577.0,
+              200.0
+            ],
+            [
+              581.0,
+              199.0
+            ],
+            [
+              581.0,
+              192.0
+            ],
+            [
+              575.0,
+              183.0
+            ],
+            [
+              575.0,
+              176.0
+            ],
+            [
+              566.0,
+              169.0
+            ],
+            [
+              566.0,
+              165.0
+            ],
+            [
+              560.0,
+              165.0
+            ],
+            [
+              559.0,
+              160.0
+            ],
+            [
+              548.0,
+              160.0
+            ],
+            [
+              543.0,
+              153.0
+            ]
+          ],
+          "contour_points": 144,
+          "framePath": "frames/frame_000046.png",
+          "mask": "masks/object_0/mask_000046.png",
+          "asset": "objects/object_0/cutouts/cutout_000046.png",
+          "anchor": [
+            50.952,
+            51.222
+          ]
+        },
+        {
+          "source_frame_index": 92,
+          "frame": 47,
+          "out_index": 46,
+          "t": 3.833333,
+          "visible": true,
+          "area": 6550.0,
+          "bbox": [
+            493,
+            140,
+            102,
+            103
+          ],
+          "centroid": [
+            544.0531167359275,
+            191.24080090668681
+          ],
+          "polygon": [
+            [
+              521.0,
+              150.0
+            ],
+            [
+              504.0,
+              166.0
+            ],
+            [
+              502.0,
+              181.0
+            ],
+            [
+              498.0,
+              182.0
+            ],
+            [
+              497.0,
+              199.0
+            ],
+            [
+              502.0,
+              204.0
+            ],
+            [
+              502.0,
+              213.0
+            ],
+            [
+              509.0,
+              217.0
+            ],
+            [
+              510.0,
+              224.0
+            ],
+            [
+              515.0,
+              225.0
+            ],
+            [
+              522.0,
+              233.0
+            ],
+            [
+              537.0,
+              235.0
+            ],
+            [
+              538.0,
+              238.0
+            ],
+            [
+              565.0,
+              234.0
+            ],
+            [
+              581.0,
+              221.0
+            ],
+            [
+              583.0,
+              212.0
+            ],
+            [
+              590.0,
+              204.0
+            ],
+            [
+              589.0,
+              175.0
+            ],
+            [
+              585.0,
+              173.0
+            ],
+            [
+              585.0,
+              167.0
+            ],
+            [
+              578.0,
+              164.0
+            ],
+            [
+              575.0,
+              156.0
+            ],
+            [
+              570.0,
+              156.0
+            ],
+            [
+              569.0,
+              152.0
+            ],
+            [
+              560.0,
+              156.0
+            ],
+            [
+              559.0,
+              148.0
+            ],
+            [
+              552.0,
+              144.0
+            ],
+            [
+              540.0,
+              144.0
+            ]
+          ],
+          "contour_points": 140,
+          "framePath": "frames/frame_000047.png",
+          "mask": "masks/object_0/mask_000047.png",
+          "asset": "objects/object_0/cutouts/cutout_000047.png",
+          "anchor": [
+            51.053,
+            51.241
+          ]
+        },
+        {
+          "source_frame_index": 94,
+          "frame": 48,
+          "out_index": 47,
+          "t": 3.916667,
+          "visible": true,
+          "area": 6666.5,
+          "bbox": [
+            503,
+            132,
+            103,
+            101
+          ],
+          "centroid": [
+            553.8314258818866,
+            181.5069857312723
+          ],
+          "polygon": [
+            [
+              544.0,
+              136.0
+            ],
+            [
+              525.0,
+              143.0
+            ],
+            [
+              524.0,
+              151.0
+            ],
+            [
+              518.0,
+              152.0
+            ],
+            [
+              512.0,
+              158.0
+            ],
+            [
+              507.0,
+              176.0
+            ],
+            [
+              507.0,
+              190.0
+            ],
+            [
+              516.0,
+              209.0
+            ],
+            [
+              519.0,
+              209.0
+            ],
+            [
+              526.0,
+              219.0
+            ],
+            [
+              545.0,
+              228.0
+            ],
+            [
+              563.0,
+              228.0
+            ],
+            [
+              564.0,
+              225.0
+            ],
+            [
+              575.0,
+              223.0
+            ],
+            [
+              576.0,
+              219.0
+            ],
+            [
+              583.0,
+              219.0
+            ],
+            [
+              592.0,
+              210.0
+            ],
+            [
+              593.0,
+              202.0
+            ],
+            [
+              601.0,
+              190.0
+            ],
+            [
+              600.0,
+              168.0
+            ],
+            [
+              595.0,
+              165.0
+            ],
+            [
+              595.0,
+              157.0
+            ],
+            [
+              589.0,
+              150.0
+            ],
+            [
+              585.0,
+              150.0
+            ],
+            [
+              584.0,
+              146.0
+            ],
+            [
+              578.0,
+              144.0
+            ],
+            [
+              575.0,
+              138.0
+            ]
+          ],
+          "contour_points": 125,
+          "framePath": "frames/frame_000048.png",
+          "mask": "masks/object_0/mask_000048.png",
+          "asset": "objects/object_0/cutouts/cutout_000048.png",
+          "anchor": [
+            50.831,
+            49.507
+          ]
+        }
+      ],
+      "interactions": {
+        "idle": {
+          "loop": true,
+          "scale": 1.0,
+          "opacity": 1.0
+        },
+        "hover": {
+          "scale": 1.06,
+          "outline": true
+        },
+        "click": {
+          "action": "reuse_or_open_detail"
+        }
+      },
+      "quality": {
+        "maskStability": 0.9877,
+        "edgeComplexity": 0.5916,
+        "bboxStability": 0.9935,
+        "vectorSuitability": 0.7568
+      },
+      "recommendedOutput": "hybrid_vector_silhouette_plus_raster",
+      "rights": {
+        "sourceAttribution": true,
+        "license": "user_uploaded_placeholder",
+        "notes": "Rights and likeness review required before remixing third-party footage."
+      }
+    }
+  ],
+  "canvas": {
+    "width": 640,
+    "height": 360,
+    "source_fps": 24.0,
+    "fps": 12.0,
+    "frame_count": 48
+  },
+  "layers": [
+    {
+      "id": "object_0_raster_layer",
+      "object_id": "object_0",
+      "type": "raster_alpha_sequence",
+      "asset_type": "cropped_rgba_png_sequence",
+      "fps": 12.0,
+      "z_index": 10,
+      "blend_mode": "source-over",
+      "frames": [
+        {
+          "frame": 1,
+          "t": 0.0,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000001.png",
+          "mask": "masks/object_0/mask_000001.png",
+          "x": 29,
+          "y": 129,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.196,
+            50.779
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 2,
+          "t": 0.083333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000002.png",
+          "mask": "masks/object_0/mask_000002.png",
+          "x": 39,
+          "y": 138,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            51.021,
+            50.9
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 3,
+          "t": 0.166667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000003.png",
+          "mask": "masks/object_0/mask_000003.png",
+          "x": 49,
+          "y": 148,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.627,
+            51.127
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 4,
+          "t": 0.25,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000004.png",
+          "mask": "masks/object_0/mask_000004.png",
+          "x": 60,
+          "y": 157,
+          "width": 100,
+          "height": 102,
+          "anchor": [
+            50.173,
+            51.079
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 5,
+          "t": 0.333333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000005.png",
+          "mask": "masks/object_0/mask_000005.png",
+          "x": 69,
+          "y": 164,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.784,
+            50.729
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 6,
+          "t": 0.416667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000006.png",
+          "mask": "masks/object_0/mask_000006.png",
+          "x": 79,
+          "y": 172,
+          "width": 102,
+          "height": 102,
+          "anchor": [
+            51.168,
+            49.903
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 7,
+          "t": 0.5,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000007.png",
+          "mask": "masks/object_0/mask_000007.png",
+          "x": 90,
+          "y": 178,
+          "width": 102,
+          "height": 100,
+          "anchor": [
+            50.146,
+            48.429
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 8,
+          "t": 0.583333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000008.png",
+          "mask": "masks/object_0/mask_000008.png",
+          "x": 99,
+          "y": 178,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.17,
+            51.295
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 9,
+          "t": 0.666667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000009.png",
+          "mask": "masks/object_0/mask_000009.png",
+          "x": 110,
+          "y": 178,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.214,
+            51.123
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 10,
+          "t": 0.75,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000010.png",
+          "mask": "masks/object_0/mask_000010.png",
+          "x": 120,
+          "y": 177,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.332,
+            51.261
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 11,
+          "t": 0.833333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000011.png",
+          "mask": "masks/object_0/mask_000011.png",
+          "x": 131,
+          "y": 174,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.167,
+            51.196
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 12,
+          "t": 0.916667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000012.png",
+          "mask": "masks/object_0/mask_000012.png",
+          "x": 140,
+          "y": 169,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.593,
+            50.83
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 13,
+          "t": 1.0,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000013.png",
+          "mask": "masks/object_0/mask_000013.png",
+          "x": 150,
+          "y": 162,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.047,
+            51.21
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 14,
+          "t": 1.083333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000014.png",
+          "mask": "masks/object_0/mask_000014.png",
+          "x": 160,
+          "y": 154,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.29,
+            50.997
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 15,
+          "t": 1.166667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000015.png",
+          "mask": "masks/object_0/mask_000015.png",
+          "x": 171,
+          "y": 145,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            49.861,
+            50.94
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 16,
+          "t": 1.25,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000016.png",
+          "mask": "masks/object_0/mask_000016.png",
+          "x": 180,
+          "y": 136,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.979,
+            51.204
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 17,
+          "t": 1.333333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000017.png",
+          "mask": "masks/object_0/mask_000017.png",
+          "x": 190,
+          "y": 126,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.975,
+            50.364
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 18,
+          "t": 1.416667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000018.png",
+          "mask": "masks/object_0/mask_000018.png",
+          "x": 200,
+          "y": 116,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.026,
+            50.943
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 19,
+          "t": 1.5,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000019.png",
+          "mask": "masks/object_0/mask_000019.png",
+          "x": 210,
+          "y": 106,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.01,
+            51.09
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 20,
+          "t": 1.583333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000020.png",
+          "mask": "masks/object_0/mask_000020.png",
+          "x": 221,
+          "y": 98,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.09,
+            50.948
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 21,
+          "t": 1.666667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000021.png",
+          "mask": "masks/object_0/mask_000021.png",
+          "x": 231,
+          "y": 91,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.118,
+            51.149
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 22,
+          "t": 1.75,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000022.png",
+          "mask": "masks/object_0/mask_000022.png",
+          "x": 241,
+          "y": 85,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.269,
+            51.081
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 23,
+          "t": 1.833333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000023.png",
+          "mask": "masks/object_0/mask_000023.png",
+          "x": 251,
+          "y": 81,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.868,
+            51.259
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 24,
+          "t": 1.916667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000024.png",
+          "mask": "masks/object_0/mask_000024.png",
+          "x": 261,
+          "y": 79,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.11,
+            51.14
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 25,
+          "t": 2.0,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000025.png",
+          "mask": "masks/object_0/mask_000025.png",
+          "x": 271,
+          "y": 79,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.082,
+            51.082
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 26,
+          "t": 2.083333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000026.png",
+          "mask": "masks/object_0/mask_000026.png",
+          "x": 281,
+          "y": 81,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.85,
+            51.042
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 27,
+          "t": 2.166667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000027.png",
+          "mask": "masks/object_0/mask_000027.png",
+          "x": 291,
+          "y": 84,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.974,
+            51.053
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 28,
+          "t": 2.25,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000028.png",
+          "mask": "masks/object_0/mask_000028.png",
+          "x": 301,
+          "y": 90,
+          "width": 103,
+          "height": 101,
+          "anchor": [
+            51.159,
+            50.835
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 29,
+          "t": 2.333333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000029.png",
+          "mask": "masks/object_0/mask_000029.png",
+          "x": 311,
+          "y": 98,
+          "width": 103,
+          "height": 102,
+          "anchor": [
+            50.746,
+            50.1
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 30,
+          "t": 2.416667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000030.png",
+          "mask": "masks/object_0/mask_000030.png",
+          "x": 322,
+          "y": 105,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.949,
+            50.918
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 31,
+          "t": 2.5,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000031.png",
+          "mask": "masks/object_0/mask_000031.png",
+          "x": 332,
+          "y": 115,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.879,
+            51.321
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 32,
+          "t": 2.583333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000032.png",
+          "mask": "masks/object_0/mask_000032.png",
+          "x": 342,
+          "y": 124,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            50.814,
+            51.149
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 33,
+          "t": 2.666667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000033.png",
+          "mask": "masks/object_0/mask_000033.png",
+          "x": 352,
+          "y": 136,
+          "width": 103,
+          "height": 101,
+          "anchor": [
+            50.984,
+            49.408
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 34,
+          "t": 2.75,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000034.png",
+          "mask": "masks/object_0/mask_000034.png",
+          "x": 362,
+          "y": 144,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.599,
+            51.111
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 35,
+          "t": 2.833333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000035.png",
+          "mask": "masks/object_0/mask_000035.png",
+          "x": 372,
+          "y": 153,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.836,
+            50.483
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 36,
+          "t": 2.916667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000036.png",
+          "mask": "masks/object_0/mask_000036.png",
+          "x": 382,
+          "y": 161,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.758,
+            50.759
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 37,
+          "t": 3.0,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000037.png",
+          "mask": "masks/object_0/mask_000037.png",
+          "x": 392,
+          "y": 168,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.807,
+            51.391
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 38,
+          "t": 3.083333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000038.png",
+          "mask": "masks/object_0/mask_000038.png",
+          "x": 402,
+          "y": 174,
+          "width": 101,
+          "height": 101,
+          "anchor": [
+            50.833,
+            49.875
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 39,
+          "t": 3.166667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000039.png",
+          "mask": "masks/object_0/mask_000039.png",
+          "x": 413,
+          "y": 178,
+          "width": 103,
+          "height": 102,
+          "anchor": [
+            51.148,
+            49.975
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 40,
+          "t": 3.25,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000040.png",
+          "mask": "masks/object_0/mask_000040.png",
+          "x": 423,
+          "y": 178,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.405,
+            51.154
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 41,
+          "t": 3.333333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000041.png",
+          "mask": "masks/object_0/mask_000041.png",
+          "x": 433,
+          "y": 178,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            51.341,
+            50.596
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 42,
+          "t": 3.416667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000042.png",
+          "mask": "masks/object_0/mask_000042.png",
+          "x": 443,
+          "y": 176,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.631,
+            50.756
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 43,
+          "t": 3.5,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000043.png",
+          "mask": "masks/object_0/mask_000043.png",
+          "x": 453,
+          "y": 171,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.617,
+            51.243
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 44,
+          "t": 3.583333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000044.png",
+          "mask": "masks/object_0/mask_000044.png",
+          "x": 463,
+          "y": 166,
+          "width": 103,
+          "height": 102,
+          "anchor": [
+            51.815,
+            50.261
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 45,
+          "t": 3.666667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000045.png",
+          "mask": "masks/object_0/mask_000045.png",
+          "x": 473,
+          "y": 158,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.88,
+            51.218
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 46,
+          "t": 3.75,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000046.png",
+          "mask": "masks/object_0/mask_000046.png",
+          "x": 483,
+          "y": 149,
+          "width": 103,
+          "height": 103,
+          "anchor": [
+            50.952,
+            51.222
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 47,
+          "t": 3.833333,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000047.png",
+          "mask": "masks/object_0/mask_000047.png",
+          "x": 493,
+          "y": 140,
+          "width": 102,
+          "height": 103,
+          "anchor": [
+            51.053,
+            51.241
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        },
+        {
+          "frame": 48,
+          "t": 3.916667,
+          "visible": true,
+          "asset": "objects/object_0/cutouts/cutout_000048.png",
+          "mask": "masks/object_0/mask_000048.png",
+          "x": 503,
+          "y": 132,
+          "width": 103,
+          "height": 101,
+          "anchor": [
+            50.831,
+            49.507
+          ],
+          "opacity": 1.0,
+          "scale": 1.0,
+          "rotation": 0.0
+        }
+      ],
+      "controls": {
+        "editable": [
+          "x",
+          "y",
+          "scale",
+          "rotation",
+          "opacity",
+          "visible",
+          "z_index"
+        ],
+        "json_edit_example": {
+          "translate": [
+            40,
+            -20
+          ],
+          "scale": 1.12,
+          "rotation": 0.08,
+          "opacity": 0.92
+        }
+      }
+    }
+  ],
+  "rendering": {
+    "recommendedRuntime": "Canvas/WebGL/PixiJS",
+    "defaultRenderMode": "raster_alpha_sequence",
+    "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics."
+  },
+  "resource_profile": {
+    "schema": "motionjson.resource_profile.v0.1",
+    "goal": "honest_resource_profile_for_cached_object_layer_workflow",
+    "sourceVideo": {
+      "path": "examples/demo_red_ball.mp4",
+      "bytes": 120288
+    },
+    "counts": {
+      "frameCount": 48,
+      "sampledFramePngCount": 48,
+      "maskCount": 48,
+      "cutoutCount": 48
+    },
+    "sizes": {
+      "extractedPackageBytes": 2201704,
+      "extractedPackageToSourceRatio": 18.3036,
+      "websitePackageBytes": 67366,
+      "websitePackageToSourceRatio": 0.56,
+      "authoringPackageBytes": 700703,
+      "payloads": {
+        "scene_graph_json_bytes": 186514,
+        "object_motion_json_bytes": 28110,
+        "object_manifest_json_bytes": 36833,
+        "web_asset_manifest_json_bytes": 29902,
+        "silhouette_lottie_json_bytes": 483769,
+        "sampled_frame_debug_png_bytes": 898211,
+        "mask_sequence_bytes": 33869,
+        "cutout_sequence_png_bytes": 443487,
+        "spritesheet_bytes": 37464,
+        "preview_html_bytes": 22589,
+        "benchmark_report_json_bytes": 956
+      }
+    },
+    "previewStrategy": {
+      "runtime": "Canvas2D MVP; WebGL/PixiJS texture atlas recommended for production",
+      "aiUsage": "Run AI at ingest/correction time, not during normal playback or transform edits.",
+      "editRepresentation": "Transform edits are small JSON deltas over cached raster/alpha assets.",
+      "partialInvalidation": "Only changed object layers need preview recomposition.",
+      "jsonTransformEditBytes": 97
+    },
+    "pixelWork": {
+      "fullFramePixelsPerSampledClip": 11059200,
+      "objectLayerPixelsPerSampledClip": 505947,
+      "objectLayerPixelRatio": 0.0457,
+      "estimatedPixelWorkReduction": 0.9543
+    },
+    "warnings": [
+      "PNG cutout sequence is larger than the source video. This is normal for a debug/authoring format; use WebP/AVIF sprites, transparent WebM, or a GPU texture atlas for production.",
+      "Full extracted package is larger than source video because it includes debug frames, masks, cutouts, manifests, and previews."
+    ],
+    "recommendations": [
+      "Keep photorealistic objects as raster/alpha assets; do not force them into SVG/Lottie.",
+      "Use transparent WebM, WebP sprite atlas, AVIF sequence, or GPU texture atlas for production payloads.",
+      "Keep Lottie/SVG for silhouettes, outlines, labels, annotations, and flat vector-like graphics.",
+      "Measure browser preview FPS separately before claiming production performance."
+    ],
+    "benchmarkSummary": {
+      "hot_preview_speedup_vs_naive_decode": 10.86,
+      "layer_pixel_ratio_vs_full_frame": 0.0457,
+      "layer_pixel_reduction_vs_full_frame": 0.9543
+    }
+  }
+}

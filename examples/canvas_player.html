@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MotionJSON Layer Player</title>
+  <style>
+    :root {
+      --bg: #15161a;
+      --panel: #202228;
+      --panel-2: #292c33;
+      --text: #f4f1ea;
+      --muted: #a9adb8;
+      --line: #3a3e47;
+      --accent: #6dc9b8;
+      --warn: #f0b35a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      align-items: center;
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(21, 22, 26, .92);
+    }
+    h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .status {
+      color: var(--muted);
+      font-size: .875rem;
+      text-align: right;
+    }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 1px;
+      min-height: calc(100vh - 58px);
+      background: var(--line);
+    }
+    .stage {
+      background:
+        linear-gradient(45deg, #e9e5dc 25%, transparent 25%),
+        linear-gradient(-45deg, #e9e5dc 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e9e5dc 75%),
+        linear-gradient(-45deg, transparent 75%, #e9e5dc 75%);
+      background-color: #f7f4ed;
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      min-width: 0;
+    }
+    canvas {
+      width: min(100%, 1040px);
+      height: min(72vh, 640px);
+      background: #fbfaf6;
+      border: 1px solid rgba(0, 0, 0, .18);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, .2);
+    }
+    aside {
+      background: var(--panel);
+      padding: 18px;
+      overflow: auto;
+    }
+    .controls {
+      display: grid;
+      gap: 14px;
+    }
+    label {
+      display: grid;
+      gap: 7px;
+      color: var(--muted);
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--text);
+      font-size: .9rem;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 6px;
+      min-height: 36px;
+      padding: 0 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover { border-color: var(--accent); }
+    .metrics {
+      display: grid;
+      gap: 8px;
+      margin: 18px 0;
+      padding: 14px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      color: var(--muted);
+      font-size: .875rem;
+    }
+    .metric strong {
+      color: var(--text);
+      font-weight: 700;
+      text-align: right;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+      padding: 14px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #111216;
+      color: #d9efe8;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .warning { color: var(--warn); }
+    @media (max-width: 860px) {
+      header { align-items: flex-start; flex-direction: column; }
+      .status { text-align: left; }
+      main { grid-template-columns: 1fr; }
+      canvas { height: 56vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>MotionJSON Layer Player</h1>
+    <div class="status" id="status">Loading scene...</div>
+  </header>
+  <main>
+    <section class="stage" aria-label="Canvas preview">
+      <canvas id="stage"></canvas>
+    </section>
+    <aside>
+      <div class="controls">
+        <button id="toggle">Pause</button>
+        <label>
+          <span class="row"><span>X offset</span><span id="xOut">0px</span></span>
+          <input id="x" type="range" min="-180" max="180" value="0" />
+        </label>
+        <label>
+          <span class="row"><span>Y offset</span><span id="yOut">0px</span></span>
+          <input id="y" type="range" min="-120" max="120" value="0" />
+        </label>
+        <label>
+          <span class="row"><span>Scale</span><span id="scaleOut">1.00</span></span>
+          <input id="scale" type="range" min="50" max="180" value="100" />
+        </label>
+        <label>
+          <span class="row"><span>Rotation</span><span id="rotationOut">0deg</span></span>
+          <input id="rotation" type="range" min="-45" max="45" value="0" />
+        </label>
+        <label>
+          <span class="row"><span>Opacity</span><span id="opacityOut">100%</span></span>
+          <input id="opacity" type="range" min="0" max="100" value="100" />
+        </label>
+      </div>
+      <div class="metrics" id="metrics"></div>
+      <pre id="editJson"></pre>
+    </aside>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const defaultScene = location.pathname.includes('/preview/') ? '../web_asset_manifest.json' : '/out/demo/web_asset_manifest.json';
+    const sceneUrl = params.get('scene') || defaultScene;
+    const canvas = document.getElementById('stage');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const metricsEl = document.getElementById('metrics');
+    const editJsonEl = document.getElementById('editJson');
+    const inputs = {
+      x: document.getElementById('x'),
+      y: document.getElementById('y'),
+      scale: document.getElementById('scale'),
+      rotation: document.getElementById('rotation'),
+      opacity: document.getElementById('opacity')
+    };
+    const outputs = {
+      x: document.getElementById('xOut'),
+      y: document.getElementById('yOut'),
+      scale: document.getElementById('scaleOut'),
+      rotation: document.getElementById('rotationOut'),
+      opacity: document.getElementById('opacityOut')
+    };
+    const toggle = document.getElementById('toggle');
+    let playing = true;
+    let started = performance.now();
+    let hoverOutline = false;
+    let clickCount = 0;
+
+    toggle.addEventListener('click', () => {
+      playing = !playing;
+      started = performance.now();
+      toggle.textContent = playing ? 'Pause' : 'Play';
+    });
+    canvas.addEventListener('mouseenter', () => { hoverOutline = true; });
+    canvas.addEventListener('mouseleave', () => { hoverOutline = false; });
+    canvas.addEventListener('click', () => {
+      clickCount += 1;
+      statusEl.textContent = `Canvas click event: reuse_or_open_detail (${clickCount})`;
+    });
+
+    function editState() {
+      const edit = {
+        translate: [Number(inputs.x.value), Number(inputs.y.value)],
+        scale: Number(inputs.scale.value) / 100,
+        rotation: Number(inputs.rotation.value) * Math.PI / 180,
+        opacity: Number(inputs.opacity.value) / 100
+      };
+      outputs.x.textContent = `${edit.translate[0]}px`;
+      outputs.y.textContent = `${edit.translate[1]}px`;
+      outputs.scale.textContent = edit.scale.toFixed(2);
+      outputs.rotation.textContent = `${inputs.rotation.value}deg`;
+      outputs.opacity.textContent = `${inputs.opacity.value}%`;
+      editJsonEl.textContent = JSON.stringify({ layerEdit: edit }, null, 2);
+      return edit;
+    }
+
+    Object.values(inputs).forEach(input => input.addEventListener('input', editState));
+
+    function sceneBase(url) {
+      return url.split('/').slice(0, -1).join('/') || '.';
+    }
+
+    function image(src) {
+      return new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+    }
+
+    function layerFromScene(scene) {
+      if (scene.layers && scene.layers[0]) return scene.layers[0];
+      const object = scene.objects[0];
+      return {
+        id: `${object.id}_legacy_full_frame`,
+        frames: (object.motion || object.frames || []).map(frame => ({
+          frame: frame.frame || frame.out_index,
+          t: frame.t,
+          visible: frame.visible,
+          asset: frame.asset,
+          x: frame.x || 0,
+          y: frame.y || 0,
+          width: frame.w || scene.canvas.width,
+          height: frame.h || scene.canvas.height
+        }))
+      };
+    }
+
+    function layerFromManifest(manifest) {
+      return {
+        id: manifest.assetId,
+        asset_type: manifest.renderMode,
+        fps: manifest.canvas.fps,
+        spritesheet: manifest.assets?.spritesheet,
+        frames: manifest.assets?.sequence || []
+      };
+    }
+
+    function normalizeDocument(document) {
+      if (document.type === 'web_motion_asset' || document.type === 'web_motion_asset_package') {
+        return {
+          mode: 'web manifest',
+          scene: {
+            canvas: {
+              width: document.canvas.width,
+              height: document.canvas.height,
+              fps: document.canvas.fps,
+              frame_count: document.canvas.frameCount
+            },
+            resource_profile: {
+              workflow_comparison: {
+                browser_layer_payload: { bytes: document.estimatedPackageSizes?.websitePackageBytes },
+                pixel_work_reduction: document.estimatedPixelWork?.estimatedPixelWorkReduction
+              }
+            }
+          },
+          layer: layerFromManifest(document)
+        };
+      }
+      return {
+        mode: 'scene graph',
+        scene: document,
+        layer: layerFromScene(document)
+      };
+    }
+
+    function metric(label, value) {
+      return `<div class="metric"><span>${label}</span><strong>${value ?? 'n/a'}</strong></div>`;
+    }
+
+    function renderMetrics(scene, layer, images) {
+      const profile = scene.resource_profile || {};
+      const comparison = profile.workflow_comparison || {};
+      const payload = comparison.browser_layer_payload || {};
+      metricsEl.innerHTML = [
+        metric('Layer frames', `${layer.spritesheet ? layer.frames.length : images.filter(Boolean).length}/${layer.frames.length}`),
+        metric('Canvas', `${scene.canvas.width}x${scene.canvas.height}`),
+        metric('FPS', Number(scene.canvas.fps || 0).toFixed(2)),
+        metric('Layer payload', payload.bytes ? `${Math.round(payload.bytes / 1024)} KB` : null),
+        metric('Pixel work saved', comparison.pixel_work_reduction != null ? `${Math.round(comparison.pixel_work_reduction * 100)}%` : 'see profile')
+      ].join('');
+    }
+
+    async function loadScene() {
+      const document = await fetch(sceneUrl).then(response => {
+        if (!response.ok) throw new Error(`Could not fetch ${sceneUrl}: ${response.status}`);
+        return response.json();
+      });
+      const { scene, layer, mode } = normalizeDocument(document);
+      const base = sceneBase(sceneUrl);
+      const sheet = layer.spritesheet?.path ? await image(`${base}/${layer.spritesheet.path}`) : null;
+      const images = sheet ? [] : await Promise.all(layer.frames.map(frame => frame.asset ? image(`${base}/${frame.asset}`) : null));
+      return { scene, layer, images, sheet, mode };
+    }
+
+    function drawPreview(scene, layer, images, sheet, now) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const cssW = Math.max(1, Math.floor(rect.width));
+      const cssH = Math.max(1, Math.floor(rect.height));
+      if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
+        canvas.width = Math.floor(cssW * dpr);
+        canvas.height = Math.floor(cssH * dpr);
+      }
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      ctx.fillStyle = '#fbfaf6';
+      ctx.fillRect(0, 0, cssW, cssH);
+
+      const fit = Math.min(cssW / scene.canvas.width, cssH / scene.canvas.height);
+      const left = (cssW - scene.canvas.width * fit) / 2;
+      const top = (cssH - scene.canvas.height * fit) / 2;
+      ctx.save();
+      ctx.translate(left, top);
+      ctx.scale(fit, fit);
+      ctx.strokeStyle = 'rgba(0,0,0,.22)';
+      ctx.strokeRect(0, 0, scene.canvas.width, scene.canvas.height);
+
+      const edit = editState();
+      const fps = scene.canvas.fps || 12;
+      const elapsed = playing ? (now - started) / 1000 : 0;
+      const index = layer.frames.length ? Math.floor(elapsed * fps) % layer.frames.length : 0;
+      const frame = layer.frames[index];
+      const img = sheet || images[index];
+
+      if (frame && img && frame.visible) {
+        const sprite = frame.sprite;
+        const w = frame.width || sprite?.w || img.width;
+        const h = frame.height || sprite?.h || img.height;
+        ctx.save();
+        ctx.globalAlpha = edit.opacity;
+        ctx.translate((frame.x || 0) + w / 2 + edit.translate[0], (frame.y || 0) + h / 2 + edit.translate[1]);
+        ctx.rotate(edit.rotation);
+        ctx.scale(edit.scale, edit.scale);
+        if (sprite && sheet) {
+          ctx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, -w / 2, -h / 2, w, h);
+        } else {
+          ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        }
+        if (hoverOutline) {
+          ctx.strokeStyle = '#2c8f7f';
+          ctx.lineWidth = 3;
+          ctx.strokeRect(-w / 2, -h / 2, w, h);
+        }
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    loadScene().then(({ scene, layer, images, sheet, mode }) => {
+      statusEl.textContent = `Loaded ${layer.id} ${mode} from ${sceneUrl}`;
+      if (mode === 'scene graph' && !scene.layers) statusEl.innerHTML += ' <span class="warning">using legacy full-frame assets</span>';
+      renderMetrics(scene, layer, images);
+      editState();
+      function tick(now) {
+        drawPreview(scene, layer, images, sheet, now);
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    }).catch(error => {
+      statusEl.textContent = error.stack || error.message;
+    });
+  </script>
+</body>
+</html>

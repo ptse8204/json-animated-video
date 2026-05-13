@@ -1,0 +1,28 @@
+{
+  "version": "0.1.0",
+  "benchmark": "naive_video_decode_vs_cached_layer_composite",
+  "iterations": 3,
+  "sampled_frames": 48,
+  "layer_frames": 48,
+  "naive_video_decode": {
+    "total_ms": 53.971,
+    "ms_per_frame": 0.375,
+    "decoded_pixels": 33177600
+  },
+  "cached_layer_preview": {
+    "asset_load_ms": 7.631,
+    "hot_composite_ms": 4.97,
+    "hot_composite_ms_per_frame": 0.035,
+    "composited_layer_pixels": 1517841
+  },
+  "comparison": {
+    "hot_preview_speedup_vs_naive_decode": 10.86,
+    "layer_pixel_ratio_vs_full_frame": 0.0457,
+    "layer_pixel_reduction_vs_full_frame": 0.9543
+  },
+  "notes": [
+    "This benchmark isolates playback/edit preview after extraction; it does not include neural segmentation time.",
+    "Naive mode decodes sampled full video frames. Layer mode composites already-cached cropped RGBA assets.",
+    "Browser performance should be validated separately with Canvas/WebGL frame timing for production."
+  ]
+}

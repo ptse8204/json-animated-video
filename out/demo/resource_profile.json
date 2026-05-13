@@ -1,0 +1,62 @@
+{
+  "schema": "motionjson.resource_profile.v0.1",
+  "goal": "honest_resource_profile_for_cached_object_layer_workflow",
+  "sourceVideo": {
+    "path": "examples/demo_red_ball.mp4",
+    "bytes": 120288
+  },
+  "counts": {
+    "frameCount": 48,
+    "sampledFramePngCount": 48,
+    "maskCount": 48,
+    "cutoutCount": 48
+  },
+  "sizes": {
+    "extractedPackageBytes": 2201704,
+    "extractedPackageToSourceRatio": 18.3036,
+    "websitePackageBytes": 67366,
+    "websitePackageToSourceRatio": 0.56,
+    "authoringPackageBytes": 700703,
+    "payloads": {
+      "scene_graph_json_bytes": 186514,
+      "object_motion_json_bytes": 28110,
+      "object_manifest_json_bytes": 36833,
+      "web_asset_manifest_json_bytes": 29902,
+      "silhouette_lottie_json_bytes": 483769,
+      "sampled_frame_debug_png_bytes": 898211,
+      "mask_sequence_bytes": 33869,
+      "cutout_sequence_png_bytes": 443487,
+      "spritesheet_bytes": 37464,
+      "preview_html_bytes": 22589,
+      "benchmark_report_json_bytes": 956
+    }
+  },
+  "previewStrategy": {
+    "runtime": "Canvas2D MVP; WebGL/PixiJS texture atlas recommended for production",
+    "aiUsage": "Run AI at ingest/correction time, not during normal playback or transform edits.",
+    "editRepresentation": "Transform edits are small JSON deltas over cached raster/alpha assets.",
+    "partialInvalidation": "Only changed object layers need preview recomposition.",
+    "jsonTransformEditBytes": 97
+  },
+  "pixelWork": {
+    "fullFramePixelsPerSampledClip": 11059200,
+    "objectLayerPixelsPerSampledClip": 505947,
+    "objectLayerPixelRatio": 0.0457,
+    "estimatedPixelWorkReduction": 0.9543
+  },
+  "warnings": [
+    "PNG cutout sequence is larger than the source video. This is normal for a debug/authoring format; use WebP/AVIF sprites, transparent WebM, or a GPU texture atlas for production.",
+    "Full extracted package is larger than source video because it includes debug frames, masks, cutouts, manifests, and previews."
+  ],
+  "recommendations": [
+    "Keep photorealistic objects as raster/alpha assets; do not force them into SVG/Lottie.",
+    "Use transparent WebM, WebP sprite atlas, AVIF sequence, or GPU texture atlas for production payloads.",
+    "Keep Lottie/SVG for silhouettes, outlines, labels, annotations, and flat vector-like graphics.",
+    "Measure browser preview FPS separately before claiming production performance."
+  ],
+  "benchmarkSummary": {
+    "hot_preview_speedup_vs_naive_decode": 10.86,
+    "layer_pixel_ratio_vs_full_frame": 0.0457,
+    "layer_pixel_reduction_vs_full_frame": 0.9543
+  }
+}

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motionjson"
+version = "0.1.0"
+description = "Raster/video object masks to JSON motion assets and Lottie silhouettes"
+requires-python = ">=3.10"
+dependencies = ["numpy", "opencv-python", "Pillow", "tqdm"]
+
+[project.scripts]
+motionjson = "motionjson.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
