@@ -1,0 +1,13 @@
+[project]
+name = "MotionJSON"
+instructions = "AGENTS.md"
+
+[agents]
+planner = ".codex/agents/motionjson_planner.toml"
+executor = ".codex/agents/motionjson_executor.toml"
+reviewer = ".codex/agents/motionjson_reviewer.toml"
+
+[phase_gates]
+required_result = "PASS / NO CONCERNS"
+commit_required = true
+
