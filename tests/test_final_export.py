@@ -129,6 +129,18 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
         assert "objects/object_0/spritesheet.webp" in names
         assert "runtime/index.js" in names
         assert "preview/canvas_player.html" in names
+        assert "preview/website_templates/hero.html" in names
+        assert "preview/website_templates/ecommerce.html" in names
+        assert "preview/website_templates/education.html" in names
+        assert "preview/website_snippets/webflow-style.html" in names
+        assert "preview/website_snippets/framer-style.html" in names
+        assert "preview/website_snippets/react-embed.jsx" in names
+        assert "templates/hero.html" in names
+        assert "templates/ecommerce.html" in names
+        assert "templates/education.html" in names
+        assert "snippets/webflow-style.html" in names
+        assert "snippets/framer-style.html" in names
+        assert "snippets/react-embed.jsx" in names
         assert "package_manifest.json" in names
         assert all(not Path(name).is_absolute() for name in names)
         assert all(".." not in Path(name).parts for name in names)
@@ -139,6 +151,12 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
         assert package_manifest["aiUsage"] == "none"
         assert package_manifest["rights"]["object_0"]["license"] == "user_uploaded_unverified"
         assert package_manifest["rightsManifest"] == "rights_manifest.json"
+        assert package_manifest["templates"] == ["templates/ecommerce.html", "templates/education.html", "templates/hero.html"]
+        assert package_manifest["snippets"] == [
+            "snippets/framer-style.html",
+            "snippets/react-embed.jsx",
+            "snippets/webflow-style.html",
+        ]
 
 
 def test_website_package_ignores_unsafe_scene_asset_paths(tmp_path):

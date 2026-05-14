@@ -1,6 +1,7 @@
 import { createCanvasRuntime } from "./canvas.js";
 import { normalizeMotionJSON } from "./manifest.js";
 import { createPixiRuntime } from "./pixi.js";
+import { decorateMotionJSONTemplate, motionJSONTemplateOptions } from "./templates.js";
 
 function resolveTarget(target) {
   if (typeof target === "string") {
@@ -24,9 +25,11 @@ async function loadDocument(source) {
 
 export async function mountMotionJSON(target, source, options = {}) {
   const element = resolveTarget(target);
+  const runtimeOptions = motionJSONTemplateOptions(options.template, options);
+  const templatePreset = decorateMotionJSONTemplate(element, runtimeOptions.templatePreset || runtimeOptions.template);
   const { document: motionDocument, baseUrl } = await loadDocument(source);
-  const scene = normalizeMotionJSON(motionDocument, { ...options, baseUrl: options.baseUrl || baseUrl });
-  const usePixi = options.renderer === "pixi";
+  const scene = normalizeMotionJSON(motionDocument, { ...runtimeOptions, baseUrl: runtimeOptions.baseUrl || baseUrl });
+  const usePixi = runtimeOptions.renderer === "pixi";
   const createdCanvas = !usePixi && !isCanvasElement(element);
   const canvas = usePixi
     ? null
@@ -34,13 +37,13 @@ export async function mountMotionJSON(target, source, options = {}) {
       ? element
       : document.createElement("canvas");
   if (canvas && createdCanvas) {
-    canvas.className = options.canvasClass || "motionjson-canvas";
+    canvas.className = runtimeOptions.canvasClass || "motionjson-canvas";
     element.appendChild(canvas);
   }
 
   const runtime = usePixi
-    ? await createPixiRuntime(element, scene, options)
-    : createCanvasRuntime(canvas, scene, options);
+    ? await createPixiRuntime(element, scene, runtimeOptions)
+    : createCanvasRuntime(canvas, scene, runtimeOptions);
   if (runtime.load) await runtime.load();
   const surface = canvas || runtime.app?.view || runtime.canvas || element;
 
@@ -48,8 +51,8 @@ export async function mountMotionJSON(target, source, options = {}) {
   const onLeave = () => runtime.setState("idle");
   const onClick = (event) => {
     runtime.setState("click");
-    options.onClick?.({ event, scene, action: scene.states.click?.action });
-    setTimeout(() => runtime.setState("idle"), options.clickStateMs || 180);
+    runtimeOptions.onClick?.({ event, scene, action: scene.states.click?.action, template: templatePreset });
+    setTimeout(() => runtime.setState("idle"), runtimeOptions.clickStateMs || 180);
   };
   const onScroll = () => {
     const maxScroll = Math.max(1, document.documentElement.scrollHeight - innerHeight);
@@ -59,19 +62,20 @@ export async function mountMotionJSON(target, source, options = {}) {
   surface.addEventListener("mouseenter", onEnter);
   surface.addEventListener("mouseleave", onLeave);
   surface.addEventListener("click", onClick);
-  if (options.scrollState !== false) addEventListener("scroll", onScroll, { passive: true });
+  if (runtimeOptions.scrollState !== false) addEventListener("scroll", onScroll, { passive: true });
   runtime.start?.();
 
   return {
     runtime,
     scene,
+    template: templatePreset,
     canvas: surface,
     surface,
     destroy() {
       surface.removeEventListener("mouseenter", onEnter);
       surface.removeEventListener("mouseleave", onLeave);
       surface.removeEventListener("click", onClick);
-      if (options.scrollState !== false) removeEventListener("scroll", onScroll);
+      if (runtimeOptions.scrollState !== false) removeEventListener("scroll", onScroll);
       runtime.destroy?.();
       if (createdCanvas) canvas.remove();
     }
@@ -89,6 +93,7 @@ export function autoMountMotionJSON(root = document, options = {}) {
     mounts.push(mountMotionJSON(element, source, {
       ...options,
       renderer: element.dataset.motionjsonRenderer || options.renderer,
+      template: element.dataset.motionjsonTemplate || options.template,
       background: element.dataset.motionjsonBackground || options.background,
       showBounds: element.dataset.motionjsonBounds === "true" || options.showBounds
     }));

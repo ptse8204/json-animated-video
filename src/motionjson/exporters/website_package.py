@@ -102,6 +102,10 @@ def _copy_tree(source: Path, package_root: Path, rel_base: str, files: dict[str,
         _copy_file(path, package_root, rel_path, files)
 
 
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
 def _include_scene_assets(out_dir: Path, package_root: Path, scene: dict[str, Any], files: dict[str, int]) -> None:
     for required in ("scene_graph.json", "object_motion.json", "web_asset_manifest.json", "resource_profile.json", "rights_manifest.json"):
         _copy_file(out_dir / required, package_root, required, files)
@@ -152,6 +156,8 @@ def _write_package_manifest(package_root: Path, scene: dict[str, Any], files: di
         "aiUsage": "none",
         "entrypoint": "index.html",
         "sourceSceneGraph": "scene_graph.json",
+        "templates": sorted(path for path in files if path.startswith("templates/")),
+        "snippets": sorted(path for path in files if path.startswith("snippets/")),
         "rightsManifest": "rights_manifest.json",
         "rightsSummary": rights_manifest.get("summary", {}),
         "files": [{"path": path, "bytes": size} for path, size in sorted(files.items())],
@@ -186,6 +192,9 @@ def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> d
         _include_scene_assets(out_dir, package_root, scene, files)
         _copy_tree(out_dir / "preview" / "runtime", package_root, "runtime", files)
         _copy_tree(out_dir / "preview", package_root, "preview", files)
+        examples_dir = _repo_root() / "examples"
+        _copy_tree(examples_dir / "website_templates", package_root, "templates", files)
+        _copy_tree(examples_dir / "website_snippets", package_root, "snippets", files)
         _write_index(package_root / "index.html")
         files["index.html"] = (package_root / "index.html").stat().st_size
         _write_index(package_root / "preview" / "index.html")

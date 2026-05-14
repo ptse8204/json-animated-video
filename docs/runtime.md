@@ -17,6 +17,7 @@ packages/motionjson-runtime/
     pixi.js       Optional Pixi/WebGL renderer through injected PIXI.
     embed.js      Plain JavaScript mount helper and data-attribute auto-mount.
     react.js      React component factory with injected React.
+    templates.js  Website template presets for hero, ecommerce, and education embeds.
 ```
 
 Run JavaScript validation:
@@ -81,6 +82,19 @@ Or use data attributes:
 </script>
 ```
 
+Template presets can be selected with `data-motionjson-template`. They set runtime defaults such as canvas class, background, click timing, and scroll behavior; they do not change cached assets or call ingest-time systems.
+
+```html
+<div
+  data-motionjson-src="/out/demo/web_asset_manifest.json"
+  data-motionjson-template="hero"
+></div>
+<script type="module">
+  import { autoMountMotionJSON } from "../packages/motionjson-runtime/src/index.js";
+  await autoMountMotionJSON();
+</script>
+```
+
 ## React
 
 React is peer-style and injected by the application.
@@ -89,6 +103,14 @@ React is peer-style and injected by the application.
 import { createMotionJSONReactComponent } from "@motionjson/runtime/react";
 
 export const MotionJSONPlayer = createMotionJSONReactComponent(React);
+```
+
+Template-oriented React helpers are also available:
+
+```js
+import { createMotionJSONTemplateEmbeds } from "@motionjson/runtime/react";
+
+const { HeroMotionJSON, EcommerceMotionJSON, EducationMotionJSON } = createMotionJSONTemplateEmbeds(React);
 ```
 
 ## Examples
@@ -101,8 +123,11 @@ Serve the repo and open:
 - `http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo/web_asset_manifest.json`
 - `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 - `http://localhost:8080/examples/website_graphics_hero.html?manifest=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/website_templates/hero.html?manifest=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/website_templates/ecommerce.html?manifest=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/website_templates/education.html?manifest=/out/demo/web_asset_manifest.json`
 
-Generated preview folders copy the runtime source into `preview/runtime/`, so `out/.../preview/*.html` works without a build step or CDN dependency.
+Generated preview folders copy the runtime source into `preview/runtime/`, website template pages into `preview/website_templates/`, and snippet examples into `preview/website_snippets/`, so `out/.../preview/*.html` works without a build step or CDN dependency.
 
 ## Website ZIP Export
 
@@ -112,7 +137,7 @@ Phase 8 can package a self-contained website ZIP from generated output:
 python3 -m motionjson.cli export out/demo --format website-zip --out out/demo/exports/website_package.zip
 ```
 
-The ZIP includes relative runtime paths, previews, `web_asset_manifest.json`, scene/object/resource JSON, cached cutouts and spritesheets needed by the runtime, and ready production assets. It excludes `.env*`, caches, `node_modules`, masks, and debug frames by default.
+The ZIP includes relative runtime paths, previews, template pages, style-compatible embed snippets, `web_asset_manifest.json`, scene/object/resource JSON, rights metadata, cached cutouts and spritesheets needed by the runtime, and ready production assets. It excludes `.env*`, caches, `node_modules`, masks, and debug frames by default. The package manifest records `aiUsage: "none"` because packaging uses cached raster/alpha assets and JSON transforms only.
 
 ## Timeline Editor MVP
 

@@ -41,6 +41,8 @@ spritesheet.webp or transparent.webm
 mask.json or mask spritesheet
 preview.html
 embed.js
+templates/
+snippets/
 fallback.mp4
 ```
 
@@ -120,11 +122,30 @@ Turn footage into reusable web-native motion graphics.
 - Click/select object
 - AI mask tracking
 - Asset extraction
-- Choose output target: hero, sticker, scroll animation, product graphic
+- Choose output target: hero, ecommerce, education, sticker, scroll animation, or product graphic
 - Generate embed package
 - Generate fallback MP4/WebM
 - Generate responsive preview page
 - Provide JSON manifest for developers
+
+## Phase 14 productized website workflows
+
+The runtime now includes template presets for `hero`, `ecommerce`, and `education`. Plain JavaScript embeds use `data-motionjson-template`, while React projects can create template-oriented components with `createMotionJSONTemplateEmbeds(React)`.
+
+Generated output copies:
+
+```text
+preview/website_templates/
+  hero.html
+  ecommerce.html
+  education.html
+preview/website_snippets/
+  webflow-style.html
+  framer-style.html
+  react-embed.jsx
+```
+
+Website ZIP packages include the same template and snippet surfaces at relative safe paths (`templates/` and `snippets/`) along with runtime modules, scene/object/resource JSON, rights metadata, and cached raster/alpha assets. The package manifest preserves rights summaries and records `aiUsage: "none"` because normal website preview and interaction are JSON transform updates over cached assets.
 
 ## Success metrics
 
@@ -173,3 +194,5 @@ embed.js runtime
 hero-section template generator
 Webflow/Framer-compatible embed docs
 ```
+
+Those additions are now represented by runtime template presets and style-compatible snippets. They are not official Webflow or Framer integrations, and they do not add CDN, API, or network runtime dependencies.

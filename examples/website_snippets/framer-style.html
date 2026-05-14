@@ -1,0 +1,31 @@
+<!-- Framer-style embed snippet. This is not an official Framer package or plugin. -->
+<div id="motionjson-framer-style" data-motionjson-template="ecommerce"></div>
+
+<script type="module">
+  import { mountMotionJSON } from "../runtime/index.js";
+
+  const manifest = "../web_asset_manifest.json";
+  const handle = await mountMotionJSON("#motionjson-framer-style", manifest, {
+    template: "ecommerce",
+    background: "transparent",
+    scrollState: false
+  });
+
+  window.motionjsonFramerStyle = {
+    setState: (state) => handle.runtime.setState(state),
+    destroy: () => handle.destroy()
+  };
+</script>
+
+<style>
+  #motionjson-framer-style {
+    width: 100%;
+    min-height: 360px;
+    aspect-ratio: 1 / 1;
+  }
+  #motionjson-framer-style canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>

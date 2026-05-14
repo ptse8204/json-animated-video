@@ -7,12 +7,17 @@ import test from "node:test";
 import {
   autoMountMotionJSON,
   createMotionJSONReactComponent,
+  createMotionJSONTemplateComponent,
+  createMotionJSONTemplateEmbeds,
   createPixiRuntime,
   duplicateLayer,
   frameAt,
   frameIndexAt,
+  getMotionJSONTemplate,
   initializeEditorState,
+  listMotionJSONTemplates,
   mountMotionJSON,
+  motionJSONTemplateOptions,
   normalizeMotionJSON,
   resolveAssetUrl,
   serializeEditState,
@@ -183,6 +188,21 @@ test("runtime exports include plain embed and React factory", () => {
   assert.equal(typeof mountMotionJSON, "function");
   assert.equal(typeof autoMountMotionJSON, "function");
   assert.equal(typeof createMotionJSONReactComponent, "function");
+  assert.equal(typeof createMotionJSONTemplateComponent, "function");
+  assert.equal(typeof createMotionJSONTemplateEmbeds, "function");
+});
+
+test("template presets expose website targets without changing cached assets", () => {
+  const templates = listMotionJSONTemplates();
+  const ids = templates.map((template) => template.id);
+  const options = motionJSONTemplateOptions("ecommerce", { background: "#fefefe", renderer: "canvas" });
+
+  assert.deepEqual(ids, ["hero", "ecommerce", "education"]);
+  assert.equal(getMotionJSONTemplate("hero").background, "#fbfaf6");
+  assert.equal(options.template, "ecommerce");
+  assert.equal(options.background, "#fefefe");
+  assert.equal(options.renderer, "canvas");
+  assert.equal(options.scrollState, false);
 });
 
 test("editor state initializes from normalized MotionJSON and serializes JSON-only edits", () => {
@@ -414,6 +434,12 @@ test("examples use local runtime imports and expose required embed surfaces", ()
   const canvas = readFileSync(join(repoRoot, "examples/canvas_player.html"), "utf8");
   const website = readFileSync(join(repoRoot, "examples/website_graphics_hero.html"), "utf8");
   const plain = readFileSync(join(repoRoot, "examples/plain_js_embed.html"), "utf8");
+  const heroTemplate = readFileSync(join(repoRoot, "examples/website_templates/hero.html"), "utf8");
+  const ecommerceTemplate = readFileSync(join(repoRoot, "examples/website_templates/ecommerce.html"), "utf8");
+  const educationTemplate = readFileSync(join(repoRoot, "examples/website_templates/education.html"), "utf8");
+  const webflowSnippet = readFileSync(join(repoRoot, "examples/website_snippets/webflow-style.html"), "utf8");
+  const framerSnippet = readFileSync(join(repoRoot, "examples/website_snippets/framer-style.html"), "utf8");
+  const reactSnippet = readFileSync(join(repoRoot, "examples/website_snippets/react-embed.jsx"), "utf8");
   const timeline = readFileSync(join(repoRoot, "examples/timeline_editor.html"), "utf8");
   const timelineJs = readFileSync(join(repoRoot, "examples/timeline_editor.js"), "utf8");
 
@@ -421,8 +447,17 @@ test("examples use local runtime imports and expose required embed surfaces", ()
   assert.match(website, /motionjson-runtime\/src\/index\.js/);
   assert.match(plain, /data-motionjson-src/);
   assert.match(plain, /autoMountMotionJSON/);
+  assert.match(heroTemplate, /data-motionjson-template="hero"/);
+  assert.match(ecommerceTemplate, /data-motionjson-template="ecommerce"/);
+  assert.match(educationTemplate, /data-motionjson-template="education"/);
+  assert.match(webflowSnippet, /data-motionjson-template="hero"/);
+  assert.match(framerSnippet, /template: "ecommerce"/);
+  assert.match(reactSnippet, /createMotionJSONTemplateEmbeds/);
   assert.match(timeline, /timeline_editor\.js/);
   assert.match(timelineJs, /motionjson-runtime\/src\/index\.js/);
   assert.match(timelineJs, /duplicateLayer/);
-  assert.doesNotMatch(canvas + website + plain + timeline + timelineJs, /https?:\/\/(?:unpkg|cdn|jsdelivr|cdnjs)\./);
+  assert.doesNotMatch(
+    canvas + website + plain + heroTemplate + ecommerceTemplate + educationTemplate + webflowSnippet + framerSnippet + reactSnippet + timeline + timelineJs,
+    /https?:\/\/(?:unpkg|cdn|jsdelivr|cdnjs)\./
+  );
 });

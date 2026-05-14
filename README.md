@@ -57,6 +57,10 @@ Open:
 - Object selection workflow: `http://localhost:8080/examples/object_selection_workflow.html?manifest=/out/demo/web_asset_manifest.json&scene=/out/demo/scene_graph.json`
 - Timeline editor MVP: `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
+- Website templates:
+  `http://localhost:8080/examples/website_templates/hero.html?manifest=/out/demo/web_asset_manifest.json`,
+  `http://localhost:8080/examples/website_templates/ecommerce.html?manifest=/out/demo/web_asset_manifest.json`,
+  `http://localhost:8080/examples/website_templates/education.html?manifest=/out/demo/web_asset_manifest.json`
 
 ## Schema Validation
 
@@ -147,6 +151,14 @@ out/demo/
     timeline_editor.html
     timeline_editor.js
     website_graphics_hero.html
+    website_templates/
+      hero.html
+      ecommerce.html
+      education.html
+    website_snippets/
+      webflow-style.html
+      framer-style.html
+      react-embed.jsx
     runtime/
       index.js
 ```
@@ -156,6 +168,8 @@ out/demo/
 The runtime package lives in `packages/motionjson-runtime`. It accepts both `web_asset_manifest.json` and `scene_graph.json`, resolves relative asset URLs, prefers spritesheets, falls back to alpha PNG sequences, and exposes cleanup through `destroy()`.
 
 Runtime playback and interactions use cached assets plus JSON transforms only. Pixi/WebGL and React are optional peer-style integrations: applications inject `PIXI` or `React`; tests run without installing either package. See `docs/runtime.md`.
+
+Website templates are available for hero, ecommerce, and education use cases. Plain embeds can set `data-motionjson-template="hero"`, `ecommerce`, or `education`; React apps can use template-oriented factories from `@motionjson/runtime/react`. The examples under `examples/website_snippets/` are style-compatible snippets for Webflow-like, Framer-like, and React projects, not official platform integrations or plugins.
 
 The timeline editor MVP lives at `examples/timeline_editor.html` and is copied into generated `preview/` folders. It provides a layer panel, canvas stage drag/scale/rotate handles, opacity and z-index controls, timeline scrub/playback, duplicate/reuse layer instances, and background replacement by compositing a checker, solid color, or local image behind alpha object layers. Duplicate/reuse creates a new layer instance that references the same cached object asset in JSON; it does not copy raster frames or rerun extraction.
 
@@ -227,6 +241,8 @@ python3 -m motionjson.cli export out/demo --format all --out out/demo/exports --
 ```
 
 MP4 and transparent WebM require local `ffmpeg`; direct CLI exports fail clearly if the requested encoder is unavailable. The Remotion export is an honest plan file only: it does not add dependencies, run npm, call the network, or invoke APIs. See `docs/final_export.md`.
+
+The website ZIP includes runtime modules, preview pages, website templates, embed snippets, scene/object/resource JSON, rights metadata, cached raster/alpha assets, and production assets when available. Package manifests record `aiUsage: "none"` because the ZIP is assembled from cached assets and JSON transforms.
 
 ## Current Limitations
 

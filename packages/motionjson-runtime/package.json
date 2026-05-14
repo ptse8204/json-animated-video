@@ -9,7 +9,8 @@
     "./canvas": "./src/canvas.js",
     "./pixi": "./src/pixi.js",
     "./embed": "./src/embed.js",
-    "./react": "./src/react.js"
+    "./react": "./src/react.js",
+    "./templates": "./src/templates.js"
   },
   "peerDependencies": {
     "pixi.js": ">=7 <8",

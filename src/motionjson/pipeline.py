@@ -64,6 +64,13 @@ def _preview_copy(out_dir: Path) -> None:
         src = repo_root / "examples" / name
         if src.exists():
             shutil.copyfile(src, preview_dir / name)
+    for directory_name in ("website_templates", "website_snippets"):
+        src_dir = repo_root / "examples" / directory_name
+        dest_dir = preview_dir / directory_name
+        if src_dir.exists():
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir)
+            shutil.copytree(src_dir, dest_dir)
     runtime_src = repo_root / "packages" / "motionjson-runtime" / "src"
     runtime_dest = preview_dir / "runtime"
     if runtime_src.exists():
