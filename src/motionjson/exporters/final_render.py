@@ -317,6 +317,7 @@ def build_final_export_manifest(
         },
         "exports": exports,
         "rights": _rights_for(scene, object_id),
+        "rightsManifest": scene.get("rightsManifest", "rights_manifest.json"),
         "notes": [
             "Final exports are rendered from cached raster/alpha assets and JSON transforms.",
             "No segmentation, matting, LLM, VLM, or external AI provider is invoked during export.",

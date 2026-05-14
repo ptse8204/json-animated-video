@@ -17,6 +17,7 @@ from .exporters.web_manifest import write_web_asset_manifest
 from .layers import crop_rgba_layer, write_spritesheet
 from .masks import MaskProvider
 from .metrics import build_resource_profile
+from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
 from .vectorize import build_quality_scores, mask_to_largest_polygon, recommended_output
 from .video import iter_sampled_frames
 
@@ -186,6 +187,7 @@ def _extract_object(
     sprite_format: str,
     output_mode: str,
     production_avif: bool,
+    rights_context: dict[str, Any] | None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
     object_id = spec.object_id
     mask_dir = out_dir / "masks" / object_id
@@ -295,6 +297,7 @@ def _extract_object(
         for entry, sprite_frame in zip((m for m in motion if m["asset"]), sprite_meta["frames"]):
             entry["sprite"] = sprite_frame
 
+    rights = build_object_rights(object_id=object_id, context=rights_context, fallback_source_uri=rights_context.get("source_uri") if rights_context else None)
     obj = {
         "id": object_id,
         "label": spec.label,
@@ -315,11 +318,7 @@ def _extract_object(
         },
         "quality": quality,
         "recommendedOutput": route,
-        "rights": {
-            "sourceAttribution": True,
-            "license": "user_uploaded_placeholder",
-            "notes": "Rights and likeness review required before remixing third-party footage.",
-        },
+        "rights": rights,
     }
     if output_mode in {"production", "both"}:
         production_assets = export_production_assets(
@@ -344,6 +343,7 @@ def _extract_object(
         "motion": motion,
         "quality": quality,
         "recommendedOutput": route,
+        "rights": rights,
     }
     if "production" in obj["assets"]:
         object_manifest["production"] = obj["assets"]["production"]
@@ -376,6 +376,7 @@ def run_multi_object_pipeline(
     sprite_format: str = "webp",
     output_mode: str = "authoring",
     production_avif: bool = False,
+    rights_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if sprite_format not in {"webp", "png"}:
         raise ValueError("sprite_format must be 'webp' or 'png'")
@@ -391,6 +392,24 @@ def run_multi_object_pipeline(
 
     video_path = Path(video_path)
     out_dir = Path(out_dir)
+    normalized_rights = normalize_rights_context(rights_context, fallback_source_uri=video_path)
+    rights_payload = {
+        "source_type": normalized_rights.source_type,
+        "source_asset_id": normalized_rights.source_asset_id,
+        "source_uri": normalized_rights.source_uri,
+        "display_text": normalized_rights.display_text,
+        "attribution_required": normalized_rights.attribution_required,
+        "license": normalized_rights.license,
+        "license_name": normalized_rights.license_name,
+        "license_url": normalized_rights.license_url,
+        "license_scope": normalized_rights.license_scope,
+        "creator_approved": normalized_rights.creator_approved,
+        "creator_approval_status": normalized_rights.creator_approval_status,
+        "creator_approval_evidence": list(normalized_rights.creator_approval_evidence),
+        "commercial_use": normalized_rights.commercial_use,
+        "commercial_use_status": normalized_rights.commercial_use_status,
+        "audit_log": list(normalized_rights.audit_log),
+    }
     frames_dir = out_dir / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     _clear_generated_frames(frames_dir)
@@ -431,6 +450,7 @@ def run_multi_object_pipeline(
             sprite_format=sprite_format,
             output_mode=output_mode,
             production_avif=production_avif,
+            rights_context=rights_payload,
         )
         objects.append(obj)
         layers.append(layer)
@@ -457,7 +477,9 @@ def run_multi_object_pipeline(
             "outputMode": output_mode,
             "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics.",
         },
+        "rightsManifest": "rights_manifest.json",
     }
+    rights_manifest = build_rights_manifest(source=source, objects=objects, context=rights_payload)
 
     default_object_id = object_specs[0].object_id
     _write_object_motion(out_dir, default_object_id, object_motions[default_object_id], legacy=True)
@@ -469,6 +491,7 @@ def run_multi_object_pipeline(
         frames=first_detailed_frames,
     )
     write_json(out_dir / "scene_graph.json", scene)
+    write_rights_manifest(out_dir / "rights_manifest.json", rights_manifest)
     for index, spec in enumerate(object_specs):
         _write_object_web_manifest(out_dir, scene, spec.object_id, legacy=index == 0)
     _preview_copy(out_dir)
@@ -493,6 +516,7 @@ def run_pipeline(
     sprite_format: str = "webp",
     output_mode: str = "authoring",
     production_avif: bool = False,
+    rights_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return run_multi_object_pipeline(
         video_path=video_path,
@@ -507,4 +531,5 @@ def run_pipeline(
         sprite_format=sprite_format,
         output_mode=output_mode,
         production_avif=production_avif,
+        rights_context=rights_context,
     )

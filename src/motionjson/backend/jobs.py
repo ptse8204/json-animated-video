@@ -96,6 +96,7 @@ def enqueue_extract_job(
     lower_hsv: tuple[int, int, int] = (0, 80, 80),
     upper_hsv: tuple[int, int, int] = (12, 255, 255),
     mask_dir: str | None = None,
+    rights_context: dict[str, Any] | None = None,
     priority: int = 0,
 ) -> dict:
     get_project(conn, user_id=user_id, project_id=project_id)
@@ -111,6 +112,7 @@ def enqueue_extract_job(
         "lower_hsv": list(lower_hsv),
         "upper_hsv": list(upper_hsv),
         "mask_dir": mask_dir,
+        "rights_context": rights_context or {},
     }
     return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="extract", payload=payload, priority=priority)
 

@@ -5,6 +5,7 @@ import mimetypes
 import sqlite3
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,9 @@ from .assets import _asset_row, list_assets_for_job, register_generated_asset
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
 from .queue import claim_next, mark_failed, mark_running, mark_succeeded
+from .rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from .usage import record_usage_event
+
 
 def _json(row: dict[str, Any], field: str) -> dict[str, Any]:
     parsed = json.loads(row[field] or "{}")
@@ -32,6 +35,8 @@ def _kind_for_rel_path(rel_path: str) -> str:
     name = Path(rel_path).name
     if rel_path == "scene_graph.json":
         return "scene_graph"
+    if rel_path == "rights_manifest.json":
+        return "rights_manifest"
     if name == "object_manifest.json":
         return "object_manifest"
     if name == "web_asset_manifest.json":
@@ -43,6 +48,15 @@ def _kind_for_rel_path(rel_path: str) -> str:
     return "extraction_file"
 
 
+def _object_id_for_rel_path(rel_path: str) -> str | None:
+    parts = Path(rel_path.replace("\\", "/")).parts
+    if len(parts) >= 2 and parts[0] == "objects":
+        return parts[1]
+    if len(parts) >= 2 and parts[0] in {"masks"}:
+        return parts[1]
+    return None
+
+
 def _register_output_tree(
     conn: sqlite3.Connection,
     *,
@@ -50,23 +64,51 @@ def _register_output_tree(
     project_id: str,
     job_id: str,
     out_dir: Path,
+    source_asset_id: str | None = None,
 ) -> list[dict]:
     assets: list[dict] = []
+    rights_manifest: dict[str, Any] = {}
+    rights_path = out_dir / "rights_manifest.json"
+    if rights_path.exists():
+        rights_manifest = json.loads(rights_path.read_text(encoding="utf-8"))
+    object_rights = rights_manifest.get("objects", {}) if isinstance(rights_manifest.get("objects"), dict) else {}
     for path in sorted(out_dir.rglob("*")):
         if not path.is_file():
             continue
         rel_path = str(path.relative_to(out_dir)).replace("\\", "/")
-        assets.append(
-            register_generated_asset(
-                conn,
-                storage=storage,
-                project_id=project_id,
-                kind=_kind_for_rel_path(rel_path),
-                source_job_id=job_id,
-                path=path,
-                rel_path=rel_path,
-                content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-            )
+        object_id = _object_id_for_rel_path(rel_path)
+        asset = register_generated_asset(
+            conn,
+            storage=storage,
+            project_id=project_id,
+            kind=_kind_for_rel_path(rel_path),
+            source_job_id=job_id,
+            path=path,
+            rel_path=rel_path,
+            content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        )
+        assets.append(asset)
+        record_asset_lineage(
+            conn,
+            project_id=project_id,
+            source_asset_id=source_asset_id,
+            derived_asset_id=asset["id"],
+            job_id=job_id,
+            operation="extract_object_layer" if object_id else "extract_manifest",
+            object_id=object_id,
+            metadata={"rel_path": rel_path, "kind": asset["kind"]},
+        )
+        rights = object_rights.get(object_id) if object_id else None
+        if isinstance(rights, dict):
+            record_rights_metadata(conn, project_id=project_id, asset_id=asset["id"], object_id=object_id, job_id=job_id, rights=rights)
+        record_audit_event(
+            conn,
+            project_id=project_id,
+            job_id=job_id,
+            asset_id=asset["id"],
+            object_id=object_id,
+            event_type="generated_asset_registered",
+            metadata={"rel_path": rel_path, "kind": asset["kind"]},
         )
     return assets
 
@@ -97,6 +139,13 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
     provider_name = validate_extract_provider_policy(str(payload.get("mask_provider") or "threshold"))
     source_asset = _asset_row(conn, str(payload["asset_id"]))
     source_bytes = storage.load_bytes(source_asset["storage_key"])
+    source_metadata = json.loads(source_asset["metadata_json"] or "{}")
+    source_rights_context = source_metadata.get("rights_context") if isinstance(source_metadata.get("rights_context"), dict) else {}
+    rights_context = {**source_rights_context, **dict(payload.get("rights_context") or {})}
+    if not rights_context.get("source_asset_id"):
+        rights_context["source_asset_id"] = source_asset["id"]
+    if not rights_context.get("source_uri"):
+        rights_context["source_uri"] = source_rights_context.get("source_uri") or source_metadata.get("filename") or source_asset.get("uri")
 
     with tempfile.TemporaryDirectory(prefix="motionjson_backend_extract_") as tmp:
         tmp_dir = Path(tmp)
@@ -123,14 +172,45 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             mask_provider=mask_provider,
             sample_fps=float(payload.get("sample_fps") or 12.0),
             max_frames=payload.get("max_frames"),
+            rights_context=rights_context,
         )
-        assets = _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir)
+        assets = _register_output_tree(
+            conn,
+            storage=storage,
+            project_id=job["project_id"],
+            job_id=job["id"],
+            out_dir=out_dir,
+            source_asset_id=source_asset["id"],
+        )
 
     frames = int(scene.get("source", {}).get("sampledFrameCount") or 0)
     objects = len(scene.get("objects", []))
     record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="frames_processed", quantity=frames, unit="frame")
     record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="objects_extracted", quantity=objects, unit="object")
+    record_audit_event(
+        conn,
+        user_id=job["created_by_user_id"],
+        project_id=job["project_id"],
+        job_id=job["id"],
+        asset_id=source_asset["id"],
+        event_type="extract_completed",
+        metadata={"frames": frames, "objects": objects, "maskProvider": provider_name},
+    )
     return {"scene": {"frames": frames, "objects": objects}, "assetIds": [asset["id"] for asset in assets]}
+
+
+def _source_asset_for_extraction(conn: sqlite3.Connection, *, source_job_id: str) -> str | None:
+    row = conn.execute(
+        """
+        SELECT source_asset_id
+        FROM asset_lineage
+        WHERE job_id = ? AND source_asset_id IS NOT NULL
+        ORDER BY created_at, id
+        LIMIT 1
+        """,
+        (source_job_id,),
+    ).fetchone()
+    return row["source_asset_id"] if row else None
 
 
 def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
@@ -145,6 +225,7 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
         _materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=source_job_id, out_dir=extraction_dir)
         output_path = tmp_dir / "website_package.zip"
         entry = export_website_package(out_dir=extraction_dir, output_path=output_path)
+        source_asset_id = _source_asset_for_extraction(conn, source_job_id=source_job_id)
         asset = register_generated_asset(
             conn,
             storage=storage,
@@ -155,6 +236,29 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
             rel_path="exports/website_package.zip",
             content_type="application/zip",
             metadata={"aiUsage": "none", "exportEntry": entry},
+        )
+        record_asset_lineage(
+            conn,
+            project_id=job["project_id"],
+            source_asset_id=source_asset_id,
+            derived_asset_id=asset["id"],
+            job_id=job["id"],
+            operation="export_website_package",
+            metadata={"format": "website-zip", "sourceJobId": source_job_id},
+        )
+        with zipfile.ZipFile(output_path) as archive:
+            rights_manifest = json.loads(archive.read("rights_manifest.json").decode("utf-8"))
+        for object_id, rights in (rights_manifest.get("objects") or {}).items():
+            if isinstance(rights, dict):
+                record_rights_metadata(conn, project_id=job["project_id"], asset_id=asset["id"], object_id=object_id, job_id=job["id"], rights=rights)
+        record_audit_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            project_id=job["project_id"],
+            job_id=job["id"],
+            asset_id=asset["id"],
+            event_type="website_package_exported",
+            metadata={"format": "website-zip", "aiUsage": "none"},
         )
     record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="exports_produced", quantity=1, unit="export", metadata={"format": "website-zip", "assetId": asset["id"]})
     return {"assetId": asset["id"], "format": "website-zip", "aiUsage": "none"}

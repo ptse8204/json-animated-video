@@ -128,6 +128,18 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--production-avif", action="store_true", help="Try to write an AVIF sprite atlas when Pillow AVIF encoding is available")
     p.add_argument("--benchmark", action="store_true", help="Write benchmark_report.json comparing naive video processing with cached layer preview")
     p.add_argument("--benchmark-iterations", type=int, default=3, help="Number of benchmark playback passes")
+    p.add_argument("--rights-source-type", default="user_upload", help="Rights source type, e.g. user_upload or licensed_stock")
+    p.add_argument("--rights-source-uri", default=None, help="Original source URI for attribution; defaults to the input video path")
+    p.add_argument("--rights-source-asset-id", default=None, help="Optional backend/source asset id for rights lineage")
+    p.add_argument("--rights-display-text", default="User uploaded source video", help="Display text for source attribution")
+    p.add_argument("--license", default="user_uploaded_unverified", help="Structured license id for extracted objects")
+    p.add_argument("--license-name", default="User uploaded - rights unverified", help="Human-readable license name")
+    p.add_argument("--license-url", default=None, help="Optional license URL")
+    p.add_argument("--license-scope", default="unknown", help="License scope, e.g. unknown, editorial, commercial")
+    p.add_argument("--creator-approved", action="store_true", help="Mark creator approval as explicitly approved")
+    p.add_argument("--creator-approval-status", default=None, help="Creator approval status; defaults to approved or unverified")
+    p.add_argument("--commercial-use", action="store_true", help="Mark the asset as cleared for commercial use")
+    p.add_argument("--commercial-use-status", default=None, help="Commercial-use status; defaults to approved only when approval and commercial-use are set")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -285,6 +297,25 @@ def build_multi_object_specs(args: argparse.Namespace) -> list[ObjectExtractionS
     return specs
 
 
+def build_rights_context_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    creator_status = args.creator_approval_status or ("approved" if args.creator_approved else "unverified")
+    commercial_status = args.commercial_use_status or ("approved" if args.commercial_use and args.creator_approved else "review_required")
+    return {
+        "source_type": args.rights_source_type,
+        "source_asset_id": args.rights_source_asset_id,
+        "source_uri": args.rights_source_uri or args.video,
+        "display_text": args.rights_display_text,
+        "license": args.license,
+        "license_name": args.license_name,
+        "license_url": args.license_url,
+        "license_scope": args.license_scope,
+        "creator_approved": args.creator_approved,
+        "creator_approval_status": creator_status,
+        "commercial_use": args.commercial_use,
+        "commercial_use_status": commercial_status,
+    }
+
+
 def run_extract(args: argparse.Namespace) -> dict:
     _validate_single_object_id(args.object_id)
     if args.object_label and not args.object_mask_dir:
@@ -304,11 +335,13 @@ def run_extract(args: argparse.Namespace) -> dict:
             sprite_format=args.sprite_format,
             output_mode=args.output_mode,
             production_avif=args.production_avif,
+            rights_context=build_rights_context_from_args(args),
         )
         out = Path(args.out)
         print(f"Wrote {out / 'scene_graph.json'}")
         print(f"Wrote {out / 'object_motion.json'}")
         print(f"Wrote {out / 'web_asset_manifest.json'}")
+        print(f"Wrote {out / 'rights_manifest.json'}")
         for spec in specs:
             print(f"Wrote {out / 'objects' / spec.object_id / 'object_manifest.json'}")
             print(f"Wrote {out / 'objects' / spec.object_id / 'object_motion.json'}")
@@ -335,6 +368,7 @@ def run_extract(args: argparse.Namespace) -> dict:
             sprite_format=args.sprite_format,
             output_mode=args.output_mode,
             production_avif=args.production_avif,
+            rights_context=build_rights_context_from_args(args),
         )
     except RuntimeError as exc:
         if args.mask_provider in {"sam2", "sam2-local", "sam2-hosted"}:
@@ -362,6 +396,7 @@ def run_extract(args: argparse.Namespace) -> dict:
     print(f"Wrote {out / 'scene_graph.json'}")
     print(f"Wrote {out / 'object_motion.json'}")
     print(f"Wrote {out / 'web_asset_manifest.json'}")
+    print(f"Wrote {out / 'rights_manifest.json'}")
     print(f"Wrote {out / 'resource_profile.json'}")
     print(f"Wrote {out / 'silhouette_lottie.json'}")
     print(f"Wrote {out / 'preview' / 'canvas_player.html'}")

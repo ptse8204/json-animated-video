@@ -103,7 +103,7 @@ def _copy_tree(source: Path, package_root: Path, rel_base: str, files: dict[str,
 
 
 def _include_scene_assets(out_dir: Path, package_root: Path, scene: dict[str, Any], files: dict[str, int]) -> None:
-    for required in ("scene_graph.json", "object_motion.json", "web_asset_manifest.json", "resource_profile.json"):
+    for required in ("scene_graph.json", "object_motion.json", "web_asset_manifest.json", "resource_profile.json", "rights_manifest.json"):
         _copy_file(out_dir / required, package_root, required, files)
 
     for obj in scene.get("objects", []):
@@ -142,12 +142,18 @@ def _write_package_manifest(package_root: Path, scene: dict[str, Any], files: di
     for obj in scene.get("objects", []):
         if obj.get("id") and obj.get("rights"):
             rights[obj["id"]] = obj["rights"]
+    rights_manifest = {}
+    rights_manifest_path = package_root / "rights_manifest.json"
+    if rights_manifest_path.exists():
+        rights_manifest = _load_json(rights_manifest_path)
     manifest = {
         "schema": "motionjson.website_package_manifest.v0.1",
         "packageType": "website_runtime_zip",
         "aiUsage": "none",
         "entrypoint": "index.html",
         "sourceSceneGraph": "scene_graph.json",
+        "rightsManifest": "rights_manifest.json",
+        "rightsSummary": rights_manifest.get("summary", {}),
         "files": [{"path": path, "bytes": size} for path, size in sorted(files.items())],
         "totalBytes": sum(files.values()),
         "rights": rights,
@@ -203,8 +209,9 @@ def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> d
         status="ready" if output_path.exists() and output_path.stat().st_size > 0 else "error",
         mime_type="application/zip",
         extra={
-            "cachedSources": ["scene_graph.json", "web_asset_manifest.json", "object_motion.json", "resource_profile.json", "objects/*"],
+            "cachedSources": ["scene_graph.json", "web_asset_manifest.json", "object_motion.json", "resource_profile.json", "rights_manifest.json", "objects/*"],
             "packageManifest": "package_manifest.json",
+            "rightsManifest": "rights_manifest.json",
             "excludes": list(EXCLUDE_PATTERNS),
             "bytes": _safe_size(output_path),
         },

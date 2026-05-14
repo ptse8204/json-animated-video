@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import Any
 
 from motionjson.providers.base import StorageProvider
+from motionjson.rights import build_object_rights
 
 from .models import NotFoundError
 from .projects import get_project
+from .rights import record_audit_event, record_rights_metadata
 from .usage import record_usage_event, utc_now
 
 SAFE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -105,6 +107,7 @@ def register_upload(
 ) -> dict:
     get_project(conn, user_id=user_id, project_id=project_id)
     source_path = Path(path)
+    input_metadata = dict(metadata or {})
     data = source_path.read_bytes()
     guessed_type = content_type or mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
     key = f"projects/{project_id}/uploads/{uuid.uuid4().hex}_{_safe_name(source_path.name)}"
@@ -118,7 +121,23 @@ def register_upload(
         content_type=guessed_type,
         byte_size=len(data),
         source_job_id=None,
-        metadata={"filename": source_path.name, **(metadata or {})},
+        metadata={"filename": source_path.name, **input_metadata},
+    )
+    rights_context = input_metadata.get("rights_context") if isinstance(input_metadata.get("rights_context"), dict) else input_metadata
+    rights = build_object_rights(
+        object_id="source",
+        context=rights_context,
+        operations=[],
+        fallback_source_uri=str(source_path),
+    )
+    record_rights_metadata(conn, project_id=project_id, asset_id=asset["id"], rights=rights)
+    record_audit_event(
+        conn,
+        user_id=user_id,
+        project_id=project_id,
+        asset_id=asset["id"],
+        event_type="asset_uploaded",
+        metadata={"kind": kind, "filename": source_path.name},
     )
     record_usage_event(conn, user_id=user_id, project_id=project_id, event_type="uploads", quantity=1, unit="asset", metadata={"assetId": asset["id"], "kind": kind})
     record_usage_event(conn, user_id=user_id, project_id=project_id, event_type="bytes_stored", quantity=len(data), unit="byte", metadata={"assetId": asset["id"], "kind": kind})

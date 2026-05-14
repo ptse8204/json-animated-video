@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.rights_manifest.v0.1",
+  "title": "MotionJSON Rights Manifest v0.1",
+  "type": "object",
+  "required": ["schema", "version", "source", "objects", "summary", "assetLineage", "auditLog"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.rights_manifest.v0.1" },
+    "version": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["video", "sourceAttribution"],
+      "additionalProperties": false,
+      "properties": {
+        "video": { "type": "string" },
+        "sourceAttribution": { "$ref": "#/$defs/sourceAttribution" }
+      }
+    },
+    "objects": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/rightsBlock" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["objectCount", "commercialUseApproved", "commercialUseReviewRequired", "attributionRequired", "licenses"],
+      "additionalProperties": false,
+      "properties": {
+        "objectCount": { "type": "integer", "minimum": 0 },
+        "commercialUseApproved": { "type": "boolean" },
+        "commercialUseReviewRequired": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "attributionRequired": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "licenses": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "assetLineage": { "$ref": "#/$defs/assetLineage" },
+    "auditLog": { "$ref": "#/$defs/auditLog" }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceAttribution": {
+      "type": "object",
+      "required": ["required", "sourceType", "sourceAssetId", "sourceUri", "displayText"],
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "sourceType": { "$ref": "#/$defs/nonEmptyString" },
+        "sourceAssetId": { "type": ["string", "null"] },
+        "sourceUri": { "type": "string" },
+        "displayText": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "licenseDetails": {
+      "type": "object",
+      "required": ["name", "url", "scope"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "url": { "type": ["string", "null"] },
+        "scope": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "creatorApproval": {
+      "type": "object",
+      "required": ["approved", "status", "evidence"],
+      "additionalProperties": false,
+      "properties": {
+        "approved": { "type": "boolean" },
+        "status": { "$ref": "#/$defs/nonEmptyString" },
+        "evidence": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "assetLineage": {
+      "type": "object",
+      "required": ["origin", "operations"],
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "$ref": "#/$defs/nonEmptyString" },
+        "operations": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      }
+    },
+    "auditLog": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": true }
+    },
+    "rightsBlock": {
+      "type": "object",
+      "required": ["sourceAttribution", "license", "licenseDetails", "creatorApproval", "commercialUse", "commercialUseStatus", "assetLineage", "auditLog"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceAttribution": { "$ref": "#/$defs/sourceAttribution" },
+        "license": { "$ref": "#/$defs/nonEmptyString" },
+        "licenseDetails": { "$ref": "#/$defs/licenseDetails" },
+        "creatorApproval": { "$ref": "#/$defs/creatorApproval" },
+        "commercialUse": { "type": "boolean" },
+        "commercialUseStatus": { "type": "string", "enum": ["approved", "review_required", "restricted", "rejected", "unverified"] },
+        "assetLineage": { "$ref": "#/$defs/assetLineage" },
+        "auditLog": { "$ref": "#/$defs/auditLog" }
+      }
+    }
+  }
+}

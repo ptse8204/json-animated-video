@@ -10,11 +10,12 @@ from typing import Any
 
 from motionjson.providers.local_storage import LocalStorageProvider
 
-from .assets import register_upload
+from .assets import get_asset, register_upload
 from .auth import authenticate_user, create_session, register_user, require_session
 from .db import connect, initialize_database
 from .jobs import enqueue_export_job, enqueue_extract_job, get_job
 from .projects import create_project, get_project
+from .rights import list_asset_lineage, list_asset_rights
 from .usage import summarize_usage
 from .worker import worker_once
 
@@ -30,6 +31,21 @@ def _default_storage_root() -> str:
 def _add_common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--db", default=_default_db(), help="SQLite database path")
     p.add_argument("--storage-root", default=_default_storage_root(), help="Local storage root")
+
+
+def _add_rights_flags(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--rights-source-type", default=None)
+    p.add_argument("--rights-source-uri", default=None)
+    p.add_argument("--rights-source-asset-id", default=None)
+    p.add_argument("--rights-display-text", default=None)
+    p.add_argument("--license", default=None)
+    p.add_argument("--license-name", default=None)
+    p.add_argument("--license-url", default=None)
+    p.add_argument("--license-scope", default=None)
+    p.add_argument("--creator-approved", action="store_true", default=None)
+    p.add_argument("--creator-approval-status", default=None)
+    p.add_argument("--commercial-use", action="store_true", default=None)
+    p.add_argument("--commercial-use-status", default=None)
 
 
 def add_backend_parser(parser: argparse.ArgumentParser) -> None:
@@ -60,6 +76,7 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     upload.add_argument("--project-id", required=True)
     upload.add_argument("--path", required=True)
     upload.add_argument("--kind", required=True, choices=["source_video", "mask_sequence", "reference", "other"])
+    _add_rights_flags(upload)
 
     extract = sub.add_parser("enqueue-extract", help="Queue deterministic local extraction")
     _add_common(extract)
@@ -69,6 +86,7 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     extract.add_argument("--mask-provider", default="threshold")
     extract.add_argument("--max-frames", type=int, default=None)
     extract.add_argument("--sample-fps", type=float, default=12.0)
+    _add_rights_flags(extract)
 
     export = sub.add_parser("enqueue-export", help="Queue cached-asset website export")
     _add_common(export)
@@ -90,6 +108,11 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     _add_common(usage)
     usage.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
     usage.add_argument("--project-id", required=True)
+
+    asset_rights = sub.add_parser("asset-rights", help="Print local rights and lineage rows for an asset")
+    _add_common(asset_rights)
+    asset_rights.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    asset_rights.add_argument("asset_id")
 
 
 def _open(args: argparse.Namespace) -> tuple[sqlite3.Connection, LocalStorageProvider]:
@@ -115,6 +138,30 @@ def _print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def _rights_context(args: argparse.Namespace) -> dict[str, Any]:
+    creator_status = args.creator_approval_status
+    if creator_status is None and args.creator_approved is True:
+        creator_status = "approved"
+    commercial_status = args.commercial_use_status
+    if commercial_status is None and args.commercial_use is True and args.creator_approved is True:
+        commercial_status = "approved"
+    context = {
+        "source_type": args.rights_source_type,
+        "source_asset_id": args.rights_source_asset_id,
+        "source_uri": args.rights_source_uri,
+        "display_text": args.rights_display_text,
+        "license": args.license,
+        "license_name": args.license_name,
+        "license_url": args.license_url,
+        "license_scope": args.license_scope,
+        "creator_approved": args.creator_approved,
+        "creator_approval_status": creator_status,
+        "commercial_use": args.commercial_use,
+        "commercial_use_status": commercial_status,
+    }
+    return {key: value for key, value in context.items() if value is not None}
+
+
 def run_backend_command(args: argparse.Namespace) -> None:
     if args.backend_command is None:
         raise SystemExit("backend command is required")
@@ -138,7 +185,8 @@ def run_backend_command(args: argparse.Namespace) -> None:
         return
     if args.backend_command == "upload-asset":
         session = _session(conn, args.session_token_env)
-        _print_json(register_upload(conn, storage=storage, user_id=session["user_id"], project_id=args.project_id, path=args.path, kind=args.kind))
+        metadata = {"rights_context": {**_rights_context(args), "source_uri": args.rights_source_uri or args.path}}
+        _print_json(register_upload(conn, storage=storage, user_id=session["user_id"], project_id=args.project_id, path=args.path, kind=args.kind, metadata=metadata))
         return
     if args.backend_command == "enqueue-extract":
         session = _session(conn, args.session_token_env)
@@ -151,6 +199,7 @@ def run_backend_command(args: argparse.Namespace) -> None:
                 mask_provider=args.mask_provider,
                 max_frames=args.max_frames,
                 sample_fps=args.sample_fps,
+                rights_context=_rights_context(args),
             )
         )
         return
@@ -171,5 +220,16 @@ def run_backend_command(args: argparse.Namespace) -> None:
         session = _session(conn, args.session_token_env)
         get_project(conn, user_id=session["user_id"], project_id=args.project_id)
         _print_json(summarize_usage(conn, project_id=args.project_id))
+        return
+    if args.backend_command == "asset-rights":
+        session = _session(conn, args.session_token_env)
+        asset = get_asset(conn, user_id=session["user_id"], asset_id=args.asset_id)
+        _print_json(
+            {
+                "asset": asset,
+                "rights": list_asset_rights(conn, asset_id=args.asset_id),
+                "lineage": list_asset_lineage(conn, asset_id=args.asset_id),
+            }
+        )
         return
     raise SystemExit(f"unknown backend command: {args.backend_command}")

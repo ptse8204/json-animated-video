@@ -153,6 +153,7 @@ def build_web_asset_manifest(
             "estimatedPixelWorkReduction": pixel_work.get("estimatedPixelWorkReduction"),
         },
         "rights": obj.get("rights", {}),
+        "rightsManifest": _prefix_rel(scene.get("rightsManifest", "rights_manifest.json"), path_prefix),
         "notes": [
             "This manifest is the website/runtime package. scene_graph.json remains the richer authoring format.",
             "Use sprite or GPU texture atlas rendering for production; sequence paths are kept for simple MVP fallback.",

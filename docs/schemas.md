@@ -10,6 +10,7 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 - `motionjson.web_asset_manifest.v0.1`: website/runtime package for canvas sprite-layer playback, with optional production WebP/WebM/AVIF asset references.
 - `motionjson.resource_profile.v0.1`: measured package sizes, production resource comparisons, pixel-work estimates, warnings, and cached-preview strategy.
 - `motionjson.final_export_manifest.v0.1`: final export metadata for MP4 renders, transparent WebM object exports, website ZIPs, and Remotion adapter plans.
+- `motionjson.rights_manifest.v0.1`: structured rights metadata, source attribution, license details, creator approval, commercial-use review status, asset lineage, and audit records.
 - `motionjson.correction_request.v0.1`: local mask correction request with add/remove points, box corrections, brush strokes, same-coordinate or centroid-delta propagation, and temporal smoothing settings.
 - `motionjson.correction_manifest.v0.1`: correction result metadata, changed frames, regenerated artifacts, quality, routing, and `aiUsage: none`.
 
@@ -36,6 +37,7 @@ scene_graph.json
 object_motion.json
 web_asset_manifest.json
 resource_profile.json
+rights_manifest.json
 objects/<object_id>/object_manifest.json
 ```
 
@@ -44,6 +46,14 @@ It also recursively checks other JSON files that declare a recognized MotionJSON
 Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively.
 
 Correction request and manifest files are optional for ordinary extraction outputs. When `motionjson correct` writes `correction_request.json` and `correction_manifest.json`, directory validation checks them recursively.
+
+## Rights Fields
+
+Phase 13 adds `rights_manifest.json` and structured embedded rights blocks. Generated scene graphs point to the canonical file with `rightsManifest: "rights_manifest.json"`. Object manifests, web asset manifests, final export manifests, Remotion plans, and website package manifests preserve the same structured rights metadata.
+
+Each rights block contains source attribution, license details, creator approval, commercial-use status, asset lineage, and audit log fields. Defaults are conservative: user-uploaded rights are unverified and commercial use requires review until callers provide explicit metadata. Exports preserve rights while keeping `aiUsage: none`; export and preview use cached raster/alpha assets and JSON transforms only.
+
+See `docs/rights_and_lineage.md`.
 
 ## Production Asset Fields
 
@@ -85,4 +95,4 @@ Correction schemas are provider-neutral. They do not encode OpenRouter, hosted s
 
 ## Final Export Manifest
 
-Phase 8 writes `final_export_manifest.json` next to final exports. Each entry reports type, format, status, output path, bytes, fps, frame count, source scene, optional object id, rights passthrough, and `aiUsage: none`. Export status can be `ready`, `plan_ready`, `not_configured`, `skipped`, `unavailable`, `unsupported`, or `error`.
+Phase 8 writes `final_export_manifest.json` next to final exports. Each entry reports type, format, status, output path, bytes, fps, frame count, source scene, optional object id, rights passthrough, `rightsManifest`, and `aiUsage: none`. Export status can be `ready`, `plan_ready`, `not_configured`, `skipped`, `unavailable`, `unsupported`, or `error`.

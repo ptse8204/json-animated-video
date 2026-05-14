@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import cv2
@@ -48,6 +49,46 @@ def test_pipeline_outputs_validate_against_packaged_schemas(tmp_path):
     assert out / "silhouette_lottie.json" in result.skipped
 
 
+def test_validate_output_dir_accepts_legacy_placeholder_rights(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+    run_pipeline(
+        video_path=video,
+        out_dir=out,
+        mask_provider=ThresholdMaskProvider((0, 80, 80), (12, 255, 255)),
+        sample_fps=6,
+        max_frames=3,
+    )
+    legacy_rights = {
+        "sourceAttribution": True,
+        "license": "user_uploaded_placeholder",
+        "notes": "Rights and likeness review required before remixing third-party footage.",
+    }
+    scene_path = out / "scene_graph.json"
+    scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    scene.pop("rightsManifest", None)
+    scene["objects"][0]["rights"] = legacy_rights
+    scene_path.write_text(json.dumps(scene), encoding="utf-8")
+
+    object_manifest_path = out / "objects" / "object_0" / "object_manifest.json"
+    object_manifest = json.loads(object_manifest_path.read_text(encoding="utf-8"))
+    object_manifest["rights"] = legacy_rights
+    object_manifest_path.write_text(json.dumps(object_manifest), encoding="utf-8")
+
+    web_manifest_path = out / "web_asset_manifest.json"
+    web_manifest = json.loads(web_manifest_path.read_text(encoding="utf-8"))
+    web_manifest.pop("rightsManifest", None)
+    web_manifest["rights"] = legacy_rights
+    web_manifest_path.write_text(json.dumps(web_manifest), encoding="utf-8")
+    (out / "rights_manifest.json").unlink()
+
+    result = validate_output_dir(out)
+
+    assert result.ok, [issue.format() for issue in result.issues]
+    assert out / "rights_manifest.json" not in result.checked
+
+
 def test_validate_file_reports_schema_errors(tmp_path):
     path = tmp_path / "object_motion.json"
     path.write_text(
@@ -78,5 +119,5 @@ def test_validate_output_dir_requires_core_artifacts(tmp_path):
     result = validate_output_dir(out)
 
     assert not result.ok
-    assert len(result.issues) == 5
+    assert len(result.issues) == 6
     assert all("missing" in issue.message for issue in result.issues)

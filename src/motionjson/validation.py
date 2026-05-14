@@ -124,6 +124,17 @@ def validate_output_dir(path: str | Path, *, object_id: str = "object_0") -> Val
     skipped: list[Path] = []
     issues: list[ValidationIssue] = []
 
+    scene_path = root / "scene_graph.json"
+    rights_manifest_path = root / "rights_manifest.json"
+    require_rights_manifest = not scene_path.exists() or rights_manifest_path.exists()
+    if scene_path.exists():
+        try:
+            scene_document = _load_json_file(scene_path)
+        except MotionJSONValidationError:
+            require_rights_manifest = rights_manifest_path.exists()
+        else:
+            require_rights_manifest = rights_manifest_path.exists() or bool(scene_document.get("rightsManifest"))
+
     required = {
         root / "scene_graph.json",
         root / "object_motion.json",
@@ -131,6 +142,8 @@ def validate_output_dir(path: str | Path, *, object_id: str = "object_0") -> Val
         root / "resource_profile.json",
         root / "objects" / object_id / "object_manifest.json",
     }
+    if require_rights_manifest:
+        required.add(rights_manifest_path)
     for candidate in sorted(required):
         if not candidate.exists():
             checked.append(candidate)

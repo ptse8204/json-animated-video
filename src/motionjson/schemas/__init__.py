@@ -12,6 +12,7 @@ SCHEMA_IDS = {
     "motionjson.web_asset_manifest.v0.1": "motionjson.web_asset_manifest.v0.1.schema.json",
     "motionjson.resource_profile.v0.1": "motionjson.resource_profile.v0.1.schema.json",
     "motionjson.final_export_manifest.v0.1": "motionjson.final_export_manifest.v0.1.schema.json",
+    "motionjson.rights_manifest.v0.1": "motionjson.rights_manifest.v0.1.schema.json",
     "motionjson.correction_request.v0.1": "motionjson.correction_request.v0.1.schema.json",
     "motionjson.correction_manifest.v0.1": "motionjson.correction_manifest.v0.1.schema.json",
 }

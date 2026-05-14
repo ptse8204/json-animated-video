@@ -96,6 +96,44 @@ CREATE TABLE IF NOT EXISTS usage_events (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS rights_metadata (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    asset_id TEXT REFERENCES assets(id),
+    object_id TEXT,
+    job_id TEXT REFERENCES jobs(id),
+    rights_json TEXT NOT NULL,
+    creator_approved INTEGER NOT NULL DEFAULT 0,
+    creator_approval_status TEXT NOT NULL,
+    commercial_use INTEGER NOT NULL DEFAULT 0,
+    commercial_use_status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS asset_lineage (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    source_asset_id TEXT REFERENCES assets(id),
+    derived_asset_id TEXT NOT NULL REFERENCES assets(id),
+    job_id TEXT REFERENCES jobs(id),
+    operation TEXT NOT NULL,
+    object_id TEXT,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+    id TEXT PRIMARY KEY,
+    user_id TEXT REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id),
+    job_id TEXT REFERENCES jobs(id),
+    asset_id TEXT REFERENCES assets(id),
+    object_id TEXT,
+    event_type TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_user_id, archived_at);
 CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id, created_at);
@@ -103,6 +141,11 @@ CREATE INDEX IF NOT EXISTS idx_assets_source_job ON assets(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_queue_claim ON queue_items(status, run_after, priority, created_at);
 CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_events(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_rights_asset ON rights_metadata(asset_id, object_id);
+CREATE INDEX IF NOT EXISTS idx_rights_project ON rights_metadata(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_lineage_source ON asset_lineage(source_asset_id);
+CREATE INDEX IF NOT EXISTS idx_lineage_derived ON asset_lineage(derived_asset_id);
+CREATE INDEX IF NOT EXISTS idx_audit_scope ON audit_events(project_id, job_id, asset_id, created_at);
 """
 
 

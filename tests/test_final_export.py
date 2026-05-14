@@ -137,7 +137,8 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
         assert not any(".env" in Path(name).name for name in names)
         package_manifest = json.loads(archive.read("package_manifest.json").decode("utf-8"))
         assert package_manifest["aiUsage"] == "none"
-        assert package_manifest["rights"]["object_0"]["license"] == "user_uploaded_placeholder"
+        assert package_manifest["rights"]["object_0"]["license"] == "user_uploaded_unverified"
+        assert package_manifest["rightsManifest"] == "rights_manifest.json"
 
 
 def test_website_package_ignores_unsafe_scene_asset_paths(tmp_path):

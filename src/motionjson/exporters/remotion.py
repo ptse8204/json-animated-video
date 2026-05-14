@@ -33,6 +33,7 @@ def build_remotion_plan(*, out_dir: str | Path, scene: dict[str, Any]) -> dict[s
         "status": "plan_ready",
         "aiUsage": "none",
         "sourceSceneGraph": "scene_graph.json",
+        "rightsManifest": scene.get("rightsManifest", "rights_manifest.json"),
         "projectConfigured": False,
         "dependencyPolicy": {
             "remotionDependencyAdded": False,
