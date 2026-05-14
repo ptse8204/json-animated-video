@@ -65,4 +65,46 @@ def summarize_usage(conn: sqlite3.Connection, *, project_id: str | None = None, 
     for event in events:
         bucket = totals.setdefault(event["event_type"], {})
         bucket[event["unit"]] = bucket.get(event["unit"], 0.0) + float(event["quantity"])
-    return {"events": events, "totals": totals}
+    return {"events": events, "totals": totals, "costDashboard": build_usage_cost_dashboard(events)}
+
+
+def build_usage_cost_dashboard(events: list[dict[str, Any]]) -> dict[str, Any]:
+    provider_events: dict[str, dict[str, Any]] = {}
+    cache = {"hits": 0, "misses": 0, "readBytes": 0, "writtenBytes": 0}
+    latency_ms = 0.0
+    latency_count = 0
+    for event in events:
+        metadata = json.loads(event.get("metadata_json") or "{}")
+        provider = metadata.get("provider")
+        if isinstance(provider, str) and provider:
+            bucket = provider_events.setdefault(
+                provider,
+                {
+                    "provider": provider,
+                    "attempts": 0,
+                    "estimatedCostUnits": 0.0,
+                    "unitCostUsd": 0.0 if metadata.get("costStatus") == "zero_local_provider_cost" else None,
+                    "costStatus": metadata.get("costStatus") or "unknown_provider_cost",
+                },
+            )
+            if event.get("event_type") == "provider_attempts":
+                bucket["attempts"] += int(float(event.get("quantity") or 0))
+            bucket["estimatedCostUnits"] += float(metadata.get("estimatedCostUnits") or 0.0)
+        if event.get("event_type") == "cache_hits":
+            cache["hits"] += int(float(event.get("quantity") or 0))
+            cache["readBytes"] += int(metadata.get("readBytes") or 0)
+        if event.get("event_type") == "cache_misses":
+            cache["misses"] += int(float(event.get("quantity") or 0))
+            cache["writtenBytes"] += int(metadata.get("writtenBytes") or 0)
+        if event.get("event_type") == "latency_ms":
+            latency_ms += float(event.get("quantity") or 0.0)
+            latency_count += 1
+    requests = cache["hits"] + cache["misses"]
+    return {
+        "schema": "motionjson.backend_cost_dashboard.v0.1",
+        "aiUsage": "none_for_preview_edits",
+        "policy": "Local deterministic providers report zero provider cost; custom hosted costs are explicit unknowns unless supplied by the provider.",
+        "providers": list(provider_events.values()),
+        "cache": {**cache, "hitRate": round(cache["hits"] / requests, 4) if requests else None},
+        "latency": {"totalMs": round(latency_ms, 3), "eventCount": latency_count},
+    }

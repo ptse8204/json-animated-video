@@ -9,6 +9,7 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 - `motionjson.object_motion.v0.1`: compact per-object motion track for JSON transform editing.
 - `motionjson.web_asset_manifest.v0.1`: website/runtime package for canvas sprite-layer playback, with optional production WebP/WebM/AVIF asset references.
 - `motionjson.resource_profile.v0.1`: measured package sizes, production resource comparisons, pixel-work estimates, warnings, and cached-preview strategy.
+- Resource profiles also include provider performance, latency metrics, cost dashboard data, and optional compression optimizer metadata.
 - `motionjson.final_export_manifest.v0.1`: final export metadata for MP4 renders, transparent WebM object exports, website ZIPs, and Remotion adapter plans.
 - `motionjson.rights_manifest.v0.1`: structured rights metadata, source attribution, license details, creator approval, commercial-use review status, asset lineage, and audit records.
 - `motionjson.correction_request.v0.1`: local mask correction request with add/remove points, box corrections, brush strokes, same-coordinate or centroid-delta propagation, and temporal smoothing settings.
@@ -65,6 +66,27 @@ Production assets are additive and opt in through extraction flags such as `--ou
 - `resource_profile.json`: `productionAssets` and `resourceComparison`
 
 Each production export reports a status such as `ready`, `skipped`, `unavailable`, `unsupported`, or `error`. Transparent WebM reports `unavailable` when local `ffmpeg` is missing. AVIF reports `unsupported` when the installed Pillow build cannot encode AVIF. These assets are derived from cached raster/alpha cutouts and JSON transforms; they do not trigger AI inference.
+
+When production assets are present, `compressionOptimizer` compares local
+candidates such as WebP sprite atlas, transparent WebM, and optional AVIF
+sprite atlas against the cached PNG cutout sequence. It selects the smallest
+ready candidate and reports bytes saved, status, path, and `aiUsage: none`.
+
+## Performance Fields
+
+Phase 16 adds additive observability fields:
+
+- `scene_graph.json`: `providerPerformance`, `latencyMetrics`, and
+  `costDashboard`
+- `resource_profile.json`: `providerPerformance`, `latencyMetrics`,
+  `costDashboard`, and optional `compressionOptimizer`
+
+`providerPerformance` records provider attempts, batch usage, fallback results,
+provider names, timings, and cache summaries where available. `latencyMetrics`
+records extraction phase timings. `costDashboard` summarizes provider attempts,
+explicit zero or unknown provider costs, cache hit/miss data, latency, and
+compression optimizer status. OpenRouter remains LLM/VLM-only and is never
+reported as a segmentation provider.
 
 ## Quality Fields
 

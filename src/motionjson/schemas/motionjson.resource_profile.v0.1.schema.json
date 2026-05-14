@@ -87,9 +87,25 @@
       "type": ["object", "null"],
       "additionalProperties": true
     },
+    "compressionOptimizer": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
     "resourceComparison": {
       "type": "object",
       "additionalProperties": { "type": ["number", "integer", "string", "boolean", "null"] }
+    },
+    "providerPerformance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "latencyMetrics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "costDashboard": {
+      "type": "object",
+      "additionalProperties": true
     },
     "previewStrategy": {
       "type": "object",

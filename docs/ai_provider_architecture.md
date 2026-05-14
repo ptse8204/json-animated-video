@@ -6,6 +6,11 @@ MotionJSON uses AI object-layer editing for video and web graphics. AI should he
 
 Phase 2 defined swappable provider interfaces without changing the local MVP pipeline. Phase 3 adds SAM2-compatible segmentation providers behind that interface. The current CLI mask modes remain available, and photoreal objects remain raster/alpha by default. SVG/Lottie remains limited to simple vector-like silhouettes, labels, annotations, icons, and flat graphics.
 
+Phase 16 adds provider performance primitives. Provider attempts, batch hooks,
+cache summaries, fallback outcomes, estimated cost units, and compression
+outcomes are reported as data. They do not introduce GPU, torch, hosted API, or
+paid-provider dependencies.
+
 ## Phase 2-3 Boundaries
 
 Included:
@@ -17,6 +22,11 @@ Included:
 - Optional local SAM2-compatible segmentation provider with lazy imports and injected fake predictor support.
 - Hosted SAM2-compatible segmentation provider with injected client/transport support and no default network calls.
 - Mask cache for normalized binary PNG masks under an ignored cache directory.
+- Optional batch segmentation request shape for providers that can process
+  multiple frames together, with sequential fallback for existing providers.
+- Segmentation-provider fallback routing with provider names, primary failures,
+  fallback successes/failures, timings, and best-effort close semantics.
+- Resource profile cost dashboards for provider/cache/latency/compression data.
 - `.env.example` placeholders with no secrets.
 
 Not included:
@@ -62,6 +72,19 @@ class SegmentationProvider:
 ```
 
 Dedicated segmentation options include existing demo providers, external masks, local SAM2-compatible providers, hosted SAM2-compatible providers, and optional credential-gated Replicate/RunPod stubs. OpenRouter is not a segmentation engine.
+
+Batch-capable providers can also implement:
+
+```python
+class BatchSegmentationProvider(SegmentationProvider):
+    def segment_batch(self, requests):
+        ...
+```
+
+Each request contains `frame_index`, `frame_bgr`, and optional point/box
+prompts. The core project only defines the hook and request shape; GPU batching
+is a provider implementation detail. Existing providers are routed through the
+same abstraction with sequential fallback.
 
 ### MattingProvider
 
@@ -145,11 +168,38 @@ The legacy `sam2` path remains a stub unless a concrete client is injected. Phas
 
 `sam2-local` lazy-imports SAM2 only when a predictor or predictor factory is not injected. `sam2-hosted` requires an injected client/transport or explicit network opt-in with endpoint and auth. OpenRouter is never used as a mask provider.
 
+Use `--fallback-mask-provider threshold` or `--fallback-mask-provider motion`
+when a primary segmentation provider should fall back to a local deterministic
+provider. Fallback routing is segmentation-only. Names such as `openrouter`,
+`llm`, and `vlm` are rejected before execution.
+
 ## Mask Cache
 
 `MaskCache` lives in `src/motionjson/providers/mask_cache.py`. It stores provider-independent binary PNG masks and a manifest under `.motionjson-cache/masks` by default. Cache keys include provider, config, source video, prompt, object id, and video metadata; per-frame PNG names carry the frame index. The extraction pipeline receives normalized `uint8` arrays with values `0` or `255`.
 
 The cache is an optimization for ingest/correction-time work. Preview and editing still use generated assets and JSON transforms.
+
+`MaskCache.summary()` reports entry count, stored mask count, stored bytes,
+hits, misses, hit rate, read bytes, and written bytes. SAM2 providers attach
+this summary to provider performance metadata. LLM/OpenRouter paths do not use
+the segmentation mask cache.
+
+## Performance And Cost Reports
+
+`ProviderAttempt`, `PhaseTiming`, `BatchSegmentationRequest`, and
+`CompressionOutcome` live in `src/motionjson/providers/base.py`. Extraction
+outputs surface them through:
+
+- `scene_graph.json`: `providerPerformance`, `latencyMetrics`, and
+  `costDashboard`
+- `resource_profile.json`: the same provider/cache/latency/cost data plus
+  `compressionOptimizer` when production assets are enabled
+- backend job events: `latency_metrics` and `cost_dashboard`
+- backend usage: provider attempts, cache hits/misses, and latency totals
+
+Local deterministic providers report zero local provider cost. Hosted/custom
+providers report explicit unknown cost unless the provider supplies a concrete
+cost model. No paid API call is hardcoded by these reports.
 
 ## OpenRouter Scope
 

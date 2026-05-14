@@ -105,6 +105,16 @@ The starter repo now includes:
 `benchmark_report.json` adds a runtime comparison between naive sampled video decoding and cached cropped-layer compositing, which is closer to the browser preview loop used after extraction.
 When production mode is enabled, the profile also compares the authoring/debug package with production WebP/WebM/AVIF payloads and records explicit encoder support status.
 
+Phase 16 adds deterministic performance and cost reporting to the same object-layer workflow:
+
+- provider attempts, fallback outcomes, and per-phase latency metrics
+- segmentation cache hit/miss/byte summaries for ingest-time mask reuse
+- optional batch segmentation request hooks with sequential fallback for non-batch providers
+- a cost dashboard that reports zero local provider cost or explicit unknown hosted/provider cost
+- compression optimizer metadata that compares local cached-asset candidates and selects the smallest ready production asset
+
+These reports do not change preview behavior. Normal drag, scale, rotate, timeline scrub, and website playback still operate on cached raster/alpha assets plus JSON transforms.
+
 ## Production optimization path
 
 1. Keep WebP/AVIF sprites and transparent WebM as production package options derived from cached cutouts.
@@ -114,6 +124,7 @@ When production mode is enabled, the profile also compares the authoring/debug p
 5. Batch segmentation requests.
 6. Self-host segmentation only after usage proves API cost/latency bottlenecks.
 7. Use quality routing to avoid expensive vectorization when raster is better.
+8. Track cache hit rate, fallback rate, latency, and compression savings before changing provider strategy.
 
 ## Commercial acceptance
 

@@ -58,6 +58,18 @@
       }
     },
     "rightsManifest": { "type": "string", "minLength": 1 },
+    "providerPerformance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "latencyMetrics": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "costDashboard": {
+      "type": "object",
+      "additionalProperties": true
+    },
     "resource_profile": {
       "type": "object",
       "additionalProperties": true

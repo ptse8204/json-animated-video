@@ -34,6 +34,22 @@ OpenRouter-style LLM/VLM routing remains reasoning-only and is explicitly not
 accepted as a pixel segmentation provider. Hosted/SAM2/network providers remain
 separate opt-in integration points and are not used by backend tests.
 
+## Usage, Latency, And Cost Dashboard
+
+Phase 16 records extraction performance data without changing provider policy.
+Backend extraction jobs persist:
+
+- `latency_ms` usage events and a `latency_metrics` job event
+- provider attempt usage events derived from the extraction cost dashboard
+- cache hit and miss usage events with byte metadata
+- a `cost_dashboard` job event that reports local zero-cost providers or
+  explicit unknown hosted/custom provider costs
+
+`python -m motionjson.cli backend usage` returns `costDashboard` alongside raw
+events and totals. The dashboard is advisory accounting over recorded
+usage/provider/cache/latency data. It does not make paid API calls and does not
+store secrets.
+
 ## CLI
 
 ```bash

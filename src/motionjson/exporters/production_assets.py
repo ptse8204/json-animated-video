@@ -10,6 +10,7 @@ from typing import Any
 from PIL import Image, features
 
 from ..layers import write_spritesheet
+from ..providers.base import CompressionOutcome
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -24,6 +25,12 @@ def _safe_size(path: Path) -> int:
         return path.stat().st_size
     except FileNotFoundError:
         return 0
+
+
+def _dir_size(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(child.stat().st_size for child in path.rglob("*") if child.is_file())
 
 
 def _visible_cutout_paths(out_dir: Path, motion: list[dict[str, Any]]) -> list[Path]:
@@ -316,6 +323,54 @@ def export_production_assets(
 
     statuses = [webp["status"], avif["status"], webm["status"]]
     ready_count = sum(1 for status in statuses if status == "ready")
+    source_bytes = _dir_size(out_dir / "objects" / object_id / "cutouts")
+    candidates = [
+        CompressionOutcome(
+            name="webpSpriteAtlas",
+            status=str(webp.get("status") or "error"),
+            bytes=int(webp.get("bytes") or 0),
+            source_bytes=source_bytes,
+            path=webp.get("path"),
+            reason=webp.get("reason"),
+        ).to_dict(),
+        CompressionOutcome(
+            name="transparentWebm",
+            status=str(webm.get("status") or "error"),
+            bytes=int(webm.get("bytes") or 0),
+            source_bytes=source_bytes,
+            path=webm.get("path"),
+            reason=webm.get("reason"),
+        ).to_dict(),
+        CompressionOutcome(
+            name="avifSpriteAtlas",
+            status=str(avif.get("status") or "error"),
+            bytes=int(avif.get("bytes") or 0),
+            source_bytes=source_bytes,
+            path=avif.get("path"),
+            reason=avif.get("reason"),
+        ).to_dict(),
+    ]
+    ready_candidates = [candidate for candidate in candidates if candidate["status"] == "ready" and candidate["bytes"] > 0]
+    selected = min(ready_candidates, key=lambda candidate: candidate["bytes"], default=None)
+    optimizer = {
+        "schema": "motionjson.compression_optimizer.v0.1",
+        "source": "cached_rgba_cutout_png_sequence",
+        "aiUsage": "none",
+        "sourceBytes": source_bytes,
+        "candidates": candidates,
+        "selected": selected
+        or {
+            "name": None,
+            "status": "no_ready_candidates",
+            "bytes": 0,
+            "source_bytes": source_bytes,
+            "path": None,
+            "reason": "no local compression candidate produced ready bytes",
+            "bytesSaved": 0,
+            "ratioToSource": None,
+            "aiUsage": "none",
+        },
+    }
     return {
         "mode": "production",
         "status": "ready" if ready_count else "no_ready_assets",
@@ -326,4 +381,5 @@ def export_production_assets(
             "transparentWebm": webm,
             "avifSpriteAtlas": avif,
         },
+        "compressionOptimizer": optimizer,
     }

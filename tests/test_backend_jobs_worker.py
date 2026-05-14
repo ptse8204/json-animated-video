@@ -54,6 +54,8 @@ def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):
     assert {"scene_graph", "object_manifest", "web_manifest"}.issubset(kinds)
     assert usage["totals"]["frames_processed"]["frame"] == 3.0
     assert usage["totals"]["objects_extracted"]["object"] == 1.0
+    assert usage["totals"]["latency_ms"]["ms"] >= 0
+    assert usage["costDashboard"]["schema"] == "motionjson.backend_cost_dashboard.v0.1"
 
 
 def test_extract_worker_runs_mock_provider_without_network(tmp_path):

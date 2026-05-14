@@ -69,6 +69,8 @@ def test_production_mode_exports_cached_asset_formats_and_validates(tmp_path):
     production = scene["objects"][0]["assets"]["production"]
     assert production["aiUsage"] == "none"
     assert production["source"] == "cached_cutout_pngs_and_motion_json"
+    assert production["compressionOptimizer"]["aiUsage"] == "none"
+    assert production["compressionOptimizer"]["selected"]["status"] in {"ready", "no_ready_candidates"}
 
     webp = production["assets"]["webpSpriteAtlas"]
     assert webp["status"] == "ready"
@@ -97,6 +99,8 @@ def test_production_mode_exports_cached_asset_formats_and_validates(tmp_path):
 
     profile = scene["resource_profile"]
     assert profile["productionAssets"]["assets"]["webpSpriteAtlas"]["status"] == "ready"
+    assert profile["compressionOptimizer"]["selected"]["name"] in {"webpSpriteAtlas", "transparentWebm", "avifSpriteAtlas"}
+    assert profile["costDashboard"]["policy"].startswith("Segmentation providers are separate")
     assert profile["resourceComparison"]["productionPackageBytes"] > 0
     assert profile["sizes"]["payloads"]["production_webp_sprite_atlas_bytes"] > 0
     assert_profile_payloads_match_files(profile["sizes"]["payloads"], profile_payload_sizes(out))

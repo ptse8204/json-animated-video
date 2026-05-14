@@ -112,6 +112,33 @@ Use `--mask-cache-dir` to move the cache, or `--no-mask-cache` to disable it:
 --no-mask-cache
 ```
 
+Each `MaskCache` instance also exposes a deterministic summary with hits,
+misses, hit rate, read bytes, written bytes, stored bytes, entry count, and
+mask count. SAM2 provider performance reports include this cache summary so a
+caller can see whether ingest/correction work reused cached masks.
+
+## Batch Hooks And Fallback
+
+SAM2 providers implement the optional `segment_batch()` hook. If an injected
+predictor or hosted client exposes a native batch method, the provider can use
+it. Otherwise MotionJSON routes the batch request shape through the existing
+per-frame `segment()` path. This adds GPU batching hooks without making GPU
+libraries default dependencies.
+
+The CLI can route a SAM2 provider through a deterministic segmentation fallback:
+
+```bash
+python -m motionjson.cli extract input.mp4 \
+  --out out/sam2-with-fallback \
+  --mask-provider sam2-local \
+  --fallback-mask-provider threshold \
+  --prompt-point 410,230
+```
+
+Fallback routing records primary failures, fallback successes or failures,
+provider names, and timings in `providerPerformance`. OpenRouter, LLM, and VLM
+providers are rejected as segmentation fallbacks.
+
 ## Optional Hosted Stubs
 
 `motionjson.adapters.sam2_replicate` and `motionjson.adapters.sam2_runpod` are explicit integration stubs. They are credential-gated and are not default dependencies.

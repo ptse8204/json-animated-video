@@ -42,6 +42,10 @@ class MaskCache:
     root: str | Path = ".motionjson-cache/masks"
     manifest_name: str = "manifest.json"
     _manifest: dict[str, Any] = field(default_factory=dict, init=False)
+    hits: int = field(default=0, init=False)
+    misses: int = field(default=0, init=False)
+    read_bytes: int = field(default=0, init=False)
+    written_bytes: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self.root = Path(self.root)
@@ -73,14 +77,19 @@ class MaskCache:
     def get(self, key: str, *, frame_index: int = 0) -> np.ndarray | None:
         entry = self._manifest.get("entries", {}).get(key)
         if not entry:
+            self.misses += 1
             return None
         masks = entry.get("masks", {})
         rel_path = masks.get(str(frame_index))
         if rel_path is None:
+            self.misses += 1
             return None
         path = self.root / rel_path
         if not path.exists():
+            self.misses += 1
             return None
+        self.hits += 1
+        self.read_bytes += path.stat().st_size
         return normalize_binary_mask(np.array(Image.open(path).convert("L")))
 
     def set(self, key: str, mask: np.ndarray, *, frame_index: int = 0, metadata: Mapping[str, Any] | None = None) -> Path:
@@ -88,6 +97,7 @@ class MaskCache:
         path = self._path_for_key(key, frame_index=frame_index)
         path.parent.mkdir(parents=True, exist_ok=True)
         Image.fromarray(binary).save(path)
+        self.written_bytes += path.stat().st_size
 
         self.root.mkdir(parents=True, exist_ok=True)
         entries = self._manifest.setdefault("entries", {})
@@ -99,6 +109,33 @@ class MaskCache:
         self._write_entry_manifest(key, entry)
         self._write_manifest()
         return path
+
+    def summary(self) -> dict[str, Any]:
+        entries = self._manifest.get("entries", {})
+        manifest_masks = 0
+        manifest_bytes = 0
+        for entry in entries.values():
+            masks = entry.get("masks", {}) if isinstance(entry, Mapping) else {}
+            manifest_masks += len(masks)
+            for rel_path in masks.values():
+                path = self.root / str(rel_path)
+                if path.exists():
+                    manifest_bytes += path.stat().st_size
+        requests = self.hits + self.misses
+        hit_rate = round(self.hits / requests, 4) if requests else None
+        return {
+            "schema": "motionjson.mask_cache_summary.v0.1",
+            "root": str(self.root),
+            "entries": len(entries),
+            "maskCount": manifest_masks,
+            "storedBytes": manifest_bytes,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hitRate": hit_rate,
+            "readBytes": self.read_bytes,
+            "writtenBytes": self.written_bytes,
+            "aiUsage": "none",
+        }
 
     def _path_for_key(self, key: str, *, frame_index: int) -> Path:
         return self.root / key / f"mask_{frame_index:06d}.png"

@@ -40,6 +40,111 @@ def _asset_bytes(asset: dict[str, Any] | None) -> int:
     return int(asset.get("bytes") or 0)
 
 
+ZERO_COST_SEGMENTATION_PROVIDERS = {
+    "thresholdmaskprovider",
+    "motionmaskprovider",
+    "externalmaskprovider",
+    "mock",
+    "mocksegmentationprovider",
+    "sam2-local",
+    "maskprovidersegmentationadapter",
+}
+
+
+def _attempts_from_provider_performance(provider_performance: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(provider_performance, dict):
+        return []
+    attempts: list[dict[str, Any]] = []
+    for item in provider_performance.get("objects", []):
+        if isinstance(item, dict):
+            nested = item.get("providerSummary")
+            if isinstance(nested, dict):
+                attempts.extend(attempt for attempt in nested.get("attempts", []) if isinstance(attempt, dict))
+                nested_nested = nested.get("nested")
+                if isinstance(nested_nested, dict):
+                    attempts.extend(attempt for attempt in nested_nested.get("attempts", []) if isinstance(attempt, dict))
+            else:
+                attempts.extend(attempt for attempt in item.get("attempts", []) if isinstance(attempt, dict))
+    attempts.extend(attempt for attempt in provider_performance.get("attempts", []) if isinstance(attempt, dict))
+    return attempts
+
+
+def _cache_totals(provider_performance: dict[str, Any] | None) -> dict[str, Any]:
+    totals = {"hits": 0, "misses": 0, "readBytes": 0, "writtenBytes": 0, "storedBytes": 0}
+    if not isinstance(provider_performance, dict):
+        return {**totals, "hitRate": None}
+    caches: list[dict[str, Any]] = []
+    for item in provider_performance.get("objects", []):
+        if not isinstance(item, dict):
+            continue
+        for candidate in (item.get("cache"), item.get("providerSummary", {}).get("cache") if isinstance(item.get("providerSummary"), dict) else None):
+            if isinstance(candidate, dict):
+                caches.append(candidate)
+    for cache in caches:
+        for key in totals:
+            totals[key] += int(cache.get(key) or 0)
+    requests = totals["hits"] + totals["misses"]
+    return {**totals, "hitRate": round(totals["hits"] / requests, 4) if requests else None}
+
+
+def build_cost_dashboard(
+    *,
+    provider_performance: dict[str, Any] | None = None,
+    latency_metrics: dict[str, Any] | None = None,
+    production_assets: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize provider, cache, latency, and compression cost signals without paid calls."""
+    attempts = _attempts_from_provider_performance(provider_performance)
+    provider_names = sorted({str(attempt.get("provider") or "unknown") for attempt in attempts})
+    providers: list[dict[str, Any]] = []
+    total_units = 0.0
+    unknown_costs = 0
+    for name in provider_names:
+        name_key = name.lower()
+        provider_attempts = [attempt for attempt in attempts if str(attempt.get("provider") or "unknown") == name]
+        estimated_units = sum(float(attempt.get("estimated_cost_units") or 0.0) for attempt in provider_attempts)
+        total_units += estimated_units
+        if name_key in ZERO_COST_SEGMENTATION_PROVIDERS or name_key.startswith("threshold") or name_key.startswith("external"):
+            cost_status = "zero_local_provider_cost"
+            unit_cost = 0.0
+        elif "hosted" in name_key:
+            cost_status = "unknown_external_provider_cost"
+            unit_cost = None
+            unknown_costs += 1
+        else:
+            cost_status = "unknown_local_or_custom_provider_cost"
+            unit_cost = None
+            unknown_costs += 1
+        providers.append(
+            {
+                "provider": name,
+                "attempts": len(provider_attempts),
+                "successes": sum(1 for attempt in provider_attempts if attempt.get("status") == "success"),
+                "failures": sum(1 for attempt in provider_attempts if attempt.get("status") == "error"),
+                "estimatedCostUnits": round(estimated_units, 4),
+                "unitCostUsd": unit_cost,
+                "costStatus": cost_status,
+            }
+        )
+    compression = None
+    if isinstance(production_assets, dict):
+        compression = production_assets.get("compressionOptimizer")
+    return {
+        "schema": "motionjson.cost_dashboard.v0.1",
+        "aiUsage": "none_for_preview_edits",
+        "policy": "Segmentation providers are separate from LLM routing; OpenRouter is never used as a pixel segmentation engine.",
+        "providers": providers,
+        "totals": {
+            "providerAttempts": len(attempts),
+            "estimatedCostUnits": round(total_units, 4),
+            "unknownProviderCostCount": unknown_costs,
+        },
+        "cache": _cache_totals(provider_performance),
+        "latency": latency_metrics or {},
+        "compression": compression,
+    }
+
+
 def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, object_id: str, scene: dict[str, Any]) -> dict[str, Any]:
     """Build an honest profile of package size and preview/edit strategy."""
     video_path = Path(video_path)
@@ -131,6 +236,15 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
         warnings.append("Full extracted package is larger than source video because it includes debug frames, masks, cutouts, manifests, and previews.")
 
     production_assets = obj.get("assets", {}).get("production", {})
+    provider_performance = scene.get("providerPerformance") if isinstance(scene.get("providerPerformance"), dict) else {}
+    latency_metrics = scene.get("latencyMetrics") if isinstance(scene.get("latencyMetrics"), dict) else {}
+    cost_dashboard = scene.get("costDashboard")
+    if not isinstance(cost_dashboard, dict):
+        cost_dashboard = build_cost_dashboard(
+            provider_performance=provider_performance,
+            latency_metrics=latency_metrics,
+            production_assets=production_assets if isinstance(production_assets, dict) else None,
+        )
     production_asset_status = production_assets.get("assets", {}) if isinstance(production_assets, dict) else {}
     webp_asset = production_asset_status.get("webpSpriteAtlas")
     avif_asset = production_asset_status.get("avifSpriteAtlas")
@@ -173,7 +287,11 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
             "payloads": payloads,
         },
         "productionAssets": production_assets or None,
+        "compressionOptimizer": production_assets.get("compressionOptimizer") if isinstance(production_assets, dict) else None,
         "resourceComparison": resource_comparison,
+        "providerPerformance": provider_performance,
+        "latencyMetrics": latency_metrics,
+        "costDashboard": cost_dashboard,
         "previewStrategy": {
             "runtime": "Canvas2D MVP; WebGL/PixiJS texture atlas recommended for production",
             "aiUsage": "Run AI at ingest/correction time, not during normal playback or transform edits.",

@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 from ..video import VideoInfo
+from .base import BatchSegmentationRequest
 
 
 @dataclass
@@ -41,6 +42,7 @@ class MockSegmentationProvider:
 
     box: tuple[int, int, int, int] | None = None
     video_metadata: VideoInfo | None = field(default=None, init=False)
+    provider_name: str = "mock"
 
     def prepare(self, video_metadata: VideoInfo) -> None:
         self.video_metadata = video_metadata
@@ -63,8 +65,22 @@ class MockSegmentationProvider:
         mask[y0:y1, x0:x1] = 255
         return mask
 
+    def segment_batch(self, requests: Sequence[BatchSegmentationRequest]) -> Sequence[np.ndarray]:
+        return [
+            self.segment(
+                request.frame_index,
+                request.frame_bgr,
+                prompt_point=request.prompt_point,
+                prompt_box=request.prompt_box,
+            )
+            for request in requests
+        ]
+
     def close(self) -> None:
         return None
+
+    def performance_summary(self) -> dict[str, Any]:
+        return {"providerName": self.provider_name, "cost": {"estimatedCostUnits": 0.0, "unit": "local", "costStatus": "zero_local_runtime"}}
 
 
 @dataclass

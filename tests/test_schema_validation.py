@@ -89,6 +89,26 @@ def test_validate_output_dir_accepts_legacy_placeholder_rights(tmp_path):
     assert out / "rights_manifest.json" not in result.checked
 
 
+def test_resource_profile_schema_accepts_pre_phase16_profiles(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+    run_pipeline(
+        video_path=video,
+        out_dir=out,
+        mask_provider=ThresholdMaskProvider((0, 80, 80), (12, 255, 255)),
+        sample_fps=6,
+        max_frames=3,
+    )
+    profile_path = out / "resource_profile.json"
+    profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    for key in ("providerPerformance", "latencyMetrics", "costDashboard", "compressionOptimizer"):
+        profile.pop(key, None)
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+
+    assert validate_file(profile_path).ok
+
+
 def test_validate_file_reports_schema_errors(tmp_path):
     path = tmp_path / "object_motion.json"
     path.write_text(

@@ -189,8 +189,65 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
 
     frames = int(scene.get("source", {}).get("sampledFrameCount") or 0)
     objects = len(scene.get("objects", []))
+    resource_profile = scene.get("resource_profile") if isinstance(scene.get("resource_profile"), dict) else {}
+    latency_metrics = resource_profile.get("latencyMetrics") if isinstance(resource_profile.get("latencyMetrics"), dict) else scene.get("latencyMetrics", {})
+    provider_performance = resource_profile.get("providerPerformance") if isinstance(resource_profile.get("providerPerformance"), dict) else scene.get("providerPerformance", {})
+    cost_dashboard = resource_profile.get("costDashboard") if isinstance(resource_profile.get("costDashboard"), dict) else scene.get("costDashboard", {})
     record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="frames_processed", quantity=frames, unit="frame")
     record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="objects_extracted", quantity=objects, unit="object")
+    if isinstance(latency_metrics, dict):
+        total_ms = float(latency_metrics.get("totalElapsedMs") or 0.0)
+        record_usage_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            project_id=job["project_id"],
+            job_id=job["id"],
+            event_type="latency_ms",
+            quantity=total_ms,
+            unit="ms",
+            metadata={"phase": "extract_total"},
+        )
+        record_job_event(conn, job_id=job["id"], event_type="latency_metrics", message="extraction latency metrics recorded", metadata=latency_metrics)
+    if isinstance(cost_dashboard, dict):
+        for provider in cost_dashboard.get("providers", []):
+            if not isinstance(provider, dict):
+                continue
+            record_usage_event(
+                conn,
+                user_id=job["created_by_user_id"],
+                project_id=job["project_id"],
+                job_id=job["id"],
+                event_type="provider_attempts",
+                quantity=float(provider.get("attempts") or 0),
+                unit="attempt",
+                metadata={
+                    "provider": provider.get("provider"),
+                    "estimatedCostUnits": provider.get("estimatedCostUnits"),
+                    "costStatus": provider.get("costStatus"),
+                },
+            )
+        cache = cost_dashboard.get("cache") if isinstance(cost_dashboard.get("cache"), dict) else {}
+        record_usage_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            project_id=job["project_id"],
+            job_id=job["id"],
+            event_type="cache_hits",
+            quantity=float(cache.get("hits") or 0),
+            unit="hit",
+            metadata={"readBytes": cache.get("readBytes", 0)},
+        )
+        record_usage_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            project_id=job["project_id"],
+            job_id=job["id"],
+            event_type="cache_misses",
+            quantity=float(cache.get("misses") or 0),
+            unit="miss",
+            metadata={"writtenBytes": cache.get("writtenBytes", 0)},
+        )
+        record_job_event(conn, job_id=job["id"], event_type="cost_dashboard", message="provider cost dashboard recorded", metadata=cost_dashboard)
     record_audit_event(
         conn,
         user_id=job["created_by_user_id"],
@@ -198,9 +255,9 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         job_id=job["id"],
         asset_id=source_asset["id"],
         event_type="extract_completed",
-        metadata={"frames": frames, "objects": objects, "maskProvider": provider_name},
+        metadata={"frames": frames, "objects": objects, "maskProvider": provider_name, "latencyMetrics": latency_metrics, "providerPerformance": provider_performance},
     )
-    return {"scene": {"frames": frames, "objects": objects}, "assetIds": [asset["id"] for asset in assets]}
+    return {"scene": {"frames": frames, "objects": objects}, "assetIds": [asset["id"] for asset in assets], "latencyMetrics": latency_metrics, "costDashboard": cost_dashboard}
 
 
 def _source_asset_for_extraction(conn: sqlite3.Connection, *, source_job_id: str) -> str | None:

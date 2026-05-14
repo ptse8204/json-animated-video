@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,10 +17,11 @@ from .exporters.scene_graph import write_json
 from .exporters.web_manifest import write_web_asset_manifest
 from .layers import crop_rgba_layer, write_spritesheet
 from .masks import MaskProvider
-from .metrics import build_resource_profile
+from .metrics import build_cost_dashboard, build_resource_profile
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
 from .vectorize import build_quality_scores, mask_to_largest_polygon, recommended_output
 from .video import iter_sampled_frames
+from .providers.base import BatchSegmentationRequest, PhaseTiming, ProviderAttempt
 
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -81,6 +83,10 @@ def _preview_copy(out_dir: Path) -> None:
 
 def _rel(path: Path, root: Path) -> str:
     return str(path.relative_to(root)).replace("\\", "/")
+
+
+def _elapsed_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 3)
 
 
 def _object_dir(out_dir: Path, object_id: str) -> Path:
@@ -195,7 +201,7 @@ def _extract_object(
     output_mode: str,
     production_avif: bool,
     rights_context: dict[str, Any] | None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     object_id = spec.object_id
     mask_dir = out_dir / "masks" / object_id
     object_dir = _object_dir(out_dir, object_id)
@@ -214,8 +220,25 @@ def _extract_object(
     detailed_frames: list[dict[str, Any]] = []
     motion: list[dict[str, Any]] = []
     cutout_paths: list[Path] = []
+    mask_timings: list[float] = []
+    mask_attempts: list[dict[str, Any]] = []
+    batch_summary = {"supported": callable(getattr(spec.mask_provider, "get_masks_batch", None)), "used": False}
+    prepared_frames: list[tuple[Any, Any]] = []
+    batch_masks: dict[int, Any] = {}
 
     try:
+        for frame in frames:
+            prepared_frames.append((frame, cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)))
+        batch_getter = getattr(spec.mask_provider, "get_masks_batch", None)
+        if callable(batch_getter):
+            batch_start = time.perf_counter()
+            requests = [
+                BatchSegmentationRequest(frame_index=frame.index, frame_bgr=frame_bgr)
+                for frame, frame_bgr in prepared_frames
+            ]
+            masks = list(batch_getter(requests))
+            batch_summary.update({"used": True, "requestCount": len(requests), "elapsedMs": _elapsed_ms(batch_start)})
+            batch_masks = {frame.index: mask for (frame, _frame_bgr), mask in zip(prepared_frames, masks)}
         for frame in tqdm(frames, desc=f"processing {object_id}"):
             frame_number = frame.out_index + 1
             frame_name = f"frame_{frame_number:06d}.png"
@@ -228,8 +251,24 @@ def _extract_object(
 
             if not frame_path.exists():
                 Image.fromarray(frame.rgb).save(frame_path)
-            frame_bgr = cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)
-            mask = spec.mask_provider.get_mask(frame.index, frame_bgr)
+            frame_bgr = next(frame_bgr for current_frame, frame_bgr in prepared_frames if current_frame.index == frame.index)
+            mask_start = time.perf_counter()
+            if frame.index in batch_masks:
+                mask = batch_masks[frame.index]
+            else:
+                mask = spec.mask_provider.get_mask(frame.index, frame_bgr)
+            mask_elapsed_ms = _elapsed_ms(mask_start)
+            mask_timings.append(mask_elapsed_ms)
+            if not callable(getattr(spec.mask_provider, "performance_summary", None)):
+                mask_attempts.append(
+                    ProviderAttempt(
+                        provider=spec.mask_provider.__class__.__name__,
+                        operation="get_mask",
+                        status="success",
+                        elapsed_ms=mask_elapsed_ms,
+                        frame_index=frame.index,
+                    ).to_dict()
+                )
             contour = mask_to_largest_polygon(mask, min_area=min_area, simplify_ratio=simplify_ratio)
             Image.fromarray(mask).save(mask_path)
 
@@ -366,7 +405,22 @@ def _extract_object(
     write_json(object_dir / "object_manifest.json", object_manifest)
     _write_object_motion(out_dir, object_id, object_motion)
     layer = _build_layer_frames(object_id, info.sample_fps, motion, z_index=spec.z_index)
-    return obj, layer, object_motion, detailed_frames
+    provider_summary_getter = getattr(spec.mask_provider, "performance_summary", None)
+    provider_summary = provider_summary_getter() if callable(provider_summary_getter) else None
+    total_mask_ms = round(sum(mask_timings), 3)
+    provider_performance = {
+        "objectId": object_id,
+        "providerName": spec.mask_provider.__class__.__name__,
+        "frames": len(frames),
+        "maskCalls": len(mask_timings),
+        "maskTotalMs": total_mask_ms,
+        "maskAvgMs": round(total_mask_ms / len(mask_timings), 3) if mask_timings else 0.0,
+        "batching": batch_summary,
+        "providerSummary": provider_summary,
+        "attempts": provider_summary.get("attempts", []) if isinstance(provider_summary, dict) else mask_attempts,
+        "cache": provider_summary.get("cache") if isinstance(provider_summary, dict) else None,
+    }
+    return obj, layer, object_motion, detailed_frames, provider_performance
 
 
 def run_multi_object_pipeline(
@@ -424,11 +478,18 @@ def run_multi_object_pipeline(
         if stale.exists():
             stale.unlink()
 
+    total_start = time.perf_counter()
+    sample_start = time.perf_counter()
     info, frame_iter = iter_sampled_frames(video_path, sample_fps=sample_fps, max_frames=max_frames)
     frames = list(frame_iter)
+    phase_timings = [
+        PhaseTiming(phase="sample_frames", elapsed_ms=_elapsed_ms(sample_start), count=len(frames)).to_dict()
+    ]
+    write_frames_start = time.perf_counter()
     for frame in frames:
         frame_number = frame.out_index + 1
         Image.fromarray(frame.rgb).save(frames_dir / f"frame_{frame_number:06d}.png")
+    phase_timings.append(PhaseTiming(phase="write_debug_frames", elapsed_ms=_elapsed_ms(write_frames_start), count=len(frames)).to_dict())
 
     source = {
         "video": str(video_path),
@@ -443,8 +504,10 @@ def run_multi_object_pipeline(
     layers: list[dict[str, Any]] = []
     object_motions: dict[str, dict[str, Any]] = {}
     first_detailed_frames: list[dict[str, Any]] = []
+    provider_performance_objects: list[dict[str, Any]] = []
+    extract_start = time.perf_counter()
     for index, spec in enumerate(object_specs):
-        obj, layer, object_motion, detailed_frames = _extract_object(
+        obj, layer, object_motion, detailed_frames, provider_performance = _extract_object(
             out_dir=out_dir,
             frames_dir=frames_dir,
             info=info,
@@ -462,9 +525,22 @@ def run_multi_object_pipeline(
         objects.append(obj)
         layers.append(layer)
         object_motions[spec.object_id] = object_motion
+        provider_performance_objects.append(provider_performance)
         if index == 0:
             first_detailed_frames = detailed_frames
+    phase_timings.append(PhaseTiming(phase="extract_objects", elapsed_ms=_elapsed_ms(extract_start), count=len(object_specs)).to_dict())
 
+    latency_metrics = {
+        "schema": "motionjson.latency_metrics.v0.1",
+        "phaseTimings": phase_timings,
+        "totalElapsedMs": _elapsed_ms(total_start),
+        "sampledFrames": len(frames),
+        "objects": len(object_specs),
+    }
+    provider_performance = {
+        "schema": "motionjson.provider_performance.v0.1",
+        "objects": provider_performance_objects,
+    }
     scene = {
         "schema": "motionjson.scene_graph.v0.1",
         "version": "0.1.0",
@@ -484,8 +560,15 @@ def run_multi_object_pipeline(
             "outputMode": output_mode,
             "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics.",
         },
+        "providerPerformance": provider_performance,
+        "latencyMetrics": latency_metrics,
         "rightsManifest": "rights_manifest.json",
     }
+    scene["costDashboard"] = build_cost_dashboard(
+        provider_performance=provider_performance,
+        latency_metrics=latency_metrics,
+        production_assets=objects[0].get("assets", {}).get("production") if objects else None,
+    )
     rights_manifest = build_rights_manifest(source=source, objects=objects, context=rights_payload)
 
     default_object_id = object_specs[0].object_id
@@ -502,6 +585,12 @@ def run_multi_object_pipeline(
     for index, spec in enumerate(object_specs):
         _write_object_web_manifest(out_dir, scene, spec.object_id, legacy=index == 0)
     _preview_copy(out_dir)
+    scene["latencyMetrics"]["totalElapsedMs"] = _elapsed_ms(total_start)
+    scene["costDashboard"] = build_cost_dashboard(
+        provider_performance=provider_performance,
+        latency_metrics=scene["latencyMetrics"],
+        production_assets=objects[0].get("assets", {}).get("production") if objects else None,
+    )
     write_profiled_outputs(out_dir=out_dir, video_path=video_path, object_id=default_object_id, scene=scene)
 
     return scene

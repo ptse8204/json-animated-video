@@ -19,7 +19,7 @@ from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, Thres
 from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
-from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
+from .providers.segmentation import FallbackSegmentationProvider, MaskProviderSegmentationAdapter, SegmentationMaskProvider
 from .validation import MotionJSONValidationError, validate_document, validate_path
 
 
@@ -113,8 +113,9 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--sam2-endpoint-env", type=str, default="HOSTED_SEGMENTATION_URL", help="Env var containing hosted SAM2 endpoint")
     p.add_argument("--sam2-hosted-config", type=parse_json_object, default={}, help='Hosted SAM2 JSON config, e.g. {"model":"sam2"}')
     p.add_argument("--sam2-hosted-allow-network", action="store_true", help="Allow real hosted SAM2 network calls when endpoint and auth are configured")
-    p.add_argument("--mask-cache-dir", type=str, default=".motionjson-cache/masks", help="Ignored cache directory for SAM2 binary PNG masks")
+    p.add_argument("--mask-cache-dir", type=str, default=".motionjson-cache/masks", help="Cache directory for SAM2 binary PNG masks")
     p.add_argument("--no-mask-cache", action="store_true", help="Disable SAM2 mask cache for this extraction")
+    p.add_argument("--fallback-mask-provider", choices=["threshold", "motion"], default=None, help="Fallback segmentation provider if the primary provider fails; never routes through LLM/OpenRouter")
     p.add_argument("--sample-fps", type=float, default=12.0)
     p.add_argument("--max-frames", type=int, default=None)
     p.add_argument("--object-id", type=str, default="object_0")
@@ -204,6 +205,30 @@ def add_correct_args(p: argparse.ArgumentParser) -> None:
 
 
 def build_provider(args: argparse.Namespace):
+    def fallback_wrap(primary_name: str, segmentation_provider):
+        if not args.fallback_mask_provider:
+            return SegmentationMaskProvider(
+                segmentation_provider,
+                prompt_point=args.prompt_point,
+                prompt_box=args.prompt_box,
+            )
+        if args.fallback_mask_provider == "motion":
+            fallback_mask_provider = MotionMaskProvider()
+        else:
+            fallback_mask_provider = ThresholdMaskProvider(args.lower_hsv, args.upper_hsv)
+        fallback_provider = MaskProviderSegmentationAdapter(fallback_mask_provider, provider_name=args.fallback_mask_provider)
+        routed = FallbackSegmentationProvider(
+            [
+                (primary_name, segmentation_provider),
+                (args.fallback_mask_provider, fallback_provider),
+            ]
+        )
+        return SegmentationMaskProvider(
+            routed,
+            prompt_point=args.prompt_point,
+            prompt_box=args.prompt_box,
+        )
+
     if args.mask_provider == "external":
         if not args.mask_dir:
             raise SystemExit("--mask-dir is required when --mask-provider external")
@@ -228,11 +253,7 @@ def build_provider(args: argparse.Namespace):
             prompt_box=args.prompt_box,
             mask_cache=mask_cache,
         )
-        return SegmentationMaskProvider(
-            segmentation_provider,
-            prompt_point=args.prompt_point,
-            prompt_box=args.prompt_box,
-        )
+        return fallback_wrap("sam2-local", segmentation_provider)
     elif args.mask_provider == "sam2-hosted":
         mask_cache = None if args.no_mask_cache else MaskCache(args.mask_cache_dir)
         segmentation_provider = HostedSAM2SegmentationProvider(
@@ -248,20 +269,12 @@ def build_provider(args: argparse.Namespace):
             allow_network=args.sam2_hosted_allow_network,
             mask_cache=mask_cache,
         )
-        return SegmentationMaskProvider(
-            segmentation_provider,
-            prompt_point=args.prompt_point,
-            prompt_box=args.prompt_box,
-        )
+        return fallback_wrap("sam2-hosted", segmentation_provider)
     else:
         mask_provider = ThresholdMaskProvider(args.lower_hsv, args.upper_hsv)
 
-    segmentation_provider = MaskProviderSegmentationAdapter(mask_provider)
-    return SegmentationMaskProvider(
-        segmentation_provider,
-        prompt_point=args.prompt_point,
-        prompt_box=args.prompt_box,
-    )
+    segmentation_provider = MaskProviderSegmentationAdapter(mask_provider, provider_name=args.mask_provider)
+    return fallback_wrap(args.mask_provider, segmentation_provider)
 
 
 def _assignment_map(values: list[tuple[str, str]], *, field_name: str) -> dict[str, str]:

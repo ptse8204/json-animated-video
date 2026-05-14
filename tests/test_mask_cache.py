@@ -40,6 +40,23 @@ def test_mask_cache_writes_binary_png_and_manifest(tmp_path):
     assert manifest["entries"][key]["metadata"]["provider"] == "sam2-local"
     assert manifest["entries"][key]["masks"]["3"] == f"{key}/mask_000003.png"
     assert entry_manifest["schema"] == "motionjson.mask_cache_entry.v0.1"
+    assert cache.summary()["hits"] == 1
+    assert cache.summary()["misses"] == 0
+    assert cache.summary()["storedBytes"] > 0
+
+
+def test_mask_cache_reports_misses_and_bytes(tmp_path):
+    cache = MaskCache(tmp_path / "cache")
+    assert cache.get("missing", frame_index=1) is None
+
+    summary = cache.summary()
+
+    assert summary["schema"] == "motionjson.mask_cache_summary.v0.1"
+    assert summary["hits"] == 0
+    assert summary["misses"] == 1
+    assert summary["readBytes"] == 0
+    assert summary["writtenBytes"] == 0
+    assert summary["hitRate"] == 0.0
 
 
 def test_mask_cache_key_changes_with_prompt_metadata(tmp_path):

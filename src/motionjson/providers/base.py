@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
@@ -18,6 +19,65 @@ class ProviderConfigError(ProviderError):
 
 class ProviderExecutionError(ProviderError):
     """Raised when a configured provider fails during execution."""
+
+
+@dataclass(frozen=True)
+class ProviderAttempt:
+    """Deterministic provider attempt record for routing, latency, and cost reports."""
+
+    provider: str
+    operation: str
+    status: str
+    elapsed_ms: float
+    frame_index: int | None = None
+    error: str | None = None
+    estimated_cost_units: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class PhaseTiming:
+    """Named phase timing for extraction and backend job metadata."""
+
+    phase: str
+    elapsed_ms: float
+    count: int | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class BatchSegmentationRequest:
+    """Optional GPU/batched segmentation request shape.
+
+    Providers can accept these requests without MotionJSON depending on CUDA,
+    torch, or any specific GPU runtime.
+    """
+
+    frame_index: int
+    frame_bgr: np.ndarray
+    prompt_point: tuple[int, int] | None = None
+    prompt_box: tuple[int, int, int, int] | None = None
+
+
+@dataclass(frozen=True)
+class CompressionOutcome:
+    """Compression candidate outcome derived from cached assets."""
+
+    name: str
+    status: str
+    bytes: int
+    source_bytes: int
+    path: str | None = None
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        saved = max(0, self.source_bytes - self.bytes) if self.status == "ready" else 0
+        ratio = round(self.bytes / self.source_bytes, 4) if self.source_bytes and self.status == "ready" else None
+        return {**asdict(self), "bytesSaved": saved, "ratioToSource": ratio, "aiUsage": "none"}
 
 
 @runtime_checkable
@@ -55,6 +115,14 @@ class SegmentationProvider(Protocol):
 
     def close(self) -> None:
         """Release provider resources."""
+
+
+@runtime_checkable
+class BatchSegmentationProvider(SegmentationProvider, Protocol):
+    """Optional segmentation provider extension for GPU/provider batching."""
+
+    def segment_batch(self, requests: Sequence[BatchSegmentationRequest]) -> Sequence[np.ndarray]:
+        """Return masks for a batch of frame requests in request order."""
 
 
 @runtime_checkable

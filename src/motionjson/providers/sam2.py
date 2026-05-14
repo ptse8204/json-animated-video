@@ -6,13 +6,13 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, Sequence
 
 import numpy as np
 from PIL import Image
 
 from ..video import VideoInfo
-from .base import ProviderConfigError, ProviderExecutionError
+from .base import BatchSegmentationRequest, ProviderConfigError, ProviderExecutionError
 from .mask_cache import MaskCache, normalize_binary_mask
 
 
@@ -42,6 +42,7 @@ class LocalSAM2SegmentationProvider:
     state: Any | None = field(default=None, init=False)
     _masks: dict[int, np.ndarray] = field(default_factory=dict, init=False)
     _prompted: bool = field(default=False, init=False)
+    provider_name: str = "sam2-local"
 
     def prepare(self, video_metadata: VideoInfo) -> None:
         self.video_metadata = video_metadata
@@ -83,9 +84,82 @@ class LocalSAM2SegmentationProvider:
             self.mask_cache.set(cache_key, mask, frame_index=frame_index, metadata={"provider": "sam2-local", "object_id": self.object_id})
         return mask
 
+    def segment_batch(self, requests: Sequence[BatchSegmentationRequest]) -> Sequence[np.ndarray]:
+        requests = list(requests)
+        if not requests:
+            return []
+        if self.mask_cache is None:
+            if self.predictor is not None and hasattr(self.predictor, "segment_batch"):
+                result = list(self.predictor.segment_batch(requests))
+                if len(result) != len(requests):
+                    raise ProviderExecutionError("SAM2 batch predictor returned a different number of masks than requested.")
+                return [normalize_binary_mask(mask) for mask in result]
+            return [
+                self.segment(
+                    request.frame_index,
+                    request.frame_bgr,
+                    prompt_point=request.prompt_point,
+                    prompt_box=request.prompt_box,
+                )
+                for request in requests
+            ]
+
+        results: list[np.ndarray | None] = [None] * len(requests)
+        misses: list[tuple[int, BatchSegmentationRequest, tuple[int, int] | None, tuple[int, int, int, int] | None, str]] = []
+        for index, request in enumerate(requests):
+            point = request.prompt_point or self.prompt_point
+            box = request.prompt_box or self.prompt_box
+            cache_key = self._cache_key(request.frame_index, point, box)
+            cached = self.mask_cache.get(cache_key, frame_index=request.frame_index)
+            if cached is not None:
+                results[index] = cached
+            else:
+                misses.append((index, request, point, box, cache_key))
+
+        if misses and self.predictor is not None and hasattr(self.predictor, "segment_batch"):
+            miss_requests = [
+                BatchSegmentationRequest(
+                    frame_index=request.frame_index,
+                    frame_bgr=request.frame_bgr,
+                    prompt_point=point,
+                    prompt_box=box,
+                )
+                for _index, request, point, box, _cache_key in misses
+            ]
+            batch_result = list(self.predictor.segment_batch(miss_requests))
+            if len(batch_result) != len(misses):
+                raise ProviderExecutionError("SAM2 batch predictor returned a different number of masks than requested.")
+            for (index, request, _point, _box, cache_key), mask in zip(misses, batch_result):
+                normalized = normalize_binary_mask(mask)
+                self._masks[request.frame_index] = normalized
+                self.mask_cache.set(cache_key, normalized, frame_index=request.frame_index, metadata={"provider": "sam2-local", "object_id": self.object_id})
+                results[index] = normalized
+        else:
+            for index, request, point, box, _cache_key in misses:
+                results[index] = self.segment(
+                    request.frame_index,
+                    request.frame_bgr,
+                    prompt_point=point,
+                    prompt_box=box,
+                )
+
+        complete_results: list[np.ndarray] = []
+        for mask in results:
+            if mask is None:
+                raise ProviderExecutionError("SAM2 batch segmentation did not produce masks for all requests.")
+            complete_results.append(mask)
+        return complete_results
+
     def close(self) -> None:
         if self.predictor is not None and hasattr(self.predictor, "close"):
             self.predictor.close()
+
+    def performance_summary(self) -> dict[str, Any]:
+        return {
+            "providerName": self.provider_name,
+            "cost": {"estimatedCostUnits": 0.0, "unit": "local", "costStatus": "zero_local_runtime"},
+            "cache": self.mask_cache.summary() if self.mask_cache is not None else None,
+        }
 
     def _build_predictor(self) -> Any:
         if self.predictor_factory is None:
@@ -254,6 +328,7 @@ class HostedSAM2SegmentationProvider:
     video_metadata: VideoInfo | None = field(default=None, init=False)
     _endpoint: str | None = field(default=None, init=False)
     _token: str | None = field(default=None, init=False)
+    provider_name: str = "sam2-hosted"
 
     def prepare(self, video_metadata: VideoInfo) -> None:
         self.video_metadata = video_metadata
@@ -297,9 +372,94 @@ class HostedSAM2SegmentationProvider:
             self.mask_cache.set(cache_key, mask, frame_index=frame_index, metadata={"provider": "sam2-hosted", "object_id": self.object_id})
         return mask
 
+    def segment_batch(self, requests: Sequence[BatchSegmentationRequest]) -> Sequence[np.ndarray]:
+        requests = list(requests)
+        if not requests:
+            return []
+        if self.mask_cache is None:
+            if self.client is not None and hasattr(self.client, "segment_batch"):
+                responses = list(
+                    self.client.segment_batch(
+                        [
+                            {
+                                "frame_index": request.frame_index,
+                                "prompt_point": request.prompt_point or self.prompt_point,
+                                "prompt_box": request.prompt_box or self.prompt_box,
+                            }
+                            for request in requests
+                        ]
+                    )
+                )
+                if len(responses) != len(requests):
+                    raise ProviderExecutionError("Hosted SAM2 batch client returned a different number of masks than requested.")
+                return [normalize_binary_mask(self._extract_mask(response)) for response in responses]
+            return [
+                self.segment(
+                    request.frame_index,
+                    request.frame_bgr,
+                    prompt_point=request.prompt_point,
+                    prompt_box=request.prompt_box,
+                )
+                for request in requests
+            ]
+
+        results: list[np.ndarray | None] = [None] * len(requests)
+        misses: list[tuple[int, BatchSegmentationRequest, tuple[int, int] | None, tuple[int, int, int, int] | None, str]] = []
+        for index, request in enumerate(requests):
+            point = request.prompt_point or self.prompt_point
+            box = request.prompt_box or self.prompt_box
+            cache_key = self._cache_key(request.frame_index, point, box)
+            cached = self.mask_cache.get(cache_key, frame_index=request.frame_index)
+            if cached is not None:
+                results[index] = cached
+            else:
+                misses.append((index, request, point, box, cache_key))
+
+        if misses and self.client is not None and hasattr(self.client, "segment_batch"):
+            responses = list(
+                self.client.segment_batch(
+                    [
+                        {
+                            "frame_index": request.frame_index,
+                            "prompt_point": point,
+                            "prompt_box": box,
+                        }
+                        for _index, request, point, box, _cache_key in misses
+                    ]
+                )
+            )
+            if len(responses) != len(misses):
+                raise ProviderExecutionError("Hosted SAM2 batch client returned a different number of masks than requested.")
+            for (index, request, _point, _box, cache_key), response in zip(misses, responses):
+                mask = normalize_binary_mask(self._extract_mask(response))
+                self.mask_cache.set(cache_key, mask, frame_index=request.frame_index, metadata={"provider": "sam2-hosted", "object_id": self.object_id})
+                results[index] = mask
+        else:
+            for index, request, point, box, _cache_key in misses:
+                results[index] = self.segment(
+                    request.frame_index,
+                    request.frame_bgr,
+                    prompt_point=point,
+                    prompt_box=box,
+                )
+
+        complete_results: list[np.ndarray] = []
+        for mask in results:
+            if mask is None:
+                raise ProviderExecutionError("Hosted SAM2 batch segmentation did not produce masks for all requests.")
+            complete_results.append(mask)
+        return complete_results
+
     def close(self) -> None:
         if self.client is not None and hasattr(self.client, "close"):
             self.client.close()
+
+    def performance_summary(self) -> dict[str, Any]:
+        return {
+            "providerName": self.provider_name,
+            "cost": {"estimatedCostUnits": None, "unit": "provider_request", "costStatus": "unknown_hosted_provider"},
+            "cache": self.mask_cache.summary() if self.mask_cache is not None else None,
+        }
 
     def _call_hosted(
         self,
