@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.web_asset_manifest.v0.1",
+  "title": "MotionJSON Web Asset Manifest v0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "type",
+    "assetId",
+    "label",
+    "sourceSceneGraph",
+    "renderMode",
+    "recommendedEmbedMode",
+    "canvas",
+    "assets",
+    "responsive",
+    "loading",
+    "states",
+    "quality",
+    "estimatedPackageSizes",
+    "estimatedPixelWork",
+    "rights",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.web_asset_manifest.v0.1" },
+    "type": { "const": "web_motion_asset" },
+    "assetId": { "$ref": "#/$defs/nonEmptyString" },
+    "label": { "$ref": "#/$defs/nonEmptyString" },
+    "sourceSceneGraph": { "$ref": "#/$defs/nonEmptyString" },
+    "renderMode": { "const": "raster_alpha_sequence" },
+    "recommendedEmbedMode": { "const": "canvas_sprite_layer" },
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height", "fps", "frameCount"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "fps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "frameCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "assets": {
+      "type": "object",
+      "required": ["poster", "spritesheet", "sequence", "fallbackStaticPoster", "fallbackVideo", "fallbackVideoPlaceholder"],
+      "additionalProperties": false,
+      "properties": {
+        "poster": { "type": ["string", "null"] },
+        "spritesheet": { "$ref": "#/$defs/spritesheet" },
+        "sequence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/webFrame" }
+        },
+        "fallbackStaticPoster": { "type": ["string", "null"] },
+        "fallbackVideo": { "type": ["string", "null"] },
+        "fallbackVideoPlaceholder": { "type": "string" }
+      }
+    },
+    "responsive": {
+      "type": "object",
+      "required": ["mobile", "tablet", "desktop"],
+      "additionalProperties": false,
+      "properties": {
+        "mobile": { "$ref": "#/$defs/responsiveRule" },
+        "tablet": { "$ref": "#/$defs/responsiveRule" },
+        "desktop": { "$ref": "#/$defs/responsiveRule" }
+      }
+    },
+    "loading": {
+      "type": "object",
+      "required": ["lazy", "preload", "decode", "pauseWhenOffscreen"],
+      "additionalProperties": false,
+      "properties": {
+        "lazy": { "type": "boolean" },
+        "preload": { "type": "string" },
+        "decode": { "type": "string" },
+        "pauseWhenOffscreen": { "type": "boolean" }
+      }
+    },
+    "states": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "estimatedPackageSizes": {
+      "type": "object",
+      "required": ["websitePackageBytes", "websitePackageToSourceRatio", "spriteBytes", "manifestBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "websitePackageBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "websitePackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
+        "spriteBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "manifestBytes": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "estimatedPixelWork": {
+      "type": "object",
+      "required": ["objectLayerPixelRatio", "estimatedPixelWorkReduction"],
+      "additionalProperties": false,
+      "properties": {
+        "objectLayerPixelRatio": { "type": ["number", "null"], "minimum": 0 },
+        "estimatedPixelWorkReduction": { "type": ["number", "null"] }
+      }
+    },
+    "rights": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "numberPair": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "spriteFrame": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "spritesheet": {
+      "type": ["object", "null"],
+      "required": ["path", "width", "height", "columns", "rows", "cellWidth", "cellHeight", "frames"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/nonEmptyString" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "columns": { "type": "integer", "minimum": 0 },
+        "rows": { "type": "integer", "minimum": 0 },
+        "cellWidth": { "type": "integer", "minimum": 0 },
+        "cellHeight": { "type": "integer", "minimum": 0 },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/spriteFrame" }
+        }
+      }
+    },
+    "webFrame": {
+      "type": "object",
+      "required": ["frame", "t", "asset", "x", "y", "width", "height", "anchor", "opacity", "scale", "rotation", "visible"],
+      "additionalProperties": false,
+      "properties": {
+        "frame": { "type": "integer", "minimum": 1 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "asset": { "type": ["string", "null"] },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "anchor": { "$ref": "#/$defs/numberPair" },
+        "opacity": { "type": "number", "minimum": 0 },
+        "scale": { "type": "number" },
+        "rotation": { "type": "number" },
+        "visible": { "type": "boolean" },
+        "sprite": { "$ref": "#/$defs/spriteFrame" }
+      }
+    },
+    "responsiveRule": {
+      "type": "object",
+      "required": ["maxWidth", "fit"],
+      "additionalProperties": false,
+      "properties": {
+        "maxWidth": { "type": "integer", "minimum": 0 },
+        "fit": { "type": "string" }
+      }
+    }
+  }
+}

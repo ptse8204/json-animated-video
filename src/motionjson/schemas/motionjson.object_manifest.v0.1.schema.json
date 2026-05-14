@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.object_manifest.v0.1",
+  "title": "MotionJSON Object Manifest v0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "objectId",
+    "label",
+    "renderMode",
+    "cutouts",
+    "masks",
+    "spritesheet",
+    "motion",
+    "quality",
+    "recommendedOutput"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.object_manifest.v0.1" },
+    "objectId": { "$ref": "#/$defs/nonEmptyString" },
+    "label": { "$ref": "#/$defs/nonEmptyString" },
+    "renderMode": { "const": "raster_alpha_sequence" },
+    "cutouts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" }
+    },
+    "masks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" }
+    },
+    "spritesheet": { "$ref": "#/$defs/spritesheet" },
+    "motion": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/motionFrame" }
+    },
+    "quality": { "$ref": "#/$defs/quality" },
+    "recommendedOutput": { "$ref": "#/$defs/recommendedOutput" }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "numberPair": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "spriteFrame": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "spritesheet": {
+      "type": ["object", "null"],
+      "required": ["path", "width", "height", "columns", "rows", "cellWidth", "cellHeight", "frames"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/nonEmptyString" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "columns": { "type": "integer", "minimum": 0 },
+        "rows": { "type": "integer", "minimum": 0 },
+        "cellWidth": { "type": "integer", "minimum": 0 },
+        "cellHeight": { "type": "integer", "minimum": 0 },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/spriteFrame" }
+        }
+      }
+    },
+    "motionFrame": {
+      "type": "object",
+      "required": [
+        "frame",
+        "sourceFrameIndex",
+        "t",
+        "visible",
+        "x",
+        "y",
+        "w",
+        "h",
+        "scale",
+        "rotation",
+        "opacity",
+        "anchor",
+        "asset",
+        "mask",
+        "centroid"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "frame": { "type": "integer", "minimum": 1 },
+        "sourceFrameIndex": { "type": "integer", "minimum": 0 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "visible": { "type": "boolean" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 },
+        "scale": { "type": "number" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0 },
+        "anchor": { "$ref": "#/$defs/numberPair" },
+        "asset": { "type": ["string", "null"] },
+        "mask": { "$ref": "#/$defs/nonEmptyString" },
+        "centroid": { "$ref": "#/$defs/numberPair" },
+        "sprite": { "$ref": "#/$defs/spriteFrame" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": ["vectorSuitability", "maskStability"],
+      "additionalProperties": true,
+      "properties": {
+        "vectorSuitability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maskStability": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "recommendedOutput": {
+      "type": "string",
+      "enum": ["raster_alpha_sequence", "hybrid_vector_silhouette_plus_raster"]
+    }
+  }
+}

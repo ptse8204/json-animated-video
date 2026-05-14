@@ -1,0 +1,316 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.scene_graph.v0.1",
+  "title": "MotionJSON Scene Graph v0.1",
+  "type": "object",
+  "required": ["schema", "version", "source", "objects", "canvas", "layers", "rendering"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.scene_graph.v0.1" },
+    "version": { "type": "string", "minLength": 1 },
+    "source": {
+      "type": "object",
+      "required": ["video", "width", "height", "fps", "sampleFps", "totalSourceFrames", "sampledFrameCount"],
+      "additionalProperties": false,
+      "properties": {
+        "video": { "type": "string", "minLength": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "fps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "sampleFps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "totalSourceFrames": { "type": "integer", "minimum": 0 },
+        "sampledFrameCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "objects": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/objectLayer" }
+    },
+    "canvas": {
+      "type": "object",
+      "required": ["width", "height", "source_fps", "fps", "frame_count"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "source_fps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "fps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "frame_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "layers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rasterLayer" }
+    },
+    "rendering": {
+      "type": "object",
+      "required": ["recommendedRuntime", "defaultRenderMode", "vectorPolicy"],
+      "additionalProperties": false,
+      "properties": {
+        "recommendedRuntime": { "type": "string" },
+        "defaultRenderMode": { "const": "raster_alpha_sequence" },
+        "vectorPolicy": { "type": "string" }
+      }
+    },
+    "resource_profile": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nonNegativeNumber": {
+      "type": "number",
+      "minimum": 0
+    },
+    "numberPair": {
+      "type": "array",
+      "prefixItems": [{ "type": "number" }, { "type": "number" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "bbox": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer" },
+        { "type": "integer" },
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 0 }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "point": { "$ref": "#/$defs/numberPair" },
+    "polygon": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/point" }
+    },
+    "spriteFrame": {
+      "type": "object",
+      "required": ["x", "y", "w", "h"],
+      "additionalProperties": false,
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "spritesheet": {
+      "type": ["object", "null"],
+      "required": ["path", "width", "height", "columns", "rows", "cellWidth", "cellHeight", "frames"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/nonEmptyString" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "columns": { "type": "integer", "minimum": 0 },
+        "rows": { "type": "integer", "minimum": 0 },
+        "cellWidth": { "type": "integer", "minimum": 0 },
+        "cellHeight": { "type": "integer", "minimum": 0 },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/spriteFrame" }
+        }
+      }
+    },
+    "motionFrame": {
+      "type": "object",
+      "required": [
+        "frame",
+        "sourceFrameIndex",
+        "t",
+        "visible",
+        "x",
+        "y",
+        "w",
+        "h",
+        "scale",
+        "rotation",
+        "opacity",
+        "anchor",
+        "asset",
+        "mask",
+        "centroid"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "frame": { "type": "integer", "minimum": 1 },
+        "sourceFrameIndex": { "type": "integer", "minimum": 0 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "visible": { "type": "boolean" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 },
+        "scale": { "type": "number" },
+        "rotation": { "type": "number" },
+        "opacity": { "type": "number", "minimum": 0 },
+        "anchor": { "$ref": "#/$defs/numberPair" },
+        "asset": { "type": ["string", "null"] },
+        "mask": { "$ref": "#/$defs/nonEmptyString" },
+        "centroid": { "$ref": "#/$defs/numberPair" },
+        "sprite": { "$ref": "#/$defs/spriteFrame" }
+      }
+    },
+    "detailedFrame": {
+      "type": "object",
+      "required": [
+        "source_frame_index",
+        "frame",
+        "out_index",
+        "t",
+        "visible",
+        "area",
+        "bbox",
+        "centroid",
+        "polygon",
+        "contour_points",
+        "framePath",
+        "mask",
+        "asset",
+        "anchor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "source_frame_index": { "type": "integer", "minimum": 0 },
+        "frame": { "type": "integer", "minimum": 1 },
+        "out_index": { "type": "integer", "minimum": 0 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "visible": { "type": "boolean" },
+        "area": { "$ref": "#/$defs/nonNegativeNumber" },
+        "bbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
+        "centroid": { "$ref": "#/$defs/numberPair" },
+        "polygon": { "$ref": "#/$defs/polygon" },
+        "contour_points": { "type": "integer", "minimum": 0 },
+        "framePath": { "$ref": "#/$defs/nonEmptyString" },
+        "mask": { "$ref": "#/$defs/nonEmptyString" },
+        "asset": { "type": ["string", "null"] },
+        "anchor": { "$ref": "#/$defs/numberPair" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": ["vectorSuitability", "maskStability"],
+      "additionalProperties": true,
+      "properties": {
+        "vectorSuitability": { "type": "number", "minimum": 0, "maximum": 1 },
+        "maskStability": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "objectLayer": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "renderMode",
+        "asset",
+        "mask",
+        "assets",
+        "zIndex",
+        "motion",
+        "frames",
+        "interactions",
+        "quality",
+        "recommendedOutput",
+        "rights"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "label": { "$ref": "#/$defs/nonEmptyString" },
+        "renderMode": { "const": "raster_alpha_sequence" },
+        "asset": { "$ref": "#/$defs/nonEmptyString" },
+        "mask": { "$ref": "#/$defs/nonEmptyString" },
+        "assets": {
+          "type": "object",
+          "required": ["cutoutPattern", "spritesheet"],
+          "additionalProperties": false,
+          "properties": {
+            "cutoutPattern": { "$ref": "#/$defs/nonEmptyString" },
+            "spritesheet": { "$ref": "#/$defs/spritesheet" }
+          }
+        },
+        "zIndex": { "type": "integer" },
+        "motion": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/motionFrame" }
+        },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/detailedFrame" }
+        },
+        "interactions": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "quality": { "$ref": "#/$defs/quality" },
+        "recommendedOutput": {
+          "type": "string",
+          "enum": ["raster_alpha_sequence", "hybrid_vector_silhouette_plus_raster"]
+        },
+        "rights": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "rasterLayerFrame": {
+      "type": "object",
+      "required": ["frame", "t", "visible", "asset", "mask", "x", "y", "width", "height", "anchor", "opacity", "scale", "rotation"],
+      "additionalProperties": false,
+      "properties": {
+        "frame": { "type": "integer", "minimum": 1 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "visible": { "type": "boolean" },
+        "asset": { "type": ["string", "null"] },
+        "mask": { "$ref": "#/$defs/nonEmptyString" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 },
+        "anchor": { "$ref": "#/$defs/numberPair" },
+        "opacity": { "type": "number", "minimum": 0 },
+        "scale": { "type": "number" },
+        "rotation": { "type": "number" }
+      }
+    },
+    "rasterLayer": {
+      "type": "object",
+      "required": ["id", "object_id", "type", "asset_type", "fps", "z_index", "blend_mode", "frames", "controls"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "object_id": { "$ref": "#/$defs/nonEmptyString" },
+        "type": { "const": "raster_alpha_sequence" },
+        "asset_type": { "const": "cropped_rgba_png_sequence" },
+        "fps": { "$ref": "#/$defs/nonNegativeNumber" },
+        "z_index": { "type": "integer" },
+        "blend_mode": { "const": "source-over" },
+        "frames": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rasterLayerFrame" }
+        },
+        "controls": {
+          "type": "object",
+          "required": ["editable", "json_edit_example"],
+          "additionalProperties": true,
+          "properties": {
+            "editable": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "json_edit_example": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

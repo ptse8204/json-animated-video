@@ -16,7 +16,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes an editable `scene_graph.json` with object identity, motion, z-index, render mode, interaction states, quality scores, and rights placeholders.
 - Writes a website-focused `web_asset_manifest.json`.
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
-- Writes `silhouette_lottie.json` for optional vector-like silhouette use.
+- Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews into `out/.../preview/`.
 
 ## Quick Start
@@ -46,6 +46,26 @@ Open:
 - Runtime package: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/web_asset_manifest.json`
 - Authoring graph: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
+
+## Schema Validation
+
+Core MotionJSON artifacts declare JSON Schema Draft 2020-12 ids in their top-level `schema` field:
+
+- `motionjson.scene_graph.v0.1`
+- `motionjson.object_manifest.v0.1`
+- `motionjson.object_motion.v0.1`
+- `motionjson.web_asset_manifest.v0.1`
+- `motionjson.resource_profile.v0.1`
+
+Validate one file or a generated output directory:
+
+```bash
+motionjson validate out/demo/scene_graph.json
+motionjson validate out/demo
+motionjson validate out/demo --object-id object_0
+```
+
+Directory validation requires the core package files and skips auxiliary JSON files that do not declare a MotionJSON core schema. `silhouette_lottie.json` remains auxiliary Lottie output, not a MotionJSON core schema.
 
 ## External Masks
 

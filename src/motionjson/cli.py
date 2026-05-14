@@ -10,6 +10,7 @@ from .exporters.web_manifest import write_web_asset_manifest
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .metrics import build_resource_profile
 from .pipeline import run_pipeline
+from .validation import validate_path
 
 
 def parse_hsv(value: str) -> tuple[int, int, int]:
@@ -67,6 +68,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     extract = sub.add_parser("extract", help="Extract one selected object layer from a short video")
     add_extract_args(extract)
+    validate = sub.add_parser("validate", help="Validate a MotionJSON file or output directory")
+    validate.add_argument("path", type=str, help="MotionJSON JSON file or output directory")
+    validate.add_argument("--object-id", type=str, default="object_0", help="Object id to require when validating an output directory")
     return parser
 
 
@@ -137,9 +141,19 @@ def run_extract(args: argparse.Namespace) -> dict:
     return scene
 
 
+def run_validate(args: argparse.Namespace) -> None:
+    result = validate_path(args.path, object_id=args.object_id)
+    for issue in result.issues:
+        print(issue.format(), file=sys.stderr)
+    if result.ok:
+        print(f"Validated {len(result.checked)} MotionJSON file(s); skipped {len(result.skipped)} auxiliary JSON file(s).")
+        return
+    raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] != "extract" and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -148,6 +162,9 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.command == "extract":
         run_extract(args)
+        return
+    if args.command == "validate":
+        run_validate(args)
         return
     parser.print_help()
 

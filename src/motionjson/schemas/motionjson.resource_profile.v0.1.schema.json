@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.resource_profile.v0.1",
+  "title": "MotionJSON Resource Profile v0.1",
+  "type": "object",
+  "required": ["schema", "goal", "sourceVideo", "counts", "sizes", "previewStrategy", "pixelWork", "warnings", "recommendations"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.resource_profile.v0.1" },
+    "goal": { "const": "honest_resource_profile_for_cached_object_layer_workflow" },
+    "sourceVideo": {
+      "type": "object",
+      "required": ["path", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["frameCount", "sampledFramePngCount", "maskCount", "cutoutCount"],
+      "additionalProperties": false,
+      "properties": {
+        "frameCount": { "type": "integer", "minimum": 0 },
+        "sampledFramePngCount": { "type": "integer", "minimum": 0 },
+        "maskCount": { "type": "integer", "minimum": 0 },
+        "cutoutCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "sizes": {
+      "type": "object",
+      "required": [
+        "extractedPackageBytes",
+        "extractedPackageToSourceRatio",
+        "websitePackageBytes",
+        "websitePackageToSourceRatio",
+        "authoringPackageBytes",
+        "payloads"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "extractedPackageBytes": { "type": "integer", "minimum": 0 },
+        "extractedPackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
+        "websitePackageBytes": { "type": "integer", "minimum": 0 },
+        "websitePackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
+        "authoringPackageBytes": { "type": "integer", "minimum": 0 },
+        "payloads": {
+          "type": "object",
+          "required": [
+            "scene_graph_json_bytes",
+            "object_motion_json_bytes",
+            "object_manifest_json_bytes",
+            "web_asset_manifest_json_bytes",
+            "silhouette_lottie_json_bytes",
+            "sampled_frame_debug_png_bytes",
+            "mask_sequence_bytes",
+            "cutout_sequence_png_bytes",
+            "spritesheet_bytes",
+            "preview_html_bytes",
+            "benchmark_report_json_bytes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scene_graph_json_bytes": { "type": "integer", "minimum": 0 },
+            "object_motion_json_bytes": { "type": "integer", "minimum": 0 },
+            "object_manifest_json_bytes": { "type": "integer", "minimum": 0 },
+            "web_asset_manifest_json_bytes": { "type": "integer", "minimum": 0 },
+            "silhouette_lottie_json_bytes": { "type": "integer", "minimum": 0 },
+            "sampled_frame_debug_png_bytes": { "type": "integer", "minimum": 0 },
+            "mask_sequence_bytes": { "type": "integer", "minimum": 0 },
+            "cutout_sequence_png_bytes": { "type": "integer", "minimum": 0 },
+            "spritesheet_bytes": { "type": "integer", "minimum": 0 },
+            "preview_html_bytes": { "type": "integer", "minimum": 0 },
+            "benchmark_report_json_bytes": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "previewStrategy": {
+      "type": "object",
+      "required": ["runtime", "aiUsage", "editRepresentation", "partialInvalidation", "jsonTransformEditBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime": { "type": "string" },
+        "aiUsage": { "type": "string" },
+        "editRepresentation": { "type": "string" },
+        "partialInvalidation": { "type": "string" },
+        "jsonTransformEditBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "pixelWork": {
+      "type": "object",
+      "required": ["fullFramePixelsPerSampledClip", "objectLayerPixelsPerSampledClip", "objectLayerPixelRatio", "estimatedPixelWorkReduction"],
+      "additionalProperties": false,
+      "properties": {
+        "fullFramePixelsPerSampledClip": { "type": "integer", "minimum": 0 },
+        "objectLayerPixelsPerSampledClip": { "type": "integer", "minimum": 0 },
+        "objectLayerPixelRatio": { "type": ["number", "null"], "minimum": 0 },
+        "estimatedPixelWorkReduction": { "type": ["number", "null"] }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "benchmarkSummary": {
+      "type": "object",
+      "additionalProperties": { "type": ["number", "integer", "string", "boolean", "null"] }
+    }
+  }
+}
