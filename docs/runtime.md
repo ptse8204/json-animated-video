@@ -1,0 +1,103 @@
+# MotionJSON Web Runtime
+
+Phase 6 adds a small browser runtime for MotionJSON web packages. It plays cached raster/alpha object layers from `web_asset_manifest.json` or `scene_graph.json` using JSON timing and transform data.
+
+The runtime does not call ingest-time systems during preview or interaction. Normal hover, click, scroll, drag, scale, rotate, and opacity changes are JSON transform updates over cached spritesheets or PNG alpha sequences.
+
+## Package
+
+```text
+packages/motionjson-runtime/
+  src/
+    manifest.js   Normalize web manifests and scene graphs.
+    assets.js     Load spritesheet-first assets, with PNG sequence fallback.
+    timeline.js   Frame index and state transform math.
+    canvas.js     Canvas2D renderer.
+    pixi.js       Optional Pixi/WebGL renderer through injected PIXI.
+    embed.js      Plain JavaScript mount helper and data-attribute auto-mount.
+    react.js      React component factory with injected React.
+```
+
+Run JavaScript validation:
+
+```bash
+npm test
+npm run lint
+```
+
+## Canvas2D
+
+```js
+import { createCanvasRuntime, normalizeMotionJSON } from "../packages/motionjson-runtime/src/index.js";
+
+const response = await fetch("/out/demo/web_asset_manifest.json");
+const scene = normalizeMotionJSON(await response.json(), {
+  baseUrl: "/out/demo/web_asset_manifest.json"
+});
+const runtime = createCanvasRuntime(document.querySelector("canvas"), scene, {
+  background: "#fbfaf6",
+  showBounds: true
+});
+await runtime.load();
+runtime.start();
+```
+
+## Pixi/WebGL
+
+Pixi is optional. The runtime never imports it directly; pass an injected `PIXI` object. If `PIXI` is unavailable, the helper falls back to Canvas2D.
+
+```js
+import { createPixiRuntime } from "../packages/motionjson-runtime/src/index.js";
+
+const runtime = await createPixiRuntime(document.querySelector("#stage"), scene, {
+  PIXI: window.PIXI
+});
+await runtime.load?.();
+runtime.start?.();
+```
+
+## Plain JS Embed
+
+```js
+import { mountMotionJSON } from "../packages/motionjson-runtime/src/index.js";
+
+const handle = await mountMotionJSON("#motion", "/out/demo/web_asset_manifest.json", {
+  background: "#fbfaf6",
+  showBounds: true,
+  onClick: ({ action }) => console.log(action)
+});
+
+handle.destroy();
+```
+
+Or use data attributes:
+
+```html
+<div data-motionjson-src="/out/demo/web_asset_manifest.json" data-motionjson-bounds="true"></div>
+<script type="module">
+  import { autoMountMotionJSON } from "../packages/motionjson-runtime/src/index.js";
+  await autoMountMotionJSON();
+</script>
+```
+
+## React
+
+React is peer-style and injected by the application.
+
+```js
+import { createMotionJSONReactComponent } from "@motionjson/runtime/react";
+
+export const MotionJSONPlayer = createMotionJSONReactComponent(React);
+```
+
+## Examples
+
+Serve the repo and open:
+
+- `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/scene_graph.json`
+- `http://localhost:8080/examples/pixi_player.html?scene=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/website_graphics_hero.html?manifest=/out/demo/web_asset_manifest.json`
+
+Generated preview folders copy the runtime source into `preview/runtime/`, so `out/.../preview/*.html` works without a build step or CDN dependency.

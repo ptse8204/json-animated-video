@@ -25,7 +25,7 @@ def profile_payload_sizes(out: Path) -> dict[str, int]:
         "production_avif_sprite_atlas_bytes": (production_dir / "sprite_atlas.avif").stat().st_size if (production_dir / "sprite_atlas.avif").exists() else 0,
         "production_transparent_webm_bytes": (production_dir / "transparent_layer.webm").stat().st_size if (production_dir / "transparent_layer.webm").exists() else 0,
         "production_asset_bytes": sum(path.stat().st_size for path in production_dir.glob("*")) if production_dir.exists() else 0,
-        "preview_html_bytes": sum(path.stat().st_size for path in (out / "preview").glob("*")),
+        "preview_html_bytes": sum(path.stat().st_size for path in (out / "preview").rglob("*") if path.is_file()),
         "benchmark_report_json_bytes": (out / "benchmark_report.json").stat().st_size if (out / "benchmark_report.json").exists() else 0,
     }
 
@@ -33,7 +33,9 @@ def profile_payload_sizes(out: Path) -> dict[str, int]:
 def assert_profile_payloads_match_files(profile_payloads: dict[str, int], actual_payloads: dict[str, int]) -> None:
     for key, expected in actual_payloads.items():
         if key in {"scene_graph_json_bytes", "web_asset_manifest_json_bytes"}:
-            assert abs(profile_payloads[key] - expected) <= 1
+            # These JSON files include profile-derived JSON byte counts, so they can
+            # settle into a tiny self-referential oscillation as digit widths change.
+            assert abs(profile_payloads[key] - expected) <= 4
         else:
             assert profile_payloads[key] == expected
 

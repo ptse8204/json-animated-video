@@ -3,15 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
   <title>MotionJSON Website Graphic Demo</title>
   <style>
     :root {
-      --bg: #111318;
-      --text: #f7f3ea;
-      --muted: #c7cbd3;
-      --panel: rgba(255, 255, 255, .075);
-      --line: rgba(255, 255, 255, .14);
-      --accent: #80d8ca;
+      --bg: #15161a;
+      --panel: #202228;
+      --panel-2: #292c33;
+      --text: #f4f1ea;
+      --muted: #a9adb8;
+      --line: #3a3e47;
+      --accent: #6dc9b8;
+      --warn: #f0b35a;
     }
     * { box-sizing: border-box; }
     body {
@@ -21,247 +24,184 @@
       font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     .hero {
-      position: relative;
-      min-height: 92vh;
-      overflow: hidden;
-      display: flex;
-      align-items: center;
-      padding: clamp(2rem, 5vw, 5.5rem);
-      isolation: isolate;
+      min-height: 82vh;
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) minmax(280px, 380px);
+      gap: 1px;
+      background: var(--line);
+      border-bottom: 1px solid var(--line);
     }
-    #canvas {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: -2;
-      background: #111318;
+    .stage {
+      min-width: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: #f7f4ed;
     }
-    .shade {
-      position: absolute;
-      inset: 0;
-      z-index: -1;
-      background: rgba(8, 9, 12, .46);
+    canvas {
+      width: min(100%, 980px);
+      height: min(68vh, 640px);
+      background: #fbfaf6;
+      border: 1px solid rgba(0, 0, 0, .18);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, .2);
     }
-    .copy {
-      max-width: min(650px, 92vw);
-      padding-top: 3vh;
+    .panel {
+      display: grid;
+      align-content: start;
+      gap: 16px;
+      padding: 24px;
+      background: var(--panel);
     }
     .eyebrow {
-      color: #9de3d7;
-      letter-spacing: .16em;
+      color: var(--accent);
+      letter-spacing: .12em;
       text-transform: uppercase;
-      font-size: .78rem;
+      font-size: .76rem;
       font-weight: 800;
     }
     h1 {
-      margin: .65rem 0 1.1rem;
-      max-width: 720px;
-      font-size: clamp(3.25rem, 9vw, 8.5rem);
-      line-height: .86;
+      margin: 0;
+      font-size: clamp(2rem, 5vw, 4.5rem);
+      line-height: .96;
       letter-spacing: 0;
       text-wrap: balance;
     }
     p {
-      max-width: 620px;
       margin: 0;
       color: var(--muted);
-      font-size: clamp(1rem, 1.35vw, 1.22rem);
-      line-height: 1.65;
+      line-height: 1.55;
+      font-size: .98rem;
       text-wrap: pretty;
     }
     .buttons {
       display: flex;
+      gap: 8px;
       flex-wrap: wrap;
-      gap: .75rem;
-      margin-top: 2rem;
     }
     button {
-      min-height: 42px;
+      min-height: 38px;
       border: 1px solid var(--line);
       border-radius: 6px;
-      padding: 0 16px;
-      font-weight: 800;
+      padding: 0 12px;
+      background: var(--panel-2);
+      color: var(--text);
+      font-weight: 700;
       cursor: pointer;
     }
-    .primary {
-      background: var(--text);
-      color: #101216;
+    button:hover,
+    button.active { border-color: var(--accent); }
+    .rows {
+      display: grid;
+      gap: 1px;
+      background: var(--line);
     }
-    .secondary {
-      background: var(--panel);
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 11px 12px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: .88rem;
+    }
+    .row strong {
       color: var(--text);
+      text-align: right;
     }
-    .cards {
+    .strip {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 1px;
       background: var(--line);
-      border-top: 1px solid var(--line);
     }
-    .card {
+    .cell {
+      min-height: 116px;
+      padding: 18px;
       background: #171a20;
-      min-height: 150px;
-      padding: clamp(1.2rem, 2vw, 1.8rem);
       color: var(--muted);
-      line-height: 1.55;
+      line-height: 1.5;
+      font-size: .92rem;
     }
-    .card strong {
+    .cell strong {
       display: block;
       color: var(--text);
-      font-size: 1rem;
-      margin-bottom: .45rem;
+      margin-bottom: 6px;
+      font-size: .96rem;
     }
+    .warning { color: var(--warn); }
     @media (max-width: 860px) {
-      .hero {
-        align-items: flex-end;
-        min-height: 88vh;
-      }
-      .shade { background: rgba(8, 9, 12, .56); }
-      .cards { grid-template-columns: 1fr; }
+      .hero,
+      .strip { grid-template-columns: 1fr; }
+      canvas { height: 54vh; }
     }
   </style>
 </head>
 <body>
   <section class="hero">
-    <canvas id="canvas"></canvas>
-    <div class="shade"></div>
-    <div class="copy">
-      <div class="eyebrow">AI video-to-web motion asset</div>
-      <h1>Video elements become website graphics.</h1>
-      <p>
-        Extract a product, prop, person, or detail once; reuse it as a responsive motion layer with JSON timing,
-        transforms, and interaction states.
-      </p>
-      <div class="buttons">
-        <button class="primary" id="toggle">Pause</button>
-        <button class="secondary" id="pulse">Pulse</button>
-      </div>
+    <div class="stage">
+      <canvas id="canvas"></canvas>
     </div>
+    <aside class="panel">
+      <div class="eyebrow">Website graphic layer</div>
+      <h1>Reusable motion, controlled by JSON.</h1>
+      <p>Cached raster/alpha assets stay photoreal. Hover, click, and scroll states update transforms during playback.</p>
+      <div class="buttons">
+        <button id="toggle">Pause</button>
+        <button id="hover">Hover</button>
+        <button id="clickState">Click</button>
+      </div>
+      <div class="rows" id="metrics"></div>
+      <p id="status" class="warning">Loading layer...</p>
+    </aside>
   </section>
-
-  <section class="cards">
-    <div class="card"><strong>Reusable</strong>One extracted object can move across landing pages, ads, templates, and short-form edits.</div>
-    <div class="card"><strong>Interactive</strong>Hover, scroll, click, and data events update JSON state without re-running AI.</div>
-    <div class="card"><strong>Resource-aware</strong>The web package loads cropped layers and transform metadata instead of a full authoring scene.</div>
+  <section class="strip">
+    <div class="cell"><strong>Cached assets</strong>Preview reuses sprite atlases or alpha PNG sequences.</div>
+    <div class="cell"><strong>JSON states</strong>Interaction changes are transform updates, not new inference runs.</div>
+    <div class="cell"><strong>Embed-ready</strong>The same manifest can load in Canvas2D, Pixi/WebGL, or a plain JS mount.</div>
   </section>
+  <script type="module">
+    const runtimePath = location.pathname.includes("/preview/")
+      ? "./runtime/index.js"
+      : "../packages/motionjson-runtime/src/index.js";
+    const { createCanvasRuntime, normalizeMotionJSON } = await import(runtimePath);
 
-  <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const toggle = document.getElementById('toggle');
-    const pulse = document.getElementById('pulse');
-
-    let playing = true;
-    let pulseUntil = 0;
-    let sheet = null;
-    let frames = [];
-    let graph = null;
-    let start = performance.now();
-
-    toggle.addEventListener('click', () => {
-      playing = !playing;
-      start = performance.now();
-      toggle.textContent = playing ? 'Pause' : 'Play';
+    const params = new URLSearchParams(location.search);
+    const manifestUrl = params.get("manifest") || (location.pathname.includes("/preview/") ? "../web_asset_manifest.json" : "../out/demo/web_asset_manifest.json");
+    const response = await fetch(manifestUrl);
+    const scene = normalizeMotionJSON(await response.json(), { baseUrl: manifestUrl });
+    const runtime = createCanvasRuntime(document.getElementById("canvas"), scene, {
+      background: "#fbfaf6",
+      showBounds: true
     });
-    pulse.addEventListener('click', () => { pulseUntil = performance.now() + 900; });
-    window.addEventListener('pointermove', event => {
-      if (event.clientX > window.innerWidth * .55) pulseUntil = performance.now() + 260;
+    await runtime.load();
+    runtime.start();
+
+    const metrics = document.getElementById("metrics");
+    metrics.innerHTML = [
+      ["Renderer", runtime.renderer],
+      ["Frames", scene.assets.sequence.length],
+      ["Source", scene.sourceType],
+      ["Layer", scene.assetId]
+    ].map(([label, value]) => `<div class="row"><span>${label}</span><strong>${value}</strong></div>`).join("");
+    document.getElementById("status").textContent = `Loaded ${scene.label}`;
+
+    document.getElementById("toggle").addEventListener("click", (event) => {
+      runtime.setPlaying(!runtime.playing);
+      event.currentTarget.textContent = runtime.playing ? "Pause" : "Play";
     });
-
-    function loadImage(src) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
-      });
-    }
-
-    function manifestUrl() {
-      const params = new URLSearchParams(location.search);
-      if (params.get('manifest')) return params.get('manifest');
-      return location.pathname.includes('/preview/') ? '../web_asset_manifest.json' : '../out/demo/web_asset_manifest.json';
-    }
-
-    function baseUrl(url) {
-      return url.split('/').slice(0, -1).join('/') || '.';
-    }
-
-    async function boot() {
-      const manifest = manifestUrl();
-      const base = baseUrl(manifest);
-      const response = await fetch(manifest);
-      graph = await response.json();
-      sheet = graph.assets?.spritesheet?.path ? await loadImage(base + '/' + graph.assets.spritesheet.path) : null;
-      frames = (await Promise.all((graph.assets?.sequence || []).map(async frame => ({
-        meta: frame,
-        img: sheet || (frame.asset ? await loadImage(base + '/' + frame.asset) : null)
-      })))).filter(frame => frame.img && frame.meta.visible);
-      requestAnimationFrame(draw);
-    }
-
-    function draw(now) {
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      const w = Math.max(1, Math.floor(rect.width * dpr));
-      const h = Math.max(1, Math.floor(rect.height * dpr));
-      if (canvas.width !== w || canvas.height !== h) {
-        canvas.width = w;
-        canvas.height = h;
-      }
-      ctx.clearRect(0, 0, w, h);
-
-      const elapsed = playing ? (now - start) / 1000 : 0;
-      const scroll = Math.min(1, window.scrollY / Math.max(1, window.innerHeight));
-      const frameIndex = frames.length ? Math.floor(elapsed * (graph?.canvas?.fps || 12)) % frames.length : 0;
-      const frame = frames[frameIndex];
-      const img = frame?.img;
-      if (!img) {
-        requestAnimationFrame(draw);
-        return;
-      }
-
-      const pulseScale = now < pulseUntil ? 1.08 + Math.sin((pulseUntil - now) / 900 * Math.PI) * .08 : 1;
-      const sprite = frame.meta.sprite;
-      const sourceW = sprite?.w || img.width;
-      const sourceH = sprite?.h || img.height;
-      const baseSize = Math.min(w, h) * (w < 860 * dpr ? .45 : .58);
-      const scale = baseSize / Math.max(sourceW, sourceH) * pulseScale;
-      const x = w * (w < 860 * dpr ? .58 : .72);
-      const y = h * (w < 860 * dpr ? .33 : .47) - scroll * h * .12;
-      const angle = Math.sin(elapsed * .8) * .1 + scroll * .35;
-      const anchor = frame.meta.anchor || [sourceW / 2, sourceH / 2];
-
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle);
-      ctx.scale(scale, scale);
-      ctx.shadowColor = 'rgba(0, 0, 0, .42)';
-      ctx.shadowBlur = 54 * dpr;
-      ctx.shadowOffsetY = 22 * dpr;
-      if (sprite && sheet) {
-        ctx.drawImage(img, sprite.x, sprite.y, sprite.w, sprite.h, -anchor[0], -anchor[1], sourceW, sourceH);
-      } else {
-        ctx.drawImage(img, -anchor[0], -anchor[1]);
-      }
-      if (now < pulseUntil) {
-        ctx.shadowBlur = 0;
-        ctx.strokeStyle = 'rgba(128, 216, 202, .82)';
-        ctx.lineWidth = 3 / Math.max(scale, 0.01);
-        ctx.strokeRect(-anchor[0], -anchor[1], sourceW, sourceH);
-      }
-      ctx.restore();
-
-      requestAnimationFrame(draw);
-    }
-
-    boot().catch(err => {
-      console.error(err);
-      ctx.fillStyle = 'white';
-      ctx.font = '20px ui-sans-serif, sans-serif';
-      ctx.fillText('Serve the repository locally so the web package can load.', 24, 48);
+    document.getElementById("hover").addEventListener("click", (event) => {
+      const active = runtime.state !== "hover";
+      runtime.setState(active ? "hover" : "idle");
+      event.currentTarget.classList.toggle("active", active);
     });
+    document.getElementById("clickState").addEventListener("click", () => {
+      runtime.setState("click");
+      setTimeout(() => runtime.setState("idle"), 180);
+    });
+    addEventListener("scroll", () => {
+      const progress = Math.min(1, scrollY / Math.max(1, innerHeight));
+      runtime.setScrollProgress(progress);
+    }, { passive: true });
   </script>
 </body>
 </html>

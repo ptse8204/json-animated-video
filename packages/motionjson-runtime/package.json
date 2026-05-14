@@ -1,0 +1,26 @@
+{
+  "name": "@motionjson/runtime",
+  "version": "0.1.0",
+  "description": "Dependency-light MotionJSON browser runtime for cached raster/alpha motion layers.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.js",
+    "./canvas": "./src/canvas.js",
+    "./pixi": "./src/pixi.js",
+    "./embed": "./src/embed.js",
+    "./react": "./src/react.js"
+  },
+  "peerDependencies": {
+    "pixi.js": ">=7 <8",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "pixi.js": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
+  }
+}

@@ -34,6 +34,8 @@ def _preview_copy(out_dir: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
     for name in (
         "canvas_player.html",
+        "pixi_player.html",
+        "plain_js_embed.html",
         "website_graphics_hero.html",
         "object_selection_workflow.html",
         "object_selection_workflow.js",
@@ -41,6 +43,12 @@ def _preview_copy(out_dir: Path) -> None:
         src = repo_root / "examples" / name
         if src.exists():
             shutil.copyfile(src, preview_dir / name)
+    runtime_src = repo_root / "packages" / "motionjson-runtime" / "src"
+    runtime_dest = preview_dir / "runtime"
+    if runtime_src.exists():
+        if runtime_dest.exists():
+            shutil.rmtree(runtime_dest)
+        shutil.copytree(runtime_src, runtime_dest)
 
 
 def _rel(path: Path, root: Path) -> str:

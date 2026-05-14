@@ -1,0 +1,12 @@
+{
+  "name": "motionjson-workspace",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "node --test packages/motionjson-runtime/test/*.test.mjs",
+    "lint": "node scripts/lint_runtime.mjs"
+  }
+}

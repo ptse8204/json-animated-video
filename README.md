@@ -20,7 +20,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes a website-focused `web_asset_manifest.json`.
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
-- Copies dependency-light browser previews into `out/.../preview/`.
+- Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
 
 ## Quick Start
 
@@ -49,6 +49,8 @@ Open:
 
 - Runtime package: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/web_asset_manifest.json`
 - Authoring graph: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/scene_graph.json`
+- Pixi/WebGL path with graceful Canvas2D fallback: `http://localhost:8080/examples/pixi_player.html?scene=/out/demo/web_asset_manifest.json`
+- Plain JS embed: `http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo/web_asset_manifest.json`
 - Object selection workflow: `http://localhost:8080/examples/object_selection_workflow.html?manifest=/out/demo/web_asset_manifest.json&scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
 
@@ -133,10 +135,20 @@ out/demo/
       object_manifest.json
   preview/
     canvas_player.html
+    pixi_player.html
+    plain_js_embed.html
     object_selection_workflow.html
     object_selection_workflow.js
     website_graphics_hero.html
+    runtime/
+      index.js
 ```
+
+## Web Runtime
+
+The runtime package lives in `packages/motionjson-runtime`. It accepts both `web_asset_manifest.json` and `scene_graph.json`, resolves relative asset URLs, prefers spritesheets, falls back to alpha PNG sequences, and exposes cleanup through `destroy()`.
+
+Runtime playback and interactions use cached assets plus JSON transforms only. Pixi/WebGL and React are optional peer-style integrations: applications inject `PIXI` or `React`; tests run without installing either package. See `docs/runtime.md`.
 
 ## Why JSON
 
@@ -177,7 +189,7 @@ The production package records explicit status for each asset. Transparent WebM 
 - Sprite sheet packing is simple row-major packing.
 - Transparent object-layer WebM export is available for production packages when `ffmpeg` is installed; full final timeline export is still future work.
 - SAM2 providers are adapter-compatible, but real local SAM2 and hosted services are optional setup, not default dependencies.
-- Browser preview uses Canvas2D; production should move to WebGL/PixiJS for many objects or large assets.
+- Browser runtime includes Canvas2D, optional Pixi/WebGL injection, plain JS embed, and a React component factory.
 
 ## Roadmap
 

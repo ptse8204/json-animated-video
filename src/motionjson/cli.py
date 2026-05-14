@@ -224,6 +224,9 @@ def run_extract(args: argparse.Namespace) -> dict:
     print(f"Wrote {out / 'resource_profile.json'}")
     print(f"Wrote {out / 'silhouette_lottie.json'}")
     print(f"Wrote {out / 'preview' / 'canvas_player.html'}")
+    print(f"Wrote {out / 'preview' / 'pixi_player.html'}")
+    print(f"Wrote {out / 'preview' / 'plain_js_embed.html'}")
+    print(f"Wrote {out / 'preview' / 'runtime'}")
     print(f"Frames: {scene['source']['sampledFrameCount']}; canvas: {scene['source']['width']}x{scene['source']['height']}")
     return scene
 
