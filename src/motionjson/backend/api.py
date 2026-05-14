@@ -26,6 +26,17 @@ from .beta import (
 )
 from .db import connect, initialize_database
 from .jobs import enqueue_asset_package_job, enqueue_extract_job, enqueue_render_job, get_job, list_job_events, list_jobs
+from .library import (
+    add_asset_to_collection,
+    create_collection,
+    create_creator_pack,
+    get_library_asset,
+    list_collection_assets,
+    list_collections,
+    list_creator_packs,
+    list_library_assets,
+    save_library_asset,
+)
 from .models import BackendError, ForbiddenError, NotFoundError, ProviderPolicyError, UnauthorizedError
 from .projects import create_project, get_project, list_projects
 from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
@@ -191,6 +202,62 @@ class MotionJSONAPI:
             return status, "application/json", json.dumps(project, sort_keys=True).encode("utf-8")
         if len(parts) == 3 and parts[:2] == ["v1", "projects"] and method == "GET":
             return get_project(conn, user_id=user_id, project_id=parts[2])
+
+        if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "library-assets" and method == "POST":
+            created = save_library_asset(
+                conn,
+                user_id=user_id,
+                project_id=parts[2],
+                asset_id=str(payload["assetId"]),
+                type=str(payload.get("type") or "saved_asset"),
+                title=str(payload.get("title") or ""),
+                description=str(payload.get("description") or ""),
+                tags=payload.get("tags") if isinstance(payload.get("tags"), list) else None,
+                metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+            )
+            return HTTPStatus.CREATED, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+        if parts == ["v1", "library", "assets"] and method == "GET":
+            filters = {key: values[0] for key, values in query.items() if values}
+            return list_library_assets(conn, user_id=user_id, filters=filters)
+        if len(parts) == 4 and parts[:3] == ["v1", "library", "assets"] and method == "GET":
+            return get_library_asset(conn, user_id=user_id, library_asset_id=parts[3])
+
+        if parts == ["v1", "library", "collections"] and method == "POST":
+            created = create_collection(
+                conn,
+                user_id=user_id,
+                title=str(payload.get("title") or payload.get("name") or ""),
+                description=str(payload.get("description") or ""),
+                project_id=payload.get("projectId"),
+                metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+            )
+            return HTTPStatus.CREATED, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+        if parts == ["v1", "library", "collections"] and method == "GET":
+            return list_collections(conn, user_id=user_id)
+        if len(parts) == 5 and parts[:3] == ["v1", "library", "collections"] and parts[4] == "assets" and method == "POST":
+            added = add_asset_to_collection(
+                conn,
+                user_id=user_id,
+                collection_id=parts[3],
+                library_asset_id=str(payload["libraryAssetId"]),
+            )
+            return HTTPStatus.CREATED, "application/json", json.dumps(added, sort_keys=True).encode("utf-8")
+        if len(parts) == 5 and parts[:3] == ["v1", "library", "collections"] and parts[4] == "assets" and method == "GET":
+            return list_collection_assets(conn, user_id=user_id, collection_id=parts[3])
+
+        if parts == ["v1", "library", "packs"] and method == "POST":
+            created = create_creator_pack(
+                conn,
+                user_id=user_id,
+                collection_id=str(payload["collectionId"]),
+                title=str(payload.get("title") or payload.get("name") or ""),
+                description=str(payload.get("description") or ""),
+                library_asset_ids=payload.get("libraryAssetIds") if isinstance(payload.get("libraryAssetIds"), list) else None,
+                metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+            )
+            return HTTPStatus.CREATED, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+        if parts == ["v1", "library", "packs"] and method == "GET":
+            return list_creator_packs(conn, user_id=user_id)
 
         if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "assets" and method == "GET":
             kind = query.get("kind", [None])[0]

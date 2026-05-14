@@ -2,9 +2,10 @@
 
 Phase 15 adds a local developer API for MotionJSON projects, assets, jobs,
 asset packages, renders, and webhooks. Phase 17 adds closed beta status,
-feedback/error reporting, and admin-only dashboard endpoints. The API is
-dependency-light and uses the stdlib HTTP server over the existing SQLite
-backend.
+feedback/error reporting, and admin-only dashboard endpoints. Phase 18 adds a
+local asset-library foundation for saved reusable motion layers, brand
+collections, and creator-approved packs. The API is dependency-light and uses
+the stdlib HTTP server over the existing SQLite backend.
 
 MotionJSON remains an AI object-layer editing system for video and web
 graphics. API extraction uses existing backend provider policy: deterministic
@@ -58,8 +59,17 @@ python -m motionjson.cli backend serve-api \
 - `GET /v1/projects/{projectId}`
 - `POST /v1/projects/{projectId}/assets`
 - `GET /v1/projects/{projectId}/assets`
+- `POST /v1/projects/{projectId}/library-assets`
 - `GET /v1/assets/{assetId}`
 - `GET /v1/assets/{assetId}/download`
+- `GET /v1/library/assets`
+- `GET /v1/library/assets/{libraryAssetId}`
+- `POST /v1/library/collections`
+- `GET /v1/library/collections`
+- `POST /v1/library/collections/{collectionId}/assets`
+- `GET /v1/library/collections/{collectionId}/assets`
+- `POST /v1/library/packs`
+- `GET /v1/library/packs`
 - `POST /v1/projects/{projectId}/extractions`
 - `GET /v1/projects/{projectId}/jobs`
 - `GET /v1/jobs/{jobId}`
@@ -85,6 +95,69 @@ python -m motionjson.cli backend serve-api \
 Asset upload accepts JSON with `dataBase64`, `filename`, `kind`,
 `contentType`, and optional `metadata`. This keeps the local server small and
 avoids multipart dependencies.
+
+## Asset Library, Collections, And Packs
+
+Save an existing backend asset as a reusable library asset:
+
+```json
+{
+  "assetId": "asset_id",
+  "type": "motion_sticker",
+  "title": "Launch sticker",
+  "description": "Reusable motion layer",
+  "tags": ["hero", "brand"]
+}
+```
+
+`type` must be `saved_asset` or `motion_sticker`. The saved library row
+references the existing asset and does not duplicate stored bytes. Rights
+metadata is derived from the latest `rights_metadata` row for that asset when
+available and remains the source of truth for creator approval and commercial
+use status.
+
+List assets with deterministic local filters:
+
+```http
+GET /v1/library/assets?q=launch&tag=hero&licenseScope=commercial&creatorApproved=true&commercialUseStatus=approved
+```
+
+Brand collections group saved assets:
+
+```json
+{
+  "projectId": "project_id",
+  "title": "Spring launch",
+  "description": "Approved brand motion"
+}
+```
+
+Attach an asset with:
+
+```json
+{
+  "libraryAssetId": "library_asset_id"
+}
+```
+
+Creator packs are created from collection assets only:
+
+```json
+{
+  "collectionId": "collection_id",
+  "title": "Approved creator pack",
+  "libraryAssetIds": ["library_asset_id"]
+}
+```
+
+If `libraryAssetIds` is omitted, all collection assets are considered. Pack
+creation rejects any asset that is not creator approved and approved for
+commercial use in rights metadata.
+
+Library, collection, and pack responses include `aiUsage: "none"` and omit
+`storage_key`, token hashes, secret hashes, uploaded bytes, and raw key
+material. These routes do not call segmentation, matting, OpenRouter, hosted
+providers, or paid APIs.
 
 `GET /v1/jobs/{jobId}/events` can include `latency_metrics` and
 `cost_dashboard` events for extraction jobs. `GET /v1/projects/{projectId}/jobs`
@@ -199,6 +272,19 @@ const packageJob = await client.createAssetPackage(project.id, {
 const renderJob = await client.createRender(project.id, {
   sourceJobId: extraction.id,
   format: "remotion-plan"
+});
+const libraryAsset = await client.saveLibraryAsset(project.id, {
+  assetId: asset.id,
+  type: "motion_sticker",
+  title: "Launch sticker",
+  tags: ["hero", "brand"]
+});
+const collection = await client.createBrandCollection({
+  projectId: project.id,
+  title: "Spring launch"
+});
+await client.addCollectionAsset(collection.id, {
+  libraryAssetId: libraryAsset.id
 });
 await client.createFeedback({
   projectId: project.id,

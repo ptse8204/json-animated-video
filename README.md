@@ -24,7 +24,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
 - Exports final MP4 renders, transparent object WebM files, website ZIP packages, and Remotion adapter plans from cached assets and JSON transforms.
-- Provides a dependency-light local developer API, hashed API keys, closed beta invite/member workflows, feedback/error reporting, an admin dashboard, signed webhook delivery records, and a JavaScript SDK for building with reusable motion layers.
+- Provides a dependency-light local developer API, hashed API keys, closed beta invite/member workflows, feedback/error reporting, an admin dashboard, signed webhook delivery records, reusable asset-library/brand-collection workflows, creator-approved packs, and a JavaScript SDK for building with reusable motion layers.
 
 ## Quick Start
 
@@ -186,12 +186,19 @@ python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
 API keys are stored as hashes and the raw key is printed only once. The API
 covers projects, assets, extraction jobs, website asset packages, cached-asset
 renders, webhooks, delivery records, beta status, feedback/error reporting, and
-admin-only beta dashboard routes. Render jobs keep `aiUsage: none` and use
-cached raster/alpha assets plus JSON transforms; `remotion-plan` is
-deterministic, while `mp4` and `webm-alpha` use local `ffmpeg` when available.
+admin-only beta dashboard routes. It also exposes a local asset-library
+foundation for saving existing backend assets as `saved_asset` or
+`motion_sticker` entries, searching by tags/license/rights filters, grouping
+assets into brand collections, and creating creator-approved packs from
+approved collection assets. Render and library reuse operations keep
+`aiUsage: none` and use cached raster/alpha assets plus JSON transforms;
+`remotion-plan` is deterministic, while `mp4` and `webm-alpha` use local
+`ffmpeg` when available.
 
 Closed beta invites are one-time, expirable/revocable, and stored only as
 hashes. See `docs/beta_readiness.md`, `docs/support.md`, and `docs/privacy.md`.
+See `docs/asset_library_marketplace.md` for the local asset-library and
+marketplace foundation.
 
 The JavaScript SDK lives in `packages/motionjson-sdk`:
 

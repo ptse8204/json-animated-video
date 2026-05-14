@@ -221,6 +221,71 @@ CREATE TABLE IF NOT EXISTS error_reports (
     resolved_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS library_assets (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    asset_id TEXT NOT NULL REFERENCES assets(id),
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    rights_metadata_id TEXT REFERENCES rights_metadata(id),
+    license TEXT NOT NULL,
+    license_name TEXT NOT NULL DEFAULT '',
+    license_url TEXT,
+    license_scope TEXT NOT NULL,
+    creator_approved INTEGER NOT NULL DEFAULT 0,
+    creator_approval_status TEXT NOT NULL,
+    commercial_use INTEGER NOT NULL DEFAULT 0,
+    commercial_use_status TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_asset_tags (
+    library_asset_id TEXT NOT NULL REFERENCES library_assets(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (library_asset_id, tag)
+);
+
+CREATE TABLE IF NOT EXISTS brand_collections (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS brand_collection_items (
+    collection_id TEXT NOT NULL REFERENCES brand_collections(id) ON DELETE CASCADE,
+    library_asset_id TEXT NOT NULL REFERENCES library_assets(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (collection_id, library_asset_id)
+);
+
+CREATE TABLE IF NOT EXISTS creator_packs (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    collection_id TEXT NOT NULL REFERENCES brand_collections(id),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS creator_pack_items (
+    pack_id TEXT NOT NULL REFERENCES creator_packs(id) ON DELETE CASCADE,
+    library_asset_id TEXT NOT NULL REFERENCES library_assets(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (pack_id, library_asset_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id, revoked_at);
@@ -242,6 +307,15 @@ CREATE INDEX IF NOT EXISTS idx_beta_invites_email ON beta_invites(email, revoked
 CREATE INDEX IF NOT EXISTS idx_beta_members_user ON beta_members(user_id, disabled_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_project_status ON feedback_items(project_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_error_reports_project_status ON error_reports(project_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_library_assets_owner ON library_assets(owner_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_library_assets_project ON library_assets(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_library_assets_asset ON library_assets(asset_id);
+CREATE INDEX IF NOT EXISTS idx_library_assets_filters ON library_assets(owner_user_id, type, license, license_scope, creator_approval_status, commercial_use_status);
+CREATE INDEX IF NOT EXISTS idx_library_asset_tags_tag ON library_asset_tags(tag, library_asset_id);
+CREATE INDEX IF NOT EXISTS idx_brand_collections_owner ON brand_collections(owner_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_brand_collection_items_asset ON brand_collection_items(library_asset_id);
+CREATE INDEX IF NOT EXISTS idx_creator_packs_owner ON creator_packs(owner_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_creator_pack_items_asset ON creator_pack_items(library_asset_id);
 """
 
 

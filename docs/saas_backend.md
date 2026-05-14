@@ -7,9 +7,11 @@ protocol, with `LocalStorageProvider` as the default implementation.
 The backend manages users, sessions, API keys, projects, assets, jobs, queue
 items, workers, usage events, rights metadata, asset lineage, audit events, and
 local webhook records. Phase 17 adds closed beta invite/member records,
-project-scoped feedback, redacted error reports, and an admin dashboard.
-Billing, marketplace features, and broad legal-advice workflows remain out of
-scope.
+project-scoped feedback, redacted error reports, and an admin dashboard. Phase
+18 adds a local marketplace foundation: saved reusable library assets, brand
+collections, tags/search/license filters, and creator-approved packs.
+Billing, public marketplace commerce, and broad legal-advice workflows remain
+out of scope.
 
 ## Product Boundary
 
@@ -68,6 +70,11 @@ python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
 python -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend save-library-asset --project-id PROJECT_ID --asset-id ASSET_ID --type motion_sticker --title "Launch sticker" --tag hero --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend list-library-assets --tag hero --creator-approved true --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend create-brand-collection --project-id PROJECT_ID --title "Spring launch" --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend add-collection-asset --collection-id COLLECTION_ID --library-asset-id LIBRARY_ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend create-creator-pack --collection-id COLLECTION_ID --title "Approved launch pack" --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend bootstrap-beta-admin --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend create-beta-invite --email beta-user@example.com --role member --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend accept-beta-invite --invite-token mjb_... --session-token-env MOTIONJSON_SESSION_TOKEN
@@ -84,6 +91,13 @@ Upload and extraction commands accept local rights metadata flags such as
 `--rights-display-text`, `--license`, `--license-name`, `--creator-approved`,
 and `--commercial-use`. These flags only persist structured metadata; they do
 not call external services or establish legal clearance.
+
+Asset-library commands only reference existing backend asset rows and rights
+metadata. They do not copy stored bytes, do not call AI providers, and report
+`aiUsage: none` for normal save/search/list/collection/pack operations.
+Creator-approved packs reject collection assets unless rights metadata marks
+creator approval and commercial use as approved. See
+`docs/asset_library_marketplace.md`.
 
 ## Closed Beta And Support
 
@@ -110,6 +124,12 @@ webhook management/delivery listing.
 Phase 17 adds `GET /v1/beta/status`, `POST /v1/beta/accept`,
 `POST /v1/feedback`, `POST /v1/error-reports`, admin beta invite/member routes,
 admin feedback/error listing, and `GET /v1/admin/dashboard`.
+Phase 18 adds `POST /v1/projects/{projectId}/library-assets`,
+`GET /v1/library/assets`, `GET /v1/library/assets/{libraryAssetId}`,
+`POST /v1/library/collections`, `GET /v1/library/collections`,
+`POST /v1/library/collections/{collectionId}/assets`,
+`GET /v1/library/collections/{collectionId}/assets`,
+`POST /v1/library/packs`, and `GET /v1/library/packs`.
 
 Asset package jobs export website ZIPs from cached extraction outputs. Render
 jobs support deterministic `remotion-plan` output and local `mp4` or

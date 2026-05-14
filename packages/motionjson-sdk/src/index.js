@@ -18,6 +18,16 @@ function toBase64(bytes) {
   throw new Error("No base64 encoder is available; pass dataBase64 directly");
 }
 
+function queryString(filters = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 async function parseResponse(response) {
   const contentType = response.headers?.get?.("content-type") || "";
   if (!response.ok) {
@@ -90,6 +100,54 @@ export class MotionJSONClient {
 
   downloadAsset(assetId) {
     return this.request(`/v1/assets/${encodeURIComponent(assetId)}/download`);
+  }
+
+  saveLibraryAsset(projectId, { assetId, type = "saved_asset", title, description = "", tags = [], metadata = {} }) {
+    return this.request(`/v1/projects/${encodeURIComponent(projectId)}/library-assets`, {
+      method: "POST",
+      body: { assetId, type, title, description, tags, metadata }
+    });
+  }
+
+  listLibraryAssets(filters = {}) {
+    return this.request(`/v1/library/assets${queryString(filters)}`);
+  }
+
+  getLibraryAsset(libraryAssetId) {
+    return this.request(`/v1/library/assets/${encodeURIComponent(libraryAssetId)}`);
+  }
+
+  createBrandCollection({ projectId, title, name, description = "", metadata = {} } = {}) {
+    return this.request("/v1/library/collections", {
+      method: "POST",
+      body: { projectId, title: title || name, description, metadata }
+    });
+  }
+
+  listBrandCollections() {
+    return this.request("/v1/library/collections");
+  }
+
+  addCollectionAsset(collectionId, { libraryAssetId }) {
+    return this.request(`/v1/library/collections/${encodeURIComponent(collectionId)}/assets`, {
+      method: "POST",
+      body: { libraryAssetId }
+    });
+  }
+
+  listCollectionAssets(collectionId) {
+    return this.request(`/v1/library/collections/${encodeURIComponent(collectionId)}/assets`);
+  }
+
+  createCreatorPack({ collectionId, title, name, description = "", libraryAssetIds, metadata = {} } = {}) {
+    return this.request("/v1/library/packs", {
+      method: "POST",
+      body: { collectionId, title: title || name, description, libraryAssetIds, metadata }
+    });
+  }
+
+  listCreatorPacks() {
+    return this.request("/v1/library/packs");
   }
 
   enqueueExtraction(projectId, { assetId, maskProvider = "threshold", maxFrames, sampleFps, rightsContext } = {}) {

@@ -101,6 +101,48 @@ test("SDK exposes beta, support, error, and admin helpers", async () => {
   assert.equal(calls[10].search, "?includeResolved=true");
 });
 
+test("SDK exposes asset library, collection, and creator pack helpers", async () => {
+  const calls = [];
+  const client = new MotionJSONClient({
+    apiKey: "mj_local_test",
+    fetch: async (url, init) => {
+      calls.push({ path: new URL(url).pathname, search: new URL(url).search, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      return jsonResponse({ ok: true });
+    }
+  });
+
+  await client.saveLibraryAsset("p1", {
+    assetId: "a1",
+    type: "motion_sticker",
+    title: "Sticker",
+    tags: ["hero"]
+  });
+  await client.listLibraryAssets({ q: "stick", tag: "hero", licenseScope: "commercial", creatorApproved: true });
+  await client.getLibraryAsset("la1");
+  await client.createBrandCollection({ projectId: "p1", title: "Brand" });
+  await client.listBrandCollections();
+  await client.addCollectionAsset("c1", { libraryAssetId: "la1" });
+  await client.listCollectionAssets("c1");
+  await client.createCreatorPack({ collectionId: "c1", title: "Pack", libraryAssetIds: ["la1"] });
+  await client.listCreatorPacks();
+
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/v1/projects/p1/library-assets",
+    "/v1/library/assets",
+    "/v1/library/assets/la1",
+    "/v1/library/collections",
+    "/v1/library/collections",
+    "/v1/library/collections/c1/assets",
+    "/v1/library/collections/c1/assets",
+    "/v1/library/packs",
+    "/v1/library/packs"
+  ]);
+  assert.equal(calls[0].body.type, "motion_sticker");
+  assert.equal(calls[1].search, "?q=stick&tag=hero&licenseScope=commercial&creatorApproved=true");
+  assert.equal(calls[5].body.libraryAssetId, "la1");
+  assert.deepEqual(calls[7].body.libraryAssetIds, ["la1"]);
+});
+
 test("verifyWebhookSignature validates MotionJSON HMAC signatures", async () => {
   const secret = "whsec_test";
   const payload = JSON.stringify({ type: "job.succeeded", data: { jobId: "j1" } });

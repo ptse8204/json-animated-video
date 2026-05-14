@@ -26,6 +26,17 @@ from .beta import (
 )
 from .db import connect, initialize_database
 from .jobs import enqueue_export_job, enqueue_extract_job, get_job
+from .library import (
+    add_asset_to_collection,
+    create_collection,
+    create_creator_pack,
+    get_library_asset,
+    list_collection_assets,
+    list_collections,
+    list_creator_packs,
+    list_library_assets,
+    save_library_asset,
+)
 from .projects import create_project, get_project
 from .rights import list_asset_lineage, list_asset_rights
 from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
@@ -147,6 +158,72 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     _add_common(asset_rights)
     asset_rights.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
     asset_rights.add_argument("asset_id")
+
+    save_asset = sub.add_parser("save-library-asset", help="Save an existing backend asset as a reusable library asset")
+    _add_common(save_asset)
+    save_asset.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    save_asset.add_argument("--project-id", required=True)
+    save_asset.add_argument("--asset-id", required=True)
+    save_asset.add_argument("--type", choices=["saved_asset", "motion_sticker"], default="saved_asset")
+    save_asset.add_argument("--title", required=True)
+    save_asset.add_argument("--description", default="")
+    save_asset.add_argument("--tag", action="append", default=[])
+    save_asset.add_argument("--metadata-json", default="{}")
+
+    library_assets = sub.add_parser("list-library-assets", help="List and search saved reusable library assets")
+    _add_common(library_assets)
+    library_assets.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    library_assets.add_argument("--q", default=None)
+    library_assets.add_argument("--type", choices=["saved_asset", "motion_sticker"], default=None)
+    library_assets.add_argument("--tag", default=None)
+    library_assets.add_argument("--license", default=None)
+    library_assets.add_argument("--license-scope", default=None)
+    library_assets.add_argument("--creator-approved", choices=["true", "false"], default=None)
+    library_assets.add_argument("--commercial-use", choices=["true", "false"], default=None)
+    library_assets.add_argument("--commercial-use-status", default=None)
+    library_assets.add_argument("--collection-id", default=None)
+    library_assets.add_argument("--pack-id", default=None)
+
+    library_asset = sub.add_parser("get-library-asset", help="Get one reusable library asset without storage keys or bytes")
+    _add_common(library_asset)
+    library_asset.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    library_asset.add_argument("library_asset_id")
+
+    collection = sub.add_parser("create-brand-collection", help="Create a local brand collection for saved assets")
+    _add_common(collection)
+    collection.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    collection.add_argument("--project-id", default=None)
+    collection.add_argument("--title", required=True)
+    collection.add_argument("--description", default="")
+    collection.add_argument("--metadata-json", default="{}")
+
+    collections = sub.add_parser("list-brand-collections", help="List local brand collections")
+    _add_common(collections)
+    collections.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+
+    collection_add = sub.add_parser("add-collection-asset", help="Attach a saved library asset to a brand collection")
+    _add_common(collection_add)
+    collection_add.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    collection_add.add_argument("--collection-id", required=True)
+    collection_add.add_argument("--library-asset-id", required=True)
+
+    collection_assets = sub.add_parser("list-collection-assets", help="List saved library assets in a brand collection")
+    _add_common(collection_assets)
+    collection_assets.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    collection_assets.add_argument("--collection-id", required=True)
+
+    pack = sub.add_parser("create-creator-pack", help="Create a creator-approved pack from approved collection assets")
+    _add_common(pack)
+    pack.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    pack.add_argument("--collection-id", required=True)
+    pack.add_argument("--title", required=True)
+    pack.add_argument("--description", default="")
+    pack.add_argument("--library-asset-id", action="append", default=None)
+    pack.add_argument("--metadata-json", default="{}")
+
+    packs = sub.add_parser("list-creator-packs", help="List creator-approved packs")
+    _add_common(packs)
+    packs.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
 
     beta_bootstrap = sub.add_parser("bootstrap-beta-admin", help="Grant the session user the local beta admin role")
     _add_common(beta_bootstrap)
@@ -351,6 +428,85 @@ def run_backend_command(args: argparse.Namespace) -> None:
                 "lineage": list_asset_lineage(conn, asset_id=args.asset_id),
             }
         )
+        return
+    if args.backend_command == "save-library-asset":
+        session = _session(conn, args.session_token_env)
+        _print_json(
+            save_library_asset(
+                conn,
+                user_id=session["user_id"],
+                project_id=args.project_id,
+                asset_id=args.asset_id,
+                type=args.type,
+                title=args.title,
+                description=args.description,
+                tags=args.tag,
+                metadata=_json_object(args.metadata_json),
+            )
+        )
+        return
+    if args.backend_command == "list-library-assets":
+        session = _session(conn, args.session_token_env)
+        filters = {
+            "q": args.q,
+            "type": args.type,
+            "tag": args.tag,
+            "license": args.license,
+            "licenseScope": args.license_scope,
+            "creatorApproved": args.creator_approved,
+            "commercialUse": args.commercial_use,
+            "commercialUseStatus": args.commercial_use_status,
+            "collectionId": args.collection_id,
+            "packId": args.pack_id,
+        }
+        _print_json(list_library_assets(conn, user_id=session["user_id"], filters={key: value for key, value in filters.items() if value is not None}))
+        return
+    if args.backend_command == "get-library-asset":
+        session = _session(conn, args.session_token_env)
+        _print_json(get_library_asset(conn, user_id=session["user_id"], library_asset_id=args.library_asset_id))
+        return
+    if args.backend_command == "create-brand-collection":
+        session = _session(conn, args.session_token_env)
+        _print_json(
+            create_collection(
+                conn,
+                user_id=session["user_id"],
+                project_id=args.project_id,
+                title=args.title,
+                description=args.description,
+                metadata=_json_object(args.metadata_json),
+            )
+        )
+        return
+    if args.backend_command == "list-brand-collections":
+        session = _session(conn, args.session_token_env)
+        _print_json(list_collections(conn, user_id=session["user_id"]))
+        return
+    if args.backend_command == "add-collection-asset":
+        session = _session(conn, args.session_token_env)
+        _print_json(add_asset_to_collection(conn, user_id=session["user_id"], collection_id=args.collection_id, library_asset_id=args.library_asset_id))
+        return
+    if args.backend_command == "list-collection-assets":
+        session = _session(conn, args.session_token_env)
+        _print_json(list_collection_assets(conn, user_id=session["user_id"], collection_id=args.collection_id))
+        return
+    if args.backend_command == "create-creator-pack":
+        session = _session(conn, args.session_token_env)
+        _print_json(
+            create_creator_pack(
+                conn,
+                user_id=session["user_id"],
+                collection_id=args.collection_id,
+                title=args.title,
+                description=args.description,
+                library_asset_ids=args.library_asset_id,
+                metadata=_json_object(args.metadata_json),
+            )
+        )
+        return
+    if args.backend_command == "list-creator-packs":
+        session = _session(conn, args.session_token_env)
+        _print_json(list_creator_packs(conn, user_id=session["user_id"]))
         return
     if args.backend_command == "bootstrap-beta-admin":
         session = _session(conn, args.session_token_env)
