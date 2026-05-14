@@ -10,6 +10,7 @@ from .exporters.web_manifest import write_web_asset_manifest
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .metrics import build_resource_profile
 from .pipeline import run_pipeline
+from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
 from .validation import validate_path
 
 
@@ -84,12 +85,20 @@ def build_provider(args: argparse.Namespace):
     if args.mask_provider == "external":
         if not args.mask_dir:
             raise SystemExit("--mask-dir is required when --mask-provider external")
-        return ExternalMaskProvider(args.mask_dir)
-    if args.mask_provider == "motion":
-        return MotionMaskProvider()
-    if args.mask_provider == "sam2":
-        return SAM2Provider(prompt_point=args.prompt_point, prompt_box=args.prompt_box)
-    return ThresholdMaskProvider(args.lower_hsv, args.upper_hsv)
+        mask_provider = ExternalMaskProvider(args.mask_dir)
+    elif args.mask_provider == "motion":
+        mask_provider = MotionMaskProvider()
+    elif args.mask_provider == "sam2":
+        mask_provider = SAM2Provider(prompt_point=args.prompt_point, prompt_box=args.prompt_box)
+    else:
+        mask_provider = ThresholdMaskProvider(args.lower_hsv, args.upper_hsv)
+
+    segmentation_provider = MaskProviderSegmentationAdapter(mask_provider)
+    return SegmentationMaskProvider(
+        segmentation_provider,
+        prompt_point=args.prompt_point,
+        prompt_box=args.prompt_box,
+    )
 
 
 def run_extract(args: argparse.Namespace) -> dict:
