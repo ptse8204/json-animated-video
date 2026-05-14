@@ -140,10 +140,11 @@ class ExternalMaskProvider(BaseMaskProvider):
 
 @dataclass
 class SAM2Provider(BaseMaskProvider):
-    """Future neural segmentation adapter stub.
+    """Legacy SAM2 adapter stub kept for the historical ``--mask-provider sam2`` mode.
 
-    This class intentionally does not hardcode a paid API call. A production
-    implementation should inject a provider client here or subclass this adapter.
+    Use the explicit ``sam2-local`` or ``sam2-hosted`` CLI modes for Phase 3
+    provider implementations. This legacy class intentionally does not hardcode
+    local SAM2 imports, paid API calls, or network calls.
     """
 
     prompt_point: tuple[int, int] | None = None
@@ -154,9 +155,9 @@ class SAM2Provider(BaseMaskProvider):
         super().prepare(video_metadata)
         if self.client is None:
             raise RuntimeError(
-                "SAM2 mask provider is configured as a stub. No SAM2 client or credentials were provided. "
+                "Legacy sam2 mask provider is configured as a stub. No SAM2 client was injected. "
                 "Use --mask-provider threshold, --mask-provider motion, or --mask-provider external for the local MVP, "
-                "or inject a SAM2 client in src/motionjson/adapters/sam2_provider.py."
+                "or use --mask-provider sam2-local / sam2-hosted for the explicit Phase 3 providers."
             )
 
     def get_mask(self, frame_index: int, frame_bgr: np.ndarray) -> np.ndarray:

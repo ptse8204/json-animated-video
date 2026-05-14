@@ -1,0 +1,136 @@
+# SAM2 Segmentation Providers
+
+MotionJSON supports SAM2-compatible segmentation as an ingest-time mask provider. Normal editing and preview still use cached raster/alpha assets plus JSON transforms; they do not rerun SAM2 during drag, scale, rotate, or timeline preview.
+
+## CLI Modes
+
+Existing modes remain available:
+
+```bash
+--mask-provider threshold
+--mask-provider motion
+--mask-provider external
+--mask-provider sam2
+```
+
+`sam2` is the legacy stub and still fails clearly unless a client is injected. Phase 3 adds explicit modes:
+
+```bash
+--mask-provider sam2-local
+--mask-provider sam2-hosted
+```
+
+Both SAM2 modes accept prompts:
+
+```bash
+--prompt-point 410,230
+--prompt-box 380,180,120,140
+--sam2-prompt-frame 0
+```
+
+`--prompt-box` is `x,y,w,h` at the CLI boundary.
+
+## Local SAM2 Setup
+
+The local provider lives at `motionjson.providers.sam2.LocalSAM2SegmentationProvider`. SAM2 and torch are optional and are not default MotionJSON dependencies.
+
+Install SAM2 in your own environment, then run:
+
+```bash
+python -m motionjson.cli extract input.mp4 \
+  --out out/sam2-local \
+  --mask-provider sam2-local \
+  --sam2-checkpoint /path/to/sam2_checkpoint.pt \
+  --sam2-config /path/to/sam2_config.yaml \
+  --sam2-device cuda \
+  --prompt-point 410,230
+```
+
+The provider lazy-imports SAM2 only when no predictor or predictor factory is injected. Tests inject a fake predictor, so CI does not need SAM2, torch, GPUs, credentials, or network.
+
+The local provider follows the SAM2 video flow:
+
+- `prepare()` initializes predictor state for the source video.
+- The first requested segment applies a point or box prompt at `--sam2-prompt-frame`.
+- Masks are propagated through the video.
+- Returned logits or masks are normalized to 2D binary `uint8` arrays with values `0` or `255`.
+
+## Hosted SAM2 Contract
+
+The hosted provider lives at `motionjson.providers.sam2.HostedSAM2SegmentationProvider`. It accepts an injected client or JSON transport and makes no network calls by default.
+
+For a real hosted deployment:
+
+```bash
+HOSTED_SEGMENTATION_URL=https://your-segmentation-service.example/sam2
+HOSTED_SEGMENTATION_API_KEY=...
+
+python -m motionjson.cli extract input.mp4 \
+  --out out/sam2-hosted \
+  --mask-provider sam2-hosted \
+  --sam2-hosted-allow-network \
+  --prompt-point 410,230
+```
+
+Without an injected client/transport, the CLI requires explicit `--sam2-hosted-allow-network`, a configured endpoint, and auth from `--sam2-auth-env` before any request can be made.
+
+The hosted request payload contains:
+
+- `source_video`
+- `frame_index`
+- `prompt_frame_index`
+- `object_id`
+- `prompt_point`
+- `prompt_box`
+- `config`
+- `video` metadata
+
+The response must include either:
+
+- `mask`: a 2D array-like mask or logits
+- `mask_png_base64`: a base64-encoded grayscale PNG
+
+MotionJSON normalizes the response before the extraction pipeline sees it.
+
+## Mask Cache
+
+SAM2 CLI modes use `.motionjson-cache/masks` by default. This directory is ignored by git.
+
+The cache stores:
+
+- Binary PNG masks normalized to `0` or `255`.
+- A root `manifest.json` with schema `motionjson.mask_cache.v0.1`.
+- Per-cache-key directories containing `mask_<frame_index>.png` files and a key-local `manifest.json`.
+- Keys that include provider, config, source video, prompt, object id, and video metadata. Individual mask filenames carry the frame index.
+
+Cache output is provider-independent: downstream code receives the same binary array shape whether the mask came from local SAM2, hosted SAM2, external masks, or a fake test provider.
+
+Use `--mask-cache-dir` to move the cache, or `--no-mask-cache` to disable it:
+
+```bash
+--mask-cache-dir .motionjson-cache/masks
+--no-mask-cache
+```
+
+## Optional Hosted Stubs
+
+`motionjson.adapters.sam2_replicate` and `motionjson.adapters.sam2_runpod` are explicit integration stubs. They are credential-gated and are not default dependencies.
+
+- Replicate requires `REPLICATE_API_TOKEN` or an explicit `api_token`.
+- RunPod requires `RUNPOD_API_KEY`, `RUNPOD_SAM2_ENDPOINT_ID`, and an injected transport/client.
+
+These stubs are not used by default CLI modes.
+
+## No-Network Tests
+
+Phase 3 tests use fake predictors and fake hosted clients:
+
+```bash
+pytest -q tests/test_sam2_providers.py tests/test_mask_cache.py
+```
+
+They do not import SAM2, torch, Replicate, RunPod, or make network calls.
+
+## OpenRouter Separation
+
+OpenRouter remains an optional `LLMProvider` for text/VLM reasoning tasks such as labels, prompt interpretation, and optimization notes. It is not a pixel segmentation engine and is not used by `sam2-local` or `sam2-hosted`.

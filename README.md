@@ -11,7 +11,9 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
   - `threshold`: HSV threshold for offline demos.
   - `motion`: rough background subtraction for demos.
   - `external`: import mask PNG/JPG/WebP sequences from SAM2, Runway, Adobe, DaVinci, etc.
-  - `sam2`: stub adapter path that fails clearly until a real client is injected.
+  - `sam2`: legacy stub adapter path that fails clearly until a client is injected.
+  - `sam2-local`: optional local SAM2-compatible provider with injected test fakes and lazy SAM2 imports.
+  - `sam2-hosted`: hosted SAM2-compatible provider with injected client/transport and no default network calls.
 - Saves sampled frames, masks, cropped alpha cutouts, an object manifest, and a WebP/PNG sprite sheet.
 - Writes an editable `scene_graph.json` with object identity, motion, z-index, render mode, interaction states, quality scores, and rights placeholders.
 - Writes a website-focused `web_asset_manifest.json`.
@@ -78,16 +80,30 @@ python -m motionjson.cli extract input.mp4 \
 
 Mask files are loaded in sorted order. They are resized to match the video frame when needed.
 
-## Future SAM2 Path
+## SAM2-Compatible Providers
 
 ```bash
 python -m motionjson.cli extract input.mp4 \
-  --out out/sam2 \
-  --mask-provider sam2 \
+  --out out/sam2-local \
+  --mask-provider sam2-local \
+  --sam2-checkpoint /path/to/checkpoint.pt \
+  --sam2-config /path/to/config.yaml \
+  --sam2-device cuda \
   --prompt-point 410,230
 ```
 
-The SAM2 provider is intentionally a stub. Without an injected client, it fails with a clear message and tells you to use `threshold`, `motion`, or `external`. This keeps the MVP provider-neutral and avoids hardcoded paid API calls.
+Local SAM2 and torch are optional; MotionJSON lazy-imports SAM2 only when the local provider is selected without an injected predictor. Hosted SAM2 is also explicit:
+
+```bash
+python -m motionjson.cli extract input.mp4 \
+  --out out/sam2-hosted \
+  --mask-provider sam2-hosted \
+  --sam2-endpoint "$HOSTED_SEGMENTATION_URL" \
+  --sam2-hosted-allow-network \
+  --prompt-point 410,230
+```
+
+Hosted auth is read from `HOSTED_SEGMENTATION_API_KEY` by default. Without an injected client/transport, hosted mode refuses to make network calls unless `--sam2-hosted-allow-network` is set. SAM2 modes cache normalized binary PNG masks under `.motionjson-cache/masks` by default. See `docs/sam2_segmentation.md`.
 
 ## Output Layout
 
@@ -137,17 +153,16 @@ Photorealistic objects have texture, blur, hair, shadows, reflections, and edge 
 - Demo mask providers are rough and CPU-first.
 - Sprite sheet packing is simple row-major packing.
 - No final video exporter yet.
-- SAM2 is a clean adapter stub, not an API integration.
+- SAM2 providers are adapter-compatible, but real local SAM2 and hosted services are optional setup, not default dependencies.
 - Browser preview uses Canvas2D; production should move to WebGL/PixiJS for many objects or large assets.
 
 ## Roadmap
 
-1. Add a real SAM2/video segmentation client behind `SAM2Provider`.
-2. Add mask smoothing, matting, and occlusion QA.
-3. Add multi-object extraction and timeline editing.
-4. Add transparent WebM/AVIF export and GPU atlas generation.
-5. Add final export via FFmpeg, Remotion, or WebCodecs.
-6. Add editor integrations and website embed helpers.
+1. Add mask smoothing, matting, and occlusion QA.
+2. Add multi-object extraction and timeline editing.
+3. Add transparent WebM/AVIF export and GPU atlas generation.
+4. Add final export via FFmpeg, Remotion, or WebCodecs.
+5. Add editor integrations and website embed helpers.
 
 ## Positioning
 

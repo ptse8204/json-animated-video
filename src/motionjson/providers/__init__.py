@@ -11,12 +11,17 @@ from .base import (
     SegmentationProvider,
     StorageProvider,
 )
+from .mask_cache import MaskCache, normalize_binary_mask
 from .mocks import MockExportProvider, MockLLMProvider, MockMattingProvider, MockRenderProvider, MockSegmentationProvider, MockStorageProvider
+from .sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider, SAM2HostedSegmentationProvider, SAM2LocalSegmentationProvider
 from .segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider, as_segmentation_provider
 
 __all__ = [
     "ExportProvider",
+    "HostedSAM2SegmentationProvider",
     "LLMProvider",
+    "LocalSAM2SegmentationProvider",
+    "MaskCache",
     "MaskProviderSegmentationAdapter",
     "MattingProvider",
     "MockExportProvider",
@@ -30,10 +35,13 @@ __all__ = [
     "ProviderError",
     "ProviderExecutionError",
     "RenderProvider",
+    "SAM2HostedSegmentationProvider",
+    "SAM2LocalSegmentationProvider",
     "SegmentationMaskProvider",
     "SegmentationProvider",
     "StorageProvider",
     "as_segmentation_provider",
+    "normalize_binary_mask",
 ]
 
 

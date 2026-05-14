@@ -4,9 +4,9 @@
 
 MotionJSON uses AI object-layer editing for video and web graphics. AI should help at ingest, correction, labeling, and optimization time, then editing and preview should run from cached raster/alpha assets and JSON transforms.
 
-Phase 2 defines swappable provider interfaces without changing the local MVP pipeline. The current CLI mask modes remain available, and photoreal objects remain raster/alpha by default. SVG/Lottie remains limited to simple vector-like silhouettes, labels, annotations, icons, and flat graphics.
+Phase 2 defined swappable provider interfaces without changing the local MVP pipeline. Phase 3 adds SAM2-compatible segmentation providers behind that interface. The current CLI mask modes remain available, and photoreal objects remain raster/alpha by default. SVG/Lottie remains limited to simple vector-like silhouettes, labels, annotations, icons, and flat graphics.
 
-## Phase 2 Boundaries
+## Phase 2-3 Boundaries
 
 Included:
 
@@ -14,11 +14,14 @@ Included:
 - Deterministic mock providers for CI and local tests.
 - Optional OpenRouter LLM/VLM provider for reasoning tasks only.
 - Segmentation adapters that let existing `MaskProvider` classes participate in the new `SegmentationProvider` abstraction.
+- Optional local SAM2-compatible segmentation provider with lazy imports and injected fake predictor support.
+- Hosted SAM2-compatible segmentation provider with injected client/transport support and no default network calls.
+- Mask cache for normalized binary PNG masks under an ignored cache directory.
 - `.env.example` placeholders with no secrets.
 
 Not included:
 
-- Real SAM2, local GPU, or hosted segmentation implementation.
+- SAM2, torch, Replicate, RunPod, or hosted services as default dependencies.
 - UI editing tools.
 - Final production render/export infrastructure.
 - SaaS/backend, marketplace, billing, or API product surfaces.
@@ -58,7 +61,7 @@ class SegmentationProvider:
         ...
 ```
 
-Dedicated segmentation options may later include SAM2, local GPU models, hosted segmentation APIs, external masks, Replicate, RunPod, Roboflow, or custom models. OpenRouter is not a segmentation engine.
+Dedicated segmentation options include existing demo providers, external masks, local SAM2-compatible providers, hosted SAM2-compatible providers, and optional credential-gated Replicate/RunPod stubs. OpenRouter is not a segmentation engine.
 
 ### MattingProvider
 
@@ -133,7 +136,20 @@ This preserves current CLI modes:
 --mask-provider sam2
 ```
 
-The SAM2 path remains a stub unless a concrete client is injected. OpenRouter is never used as a mask provider.
+The legacy `sam2` path remains a stub unless a concrete client is injected. Phase 3 adds:
+
+```bash
+--mask-provider sam2-local
+--mask-provider sam2-hosted
+```
+
+`sam2-local` lazy-imports SAM2 only when a predictor or predictor factory is not injected. `sam2-hosted` requires an injected client/transport or explicit network opt-in with endpoint and auth. OpenRouter is never used as a mask provider.
+
+## Mask Cache
+
+`MaskCache` lives in `src/motionjson/providers/mask_cache.py`. It stores provider-independent binary PNG masks and a manifest under `.motionjson-cache/masks` by default. Cache keys include provider, config, source video, prompt, object id, and video metadata; per-frame PNG names carry the frame index. The extraction pipeline receives normalized `uint8` arrays with values `0` or `255`.
+
+The cache is an optimization for ingest/correction-time work. Preview and editing still use generated assets and JSON transforms.
 
 ## OpenRouter Scope
 
@@ -159,6 +175,8 @@ Mock providers live in `src/motionjson/providers/mocks.py`:
 
 They are deterministic, require no credentials, and make no network calls. Tests for OpenRouter must inject a transport and assert request construction without touching the network.
 
+SAM2 provider tests inject fake predictors or fake hosted clients. They do not import SAM2, torch, Replicate, RunPod, or touch the network.
+
 ## Environment Variables
 
 Use `.env.example` for placeholders only:
@@ -178,8 +196,12 @@ LOCAL_LLM_DEFAULT_MODEL=
 SEGMENTATION_BACKEND=threshold
 SAM2_LOCAL_CHECKPOINT=
 SAM2_LOCAL_CONFIG=
+SAM2_LOCAL_DEVICE=cpu
 HOSTED_SEGMENTATION_URL=
 HOSTED_SEGMENTATION_API_KEY=
+REPLICATE_API_TOKEN=
+RUNPOD_API_KEY=
+RUNPOD_SAM2_ENDPOINT_ID=
 
 STORAGE_BACKEND=local
 STORAGE_BUCKET=

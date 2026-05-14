@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from .benchmark import benchmark_scene
 from .exporters.scene_graph import write_json
@@ -10,6 +13,8 @@ from .exporters.web_manifest import write_web_asset_manifest
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .metrics import build_resource_profile
 from .pipeline import run_pipeline
+from .providers.mask_cache import MaskCache
+from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
 from .validation import validate_path
 
@@ -42,15 +47,44 @@ def parse_box(value: str | None) -> tuple[int, int, int, int] | None:
     return parts[0], parts[1], parts[2], parts[3]
 
 
+def parse_json_object(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(f"Expected JSON object: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise argparse.ArgumentTypeError("Expected JSON object")
+    return parsed
+
+
 def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("video", type=str, help="Input video file")
     p.add_argument("--out", type=str, default="out/motionjson", help="Output directory")
-    p.add_argument("--mask-provider", "--mode", dest="mask_provider", choices=["external", "threshold", "motion", "sam2"], default="threshold")
+    p.add_argument(
+        "--mask-provider",
+        "--mode",
+        dest="mask_provider",
+        choices=["external", "threshold", "motion", "sam2", "sam2-local", "sam2-hosted"],
+        default="threshold",
+    )
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
     p.add_argument("--lower-hsv", type=parse_hsv, default=(0, 80, 80), help="Lower HSV threshold, e.g. 0,80,80")
     p.add_argument("--upper-hsv", type=parse_hsv, default=(12, 255, 255), help="Upper HSV threshold, e.g. 12,255,255")
     p.add_argument("--prompt-point", type=parse_point, default=None, help="SAM2 point prompt, x,y")
     p.add_argument("--prompt-box", type=parse_box, default=None, help="SAM2 box prompt, x,y,w,h")
+    p.add_argument("--sam2-checkpoint", type=str, default=None, help="Local SAM2 checkpoint path for --mask-provider sam2-local")
+    p.add_argument("--sam2-config", "--sam2-model-config", dest="sam2_model_config", type=str, default=None, help="Local SAM2 model config for --mask-provider sam2-local")
+    p.add_argument("--sam2-device", type=str, default=None, help="Local SAM2 device, e.g. cpu, cuda, mps")
+    p.add_argument("--sam2-prompt-frame", type=int, default=0, help="Frame index where the SAM2 prompt is applied")
+    p.add_argument("--sam2-endpoint", type=str, default=None, help="Hosted SAM2 endpoint for --mask-provider sam2-hosted")
+    p.add_argument("--sam2-auth-env", type=str, default="HOSTED_SEGMENTATION_API_KEY", help="Env var containing hosted SAM2 auth token")
+    p.add_argument("--sam2-endpoint-env", type=str, default="HOSTED_SEGMENTATION_URL", help="Env var containing hosted SAM2 endpoint")
+    p.add_argument("--sam2-hosted-config", type=parse_json_object, default={}, help='Hosted SAM2 JSON config, e.g. {"model":"sam2"}')
+    p.add_argument("--sam2-hosted-allow-network", action="store_true", help="Allow real hosted SAM2 network calls when endpoint and auth are configured")
+    p.add_argument("--mask-cache-dir", type=str, default=".motionjson-cache/masks", help="Ignored cache directory for SAM2 binary PNG masks")
+    p.add_argument("--no-mask-cache", action="store_true", help="Disable SAM2 mask cache for this extraction")
     p.add_argument("--sample-fps", type=float, default=12.0)
     p.add_argument("--max-frames", type=int, default=None)
     p.add_argument("--object-id", type=str, default="object_0")
@@ -90,6 +124,47 @@ def build_provider(args: argparse.Namespace):
         mask_provider = MotionMaskProvider()
     elif args.mask_provider == "sam2":
         mask_provider = SAM2Provider(prompt_point=args.prompt_point, prompt_box=args.prompt_box)
+    elif args.mask_provider == "sam2-local":
+        mask_cache = None if args.no_mask_cache else MaskCache(args.mask_cache_dir)
+        checkpoint = args.sam2_checkpoint or os.environ.get("SAM2_LOCAL_CHECKPOINT")
+        model_config = args.sam2_model_config or os.environ.get("SAM2_LOCAL_CONFIG")
+        device = args.sam2_device or os.environ.get("SAM2_LOCAL_DEVICE", "cpu")
+        segmentation_provider = LocalSAM2SegmentationProvider(
+            source_video=args.video,
+            checkpoint=checkpoint,
+            model_config=model_config,
+            device=device,
+            prompt_frame_index=args.sam2_prompt_frame,
+            object_id=args.object_id,
+            prompt_point=args.prompt_point,
+            prompt_box=args.prompt_box,
+            mask_cache=mask_cache,
+        )
+        return SegmentationMaskProvider(
+            segmentation_provider,
+            prompt_point=args.prompt_point,
+            prompt_box=args.prompt_box,
+        )
+    elif args.mask_provider == "sam2-hosted":
+        mask_cache = None if args.no_mask_cache else MaskCache(args.mask_cache_dir)
+        segmentation_provider = HostedSAM2SegmentationProvider(
+            source_video=args.video,
+            endpoint=args.sam2_endpoint,
+            config=args.sam2_hosted_config,
+            auth_env=args.sam2_auth_env,
+            endpoint_env=args.sam2_endpoint_env,
+            prompt_frame_index=args.sam2_prompt_frame,
+            object_id=args.object_id,
+            prompt_point=args.prompt_point,
+            prompt_box=args.prompt_box,
+            allow_network=args.sam2_hosted_allow_network,
+            mask_cache=mask_cache,
+        )
+        return SegmentationMaskProvider(
+            segmentation_provider,
+            prompt_point=args.prompt_point,
+            prompt_box=args.prompt_box,
+        )
     else:
         mask_provider = ThresholdMaskProvider(args.lower_hsv, args.upper_hsv)
 
@@ -119,7 +194,7 @@ def run_extract(args: argparse.Namespace) -> dict:
             sprite_format=args.sprite_format,
         )
     except RuntimeError as exc:
-        if args.mask_provider == "sam2":
+        if args.mask_provider in {"sam2", "sam2-local", "sam2-hosted"}:
             raise SystemExit(str(exc)) from exc
         raise
 

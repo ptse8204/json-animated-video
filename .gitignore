@@ -6,5 +6,6 @@ __pycache__/
 venv/
 build/
 dist/
+.motionjson-cache/
 out/external/
 out/audit*/
