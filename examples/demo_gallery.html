@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MotionJSON Demo Gallery</title>
+  <meta name="description" content="MotionJSON demo gallery for reusable motion layers controlled by JSON and cached raster/alpha assets.">
+  <style>
+    :root {
+      --paper: #f4f1e8;
+      --ink: #1f2326;
+      --muted: #677078;
+      --line: #d7cfc0;
+      --blue: #2f627f;
+      --white: #fffdf7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Aptos", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(244, 241, 232, 0.94);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      backdrop-filter: blur(16px);
+    }
+
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 22px;
+    }
+
+    .brand {
+      font-weight: 800;
+      font-size: 1.04rem;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 40px;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      border-radius: 6px;
+      border: 1px solid var(--ink);
+      color: var(--white);
+      background: var(--ink);
+      font-weight: 700;
+    }
+
+    .gallery-hero {
+      position: relative;
+      min-height: min(560px, calc(100svh - 260px));
+      display: grid;
+      align-items: end;
+      overflow: hidden;
+      color: var(--white);
+      background: #15181b;
+      isolation: isolate;
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: saturate(0.94) contrast(1.04);
+      z-index: -3;
+    }
+
+    .gallery-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(12, 16, 18, 0.62);
+      z-index: -2;
+    }
+
+    .hero-content {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 54px 0 42px;
+    }
+
+    .eyebrow {
+      color: #b9d4e3;
+      font-size: 0.86rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 760px;
+      margin: 14px 0 22px;
+      font-size: clamp(3.1rem, 8vw, 6.4rem);
+      line-height: 0.9;
+      letter-spacing: 0;
+      text-wrap: balance;
+    }
+
+    .lead {
+      max-width: 750px;
+      color: rgba(255, 253, 247, 0.86);
+      font-size: clamp(1.04rem, 2vw, 1.24rem);
+      text-wrap: pretty;
+    }
+
+    .hero-proof {
+      max-width: 720px;
+      margin: 34px 0 0;
+      padding-top: 14px;
+      border-top: 1px solid rgba(255, 253, 247, 0.32);
+      color: rgba(255, 253, 247, 0.72);
+      font-size: 0.94rem;
+    }
+
+    section {
+      padding: 70px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .gallery-section {
+      padding-top: 54px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 30px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.4rem);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .section-head p {
+      margin: 0;
+      max-width: 390px;
+      color: var(--muted);
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .demo {
+      min-height: 350px;
+      display: flex;
+      flex-direction: column;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .demo video,
+    .demo .preview {
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: cover;
+      display: block;
+      background: #15181b;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .preview {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .preview img {
+      max-width: 82%;
+      max-height: 82%;
+      object-fit: contain;
+    }
+
+    .demo-body {
+      display: grid;
+      gap: 12px;
+      padding: 20px;
+    }
+
+    .demo h3 {
+      margin: 0;
+      font-size: 1.2rem;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .demo p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      padding: 4px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #425056;
+      font-size: 0.78rem;
+      font-weight: 700;
+      background: #f6f0e3;
+    }
+
+    .demo-link {
+      margin-top: auto;
+      color: var(--blue);
+      font-weight: 800;
+    }
+
+    .docs {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .doc-link {
+      min-height: 140px;
+      padding: 18px;
+      background: #e9e2d4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-weight: 800;
+    }
+
+    footer {
+      padding: 34px 0 48px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 940px) {
+      .gallery,
+      .docs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .section-head {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .shell {
+        width: min(100% - 28px, 1180px);
+      }
+
+      .nav {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px 0;
+      }
+
+      .nav-links {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .gallery-hero {
+        min-height: calc(100svh - 310px);
+      }
+
+      .hero-media {
+        object-position: left center;
+      }
+
+      .hero-content {
+        width: min(100% - 28px, 1180px);
+        padding: 38px 0 34px;
+      }
+
+      h1 {
+        font-size: clamp(2.7rem, 14vw, 3.8rem);
+      }
+
+      .gallery,
+      .docs {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="shell nav" aria-label="Primary">
+      <a class="brand" href="landing_page.html">MotionJSON</a>
+      <div class="nav-links">
+        <a href="landing_page.html">Landing</a>
+        <a href="../docs/index.md">Docs</a>
+        <a class="button" href="timeline_editor.html?scene=../out/demo/scene_graph.json">Open editor</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="gallery-hero" aria-label="MotionJSON demo gallery hero">
+      <img class="hero-media" src="../out/demo/frames/frame_000001.png" alt="Local MotionJSON sampled demo frame background">
+      <div class="hero-content">
+        <div class="eyebrow">Reusable motion layers controlled by JSON</div>
+        <h1>Demo gallery</h1>
+        <p class="lead">
+          Cached object-layer video assets, local manifests, browser previews, and runtime examples
+          for reusable motion layers controlled by JSON.
+        </p>
+        <p class="hero-proof">
+          Generated sprite sheets, cutouts, masks, and manifests are local cached assets. Opening a preview does not start a new segmentation run.
+        </p>
+      </div>
+    </section>
+
+    <section class="gallery-section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Local previews</h2>
+          <p>Open the same generated layer package in purpose-built viewers, editors, and website snippets.</p>
+        </div>
+        <div class="gallery">
+          <article class="demo">
+            <video src="demo_red_ball.mp4" muted autoplay loop playsinline aria-label="Original red ball video"></video>
+            <div class="demo-body">
+              <h3>Source clip</h3>
+              <p>Short local video used to produce object masks, cutouts, motion JSON, and a reusable asset manifest.</p>
+              <div class="tags">
+                <span class="tag">local video</span>
+                <span class="tag">ingest</span>
+              </div>
+              <a class="demo-link" href="demo_red_ball.mp4">Open source file</a>
+            </div>
+          </article>
+
+          <article class="demo">
+            <div class="preview">
+              <img src="../out/demo/objects/object_0/spritesheet.webp" alt="Cached alpha layer spritesheet">
+            </div>
+            <div class="demo-body">
+              <h3>Cached layer</h3>
+              <p>Photoreal object output stays raster/alpha by default and is reused by runtime previews.</p>
+              <div class="tags">
+                <span class="tag">raster alpha</span>
+                <span class="tag">no preview AI</span>
+              </div>
+              <a class="demo-link" href="../out/demo/objects/object_0/object_manifest.json">Open object manifest</a>
+            </div>
+          </article>
+
+          <article class="demo">
+            <div class="preview">
+              <img src="../out/demo/objects/object_0/cutouts/cutout_000001.png" alt="Transparent object cutout">
+            </div>
+            <div class="demo-body">
+              <h3>Transparent cutout</h3>
+              <p>Cutout frames make object reuse cheap for editors, website templates, and export adapters.</p>
+              <div class="tags">
+                <span class="tag">cutout</span>
+                <span class="tag">asset cache</span>
+              </div>
+              <a class="demo-link" href="../out/demo/objects/object_0/cutouts/cutout_000001.png">Open cutout</a>
+            </div>
+          </article>
+
+          <article class="demo">
+            <div class="preview">
+              <img src="../out/demo/masks/object_0/mask_000001.png" alt="Object mask generated during ingest">
+            </div>
+            <div class="demo-body">
+              <h3>Object mask</h3>
+              <p>Mask generation happens during ingest or correction, then downstream editing reads cached assets.</p>
+              <div class="tags">
+                <span class="tag">mask</span>
+                <span class="tag">ingest-time</span>
+              </div>
+              <a class="demo-link" href="../out/demo/masks/object_0/mask_000001.png">Open mask</a>
+            </div>
+          </article>
+
+          <article class="demo">
+            <div class="preview">
+              <img src="../out/demo/frames/frame_000001.png" alt="Sampled source frame">
+            </div>
+            <div class="demo-body">
+              <h3>Canvas runtime</h3>
+              <p>Canvas playback resolves the web asset manifest and applies transforms without calling providers.</p>
+              <div class="tags">
+                <span class="tag">runtime</span>
+                <span class="tag">JSON transforms</span>
+              </div>
+              <a class="demo-link" href="canvas_player.html?scene=../out/demo/web_asset_manifest.json">Open canvas player</a>
+            </div>
+          </article>
+
+          <article class="demo">
+            <div class="preview">
+              <img src="../out/demo/frames/frame_000002.png" alt="Second sampled source frame">
+            </div>
+            <div class="demo-body">
+              <h3>Timeline editor</h3>
+              <p>Drag, scale, rotate, duplicate, and reuse a layer instance while referencing the same cached object asset.</p>
+              <div class="tags">
+                <span class="tag">editor</span>
+                <span class="tag">reuse</span>
+              </div>
+              <a class="demo-link" href="timeline_editor.html?scene=../out/demo/scene_graph.json">Open timeline editor</a>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <h2>Docs for launch review</h2>
+          <p>Phase 19 adds public docs for setup, deployment, pricing metadata, onboarding, and security review.</p>
+        </div>
+        <div class="docs">
+          <a class="doc-link" href="../docs/ga_launch.md">GA launch guide</a>
+          <a class="doc-link" href="../docs/deployment.md">Deployment guide</a>
+          <a class="doc-link" href="../docs/billing_pricing.md">Billing and pricing</a>
+          <a class="doc-link" href="../docs/security_checklist.md">Security checklist</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      MotionJSON keeps photoreal objects as cached raster/alpha assets and reserves SVG/Lottie for simple flat graphics.
+    </div>
+  </footer>
+</body>
+</html>

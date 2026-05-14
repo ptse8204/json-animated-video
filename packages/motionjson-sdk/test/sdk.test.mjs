@@ -80,6 +80,8 @@ test("SDK exposes beta, support, error, and admin helpers", async () => {
   await client.listBetaInvites({ includeRevoked: true });
   await client.revokeBetaInvite("invite1");
   await client.listBetaMembers();
+  await client.listBillingPlans();
+  await client.billingStatus();
   await client.listFeedback();
   await client.listErrorReports({ includeResolved: true });
 
@@ -93,12 +95,14 @@ test("SDK exposes beta, support, error, and admin helpers", async () => {
     "/v1/admin/beta/invites",
     "/v1/admin/beta/invites/invite1",
     "/v1/admin/beta/members",
+    "/v1/billing/plans",
+    "/v1/billing/status",
     "/v1/admin/feedback",
     "/v1/admin/error-reports"
   ]);
   assert.equal(calls[1].body.inviteToken, "mjb_test");
   assert.equal(calls[6].search, "?includeRevoked=true");
-  assert.equal(calls[10].search, "?includeResolved=true");
+  assert.equal(calls[12].search, "?includeResolved=true");
 });
 
 test("SDK exposes asset library, collection, and creator pack helpers", async () => {

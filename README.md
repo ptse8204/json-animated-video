@@ -25,6 +25,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
 - Exports final MP4 renders, transparent object WebM files, website ZIP packages, and Remotion adapter plans from cached assets and JSON transforms.
 - Provides a dependency-light local developer API, hashed API keys, closed beta invite/member workflows, feedback/error reporting, an admin dashboard, signed webhook delivery records, reusable asset-library/brand-collection workflows, creator-approved packs, and a JavaScript SDK for building with reusable motion layers.
+- Provides local billing/pricing plan metadata and entitlement status for product UI gating without checkout, tax, invoice, or payment-provider calls.
 
 ## Quick Start
 
@@ -58,6 +59,8 @@ Open:
 - Object selection workflow: `http://localhost:8080/examples/object_selection_workflow.html?manifest=/out/demo/web_asset_manifest.json&scene=/out/demo/scene_graph.json`
 - Timeline editor MVP: `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
+- Landing page: `http://localhost:8080/examples/landing_page.html`
+- Demo gallery: `http://localhost:8080/examples/demo_gallery.html`
 - Website templates:
   `http://localhost:8080/examples/website_templates/hero.html?manifest=/out/demo/web_asset_manifest.json`,
   `http://localhost:8080/examples/website_templates/ecommerce.html?manifest=/out/demo/web_asset_manifest.json`,
@@ -213,6 +216,20 @@ const client = new MotionJSONClient({
 
 See `docs/developer_api.md`.
 
+## Deployment And Launch Docs
+
+Phase 19 public docs:
+
+- `docs/index.md`
+- `docs/ga_launch.md`
+- `docs/deployment.md`
+- `docs/billing_pricing.md`
+- `docs/onboarding.md`
+- `docs/security_checklist.md`
+
+Docker deployment artifacts are available in `Dockerfile`,
+`docker-compose.yml`, `.dockerignore`, and `.env.example`.
+
 ## Why JSON
 
 JSON stores object identity and edits: timing, x/y, scale, rotation, opacity, z-index, interaction states, render mode, quality scores, and rights metadata. Moving or hiding an extracted object becomes a small JSON change instead of a new AI run or full video re-render.
@@ -306,4 +323,4 @@ The website ZIP includes runtime modules, preview pages, website templates, embe
 
 Say: “Turn video elements into reusable motion layers for editors and websites.”
 
-Do not say: “Convert video to JSON,” “convert video to SVG,” or “convert all video to Lottie.”
+Do not position the product as a whole-video JSON, SVG, or Lottie exporter.

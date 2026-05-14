@@ -24,6 +24,7 @@ from .beta import (
     list_beta_members,
     revoke_beta_invite,
 )
+from .billing import get_billing_status, list_plan_catalog
 from .db import connect, initialize_database
 from .jobs import enqueue_export_job, enqueue_extract_job, get_job
 from .library import (
@@ -287,6 +288,13 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     dashboard = sub.add_parser("admin-dashboard", help="Print beta admin dashboard without raw secrets")
     _add_common(dashboard)
     dashboard.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+
+    plans = sub.add_parser("list-plans", help="Print the local billing/pricing plan catalog")
+    _add_common(plans)
+
+    billing_status = sub.add_parser("billing-status", help="Print local plan and entitlement status for the session user")
+    _add_common(billing_status)
+    billing_status.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
 
 
 def _open(args: argparse.Namespace) -> tuple[sqlite3.Connection, LocalStorageProvider]:
@@ -575,5 +583,12 @@ def run_backend_command(args: argparse.Namespace) -> None:
     if args.backend_command == "admin-dashboard":
         session = _session(conn, args.session_token_env)
         _print_json(build_admin_dashboard(conn, admin_user_id=session["user_id"]))
+        return
+    if args.backend_command == "list-plans":
+        _print_json(list_plan_catalog())
+        return
+    if args.backend_command == "billing-status":
+        session = _session(conn, args.session_token_env)
+        _print_json(get_billing_status(user_id=session["user_id"]))
         return
     raise SystemExit(f"unknown backend command: {args.backend_command}")

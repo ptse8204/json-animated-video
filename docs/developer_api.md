@@ -4,7 +4,8 @@ Phase 15 adds a local developer API for MotionJSON projects, assets, jobs,
 asset packages, renders, and webhooks. Phase 17 adds closed beta status,
 feedback/error reporting, and admin-only dashboard endpoints. Phase 18 adds a
 local asset-library foundation for saved reusable motion layers, brand
-collections, and creator-approved packs. The API is dependency-light and uses
+collections, and creator-approved packs. Phase 19 adds local billing plan
+catalog and entitlement status endpoints. The API is dependency-light and uses
 the stdlib HTTP server over the existing SQLite backend.
 
 MotionJSON remains an AI object-layer editing system for video and web
@@ -84,6 +85,8 @@ python -m motionjson.cli backend serve-api \
 - `POST /v1/beta/accept`
 - `POST /v1/feedback`
 - `POST /v1/error-reports`
+- `GET /v1/billing/plans`
+- `GET /v1/billing/status`
 - `GET /v1/admin/dashboard`
 - `POST /v1/admin/beta/invites`
 - `GET /v1/admin/beta/invites`
@@ -193,6 +196,14 @@ storage.
 Admins list unresolved support records with `GET /v1/admin/feedback` and
 `GET /v1/admin/error-reports`; pass `includeResolved=true` to include resolved
 records.
+
+## Billing Plan Metadata
+
+`GET /v1/billing/plans` returns the local catalog. `GET /v1/billing/status`
+returns the authenticated user's configured plan and entitlement metadata.
+These routes report `billingProvider: "local_catalog"`,
+`paymentCollection: "not_configured"`, and `aiUsage: "none"`. They do not call
+checkout, tax, invoice, payment, AI, or segmentation services.
 
 ## Asset Packages And Renders
 

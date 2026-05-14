@@ -1,0 +1,27 @@
+services:
+  motionjson-api:
+    build: .
+    image: motionjson-ga:local
+    ports:
+      - "${MOTIONJSON_API_PORT:-8765}:8765"
+    env_file:
+      - .env.example
+    environment:
+      MOTIONJSON_BACKEND_DB: /data/backend.sqlite
+      MOTIONJSON_STORAGE_ROOT: /data/storage
+      MOTIONJSON_DEFAULT_PLAN: ${MOTIONJSON_DEFAULT_PLAN:-starter}
+    volumes:
+      - motionjson-data:/data
+    command:
+      - python
+      - -m
+      - motionjson.cli
+      - backend
+      - serve-api
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+
+volumes:
+  motionjson-data:

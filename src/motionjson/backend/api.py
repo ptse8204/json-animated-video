@@ -24,6 +24,7 @@ from .beta import (
     list_beta_members,
     revoke_beta_invite,
 )
+from .billing import get_billing_status, list_plan_catalog
 from .db import connect, initialize_database
 from .jobs import enqueue_asset_package_job, enqueue_extract_job, enqueue_render_job, get_job, list_job_events, list_jobs
 from .library import (
@@ -138,6 +139,11 @@ class MotionJSONAPI:
     ) -> Any:
         if parts[:1] != ["v1"]:
             raise NotFoundError("route not found")
+
+        if parts == ["v1", "billing", "plans"] and method == "GET":
+            return list_plan_catalog()
+        if parts == ["v1", "billing", "status"] and method == "GET":
+            return get_billing_status(user_id=user_id)
 
         if parts == ["v1", "beta", "status"] and method == "GET":
             return get_beta_status(conn, user_id=user_id)

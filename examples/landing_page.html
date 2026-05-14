@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MotionJSON | Reusable Motion Layers</title>
+  <meta name="description" content="MotionJSON is AI object-layer editing for video and web graphics with reusable motion layers controlled by JSON.">
+  <style>
+    :root {
+      --paper: #f7f3ea;
+      --ink: #202326;
+      --muted: #626a70;
+      --line: #d8d0c3;
+      --blue: #315e7a;
+      --green: #617b4b;
+      --clay: #a8583b;
+      --white: #fffdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Aptos", "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(247, 243, 234, 0.94);
+      border-bottom: 1px solid rgba(216, 208, 195, 0.9);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      font-weight: 800;
+      font-size: 1.05rem;
+      letter-spacing: 0;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 18px;
+      border: 1px solid var(--ink);
+      border-radius: 6px;
+      background: var(--ink);
+      color: var(--white);
+      font-weight: 700;
+    }
+
+    .button.secondary {
+      background: rgba(255, 253, 248, 0.42);
+      color: var(--ink);
+      border-color: rgba(32, 35, 38, 0.24);
+    }
+
+    .product-hero {
+      position: relative;
+      min-height: min(690px, calc(100svh - 220px));
+      display: grid;
+      align-items: end;
+      overflow: hidden;
+      color: var(--ink);
+      background: #eef1ed;
+      isolation: isolate;
+    }
+
+    .hero-media {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 30% center;
+      filter: saturate(0.96) contrast(1.02);
+      z-index: -3;
+    }
+
+    .product-hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(247, 243, 234, 0.2) 0%, rgba(247, 243, 234, 0.72) 42%, rgba(247, 243, 234, 0.94) 100%);
+      z-index: -2;
+    }
+
+    .product-hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(49, 94, 122, 0.12) 1px, transparent 1px),
+        linear-gradient(0deg, rgba(49, 94, 122, 0.12) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.42;
+      z-index: -1;
+    }
+
+    .hero-content {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 52px 0 42px;
+      display: grid;
+      justify-items: end;
+      text-align: right;
+    }
+
+    .eyebrow {
+      color: var(--blue);
+      font-size: 0.86rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin: 16px 0 22px;
+      font-size: clamp(4.2rem, 12vw, 9.4rem);
+      line-height: 0.86;
+      letter-spacing: 0;
+      text-wrap: balance;
+    }
+
+    .hero-copy {
+      max-width: 760px;
+      color: #3f464b;
+      font-size: clamp(1.06rem, 2vw, 1.28rem);
+      text-wrap: pretty;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .proof {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 34px;
+      color: #4e565c;
+      font-size: 0.94rem;
+    }
+
+    .proof-row {
+      display: grid;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 18px;
+      align-items: baseline;
+      max-width: 510px;
+      border-top: 1px solid rgba(32, 35, 38, 0.24);
+      padding-top: 14px;
+      text-align: left;
+    }
+
+    .proof-row strong {
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    section {
+      padding: 74px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .workflow-section {
+      padding-top: 54px;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 0.76fr) minmax(260px, 0.44fr);
+      gap: 44px;
+      align-items: end;
+      margin-bottom: 34px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 3.6rem);
+      line-height: 1;
+      letter-spacing: 0;
+      text-wrap: balance;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      text-wrap: pretty;
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .step,
+    .plan {
+      min-height: 230px;
+      padding: 22px;
+      background: var(--white);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .step .num {
+      color: var(--clay);
+      font-weight: 800;
+      font-size: 0.84rem;
+    }
+
+    .step h3,
+    .plan h3 {
+      margin: 22px 0 10px;
+      font-size: 1.24rem;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .step p,
+    .plan p,
+    .plan li {
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    .plans {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .price {
+      margin: 8px 0 18px;
+      color: var(--green);
+      font-size: 2rem;
+      font-weight: 800;
+    }
+
+    ul {
+      padding-left: 18px;
+      margin: 0;
+    }
+
+    li + li {
+      margin-top: 8px;
+    }
+
+    footer {
+      padding: 36px 0 50px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 900px) {
+      .section-head {
+        grid-template-columns: 1fr;
+      }
+
+      .workflow,
+      .plans {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 640px) {
+      .shell {
+        width: min(100% - 28px, 1180px);
+      }
+
+      .nav {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 16px 0;
+      }
+
+      .nav-links {
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+
+      .product-hero {
+        min-height: calc(100svh - 250px);
+      }
+
+      .hero-media {
+        object-position: left center;
+      }
+
+      .hero-content {
+        width: min(100% - 28px, 1180px);
+        padding: 38px 0 34px;
+        justify-items: start;
+        text-align: left;
+      }
+
+      h1 {
+        max-width: 100%;
+        font-size: clamp(2.7rem, 13vw, 3.7rem);
+      }
+
+      .proof-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
+      .workflow,
+      .plans {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hero-media {
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav class="shell nav" aria-label="Primary">
+      <a class="brand" href="landing_page.html">MotionJSON</a>
+      <div class="nav-links">
+        <a href="demo_gallery.html">Demo gallery</a>
+        <a href="../docs/index.md">Docs</a>
+        <a href="../docs/deployment.md">Deploy</a>
+        <a class="button" href="timeline_editor.html?scene=../out/demo/scene_graph.json">Open editor</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="product-hero" aria-label="MotionJSON product hero">
+      <img class="hero-media" src="../out/demo/frames/frame_000001.png" alt="Local MotionJSON demo frame with selected red object">
+      <div class="hero-content">
+        <div class="eyebrow">AI object-layer editing for video and web graphics</div>
+        <h1>MotionJSON</h1>
+        <p class="hero-copy">
+          Turn video elements into reusable motion layers controlled by JSON. Extract selected objects once,
+          keep photoreal footage as cached raster/alpha assets, and preview edits without rerunning AI.
+        </p>
+        <div class="actions">
+          <a class="button" href="demo_gallery.html">View demos</a>
+          <a class="button secondary" href="../docs/onboarding.md">Read onboarding</a>
+        </div>
+        <div class="proof" aria-label="Product constraints">
+          <div class="proof-row">
+            <strong>Preview model</strong>
+            <span>Drag, scale, rotate, and background edits use cached assets plus JSON transforms.</span>
+          </div>
+          <div class="proof-row">
+            <strong>Asset model</strong>
+            <span>Photoreal objects stay raster/alpha; SVG and Lottie fit simple flat graphics.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workflow-section">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Built around reusable layers, not repeated inference.</h2>
+          <p>
+            MotionJSON separates expensive ingest work from everyday editing. The editor and runtime
+            operate on portable manifests, cached cutouts, spritesheets, alpha exports, and scene graphs.
+          </p>
+        </div>
+        <div class="workflow">
+          <article class="step">
+            <div class="num">01</div>
+            <h3>Ingest</h3>
+            <p>Run local threshold, external masks, or a configured segmentation provider at import time.</p>
+          </article>
+          <article class="step">
+            <div class="num">02</div>
+            <h3>Cache</h3>
+            <p>Save masks, cutouts, manifests, sprite sheets, and optional production exports.</p>
+          </article>
+          <article class="step">
+            <div class="num">03</div>
+            <h3>Edit</h3>
+            <p>Use JSON transforms for timeline, position, scale, opacity, z-index, and reuse.</p>
+          </article>
+          <article class="step">
+            <div class="num">04</div>
+            <h3>Ship</h3>
+            <p>Export website packages, Remotion plans, MP4 renders, or alpha video when locally available.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="shell">
+        <div class="section-head">
+          <h2>Local plans for product gating.</h2>
+          <p>
+            Phase 19 includes catalog and entitlement metadata only. Payment collection, checkout,
+            tax, and invoices remain outside the local backend.
+          </p>
+        </div>
+        <div class="plans">
+          <article class="plan">
+            <h3>Starter</h3>
+            <div class="price">$0</div>
+            <ul>
+              <li>3 local projects</li>
+              <li>1,200 monthly extracted frames</li>
+              <li>5 GB local asset storage</li>
+            </ul>
+          </article>
+          <article class="plan">
+            <h3>Studio</h3>
+            <div class="price">$49</div>
+            <ul>
+              <li>25 local projects</li>
+              <li>18,000 monthly extracted frames</li>
+              <li>Brand collections and creator packs</li>
+            </ul>
+          </article>
+          <article class="plan">
+            <h3>Production</h3>
+            <div class="price">$199</div>
+            <ul>
+              <li>250 local projects</li>
+              <li>240,000 monthly extracted frames</li>
+              <li>Deployment and API status support</li>
+            </ul>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      MotionJSON uses cached raster/alpha assets and JSON transforms for normal editing and preview.
+    </div>
+  </footer>
+</body>
+</html>

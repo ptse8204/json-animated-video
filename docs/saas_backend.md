@@ -9,8 +9,9 @@ items, workers, usage events, rights metadata, asset lineage, audit events, and
 local webhook records. Phase 17 adds closed beta invite/member records,
 project-scoped feedback, redacted error reports, and an admin dashboard. Phase
 18 adds a local marketplace foundation: saved reusable library assets, brand
-collections, tags/search/license filters, and creator-approved packs.
-Billing, public marketplace commerce, and broad legal-advice workflows remain
+collections, tags/search/license filters, and creator-approved packs. Phase 19
+adds a local billing/pricing catalog and entitlement status slice. Payment
+collection, public marketplace commerce, and broad legal-advice workflows remain
 out of scope.
 
 ## Product Boundary
@@ -81,6 +82,8 @@ python -m motionjson.cli backend accept-beta-invite --invite-token mjb_... --ses
 python -m motionjson.cli backend feedback --project-id PROJECT_ID --subject "Beta issue" --message "Layer jumps" --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend error-report --project-id PROJECT_ID --message "Render failed" --stack-trace "$STACK_TRACE" --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend admin-dashboard --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend list-plans
+python -m motionjson.cli backend billing-status --session-token-env MOTIONJSON_SESSION_TOKEN
 ```
 
 `--db` and `--storage-root` can be passed to every backend command. Defaults
@@ -129,7 +132,12 @@ Phase 18 adds `POST /v1/projects/{projectId}/library-assets`,
 `POST /v1/library/collections`, `GET /v1/library/collections`,
 `POST /v1/library/collections/{collectionId}/assets`,
 `GET /v1/library/collections/{collectionId}/assets`,
-`POST /v1/library/packs`, and `GET /v1/library/packs`.
+`POST /v1/library/packs`, and `GET /v1/library/packs`. Phase 19 adds
+`GET /v1/billing/plans` and `GET /v1/billing/status`.
+
+Billing routes expose local plan catalog and entitlement metadata only. They do
+not create checkout sessions, compute tax, issue invoices, or call payment
+providers.
 
 Asset package jobs export website ZIPs from cached extraction outputs. Render
 jobs support deterministic `remotion-plan` output and local `mp4` or

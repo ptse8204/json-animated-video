@@ -259,6 +259,14 @@ export class MotionJSONClient {
     return this.request(`/v1/admin/beta/members${suffix}`);
   }
 
+  listBillingPlans() {
+    return this.request("/v1/billing/plans");
+  }
+
+  billingStatus() {
+    return this.request("/v1/billing/status");
+  }
+
   listFeedback({ includeResolved = false } = {}) {
     const suffix = includeResolved ? "?includeResolved=true" : "";
     return this.request(`/v1/admin/feedback${suffix}`);
