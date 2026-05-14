@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.correction_request.v0.1",
+  "title": "MotionJSON Correction Request v0.1",
+  "type": "object",
+  "required": ["schema", "objectId", "operations", "propagation", "temporalSmoothing", "aiUsage"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.correction_request.v0.1" },
+    "objectId": { "$ref": "#/$defs/nonEmptyString" },
+    "operations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/operation" }
+    },
+    "propagation": {
+      "type": "object",
+      "required": ["enabled", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["none", "same_coordinates", "centroid_delta"] },
+        "frameRange": { "$ref": "#/$defs/frameRange" }
+      }
+    },
+    "temporalSmoothing": {
+      "type": "object",
+      "required": ["enabled", "radius", "threshold"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "radius": { "type": "integer", "minimum": 0 },
+        "threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "aiUsage": { "const": "none" }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "point": {
+      "type": "array",
+      "prefixItems": [{ "type": "integer" }, { "type": "integer" }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "frameRange": {
+      "type": "array",
+      "prefixItems": [{ "type": "integer", "minimum": 1 }, { "type": "integer", "minimum": 1 }],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "operation": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["add_point", "remove_point", "box", "brush"] },
+        "frame": { "type": "integer", "minimum": 1 },
+        "frameRange": { "$ref": "#/$defs/frameRange" },
+        "propagate": { "type": "boolean" },
+        "x": { "type": "integer" },
+        "y": { "type": "integer" },
+        "w": { "type": "integer", "minimum": 0 },
+        "h": { "type": "integer", "minimum": 0 },
+        "radius": { "type": "integer", "minimum": 1 },
+        "mode": { "type": "string", "enum": ["constrain", "replace", "add", "remove"] },
+        "points": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/point" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "add_point" } }, "required": ["type"] },
+          "then": { "required": ["x", "y"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "remove_point" } }, "required": ["type"] },
+          "then": { "required": ["x", "y"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "box" } }, "required": ["type"] },
+          "then": {
+            "required": ["x", "y", "w", "h"],
+            "properties": {
+              "mode": { "type": "string", "enum": ["constrain", "replace", "add", "remove"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "type": { "const": "brush" } }, "required": ["type"] },
+          "then": {
+            "required": ["points"],
+            "properties": {
+              "mode": { "type": "string", "enum": ["add", "remove"] }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

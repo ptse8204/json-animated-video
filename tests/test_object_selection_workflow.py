@@ -44,6 +44,8 @@ def test_static_prototype_structure_has_required_surfaces():
     assert any(attrs.get("src") == "object_selection_workflow.js" for attrs in parser.scripts)
     assert any(attrs.get("value") == "threshold" and "selected" in attrs for attrs in parser.options)
     assert parser.details >= 2
+    assert "Mask Correction" in html
+    assert "correction_request.json" in html
     assert "AI object-layer editing for video and web graphics" in html
     assert "Cached raster/alpha assets" in html
     assert "universal video-to-JSON" not in html
@@ -82,6 +84,15 @@ def test_point_box_prompt_state_and_cli_command_are_generated_only():
     assert "--prompt-point" in js
     assert "--prompt-box" in js
     assert "--sam2-prompt-frame" in js
+    assert "motionjson.cli" in js
+    assert "'correct'" in js
+    assert "motionjson.correction_request.v0.1" in js
+    assert "add_point" in js
+    assert "remove_point" in js
+    assert "brush" in js
+    assert "same_coordinates" in js
+    assert "centroid_delta" in js
+    assert "frameRange" in js
     assert "# Simulated by this browser prototype; not executed here." in js
     assert "fetch(" in js
     assert "function loadJson(url)" in js
@@ -103,3 +114,4 @@ def test_cached_asset_defaults_and_transform_policy_are_explicit():
     assert "spriteSheet" in js
     assert "drawAssetPreview" in js
     assert "cached assets + JSON transforms; no AI rerun" in js
+    assert "Local deterministic correction only; no provider, network, or model-router call." in js

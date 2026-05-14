@@ -19,6 +19,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes an editable `scene_graph.json` with object identity, motion, z-index, render mode, interaction states, quality scores, and rights placeholders.
 - Writes a website-focused `web_asset_manifest.json`.
 - Scores extraction quality from cached metadata: mask drift, edge quality, missing frames, occlusion risk, vector suitability, and production readiness.
+- Applies local mask corrections to existing outputs and regenerates cached masks, cutouts, manifests, quality, and routing.
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
@@ -171,6 +172,23 @@ Photorealistic objects have texture, blur, hair, shadows, reflections, and edge 
 MotionJSON computes quality from generated extraction metadata only: visibility, area, bbox, centroid, contour point count, and polygon. It does not rerun AI during editing or preview. Quality objects include mask drift consistency, edge quality, missing-frame coverage, occlusion risk, vector suitability, production readiness, readiness labels, and routing reasons.
 
 Routing is conservative. The default is `raster_alpha_sequence`; `hybrid_vector_silhouette_plus_raster` is used only for stable, simple, low-risk layers. Pure SVG/Lottie is never recommended for extracted photoreal objects. See `docs/quality_engine.md`.
+
+## Mask Correction
+
+Correct existing extractions locally without network calls:
+
+```bash
+python3 -m motionjson.cli correct out/demo \
+  --out out/demo_corrected \
+  --add-point 120,80 \
+  --frame 4 \
+  --radius 12 \
+  --propagate \
+  --propagate-window 2 \
+  --smooth
+```
+
+The correction loop supports add/remove points, box correction, brush refine, same-coordinate or centroid-delta propagation, and temporal smoothing. It rewrites corrected masks/cutouts/spritesheets/manifests/resource profile/quality/routing and writes `correction_request.json` plus `correction_manifest.json`. In-place correction requires `--in-place`. See `docs/mask_correction.md`.
 
 ## Resource Profile
 

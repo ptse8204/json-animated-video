@@ -131,6 +131,12 @@ pytest -q tests/test_sam2_providers.py tests/test_mask_cache.py
 
 They do not import SAM2, torch, Replicate, RunPod, or make network calls.
 
+## Correction Loop
+
+`motionjson correct` is separate from SAM2 provider execution. It applies deterministic local corrections to cached mask PNGs, then regenerates cutouts, spritesheets, manifests, quality scores, and routing. Add/remove points, box correction, brush refine, same-coordinate or centroid-delta propagation, and temporal smoothing are represented as `motionjson.correction_request.v0.1`.
+
+The correction loop does not call SAM2, hosted segmentation, OpenRouter, Replicate, RunPod, or any network API by default. Future provider-specific correction hooks must remain explicit ingest/correction-time actions and must not run during normal drag, scale, rotate, timeline, or runtime preview.
+
 ## OpenRouter Separation
 
 OpenRouter remains an optional `LLMProvider` for text/VLM reasoning tasks such as labels, prompt interpretation, and optimization notes. It is not a pixel segmentation engine and is not used by `sam2-local` or `sam2-hosted`.

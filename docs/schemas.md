@@ -10,6 +10,8 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 - `motionjson.web_asset_manifest.v0.1`: website/runtime package for canvas sprite-layer playback, with optional production WebP/WebM/AVIF asset references.
 - `motionjson.resource_profile.v0.1`: measured package sizes, production resource comparisons, pixel-work estimates, warnings, and cached-preview strategy.
 - `motionjson.final_export_manifest.v0.1`: final export metadata for MP4 renders, transparent WebM object exports, website ZIPs, and Remotion adapter plans.
+- `motionjson.correction_request.v0.1`: local mask correction request with add/remove points, box corrections, brush strokes, same-coordinate or centroid-delta propagation, and temporal smoothing settings.
+- `motionjson.correction_manifest.v0.1`: correction result metadata, changed frames, regenerated artifacts, quality, routing, and `aiUsage: none`.
 
 Schema files are packaged under `src/motionjson/schemas/`.
 
@@ -41,6 +43,8 @@ It also recursively checks other JSON files that declare a recognized MotionJSON
 
 Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively.
 
+Correction request and manifest files are optional for ordinary extraction outputs. When `motionjson correct` writes `correction_request.json` and `correction_manifest.json`, directory validation checks them recursively.
+
 ## Production Asset Fields
 
 Production assets are additive and opt in through extraction flags such as `--output-mode production` or `--output-mode both`. The schemas accept optional production metadata under:
@@ -65,6 +69,15 @@ All numeric score fields are deterministic, bounded `0..1`, rounded, and compute
 Routing remains conservative. `raster_alpha_sequence` is the default, and `hybrid_vector_silhouette_plus_raster` is allowed only for stable, simple, low-risk layers. Pure SVG/Lottie is not a recommended route for extracted photoreal objects.
 
 See `docs/quality_engine.md` for scoring and readiness rules.
+
+## Correction Schemas
+
+Mask correction is represented by two core schemas:
+
+- `correction_request.json` declares deterministic operations and smoothing/propagation settings.
+- `correction_manifest.json` records the source output directory, corrected output directory, changed frames, regenerated artifacts, final quality, final route, and `providerPolicy: deterministic_local_correction_only`.
+
+Correction schemas are provider-neutral. They do not encode OpenRouter, hosted segmentation credentials, network endpoints, or paid API calls. See `docs/mask_correction.md`.
 
 ## Auxiliary Lottie
 

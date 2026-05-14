@@ -92,6 +92,10 @@
       padding: 0 8px;
     }
 
+    input[type="checkbox"] {
+      accent-color: var(--accent);
+    }
+
     header {
       display: flex;
       justify-content: space-between;
@@ -603,6 +607,66 @@
         <div class="panel-body">
           <div class="status-list" id="statusList"></div>
           <pre id="cliCommand"></pre>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="correctionTitle">
+        <div class="panel-head">
+          <h2 id="correctionTitle">Mask Correction</h2>
+          <span class="pill teal">local refine</span>
+        </div>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">Correction operation</span>
+            <select id="correctionMode">
+              <option value="add_point" selected>Add point</option>
+              <option value="remove_point">Remove point</option>
+              <option value="box">Box correction</option>
+              <option value="brush">Brush refine</option>
+            </select>
+          </label>
+          <div class="metrics-grid">
+            <label class="field">
+              <span class="field-label">Frame</span>
+              <input id="correctionFrame" type="number" min="1" value="1" />
+            </label>
+            <label class="field">
+              <span class="field-label">Radius</span>
+              <input id="correctionRadius" type="number" min="1" value="12" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label"><span>Propagate correction</span><input id="correctionPropagate" type="checkbox" /></span>
+          </label>
+          <div class="metrics-grid">
+            <label class="field">
+              <span class="field-label">Propagation mode</span>
+              <select id="correctionPropagationMode">
+                <option value="same_coordinates" selected>Same coordinates</option>
+                <option value="centroid_delta">Centroid delta</option>
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Window</span>
+              <input id="correctionPropagateWindow" type="number" min="0" value="2" />
+            </label>
+          </div>
+          <label class="field">
+            <span class="field-label"><span>Temporal smoothing</span><input id="correctionSmooth" type="checkbox" checked /></span>
+          </label>
+          <div class="button-row">
+            <button class="primary" id="addCorrection" type="button">Add Correction</button>
+            <button id="clearCorrections" type="button">Clear Corrections</button>
+          </div>
+          <div class="metric"><span>Request</span><strong id="correctionSummary">0 ops</strong></div>
+          <details>
+            <summary>motionjson correct command</summary>
+            <pre id="correctionCommand"></pre>
+          </details>
+          <details>
+            <summary>correction_request.json</summary>
+            <pre id="correctionJson"></pre>
+          </details>
         </div>
       </section>
     </aside>

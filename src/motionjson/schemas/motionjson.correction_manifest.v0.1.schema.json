@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.correction_manifest.v0.1",
+  "title": "MotionJSON Correction Manifest v0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "objectId",
+    "sourceOutputDir",
+    "correctedOutputDir",
+    "request",
+    "changedFrames",
+    "regeneratedArtifacts",
+    "quality",
+    "recommendedOutput",
+    "aiUsage",
+    "providerPolicy"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.correction_manifest.v0.1" },
+    "objectId": { "$ref": "#/$defs/nonEmptyString" },
+    "sourceOutputDir": { "type": "string" },
+    "correctedOutputDir": { "type": "string" },
+    "request": { "type": "object", "additionalProperties": true },
+    "changedFrames": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "regeneratedArtifacts": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["vectorSuitability", "productionReadinessScore", "missingFrameScore", "occlusionRiskScore"],
+      "properties": {
+        "vectorSuitability": { "$ref": "#/$defs/zeroToOne" },
+        "productionReadinessScore": { "$ref": "#/$defs/zeroToOne" },
+        "missingFrameScore": { "$ref": "#/$defs/zeroToOne" },
+        "occlusionRiskScore": { "$ref": "#/$defs/zeroToOne" }
+      }
+    },
+    "recommendedOutput": {
+      "type": "string",
+      "enum": ["raster_alpha_sequence", "hybrid_vector_silhouette_plus_raster"]
+    },
+    "aiUsage": { "const": "none" },
+    "providerPolicy": { "const": "deterministic_local_correction_only" }
+  },
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "zeroToOne": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  }
+}

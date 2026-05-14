@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import benchmark_scene
+from .corrections import build_correction_request, correct_output_dir
 from .exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
 from .exporters.production_assets import export_transparent_webm_object
 from .exporters.remotion import write_remotion_plan
@@ -18,7 +19,7 @@ from .pipeline import run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
-from .validation import validate_path
+from .validation import MotionJSONValidationError, validate_document, validate_path
 
 
 def parse_hsv(value: str) -> tuple[int, int, int]:
@@ -59,6 +60,18 @@ def parse_json_object(value: str | None) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise argparse.ArgumentTypeError("Expected JSON object")
     return parsed
+
+
+def parse_brush_points(value: str | None) -> list[list[int]]:
+    if not value:
+        return []
+    points: list[list[int]] = []
+    for raw_point in value.split(";"):
+        parts = [int(x.strip()) for x in raw_point.split(",")]
+        if len(parts) != 2:
+            raise argparse.ArgumentTypeError("Brush points must be x,y;x,y")
+        points.append([parts[0], parts[1]])
+    return points
 
 
 def add_extract_args(p: argparse.ArgumentParser) -> None:
@@ -110,6 +123,8 @@ def build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate", help="Validate a MotionJSON file or output directory")
     validate.add_argument("path", type=str, help="MotionJSON JSON file or output directory")
     validate.add_argument("--object-id", type=str, default="object_0", help="Object id to require when validating an output directory")
+    correct = sub.add_parser("correct", help="Apply local deterministic mask corrections to an existing extraction")
+    add_correct_args(correct)
     export = sub.add_parser("export", help="Export final video, object alpha video, website package, or adapter plan")
     add_export_args(export)
     return parser
@@ -133,6 +148,27 @@ def add_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--object-id", type=str, default="object_0", help="Object id for object-specific exports")
     p.add_argument("--background-color", type=str, default="#fbfaf6", help="Final render background color")
     p.add_argument("--editor-state", type=str, default=None, help="Optional Phase 7 timeline editor-state JSON")
+
+
+def add_correct_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("out_dir", type=str, help="Existing MotionJSON extraction output directory")
+    p.add_argument("--out", type=str, default=None, help="Corrected output directory; defaults to <out_dir>_corrected")
+    p.add_argument("--in-place", action="store_true", help="Overwrite the input output directory with corrected assets")
+    p.add_argument("--object-id", type=str, default="object_0", help="Object id to correct")
+    p.add_argument("--request", type=str, default=None, help="Correction request JSON file")
+    p.add_argument("--add-point", action="append", type=parse_point, default=[], help="Add mask point x,y")
+    p.add_argument("--remove-point", action="append", type=parse_point, default=[], help="Remove mask point x,y")
+    p.add_argument("--box", action="append", type=parse_box, default=[], help="Box correction x,y,w,h")
+    p.add_argument("--box-mode", choices=["constrain", "replace", "add", "remove"], default="constrain", help="How --box modifies masks")
+    p.add_argument("--brush", action="append", type=parse_brush_points, default=[], help="Brush stroke points x,y;x,y")
+    p.add_argument("--brush-mode", choices=["add", "remove"], default="add", help="How --brush modifies masks")
+    p.add_argument("--frame", type=int, default=1, help="1-based frame for inline correction operations")
+    p.add_argument("--radius", type=int, default=10, help="Point/brush radius in pixels")
+    p.add_argument("--propagate", action="store_true", help="Apply inline operations across sampled frames")
+    p.add_argument("--propagation-mode", choices=["same_coordinates", "centroid_delta"], default="same_coordinates", help="How propagated corrections move across frames")
+    p.add_argument("--propagate-window", type=int, default=None, help="Limit propagated inline corrections to +/- this many sampled frames around --frame")
+    p.add_argument("--smooth", action="store_true", help="Apply deterministic temporal mask smoothing after corrections")
+    p.add_argument("--smooth-radius", type=int, default=1, help="Temporal smoothing radius in sampled frames")
 
 
 def build_provider(args: argparse.Namespace):
@@ -260,6 +296,105 @@ def run_validate(args: argparse.Namespace) -> None:
         print(f"Validated {len(result.checked)} MotionJSON file(s); skipped {len(result.skipped)} auxiliary JSON file(s).")
         return
     raise SystemExit(1)
+
+
+def _default_corrected_out_dir(source: Path) -> Path:
+    return source.with_name(f"{source.name}_corrected")
+
+
+def _load_correction_request(path: str | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    try:
+        request = json.loads(Path(path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid correction request JSON: {exc}") from exc
+    if not isinstance(request, dict):
+        raise SystemExit("--request must point to a JSON object")
+    return request
+
+
+def _validate_correction_request(request: dict[str, Any]) -> dict[str, Any]:
+    try:
+        errors = validate_document(request, schema_id="motionjson.correction_request.v0.1")
+    except MotionJSONValidationError as exc:
+        raise SystemExit(f"Invalid correction request: {exc}") from exc
+    if errors:
+        details = "; ".join(error.message for error in errors[:4])
+        raise SystemExit(f"Invalid correction request: {details}")
+    return request
+
+
+def _inline_correction_operations(args: argparse.Namespace) -> list[dict[str, Any]]:
+    operations: list[dict[str, Any]] = []
+    for point in args.add_point:
+        operations.append({"type": "add_point", "x": point[0], "y": point[1], "frame": args.frame, "radius": args.radius})
+    for point in args.remove_point:
+        operations.append({"type": "remove_point", "x": point[0], "y": point[1], "frame": args.frame, "radius": args.radius})
+    for box in args.box:
+        operations.append({"type": "box", "x": box[0], "y": box[1], "w": box[2], "h": box[3], "frame": args.frame, "mode": args.box_mode})
+    for points in args.brush:
+        operations.append({"type": "brush", "points": points, "frame": args.frame, "radius": args.radius, "mode": args.brush_mode})
+    return operations
+
+
+def build_correction_request_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    request = _load_correction_request(args.request)
+    inline_operations = _inline_correction_operations(args)
+    if request and inline_operations:
+        raise SystemExit("Use either --request or inline correction operations, not both")
+    if request:
+        request.setdefault("objectId", args.object_id)
+        request.setdefault("schema", "motionjson.correction_request.v0.1")
+        request.setdefault("operations", [])
+        request.setdefault("propagation", {"enabled": False, "mode": "same_coordinates"})
+        request.setdefault("temporalSmoothing", {"enabled": False, "radius": args.smooth_radius, "threshold": 0.5})
+        request.setdefault("aiUsage", "none")
+        return _validate_correction_request(request)
+    if not inline_operations and not args.smooth:
+        raise SystemExit("Provide --request, --add-point, --remove-point, --box, --brush, or --smooth")
+    frame_range = None
+    if args.propagate and args.propagate_window is not None:
+        window = max(0, int(args.propagate_window))
+        frame_range = [max(1, int(args.frame) - window), int(args.frame) + window]
+    request = build_correction_request(
+        object_id=args.object_id,
+        operations=inline_operations,
+        propagate=args.propagate,
+        propagation_mode=args.propagation_mode,
+        frame_range=frame_range,
+        smooth=args.smooth,
+        smooth_radius=args.smooth_radius,
+    )
+    return _validate_correction_request(request)
+
+
+def run_correct(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
+    source_dir = Path(args.out_dir)
+    if not (source_dir / "scene_graph.json").exists():
+        raise SystemExit(f"{source_dir / 'scene_graph.json'} does not exist")
+    output_dir = source_dir if args.in_place else Path(args.out) if args.out else _default_corrected_out_dir(source_dir)
+    if output_dir.resolve() == source_dir.resolve() and not args.in_place:
+        raise SystemExit("Refusing in-place correction without --in-place")
+    request = build_correction_request_from_args(args)
+    try:
+        scene, manifest = correct_output_dir(
+            source_dir=source_dir,
+            output_dir=output_dir,
+            request=request,
+            in_place=args.in_place,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(f"Wrote {output_dir / 'scene_graph.json'}")
+    print(f"Wrote {output_dir / 'object_motion.json'}")
+    print(f"Wrote {output_dir / 'web_asset_manifest.json'}")
+    print(f"Wrote {output_dir / 'resource_profile.json'}")
+    print(f"Wrote {output_dir / 'correction_request.json'}")
+    print(f"Wrote {output_dir / 'correction_manifest.json'}")
+    print(f"Corrected frames: {len(manifest.get('changedFrames', []))}; recommended output: {manifest.get('recommendedOutput')}")
+    return scene, manifest
 
 
 def _first_object(scene: dict[str, Any], object_id: str) -> dict[str, Any]:
@@ -406,7 +541,7 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate", "export"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "correct", "export"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -418,6 +553,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "validate":
         run_validate(args)
+        return
+    if args.command == "correct":
+        run_correct(args)
         return
     if args.command == "export":
         run_export(args)

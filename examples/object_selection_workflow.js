@@ -36,6 +36,18 @@
     statusList: $('statusList'),
     jobBadge: $('jobBadge'),
     cliCommand: $('cliCommand'),
+    correctionMode: $('correctionMode'),
+    correctionFrame: $('correctionFrame'),
+    correctionRadius: $('correctionRadius'),
+    correctionPropagate: $('correctionPropagate'),
+    correctionPropagationMode: $('correctionPropagationMode'),
+    correctionPropagateWindow: $('correctionPropagateWindow'),
+    correctionSmooth: $('correctionSmooth'),
+    addCorrection: $('addCorrection'),
+    clearCorrections: $('clearCorrections'),
+    correctionSummary: $('correctionSummary'),
+    correctionCommand: $('correctionCommand'),
+    correctionJson: $('correctionJson'),
     playPause: $('playPause'),
     capturePromptFrame: $('capturePromptFrame'),
     fitBadge: $('fitBadge'),
@@ -79,7 +91,8 @@
     assetImages: [],
     spriteSheet: null,
     animationRequest: 0,
-    assetPlaying: true
+    assetPlaying: true,
+    corrections: []
   };
 
   function prettyJson(value) {
@@ -191,10 +204,12 @@
       els.selectionW.textContent = '-';
       els.selectionH.textContent = '-';
       els.promptFrameOut.textContent = 'none';
+      els.correctionFrame.value = String(Math.max(1, appState.promptFrame || 1));
       return;
     }
 
     els.promptFrameOut.textContent = String(selection.promptFrame);
+    els.correctionFrame.value = String(Math.max(1, selection.promptFrame || 1));
     if (selection.type === 'point') {
       els.selectionSummary.textContent = `point ${selection.x},${selection.y}`;
       els.selectionX.textContent = selection.x;
@@ -253,6 +268,86 @@
       parts.join(' ')
     ];
     els.cliCommand.textContent = note.join('\n');
+  }
+
+  function correctionRequest() {
+    const frame = Math.max(1, Number(els.correctionFrame.value) || 1);
+    const windowSize = Math.max(0, Number(els.correctionPropagateWindow.value) || 0);
+    const propagationModes = ['same_coordinates', 'centroid_delta'];
+    const propagationMode = propagationModes.includes(els.correctionPropagationMode.value)
+      ? els.correctionPropagationMode.value
+      : 'same_coordinates';
+    const propagation = {
+      enabled: Boolean(els.correctionPropagate.checked),
+      mode: propagationMode
+    };
+    if (propagation.enabled && windowSize) {
+      propagation.frameRange = [Math.max(1, frame - windowSize), frame + windowSize];
+    }
+    return {
+      schema: 'motionjson.correction_request.v0.1',
+      objectId: 'object_0',
+      operations: appState.corrections,
+      propagation,
+      temporalSmoothing: {
+        enabled: Boolean(els.correctionSmooth.checked),
+        radius: 1,
+        threshold: 0.5
+      },
+      aiUsage: 'none'
+    };
+  }
+
+  function buildCorrectionCommand() {
+    const label = els.labelInput.value.trim() || 'selected_object';
+    const outName = label.toLowerCase().replace(/[^a-z0-9_-]+/g, '_') || 'selected_object';
+    const parts = [
+      'python3',
+      '-m',
+      'motionjson.cli',
+      'correct',
+      shellQuote(`out/${outName}`),
+      '--out',
+      shellQuote(`out/${outName}_corrected`),
+      '--request',
+      'correction_request.json'
+    ];
+    els.correctionCommand.textContent = [
+      '# Local deterministic correction only; no provider, network, or model-router call.',
+      '# Normal drag/scale/rotate preview continues to use cached assets + JSON transforms.',
+      els.correctionPropagate.checked ? `# Propagation: ${els.correctionPropagationMode.value || 'same_coordinates'}, window ${Math.max(0, Number(els.correctionPropagateWindow.value) || 0)}` : '# Propagation: off',
+      parts.join(' ')
+    ].join('\n');
+    els.correctionJson.textContent = prettyJson(correctionRequest());
+    els.correctionSummary.textContent = `${appState.corrections.length} ops`;
+  }
+
+  function addCorrectionFromSelection() {
+    const selection = appState.selection;
+    if (!selection) {
+      setHeaderStatus('Choose a point or box before adding a correction.', 'error');
+      return;
+    }
+    const frame = Math.max(1, Number(els.correctionFrame.value) || selection.promptFrame || 1);
+    const radius = Math.max(1, Number(els.correctionRadius.value) || 12);
+    const type = els.correctionMode.value;
+    let operation;
+    if (type === 'box' || selection.type === 'box') {
+      const box = selection.type === 'box'
+        ? selection
+        : { x: selection.x - radius, y: selection.y - radius, w: radius * 2, h: radius * 2 };
+      operation = { type: 'box', frame, x: box.x, y: box.y, w: box.w, h: box.h, mode: 'constrain' };
+    } else if (type === 'brush') {
+      operation = { type: 'brush', frame, points: [[selection.x, selection.y]], radius, mode: 'add' };
+    } else if (type === 'remove_point') {
+      operation = { type: 'remove_point', frame, x: selection.x, y: selection.y, radius };
+    } else {
+      operation = { type: 'add_point', frame, x: selection.x, y: selection.y, radius };
+    }
+    if (els.correctionPropagate.checked) operation.propagate = true;
+    appState.corrections.push(operation);
+    buildCorrectionCommand();
+    setHeaderStatus('Correction request updated. Run the generated local command to regenerate cached assets.', 'warn');
   }
 
   function drawSelectionOverlay() {
@@ -327,6 +422,7 @@
     };
     updateSelectionReadout();
     buildCliCommand();
+    buildCorrectionCommand();
     drawSelectionOverlay();
   }
 
@@ -364,6 +460,7 @@
     els.videoEmpty.style.display = 'none';
     setHeaderStatus(`Loaded ${appState.videoName}. Prompt selection is local to this page.`, 'warn');
     buildCliCommand();
+    buildCorrectionCommand();
   }
 
   function simulateJob() {
@@ -611,17 +708,31 @@
       if (appState.selection) appState.selection.promptFrame = appState.promptFrame;
       updateSelectionReadout();
       buildCliCommand();
+      buildCorrectionCommand();
     });
     els.pointMode.addEventListener('click', () => setMode('point'));
     els.boxMode.addEventListener('click', () => setMode('box'));
     els.providerSelect.addEventListener('change', buildCliCommand);
-    els.labelInput.addEventListener('input', buildCliCommand);
+    els.labelInput.addEventListener('input', () => {
+      buildCliCommand();
+      buildCorrectionCommand();
+    });
     els.simulateJob.addEventListener('click', simulateJob);
+    els.addCorrection.addEventListener('click', addCorrectionFromSelection);
+    els.clearCorrections.addEventListener('click', () => {
+      appState.corrections = [];
+      buildCorrectionCommand();
+    });
+    [els.correctionMode, els.correctionFrame, els.correctionRadius, els.correctionPropagate, els.correctionPropagationMode, els.correctionPropagateWindow, els.correctionSmooth].forEach((input) => {
+      input.addEventListener('input', buildCorrectionCommand);
+      input.addEventListener('change', buildCorrectionCommand);
+    });
     els.clearSelection.addEventListener('click', () => {
       appState.selection = null;
       appState.dragPreview = null;
       updateSelectionReadout();
       buildCliCommand();
+      buildCorrectionCommand();
       drawSelectionOverlay();
     });
     els.assetFrame.addEventListener('input', () => {
@@ -668,6 +779,7 @@
       }
       updateSelectionReadout();
       buildCliCommand();
+      buildCorrectionCommand();
       drawSelectionOverlay();
     });
     window.addEventListener('resize', drawSelectionOverlay);
@@ -677,6 +789,7 @@
     renderStatusSteps();
     updateSelectionReadout();
     buildCliCommand();
+    buildCorrectionCommand();
     transformState();
     bindEvents();
     try {
