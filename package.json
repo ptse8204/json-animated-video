@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "test": "node --test packages/motionjson-runtime/test/*.test.mjs",
+    "test": "node --test packages/motionjson-runtime/test/*.test.mjs packages/motionjson-sdk/test/*.test.mjs",
     "lint": "node scripts/lint_runtime.mjs"
   }
 }

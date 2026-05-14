@@ -25,6 +25,18 @@ CREATE TABLE IF NOT EXISTS sessions (
     revoked_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    key_prefix TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    scopes_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_used_at TEXT,
+    revoked_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     owner_user_id TEXT NOT NULL REFERENCES users(id),
@@ -134,7 +146,33 @@ CREATE TABLE IF NOT EXISTS audit_events (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    url TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    event_types_json TEXT NOT NULL,
+    secret TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    disabled_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    id TEXT PRIMARY KEY,
+    webhook_id TEXT NOT NULL REFERENCES webhook_endpoints(id),
+    user_id TEXT NOT NULL REFERENCES users(id),
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    signature TEXT NOT NULL,
+    status TEXT NOT NULL,
+    status_code INTEGER,
+    response_body TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id, revoked_at);
 CREATE INDEX IF NOT EXISTS idx_projects_owner ON projects(owner_user_id, archived_at);
 CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_assets_source_job ON assets(source_job_id);
@@ -146,6 +184,8 @@ CREATE INDEX IF NOT EXISTS idx_rights_project ON rights_metadata(project_id, cre
 CREATE INDEX IF NOT EXISTS idx_lineage_source ON asset_lineage(source_asset_id);
 CREATE INDEX IF NOT EXISTS idx_lineage_derived ON asset_lineage(derived_asset_id);
 CREATE INDEX IF NOT EXISTS idx_audit_scope ON audit_events(project_id, job_id, asset_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhook_endpoints(user_id, disabled_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_user ON webhook_deliveries(user_id, created_at);
 """
 
 

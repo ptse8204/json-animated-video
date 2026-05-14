@@ -24,6 +24,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
 - Exports final MP4 renders, transparent object WebM files, website ZIP packages, and Remotion adapter plans from cached assets and JSON transforms.
+- Provides a dependency-light local developer API, hashed API keys, signed webhook delivery records, and a JavaScript SDK for building with reusable motion layers.
 
 ## Quick Start
 
@@ -172,6 +173,34 @@ Runtime playback and interactions use cached assets plus JSON transforms only. P
 Website templates are available for hero, ecommerce, and education use cases. Plain embeds can set `data-motionjson-template="hero"`, `ecommerce`, or `education`; React apps can use template-oriented factories from `@motionjson/runtime/react`. The examples under `examples/website_snippets/` are style-compatible snippets for Webflow-like, Framer-like, and React projects, not official platform integrations or plugins.
 
 The timeline editor MVP lives at `examples/timeline_editor.html` and is copied into generated `preview/` folders. It provides a layer panel, canvas stage drag/scale/rotate handles, opacity and z-index controls, timeline scrub/playback, duplicate/reuse layer instances, and background replacement by compositing a checker, solid color, or local image behind alpha object layers. Duplicate/reuse creates a new layer instance that references the same cached object asset in JSON; it does not copy raster frames or rerun extraction.
+
+## Developer API And SDK
+
+The local backend can serve a dependency-light REST API:
+
+```bash
+python -m motionjson.cli backend create-api-key --session-token-env MOTIONJSON_SESSION_TOKEN --name "local sdk"
+python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
+```
+
+API keys are stored as hashes and the raw key is printed only once. The API
+covers projects, assets, extraction jobs, website asset packages, cached-asset
+renders, webhooks, and delivery records. Render jobs keep `aiUsage: none` and
+use cached raster/alpha assets plus JSON transforms; `remotion-plan` is
+deterministic, while `mp4` and `webm-alpha` use local `ffmpeg` when available.
+
+The JavaScript SDK lives in `packages/motionjson-sdk`:
+
+```js
+import { MotionJSONClient } from "@motionjson/sdk";
+
+const client = new MotionJSONClient({
+  baseUrl: "http://127.0.0.1:8765",
+  apiKey: process.env.MOTIONJSON_API_KEY
+});
+```
+
+See `docs/developer_api.md`.
 
 ## Why JSON
 

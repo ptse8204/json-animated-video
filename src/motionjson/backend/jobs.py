@@ -134,6 +134,53 @@ def enqueue_export_job(
     return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="export", payload=payload, priority=priority)
 
 
+def enqueue_asset_package_job(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    project_id: str,
+    source_job_id: str,
+    format: str = "website-zip",
+    priority: int = 0,
+) -> dict:
+    return enqueue_export_job(
+        conn,
+        user_id=user_id,
+        project_id=project_id,
+        source_job_id=source_job_id,
+        format=format,
+        priority=priority,
+    )
+
+
+def enqueue_render_job(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    project_id: str,
+    source_job_id: str,
+    format: str = "remotion-plan",
+    object_id: str | None = None,
+    background_color: str = "#fbfaf6",
+    editor_state: dict[str, Any] | None = None,
+    priority: int = 0,
+) -> dict:
+    get_project(conn, user_id=user_id, project_id=project_id)
+    source = get_job(conn, user_id=user_id, job_id=source_job_id)
+    if source["project_id"] != project_id:
+        raise NotFoundError("source job not found in project")
+    if format not in {"remotion-plan", "mp4", "webm-alpha"}:
+        raise ValueError("render format must be remotion-plan, mp4, or webm-alpha")
+    payload = {
+        "source_job_id": source_job_id,
+        "format": format,
+        "object_id": object_id,
+        "background_color": background_color,
+        "editor_state": editor_state or {},
+    }
+    return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="render", payload=payload, priority=priority)
+
+
 def get_job(conn: sqlite3.Connection, *, user_id: str, job_id: str) -> dict:
     row = conn.execute(
         """

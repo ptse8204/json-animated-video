@@ -9,6 +9,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from motionjson.exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
+from motionjson.exporters.production_assets import export_transparent_webm_object
+from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
 from motionjson.masks import ExternalMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_pipeline
@@ -22,6 +25,7 @@ from .models import validate_extract_provider_policy
 from .queue import claim_next, mark_failed, mark_running, mark_succeeded
 from .rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from .usage import record_usage_event
+from .webhooks import WebhookTransport, deliver_event
 
 
 def _json(row: dict[str, Any], field: str) -> dict[str, Any]:
@@ -264,6 +268,226 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
     return {"assetId": asset["id"], "format": "website-zip", "aiUsage": "none"}
 
 
+def _first_scene_object(scene: dict[str, Any], object_id: str | None = None) -> dict[str, Any]:
+    objects = scene.get("objects") or []
+    if object_id:
+        for obj in objects:
+            if obj.get("id") == object_id:
+                return obj
+        raise ValueError(f"object {object_id!r} not found in scene graph")
+    if not objects:
+        raise ValueError("scene graph does not contain objects")
+    first = objects[0]
+    if not isinstance(first, dict):
+        raise ValueError("scene object must be a JSON object")
+    return first
+
+
+def _canvas(scene: dict[str, Any]) -> dict[str, Any]:
+    source = scene.get("source", {})
+    canvas = scene.get("canvas", {})
+    return {
+        "width": int(source.get("width") or canvas.get("width") or 1),
+        "height": int(source.get("height") or canvas.get("height") or 1),
+        "fps": float(source.get("sampleFps") or canvas.get("fps") or 12),
+        "frameCount": int(source.get("sampledFrameCount") or canvas.get("frame_count") or 0),
+    }
+
+
+def _render_webm_alpha(*, extraction_dir: Path, output_path: Path, object_id: str | None) -> dict[str, Any]:
+    scene = load_scene(extraction_dir)
+    obj = _first_scene_object(scene, object_id)
+    selected_object_id = str(obj.get("id"))
+    canvas = _canvas(scene)
+    webm = export_transparent_webm_object(
+        out_dir=extraction_dir,
+        output_path=output_path,
+        motion=obj.get("motion", []),
+        width=canvas["width"],
+        height=canvas["height"],
+        fps=canvas["fps"],
+    )
+    return final_export_entry(
+        export_type="transparent_webm_object",
+        format_name="webm-alpha",
+        output_path=output_path,
+        out_dir=extraction_dir,
+        status=webm.get("status", "error"),
+        mime_type=webm.get("mimeType", "video/webm"),
+        width=canvas["width"],
+        height=canvas["height"],
+        fps=canvas["fps"],
+        frame_count=canvas["frameCount"],
+        reason=webm.get("reason"),
+        extra={
+            "objectId": selected_object_id,
+            "encoder": webm.get("encoder", "ffmpeg"),
+            "pixelFormat": "yuva420p",
+            "cachedSource": webm.get("cachedSource", "cached_rgba_cutout_png_sequence"),
+            "cachedSources": ["scene_graph.json", f"objects/{selected_object_id}/cutouts/*.png"],
+            "source": webm.get("source", "cached_rgba_cutout_png_sequence_and_json_transforms"),
+            "aiUsage": "none",
+        },
+    )
+
+
+def _render_asset_kind(entry: dict[str, Any]) -> str:
+    if entry.get("format") == "mp4":
+        return "final_render_mp4"
+    if entry.get("format") == "webm-alpha":
+        return "transparent_webm"
+    if entry.get("type") == "remotion_plan":
+        return "remotion_plan"
+    return "render_output"
+
+
+def _register_render_entry(
+    conn: sqlite3.Connection,
+    *,
+    storage: StorageProvider,
+    job: dict[str, Any],
+    extraction_dir: Path,
+    entry: dict[str, Any],
+    source_asset_id: str | None,
+) -> dict[str, Any] | None:
+    rel_path = entry.get("path")
+    if not isinstance(rel_path, str) or entry.get("status") not in {"ready", "plan_ready"}:
+        return None
+    path = extraction_dir / rel_path
+    if not path.exists() or not path.is_file():
+        return None
+    asset = register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=job["project_id"],
+        kind=_render_asset_kind(entry),
+        source_job_id=job["id"],
+        path=path,
+        rel_path=rel_path,
+        content_type=entry.get("mimeType") or mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        metadata={"aiUsage": "none", "renderEntry": entry},
+    )
+    record_asset_lineage(
+        conn,
+        project_id=job["project_id"],
+        source_asset_id=source_asset_id,
+        derived_asset_id=asset["id"],
+        job_id=job["id"],
+        operation="render_cached_assets",
+        object_id=entry.get("objectId"),
+        metadata={"format": entry.get("format"), "source": entry.get("source"), "aiUsage": "none"},
+    )
+    record_audit_event(
+        conn,
+        user_id=job["created_by_user_id"],
+        project_id=job["project_id"],
+        job_id=job["id"],
+        asset_id=asset["id"],
+        object_id=entry.get("objectId"),
+        event_type="render_asset_registered",
+        metadata={"format": entry.get("format"), "status": entry.get("status"), "aiUsage": "none"},
+    )
+    return asset
+
+
+def _run_render(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
+    payload = _json(job, "payload_json")
+    source_job_id = str(payload["source_job_id"])
+    format_name = str(payload.get("format") or "remotion-plan")
+    with tempfile.TemporaryDirectory(prefix="motionjson_backend_render_") as tmp:
+        tmp_dir = Path(tmp)
+        extraction_dir = tmp_dir / "extraction"
+        extraction_dir.mkdir()
+        _materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=source_job_id, out_dir=extraction_dir)
+        exports_dir = extraction_dir / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        scene = load_scene(extraction_dir)
+
+        if format_name == "remotion-plan":
+            entry = write_remotion_plan(out_dir=extraction_dir, output_path=exports_dir / "remotion_export_plan.json")
+        elif format_name == "mp4":
+            editor_state = payload.get("editor_state") if isinstance(payload.get("editor_state"), dict) and payload.get("editor_state") else None
+            editor_state_path = None
+            if editor_state:
+                editor_state_path = exports_dir / "editor_state.json"
+                editor_state_path.write_text(json.dumps(editor_state, sort_keys=True), encoding="utf-8")
+            entry = export_mp4(
+                out_dir=extraction_dir,
+                output_path=exports_dir / "final.mp4",
+                background_color=str(payload.get("background_color") or "#fbfaf6"),
+                editor_state_path=editor_state_path,
+            )
+        elif format_name == "webm-alpha":
+            entry = _render_webm_alpha(
+                extraction_dir=extraction_dir,
+                output_path=exports_dir / f"{payload.get('object_id') or 'object_0'}.webm",
+                object_id=payload.get("object_id"),
+            )
+        else:
+            raise ValueError("render format must be remotion-plan, mp4, or webm-alpha")
+
+        manifest_path = exports_dir / "final_export_manifest.json"
+        write_final_export_manifest(
+            manifest_path=manifest_path,
+            out_dir=extraction_dir,
+            scene=scene,
+            exports=[entry],
+            object_id=payload.get("object_id"),
+        )
+        source_asset_id = _source_asset_for_extraction(conn, source_job_id=source_job_id)
+        asset = _register_render_entry(conn, storage=storage, job=job, extraction_dir=extraction_dir, entry=entry, source_asset_id=source_asset_id)
+        manifest_asset = register_generated_asset(
+            conn,
+            storage=storage,
+            project_id=job["project_id"],
+            kind="final_export_manifest",
+            source_job_id=job["id"],
+            path=manifest_path,
+            rel_path="exports/final_export_manifest.json",
+            content_type="application/json",
+            metadata={"aiUsage": "none", "renderStatus": entry.get("status"), "renderFormat": format_name},
+        )
+        record_asset_lineage(
+            conn,
+            project_id=job["project_id"],
+            source_asset_id=source_asset_id,
+            derived_asset_id=manifest_asset["id"],
+            job_id=job["id"],
+            operation="render_manifest",
+            object_id=payload.get("object_id"),
+            metadata={"format": format_name, "aiUsage": "none"},
+        )
+
+    record_usage_event(
+        conn,
+        user_id=job["created_by_user_id"],
+        project_id=job["project_id"],
+        job_id=job["id"],
+        event_type="renders_requested",
+        quantity=1,
+        unit="render",
+        metadata={"format": format_name, "status": entry.get("status"), "assetId": asset["id"] if asset else None},
+    )
+    record_audit_event(
+        conn,
+        user_id=job["created_by_user_id"],
+        project_id=job["project_id"],
+        job_id=job["id"],
+        asset_id=asset["id"] if asset else None,
+        object_id=payload.get("object_id"),
+        event_type="render_completed",
+        metadata={"format": format_name, "status": entry.get("status"), "aiUsage": "none"},
+    )
+    return {
+        "assetId": asset["id"] if asset else None,
+        "manifestAssetId": manifest_asset["id"],
+        "format": format_name,
+        "status": entry.get("status"),
+        "entry": entry,
+        "aiUsage": "none",
+    }
+
+
 def process_job(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
     mark_running(conn, job_id=job["id"])
     record_job_event(conn, job_id=job["id"], event_type="worker_claimed", message="worker claimed job")
@@ -272,7 +496,68 @@ def process_job(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
         return _run_extract(conn, storage=storage, job=fresh_job)
     if fresh_job["type"] == "export":
         return _run_export(conn, storage=storage, job=fresh_job)
+    if fresh_job["type"] == "render":
+        return _run_render(conn, storage=storage, job=fresh_job)
     raise ValueError(f"unsupported job type: {fresh_job['type']}")
+
+
+def _asset_ids_from_result(result: dict[str, Any]) -> list[str]:
+    asset_ids: list[str] = []
+    if isinstance(result.get("assetIds"), list):
+        asset_ids.extend(str(asset_id) for asset_id in result["assetIds"] if asset_id)
+    for key in ("assetId", "manifestAssetId"):
+        value = result.get(key)
+        if value:
+            asset_ids.append(str(value))
+    return list(dict.fromkeys(asset_ids))
+
+
+def _deliver_success_events(
+    conn: sqlite3.Connection,
+    *,
+    job: dict[str, Any],
+    result: dict[str, Any],
+    transport: WebhookTransport | None = None,
+) -> None:
+    deliver_event(
+        conn,
+        user_id=job["created_by_user_id"],
+        event_type="job.succeeded",
+        payload={"jobId": job["id"], "projectId": job["project_id"], "type": job["type"], "status": job["status"], "result": result},
+        transport=transport,
+    )
+    for asset_id in _asset_ids_from_result(result):
+        deliver_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            event_type="asset.created",
+            payload={"assetId": asset_id, "jobId": job["id"], "projectId": job["project_id"], "jobType": job["type"]},
+            transport=transport,
+        )
+    if job["type"] == "export" and result.get("assetId"):
+        deliver_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            event_type="asset_package.ready",
+            payload={"assetId": result["assetId"], "jobId": job["id"], "projectId": job["project_id"], "format": result.get("format"), "aiUsage": "none"},
+            transport=transport,
+        )
+    if job["type"] == "render":
+        deliver_event(
+            conn,
+            user_id=job["created_by_user_id"],
+            event_type="render.ready",
+            payload={
+                "assetId": result.get("assetId"),
+                "manifestAssetId": result.get("manifestAssetId"),
+                "jobId": job["id"],
+                "projectId": job["project_id"],
+                "format": result.get("format"),
+                "status": result.get("status"),
+                "aiUsage": "none",
+            },
+            transport=transport,
+        )
 
 
 def worker_once(
@@ -281,6 +566,7 @@ def worker_once(
     storage: StorageProvider,
     worker_id: str | None = None,
     max_attempts: int = 1,
+    webhook_transport: WebhookTransport | None = None,
 ) -> dict[str, Any] | None:
     claimed = claim_next(conn, worker_id=worker_id or f"worker-{uuid.uuid4().hex[:8]}")
     if claimed is None:
@@ -288,6 +574,16 @@ def worker_once(
     try:
         result = process_job(conn, storage=storage, job=claimed)
     except Exception as exc:
-        mark_failed(conn, job_id=claimed["id"], error=str(exc), max_attempts=max_attempts)
-        return dict(conn.execute("SELECT * FROM jobs WHERE id = ?", (claimed["id"],)).fetchone())
-    return mark_succeeded(conn, job_id=claimed["id"], result=result)
+        failed = mark_failed(conn, job_id=claimed["id"], error=str(exc), max_attempts=max_attempts)
+        if failed["status"] == "failed":
+            deliver_event(
+                conn,
+                user_id=failed["created_by_user_id"],
+                event_type="job.failed",
+                payload={"jobId": failed["id"], "projectId": failed["project_id"], "type": failed["type"], "status": failed["status"], "error": failed["error"]},
+                transport=webhook_transport,
+        )
+        return failed
+    succeeded = mark_succeeded(conn, job_id=claimed["id"], result=result)
+    _deliver_success_events(conn, job=succeeded, result=result, transport=webhook_transport)
+    return succeeded

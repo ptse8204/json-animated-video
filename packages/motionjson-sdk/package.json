@@ -1,0 +1,10 @@
+{
+  "name": "@motionjson/sdk",
+  "version": "0.1.0",
+  "description": "Dependency-light MotionJSON developer API client for reusable motion layer workflows.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.js"
+  }
+}

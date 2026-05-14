@@ -4,10 +4,10 @@ Phase 12 adds a local, framework-independent backend foundation for MotionJSON.
 It stores metadata in SQLite and stores bytes through the `StorageProvider`
 protocol, with `LocalStorageProvider` as the default implementation.
 
-The backend manages users, sessions, projects, assets, jobs, queue items,
-workers, usage events, rights metadata, asset lineage, and audit events. It
-does not add an HTTP server, billing, webhooks, marketplace features, public API
-keys, SDKs, admin tools, or broad legal-advice workflows.
+The backend manages users, sessions, API keys, projects, assets, jobs, queue
+items, workers, usage events, rights metadata, asset lineage, audit events, and
+local webhook records. Billing, marketplace features, admin tools, and broad
+legal-advice workflows remain out of scope.
 
 ## Product Boundary
 
@@ -45,6 +45,8 @@ python -m motionjson.cli backend upload-asset --project-id PROJECT_ID --path exa
 python -m motionjson.cli backend enqueue-extract --project-id PROJECT_ID --asset-id ASSET_ID --mask-provider threshold --max-frames 12
 python -m motionjson.cli backend enqueue-export --project-id PROJECT_ID --source-job-id JOB_ID --format website-zip
 python -m motionjson.cli backend worker --once
+python -m motionjson.cli backend create-api-key --session-token-env MOTIONJSON_SESSION_TOKEN --name "local sdk"
+python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
 python -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
@@ -58,6 +60,24 @@ Upload and extraction commands accept local rights metadata flags such as
 `--rights-display-text`, `--license`, `--license-name`, `--creator-approved`,
 and `--commercial-use`. These flags only persist structured metadata; they do
 not call external services or establish legal clearance.
+
+## Developer API
+
+Phase 15 adds a stdlib HTTP server under `motionjson.backend.api`. It validates
+bearer API keys, stores only API-key hashes, and exposes local endpoints for
+project create/list/get, asset upload/list/get/download, extraction enqueue, job
+status/events, website asset-package enqueue, cached-asset render enqueue, and
+webhook management/delivery listing.
+
+Asset package jobs export website ZIPs from cached extraction outputs. Render
+jobs support deterministic `remotion-plan` output and local `mp4` or
+`webm-alpha` rendering when `ffmpeg` is available. If `ffmpeg` is unavailable,
+the job result reports `unavailable` through the existing exporter contract.
+Render jobs preserve rights, lineage, audit metadata, and `aiUsage: none`.
+
+Webhook delivery uses signed HMAC payloads and records local delivery rows. The
+default worker transport records deliveries without making real network calls;
+tests may inject a fake transport. See `docs/developer_api.md`.
 
 ## Rights, Lineage, and Audit
 
@@ -82,5 +102,5 @@ pytest -q
 npm test
 npm run lint
 git diff --check
-python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out /tmp/motionjson_phase13_demo --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out /tmp/motionjson_phase15_demo --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12
 ```

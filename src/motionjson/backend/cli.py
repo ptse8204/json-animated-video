@@ -10,6 +10,8 @@ from typing import Any
 
 from motionjson.providers.local_storage import LocalStorageProvider
 
+from .api import serve
+from .api_keys import create_api_key, list_api_keys, revoke_api_key
 from .assets import get_asset, register_upload
 from .auth import authenticate_user, create_session, register_user, require_session
 from .db import connect, initialize_database
@@ -98,6 +100,27 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     worker = sub.add_parser("worker", help="Run backend worker")
     _add_common(worker)
     worker.add_argument("--once", action="store_true")
+
+    server = sub.add_parser("serve-api", help="Serve the dependency-light local REST API")
+    _add_common(server)
+    server.add_argument("--host", default="127.0.0.1")
+    server.add_argument("--port", type=int, default=8765)
+
+    api_key_create = sub.add_parser("create-api-key", help="Create a local API key and print the raw key once")
+    _add_common(api_key_create)
+    api_key_create.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    api_key_create.add_argument("--name", default="Local API key")
+    api_key_create.add_argument("--scope", action="append", default=[])
+
+    api_key_list = sub.add_parser("list-api-keys", help="List local API keys without raw key material")
+    _add_common(api_key_list)
+    api_key_list.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    api_key_list.add_argument("--include-revoked", action="store_true")
+
+    api_key_revoke = sub.add_parser("revoke-api-key", help="Revoke a local API key by id")
+    _add_common(api_key_revoke)
+    api_key_revoke.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    api_key_revoke.add_argument("api_key_id")
 
     status = sub.add_parser("job-status", help="Print job status by id")
     _add_common(status)
@@ -211,6 +234,22 @@ def run_backend_command(args: argparse.Namespace) -> None:
         if not args.once:
             raise SystemExit("only --once is supported by the local backend worker")
         _print_json(worker_once(conn, storage=storage) or {"status": "idle"})
+        return
+    if args.backend_command == "serve-api":
+        conn.close()
+        serve(db_path=args.db, storage_root=args.storage_root, host=args.host, port=args.port)
+        return
+    if args.backend_command == "create-api-key":
+        session = _session(conn, args.session_token_env)
+        _print_json(create_api_key(conn, user_id=session["user_id"], name=args.name, scopes=args.scope or None))
+        return
+    if args.backend_command == "list-api-keys":
+        session = _session(conn, args.session_token_env)
+        _print_json({"apiKeys": list_api_keys(conn, user_id=session["user_id"], include_revoked=args.include_revoked)})
+        return
+    if args.backend_command == "revoke-api-key":
+        session = _session(conn, args.session_token_env)
+        _print_json({"revoked": revoke_api_key(conn, user_id=session["user_id"], key_id=args.api_key_id)})
         return
     if args.backend_command == "job-status":
         session = _session(conn, args.session_token_env)
