@@ -66,6 +66,21 @@ function normalizeSpritesheet(spritesheet, baseUrl) {
 function normalizeWebManifest(document, options) {
   const baseUrl = options.baseUrl || "";
   const sequence = document.assets?.sequence || [];
+  const normalizedFrames = sequence.map((frame, index) => normalizeFrame(frame, index, baseUrl));
+  const normalizedObject = {
+    id: document.assetId,
+    label: document.label,
+    renderMode: document.renderMode || "raster_alpha_sequence",
+    states: document.states || {},
+    assets: {
+      posterUrl: resolveAssetUrl(document.assets?.poster, baseUrl),
+      spritesheet: normalizeSpritesheet(document.assets?.spritesheet, baseUrl),
+      sequence: normalizedFrames,
+      fallbackStaticPosterUrl: resolveAssetUrl(document.assets?.fallbackStaticPoster, baseUrl),
+      fallbackVideoUrl: resolveAssetUrl(document.assets?.fallbackVideo, baseUrl),
+      production: document.assets?.production || null
+    }
+  };
   return {
     schema: WEB_MANIFEST_SCHEMA,
     sourceType: "web_asset_manifest",
@@ -79,14 +94,16 @@ function normalizeWebManifest(document, options) {
       frameCount: numberOr(document.canvas?.frameCount, sequence.length)
     },
     states: document.states || {},
-    assets: {
-      posterUrl: resolveAssetUrl(document.assets?.poster, baseUrl),
-      spritesheet: normalizeSpritesheet(document.assets?.spritesheet, baseUrl),
-      sequence: sequence.map((frame, index) => normalizeFrame(frame, index, baseUrl)),
-      fallbackStaticPosterUrl: resolveAssetUrl(document.assets?.fallbackStaticPoster, baseUrl),
-      fallbackVideoUrl: resolveAssetUrl(document.assets?.fallbackVideo, baseUrl),
-      production: document.assets?.production || null
-    },
+    assets: normalizedObject.assets,
+    objects: [normalizedObject],
+    layers: [{
+      id: `${document.assetId}_raster_layer`,
+      objectId: document.assetId,
+      visible: true,
+      opacity: 1,
+      zIndex: 10,
+      transform: { translate: [0, 0], scale: 1, rotation: 0 }
+    }],
     raw: document
   };
 }
@@ -98,18 +115,10 @@ function firstSceneObject(document) {
   return document.objects[0];
 }
 
-function normalizeSceneGraph(document, options) {
-  const baseUrl = options.baseUrl || "";
-  const object = options.objectId
-    ? document.objects.find((candidate) => candidate.id === options.objectId)
-    : firstSceneObject(document);
-  if (!object) throw new Error(`MotionJSON object not found: ${options.objectId}`);
-  const layer = Array.isArray(document.layers)
-    ? document.layers.find((candidate) => candidate.object_id === object.id) || document.layers[0]
-    : null;
+function sceneObjectFrames(object, layer, baseUrl) {
   const objectFrames = object.motion || object.frames || [];
   const sourceFrames = layer?.frames?.length ? layer.frames : objectFrames;
-  const frames = sourceFrames.map((frame, index) => {
+  return sourceFrames.map((frame, index) => {
     const objectFrame = objectFrames[index] || {};
     return normalizeFrame(
       {
@@ -121,27 +130,73 @@ function normalizeSceneGraph(document, options) {
       baseUrl
     );
   });
+}
+
+function normalizeSceneObject(object, layer, baseUrl) {
+  const frames = sceneObjectFrames(object, layer, baseUrl);
+  const firstAsset = frames.find((frame) => frame.asset)?.asset;
+  return {
+    id: object.id,
+    label: object.label,
+    renderMode: object.renderMode || layer?.type || "raster_alpha_sequence",
+    states: object.interactions || {},
+    zIndex: numberOr(object.zIndex ?? layer?.z_index ?? layer?.zIndex, 10),
+    assets: {
+      posterUrl: resolveAssetUrl(firstAsset, baseUrl),
+      spritesheet: normalizeSpritesheet(object.assets?.spritesheet, baseUrl),
+      sequence: frames,
+      fallbackStaticPosterUrl: resolveAssetUrl(firstAsset, baseUrl),
+      fallbackVideoUrl: null,
+      production: object.assets?.production || null
+    }
+  };
+}
+
+function normalizeSceneGraph(document, options) {
+  const baseUrl = options.baseUrl || "";
+  const selectedRawObject = options.objectId
+    ? document.objects.find((candidate) => candidate.id === options.objectId)
+    : firstSceneObject(document);
+  if (!selectedRawObject) throw new Error(`MotionJSON object not found: ${options.objectId}`);
+  const rawLayers = Array.isArray(document.layers) ? document.layers : [];
+  const objects = document.objects.map((object) => {
+    const layer = rawLayers.find((candidate) => candidate.object_id === object.id || candidate.objectId === object.id) || null;
+    return normalizeSceneObject(object, layer, baseUrl);
+  });
+  const selected = objects.find((object) => object.id === selectedRawObject.id) || objects[0];
+  const layers = (rawLayers.length ? rawLayers : objects.map((object) => ({ object_id: object.id, z_index: object.zIndex }))).map((layer, index) => {
+    const objectId = layer.object_id || layer.objectId || objects[index]?.id;
+    return {
+      id: layer.id || `${objectId}_raster_layer`,
+      objectId,
+      visible: layer.visible !== false,
+      opacity: numberOr(layer.opacity, 1),
+      zIndex: numberOr(layer.z_index ?? layer.zIndex ?? objects.find((object) => object.id === objectId)?.zIndex, 10 + index),
+      transform: {
+        translate: Array.isArray(layer.transform?.translate)
+          ? [numberOr(layer.transform.translate[0], 0), numberOr(layer.transform.translate[1], 0)]
+          : [0, 0],
+        scale: numberOr(layer.transform?.scale, 1),
+        rotation: numberOr(layer.transform?.rotation, 0)
+      }
+    };
+  });
   return {
     schema: SCENE_GRAPH_SCHEMA,
     sourceType: "scene_graph",
-    assetId: object.id,
-    label: object.label,
-    renderMode: object.renderMode || layer?.type || "raster_alpha_sequence",
+    assetId: selected.id,
+    label: selected.label,
+    renderMode: selected.renderMode,
     canvas: {
       width: numberOr(document.canvas?.width ?? document.source?.width, 1),
       height: numberOr(document.canvas?.height ?? document.source?.height, 1),
       fps: numberOr(document.canvas?.fps ?? document.source?.sampleFps, 12),
-      frameCount: numberOr(document.canvas?.frame_count ?? document.source?.sampledFrameCount, frames.length)
+      frameCount: numberOr(document.canvas?.frame_count ?? document.source?.sampledFrameCount, selected.assets.sequence.length)
     },
-    states: object.interactions || {},
-    assets: {
-      posterUrl: resolveAssetUrl(frames.find((frame) => frame.asset)?.asset, baseUrl),
-      spritesheet: normalizeSpritesheet(object.assets?.spritesheet, baseUrl),
-      sequence: frames,
-      fallbackStaticPosterUrl: resolveAssetUrl(frames.find((frame) => frame.asset)?.asset, baseUrl),
-      fallbackVideoUrl: null,
-      production: object.assets?.production || null
-    },
+    states: selected.states,
+    assets: selected.assets,
+    objects,
+    layers,
     raw: document
   };
 }

@@ -73,7 +73,7 @@ def _write_index(path: Path) -> None:
     <div id="motion"></div>
     <script type="module">
       import { mountMotionJSON } from "./runtime/index.js";
-      await mountMotionJSON("#motion", "./web_asset_manifest.json", { background: "#fbfaf6" });
+      await mountMotionJSON("#motion", "./scene_graph.json", { background: "#fbfaf6" });
     </script>
   </body>
 </html>
@@ -112,6 +112,10 @@ def _include_scene_assets(out_dir: Path, package_root: Path, scene: dict[str, An
             continue
         manifest_rel = f"objects/{object_id}/object_manifest.json"
         _copy_file(out_dir / manifest_rel, package_root, manifest_rel, files)
+        motion_rel = f"objects/{object_id}/object_motion.json"
+        _copy_file(out_dir / motion_rel, package_root, motion_rel, files)
+        web_manifest_rel = f"objects/{object_id}/web_asset_manifest.json"
+        _copy_file(out_dir / web_manifest_rel, package_root, web_manifest_rel, files)
 
         spritesheet = obj.get("assets", {}).get("spritesheet")
         if isinstance(spritesheet, dict) and spritesheet.get("path"):

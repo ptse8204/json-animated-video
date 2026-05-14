@@ -1,6 +1,6 @@
 import { createCanvasRuntime } from "./canvas.js";
 import { normalizeMotionJSON } from "./manifest.js";
-import { composeFrameTransform, frameAt, stateTransforms } from "./timeline.js";
+import { composeFrameTransform, frameIndexAt, stateTransforms } from "./timeline.js";
 
 function pixiFromOptions(options) {
   return options.PIXI || globalThis.PIXI || null;
@@ -63,18 +63,32 @@ export async function createPixiRuntime(target, motionDocument, options = {}) {
   });
   if (target.appendChild && app.view) target.appendChild(app.view);
 
-  const firstFrame = frameAt(scene, 0) || scene.assets.sequence[0];
-  const baseTexture = scene.assets.spritesheet?.url && PIXI.BaseTexture?.from
-    ? PIXI.BaseTexture.from(scene.assets.spritesheet.url)
-    : null;
-  const sprite = new PIXI.Sprite(makeTexture(PIXI, baseTexture, firstFrame));
-  app.stage.addChild(sprite);
+  const objects = new Map((scene.objects || [{ id: scene.assetId, assets: scene.assets, states: scene.states }]).map((object) => [object.id, object]));
+  const layers = Array.isArray(scene.layers) && scene.layers.length
+    ? scene.layers.slice().sort((a, b) => (a.zIndex - b.zIndex) || String(a.id).localeCompare(String(b.id)))
+    : [{ id: `${scene.assetId}_raster_layer`, objectId: scene.assetId, visible: true, opacity: 1, transform: { translate: [0, 0], scale: 1, rotation: 0 } }];
+  const baseTextures = new Map();
+  const sprites = new Map();
+  for (const layer of layers) {
+    const object = objects.get(layer.objectId);
+    if (!object) continue;
+    const firstFrame = object.assets.sequence[0];
+    const baseTexture = object.assets.spritesheet?.url && PIXI.BaseTexture?.from
+      ? PIXI.BaseTexture.from(object.assets.spritesheet.url)
+      : null;
+    baseTextures.set(object.id, baseTexture);
+    const sprite = new PIXI.Sprite(makeTexture(PIXI, baseTexture, firstFrame));
+    sprites.set(layer.id, sprite);
+    app.stage.addChild(sprite);
+  }
+  const sprite = sprites.values().next().value;
 
   const runtime = {
     renderer: "pixi",
     scene,
     app,
     sprite,
+    sprites,
     state: options.state || "idle",
     context: { ...options },
     playing: options.autoplay !== false,
@@ -103,23 +117,47 @@ export async function createPixiRuntime(target, motionDocument, options = {}) {
       return runtime.elapsedWhenPaused;
     },
     render(now = performance.now(), renderOptions = {}) {
-      const frame = frameAt(scene, runtime.timeSeconds(now), { loop: options.loop });
-      if (!frame) return null;
+      let renderedFrame = null;
+      const timeSeconds = runtime.timeSeconds(now);
+      const sortedLayers = layers.slice().sort((a, b) => (a.zIndex - b.zIndex) || String(a.id).localeCompare(String(b.id)));
+      for (const layer of sortedLayers) {
+        const sprite = sprites.get(layer.id);
+        const object = objects.get(layer.objectId);
+        if (!sprite || !object) continue;
+        const sequence = object.assets.sequence || [];
+        const frameIndex = frameIndexAt(timeSeconds, scene.canvas.fps, sequence.length, { loop: options.loop });
+        const frame = sequence[frameIndex] || null;
+        if (!frame) {
+          sprite.visible = false;
+          continue;
+        }
+        const baseTexture = baseTextures.get(object.id);
       if (baseTexture) {
         sprite.texture = makeTexture(PIXI, baseTexture, frame);
       } else if (frame.assetUrl && PIXI.Texture?.from) {
         sprite.texture = PIXI.Texture.from(frame.assetUrl);
       }
-      const transform = composeFrameTransform(frame, stateTransforms(scene, runtime.state, { ...runtime.context, ...renderOptions }));
+        const layerTransform = {
+          translate: layer.transform?.translate || [0, 0],
+          scale: layer.transform?.scale ?? 1,
+          rotation: layer.transform?.rotation ?? 0,
+          opacity: layer.opacity ?? 1
+        };
+      const transform = composeFrameTransform(frame, [
+        ...stateTransforms({ ...scene, states: object.states || scene.states }, runtime.state, { ...runtime.context, ...renderOptions }),
+        layerTransform
+      ]);
       const { width, height } = spriteSize(frame, sprite);
       setPivot(sprite, width, height);
-      sprite.visible = frame.visible;
+      sprite.visible = frame.visible && layer.visible !== false && layer.opacity > 0;
       sprite.x = frame.x + width / 2 + transform.translate[0];
       sprite.y = frame.y + height / 2 + transform.translate[1];
       sprite.alpha = transform.opacity;
       sprite.rotation = transform.rotation;
       sprite.scale?.set?.(transform.scale);
-      return frame;
+        renderedFrame = frame;
+      }
+      return renderedFrame;
     },
     start() {
       runtime._tick = () => runtime.render(performance.now());

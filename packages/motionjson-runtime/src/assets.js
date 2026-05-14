@@ -18,14 +18,24 @@ export function loadImage(url, options = {}) {
 }
 
 export async function loadRuntimeAssets(scene, options = {}) {
-  const spritesheet = scene.assets.spritesheet?.url
-    ? await loadImage(scene.assets.spritesheet.url, options)
-    : null;
-  if (spritesheet) {
-    return { spritesheet, frames: [] };
+  const byObject = {};
+  const objects = Array.isArray(scene.objects) && scene.objects.length
+    ? scene.objects
+    : [{ id: scene.assetId, assets: scene.assets }];
+  for (const object of objects) {
+    const spritesheet = object.assets?.spritesheet?.url
+      ? await loadImage(object.assets.spritesheet.url, options)
+      : null;
+    if (spritesheet) {
+      byObject[object.id] = { spritesheet, frames: [] };
+      continue;
+    }
+    const sequence = object.assets?.sequence || [];
+    const frames = await Promise.all(
+      sequence.map((frame) => (frame.assetUrl ? loadImage(frame.assetUrl, options).catch(() => null) : null))
+    );
+    byObject[object.id] = { spritesheet: null, frames };
   }
-  const frames = await Promise.all(
-    scene.assets.sequence.map((frame) => (frame.assetUrl ? loadImage(frame.assetUrl, options).catch(() => null) : null))
-  );
-  return { spritesheet: null, frames };
+  const defaultAssets = byObject[scene.assetId] || Object.values(byObject)[0] || { spritesheet: null, frames: [] };
+  return { ...defaultAssets, byObject };
 }

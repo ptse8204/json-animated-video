@@ -40,7 +40,7 @@ function layerLabel(scene, objectId, index) {
 }
 
 function makeLayer(scene, rawLayer, index) {
-  const fallbackId = scene.assetId || rawLayer?.object_id || `object_${index}`;
+  const fallbackId = rawLayer?.object_id || rawLayer?.objectId || scene.objects?.[index]?.id || scene.assetId || `object_${index}`;
   const rawObject = scene.raw?.objects?.find?.((candidate) => candidate.id === (rawLayer?.object_id || fallbackId));
   const id = rawLayer?.id || `${fallbackId}_layer`;
   const clip = layerFrameBounds(scene);

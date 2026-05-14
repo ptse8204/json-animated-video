@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,22 @@ from .masks import MaskProvider
 from .metrics import build_resource_profile
 from .vectorize import build_quality_scores, mask_to_largest_polygon, recommended_output
 from .video import iter_sampled_frames
+
+
+SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+@dataclass(frozen=True)
+class ObjectExtractionSpec:
+    object_id: str
+    label: str
+    mask_provider: MaskProvider
+    z_index: int = 10
+
+
+def _validate_object_id(object_id: str) -> None:
+    if not SAFE_OBJECT_ID_PATTERN.match(object_id):
+        raise ValueError("Object IDs must be safe path segments using letters, numbers, underscores, or hyphens")
 
 
 def _clear_generated_frames(*directories: Path) -> None:
@@ -57,6 +75,28 @@ def _rel(path: Path, root: Path) -> str:
     return str(path.relative_to(root)).replace("\\", "/")
 
 
+def _object_dir(out_dir: Path, object_id: str) -> Path:
+    return out_dir / "objects" / object_id
+
+
+def _write_object_motion(out_dir: Path, object_id: str, object_motion: dict[str, Any], *, legacy: bool = False) -> None:
+    write_json(_object_dir(out_dir, object_id) / "object_motion.json", object_motion)
+    if legacy:
+        write_json(out_dir / "object_motion.json", object_motion)
+
+
+def _write_object_web_manifest(out_dir: Path, scene: dict[str, Any], object_id: str, *, legacy: bool = False) -> None:
+    write_web_asset_manifest(
+        _object_dir(out_dir, object_id) / "web_asset_manifest.json",
+        scene,
+        object_id=object_id,
+        path_prefix="../../",
+        source_scene_graph="../../scene_graph.json",
+    )
+    if legacy:
+        write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
+
+
 def write_profiled_outputs(
     *,
     out_dir: Path,
@@ -75,7 +115,10 @@ def write_profiled_outputs(
         scene["resource_profile"] = profile
         write_json(out_dir / "resource_profile.json", profile)
         write_json(out_dir / "scene_graph.json", scene)
-        write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
+        for index, obj in enumerate(scene.get("objects", [])):
+            current_id = obj.get("id")
+            if current_id:
+                _write_object_web_manifest(out_dir, scene, current_id, legacy=index == 0 and current_id == object_id)
         payloads = profile.get("sizes", {}).get("payloads", {})
         actual_profile = build_resource_profile(video_path=video_path, out_dir=out_dir, object_id=object_id, scene=scene)
         if profile_updates:
@@ -90,14 +133,14 @@ def write_profiled_outputs(
     return profile
 
 
-def _build_layer_frames(object_id: str, fps: float, motion: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_layer_frames(object_id: str, fps: float, motion: list[dict[str, Any]], *, z_index: int = 10) -> dict[str, Any]:
     return {
         "id": f"{object_id}_raster_layer",
         "object_id": object_id,
         "type": "raster_alpha_sequence",
         "asset_type": "cropped_rgba_png_sequence",
         "fps": fps,
-        "z_index": 10,
+        "z_index": z_index,
         "blend_mode": "source-over",
         "frames": [
             {
@@ -129,54 +172,42 @@ def _build_layer_frames(object_id: str, fps: float, motion: list[dict[str, Any]]
     }
 
 
-def run_pipeline(
+def _extract_object(
     *,
-    video_path: str | Path,
-    out_dir: str | Path,
-    mask_provider: MaskProvider,
-    object_id: str = "object_0",
-    object_label: str = "selected_object",
-    sample_fps: float | None = None,
-    max_frames: int | None = None,
-    min_area: float = 100.0,
-    simplify_ratio: float = 0.006,
-    feather: int = 0,
-    layer_padding: int = 4,
-    sprite_format: str = "webp",
-    output_mode: str = "authoring",
-    production_avif: bool = False,
-) -> dict[str, Any]:
-    if sprite_format not in {"webp", "png"}:
-        raise ValueError("sprite_format must be 'webp' or 'png'")
-    if output_mode not in {"authoring", "production", "both"}:
-        raise ValueError("output_mode must be 'authoring', 'production', or 'both'")
-
-    video_path = Path(video_path)
-    out_dir = Path(out_dir)
-    frames_dir = out_dir / "frames"
+    out_dir: Path,
+    frames_dir: Path,
+    info: Any,
+    frames: list[Any],
+    spec: ObjectExtractionSpec,
+    min_area: float,
+    simplify_ratio: float,
+    feather: int,
+    layer_padding: int,
+    sprite_format: str,
+    output_mode: str,
+    production_avif: bool,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    object_id = spec.object_id
     mask_dir = out_dir / "masks" / object_id
-    object_dir = out_dir / "objects" / object_id
+    object_dir = _object_dir(out_dir, object_id)
     cutout_dir = object_dir / "cutouts"
-    for directory in (frames_dir, mask_dir, cutout_dir, object_dir):
+    for directory in (mask_dir, cutout_dir, object_dir):
         directory.mkdir(parents=True, exist_ok=True)
-    _clear_generated_frames(frames_dir, mask_dir, cutout_dir)
+    _clear_generated_frames(mask_dir, cutout_dir)
     for stale_dir in (object_dir / "masks", object_dir / "layers", object_dir / "production"):
         if stale_dir.exists():
             shutil.rmtree(stale_dir)
-    for stale in (out_dir / "benchmark_report.json", object_dir / "spritesheet.webp", object_dir / "spritesheet.png"):
+    for stale in (object_dir / "spritesheet.webp", object_dir / "spritesheet.png"):
         if stale.exists():
             stale.unlink()
 
-    info, frame_iter = iter_sampled_frames(video_path, sample_fps=sample_fps, max_frames=max_frames)
-    frames = list(frame_iter)
-    mask_provider.prepare(info)
-
+    spec.mask_provider.prepare(info)
     detailed_frames: list[dict[str, Any]] = []
     motion: list[dict[str, Any]] = []
     cutout_paths: list[Path] = []
 
     try:
-        for frame in tqdm(frames, desc="processing frames"):
+        for frame in tqdm(frames, desc=f"processing {object_id}"):
             frame_number = frame.out_index + 1
             frame_name = f"frame_{frame_number:06d}.png"
             mask_name = f"mask_{frame_number:06d}.png"
@@ -186,9 +217,10 @@ def run_pipeline(
             mask_path = mask_dir / mask_name
             cutout_path = cutout_dir / cutout_name
 
-            Image.fromarray(frame.rgb).save(frame_path)
+            if not frame_path.exists():
+                Image.fromarray(frame.rgb).save(frame_path)
             frame_bgr = cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)
-            mask = mask_provider.get_mask(frame.index, frame_bgr)
+            mask = spec.mask_provider.get_mask(frame.index, frame_bgr)
             contour = mask_to_largest_polygon(mask, min_area=min_area, simplify_ratio=simplify_ratio)
             Image.fromarray(mask).save(mask_path)
 
@@ -248,7 +280,7 @@ def run_pipeline(
                 }
             )
     finally:
-        mask_provider.close()
+        spec.mask_provider.close()
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
@@ -263,18 +295,9 @@ def run_pipeline(
         for entry, sprite_frame in zip((m for m in motion if m["asset"]), sprite_meta["frames"]):
             entry["sprite"] = sprite_frame
 
-    source = {
-        "video": str(video_path),
-        "width": info.width,
-        "height": info.height,
-        "fps": info.source_fps,
-        "sampleFps": info.sample_fps,
-        "totalSourceFrames": info.total_source_frames,
-        "sampledFrameCount": len(frames),
-    }
     obj = {
         "id": object_id,
-        "label": object_label,
+        "label": spec.label,
         "renderMode": "raster_alpha_sequence",
         "asset": f"objects/{object_id}/cutouts/cutout_%06d.png",
         "mask": f"masks/{object_id}/mask_%06d.png",
@@ -282,7 +305,7 @@ def run_pipeline(
             "cutoutPattern": f"objects/{object_id}/cutouts/cutout_%06d.png",
             "spritesheet": sprite_meta,
         },
-        "zIndex": 10,
+        "zIndex": spec.z_index,
         "motion": motion,
         "frames": detailed_frames,
         "interactions": {
@@ -310,30 +333,10 @@ def run_pipeline(
         )
         obj["assets"]["production"] = production_assets
 
-    scene = {
-        "schema": "motionjson.scene_graph.v0.1",
-        "version": "0.1.0",
-        "source": source,
-        "objects": [obj],
-        "canvas": {
-            "width": info.width,
-            "height": info.height,
-            "source_fps": info.source_fps,
-            "fps": info.sample_fps,
-            "frame_count": len(frames),
-        },
-        "layers": [_build_layer_frames(object_id, info.sample_fps, motion)],
-        "rendering": {
-            "recommendedRuntime": "Canvas/WebGL/PixiJS",
-            "defaultRenderMode": "raster_alpha_sequence",
-            "outputMode": output_mode,
-            "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics.",
-        },
-    }
     object_manifest = {
         "schema": "motionjson.object_manifest.v0.1",
         "objectId": object_id,
-        "label": object_label,
+        "label": spec.label,
         "renderMode": obj["renderMode"],
         "cutouts": [entry["asset"] for entry in motion if entry["asset"]],
         "masks": [entry["mask"] for entry in motion],
@@ -353,12 +356,155 @@ def run_pipeline(
         "recommendedOutput": route,
     }
 
-    write_json(out_dir / "object_motion.json", object_motion)
     write_json(object_dir / "object_manifest.json", object_manifest)
-    write_silhouette_lottie(out_dir / "silhouette_lottie.json", width=info.width, height=info.height, fps=info.sample_fps, frames=detailed_frames)
+    _write_object_motion(out_dir, object_id, object_motion)
+    layer = _build_layer_frames(object_id, info.sample_fps, motion, z_index=spec.z_index)
+    return obj, layer, object_motion, detailed_frames
+
+
+def run_multi_object_pipeline(
+    *,
+    video_path: str | Path,
+    out_dir: str | Path,
+    object_specs: list[ObjectExtractionSpec],
+    sample_fps: float | None = None,
+    max_frames: int | None = None,
+    min_area: float = 100.0,
+    simplify_ratio: float = 0.006,
+    feather: int = 0,
+    layer_padding: int = 4,
+    sprite_format: str = "webp",
+    output_mode: str = "authoring",
+    production_avif: bool = False,
+) -> dict[str, Any]:
+    if sprite_format not in {"webp", "png"}:
+        raise ValueError("sprite_format must be 'webp' or 'png'")
+    if output_mode not in {"authoring", "production", "both"}:
+        raise ValueError("output_mode must be 'authoring', 'production', or 'both'")
+    if not object_specs:
+        raise ValueError("At least one object extraction spec is required")
+    object_ids = [spec.object_id for spec in object_specs]
+    for object_id in object_ids:
+        _validate_object_id(object_id)
+    if len(set(object_ids)) != len(object_ids):
+        raise ValueError("Object extraction specs must use unique object IDs")
+
+    video_path = Path(video_path)
+    out_dir = Path(out_dir)
+    frames_dir = out_dir / "frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    _clear_generated_frames(frames_dir)
+    for stale in (out_dir / "benchmark_report.json", out_dir / "silhouette_lottie.json"):
+        if stale.exists():
+            stale.unlink()
+
+    info, frame_iter = iter_sampled_frames(video_path, sample_fps=sample_fps, max_frames=max_frames)
+    frames = list(frame_iter)
+    for frame in frames:
+        frame_number = frame.out_index + 1
+        Image.fromarray(frame.rgb).save(frames_dir / f"frame_{frame_number:06d}.png")
+
+    source = {
+        "video": str(video_path),
+        "width": info.width,
+        "height": info.height,
+        "fps": info.source_fps,
+        "sampleFps": info.sample_fps,
+        "totalSourceFrames": info.total_source_frames,
+        "sampledFrameCount": len(frames),
+    }
+    objects: list[dict[str, Any]] = []
+    layers: list[dict[str, Any]] = []
+    object_motions: dict[str, dict[str, Any]] = {}
+    first_detailed_frames: list[dict[str, Any]] = []
+    for index, spec in enumerate(object_specs):
+        obj, layer, object_motion, detailed_frames = _extract_object(
+            out_dir=out_dir,
+            frames_dir=frames_dir,
+            info=info,
+            frames=frames,
+            spec=spec,
+            min_area=min_area,
+            simplify_ratio=simplify_ratio,
+            feather=feather,
+            layer_padding=layer_padding,
+            sprite_format=sprite_format,
+            output_mode=output_mode,
+            production_avif=production_avif,
+        )
+        objects.append(obj)
+        layers.append(layer)
+        object_motions[spec.object_id] = object_motion
+        if index == 0:
+            first_detailed_frames = detailed_frames
+
+    scene = {
+        "schema": "motionjson.scene_graph.v0.1",
+        "version": "0.1.0",
+        "source": source,
+        "objects": objects,
+        "canvas": {
+            "width": info.width,
+            "height": info.height,
+            "source_fps": info.source_fps,
+            "fps": info.sample_fps,
+            "frame_count": len(frames),
+        },
+        "layers": layers,
+        "rendering": {
+            "recommendedRuntime": "Canvas/WebGL/PixiJS",
+            "defaultRenderMode": "raster_alpha_sequence",
+            "outputMode": output_mode,
+            "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics.",
+        },
+    }
+
+    default_object_id = object_specs[0].object_id
+    _write_object_motion(out_dir, default_object_id, object_motions[default_object_id], legacy=True)
+    write_silhouette_lottie(
+        out_dir / "silhouette_lottie.json",
+        width=info.width,
+        height=info.height,
+        fps=info.sample_fps,
+        frames=first_detailed_frames,
+    )
     write_json(out_dir / "scene_graph.json", scene)
-    write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
+    for index, spec in enumerate(object_specs):
+        _write_object_web_manifest(out_dir, scene, spec.object_id, legacy=index == 0)
     _preview_copy(out_dir)
-    write_profiled_outputs(out_dir=out_dir, video_path=video_path, object_id=object_id, scene=scene)
+    write_profiled_outputs(out_dir=out_dir, video_path=video_path, object_id=default_object_id, scene=scene)
 
     return scene
+
+
+def run_pipeline(
+    *,
+    video_path: str | Path,
+    out_dir: str | Path,
+    mask_provider: MaskProvider,
+    object_id: str = "object_0",
+    object_label: str = "selected_object",
+    sample_fps: float | None = None,
+    max_frames: int | None = None,
+    min_area: float = 100.0,
+    simplify_ratio: float = 0.006,
+    feather: int = 0,
+    layer_padding: int = 4,
+    sprite_format: str = "webp",
+    output_mode: str = "authoring",
+    production_avif: bool = False,
+) -> dict[str, Any]:
+    return run_multi_object_pipeline(
+        video_path=video_path,
+        out_dir=out_dir,
+        object_specs=[ObjectExtractionSpec(object_id=object_id, label=object_label, mask_provider=mask_provider)],
+        sample_fps=sample_fps,
+        max_frames=max_frames,
+        min_area=min_area,
+        simplify_ratio=simplify_ratio,
+        feather=feather,
+        layer_padding=layer_padding,
+        sprite_format=sprite_format,
+        output_mode=output_mode,
+        production_avif=production_avif,
+    )

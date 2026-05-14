@@ -94,6 +94,42 @@ function sampleSceneGraph() {
   };
 }
 
+function sampleMultiSceneGraph() {
+  const scene = sampleSceneGraph();
+  const secondSequence = sampleManifest().assets.sequence.map((frame) => ({
+    ...frame,
+    asset: frame.asset.replaceAll("object_0", "shadow"),
+    x: frame.x + 40,
+    y: frame.y + 10,
+    width: 12,
+    height: 12,
+    w: 12,
+    h: 12
+  }));
+  scene.objects.push({
+    id: "shadow",
+    label: "Shadow",
+    renderMode: "raster_alpha_sequence",
+    interactions: scene.objects[0].interactions,
+    assets: {
+      spritesheet: {
+        ...sampleManifest().assets.spritesheet,
+        path: "objects/shadow/spritesheet.webp"
+      }
+    },
+    motion: secondSequence
+  });
+  scene.layers[0].id = "object_0_layer";
+  scene.layers[0].z_index = 10;
+  scene.layers.push({
+    id: "shadow_layer",
+    object_id: "shadow",
+    z_index: 20,
+    frames: secondSequence
+  });
+  return scene;
+}
+
 test("normalizes web_asset_manifest and resolves relative URLs", () => {
   const scene = normalizeMotionJSON(sampleManifest(), { baseUrl: "https://example.test/out/demo/web_asset_manifest.json" });
 
@@ -111,6 +147,17 @@ test("normalizes scene_graph with the same runtime frame shape", () => {
   assert.equal(scene.assets.sequence[1].width, 20);
   assert.deepEqual(scene.assets.sequence[1].sprite, { x: 20, y: 0, w: 20, h: 20 });
   assert.equal(resolveAssetUrl("objects/object_0/cutouts/cutout_000002.png", "/out/demo/scene_graph.json"), "/out/demo/objects/object_0/cutouts/cutout_000002.png");
+});
+
+test("normalizes multi-object scene_graph without collapsing layers", () => {
+  const scene = normalizeMotionJSON(sampleMultiSceneGraph(), { baseUrl: "/out/demo/scene_graph.json" });
+  const editor = initializeEditorState(scene);
+
+  assert.equal(scene.objects.length, 2);
+  assert.deepEqual(scene.layers.map((layer) => layer.objectId), ["object_0", "shadow"]);
+  assert.equal(scene.objects[1].assets.sequence[0].assetUrl, "/out/demo/objects/shadow/cutouts/cutout_000001.png");
+  assert.deepEqual(editor.layers.map((layer) => layer.sourceAssetId), ["object_0", "shadow"]);
+  assert.deepEqual(sortVisibleLayers(editor).map((layer) => layer.id), ["object_0_layer", "shadow_layer"]);
 });
 
 test("frame math loops and clamps", () => {

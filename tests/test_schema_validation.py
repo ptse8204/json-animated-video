@@ -43,7 +43,8 @@ def test_pipeline_outputs_validate_against_packaged_schemas(tmp_path):
 
     result = validate_output_dir(out)
     assert result.ok, [issue.format() for issue in result.issues]
-    assert len(result.checked) == 5
+    assert out / "objects" / "object_0" / "object_motion.json" in result.checked
+    assert out / "objects" / "object_0" / "web_asset_manifest.json" in result.checked
     assert out / "silhouette_lottie.json" in result.skipped
 
 

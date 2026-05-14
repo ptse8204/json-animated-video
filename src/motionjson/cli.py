@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from .exporters.remotion import write_remotion_plan
 from .exporters.scene_graph import write_json
 from .exporters.website_package import export_website_package
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
-from .pipeline import run_pipeline, write_profiled_outputs
+from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
@@ -62,6 +63,18 @@ def parse_json_object(value: str | None) -> dict[str, Any]:
     return parsed
 
 
+SAFE_OBJECT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+
+
+def parse_object_assignment(value: str) -> tuple[str, str]:
+    object_id, sep, assigned = value.partition("=")
+    if not sep or not object_id or not assigned:
+        raise argparse.ArgumentTypeError("Expected object_id=value")
+    if not SAFE_OBJECT_ID.match(object_id):
+        raise argparse.ArgumentTypeError("Object IDs must use letters, numbers, underscores, or hyphens")
+    return object_id, assigned
+
+
 def parse_brush_points(value: str | None) -> list[list[int]]:
     if not value:
         return []
@@ -85,6 +98,8 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
         default="threshold",
     )
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
+    p.add_argument("--object-mask-dir", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=/path/to/masks for deterministic multi-object extraction")
+    p.add_argument("--object-label", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=Label for multi-object extraction")
     p.add_argument("--lower-hsv", type=parse_hsv, default=(0, 80, 80), help="Lower HSV threshold, e.g. 0,80,80")
     p.add_argument("--upper-hsv", type=parse_hsv, default=(12, 255, 255), help="Upper HSV threshold, e.g. 12,255,255")
     p.add_argument("--prompt-point", type=parse_point, default=None, help="SAM2 point prompt, x,y")
@@ -146,6 +161,7 @@ def add_export_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument("--out", type=str, required=True, help="Output file for one format, or output directory for --format all")
     p.add_argument("--object-id", type=str, default="object_0", help="Object id for object-specific exports")
+    p.add_argument("--all-objects", action="store_true", help="Export separate object-specific outputs for every object layer")
     p.add_argument("--background-color", type=str, default="#fbfaf6", help="Final render background color")
     p.add_argument("--editor-state", type=str, default=None, help="Optional Phase 7 timeline editor-state JSON")
 
@@ -232,7 +248,72 @@ def build_provider(args: argparse.Namespace):
     )
 
 
+def _assignment_map(values: list[tuple[str, str]], *, field_name: str) -> dict[str, str]:
+    output: dict[str, str] = {}
+    for object_id, value in values:
+        if object_id in output:
+            raise SystemExit(f"Duplicate {field_name} for object id {object_id!r}")
+        output[object_id] = value
+    return output
+
+
+def _validate_single_object_id(object_id: str) -> None:
+    if not SAFE_OBJECT_ID.match(object_id):
+        raise SystemExit("Object IDs must use letters, numbers, underscores, or hyphens")
+
+
+def build_multi_object_specs(args: argparse.Namespace) -> list[ObjectExtractionSpec]:
+    mask_dirs = _assignment_map(args.object_mask_dir, field_name="--object-mask-dir")
+    labels = _assignment_map(args.object_label, field_name="--object-label")
+    unknown_labels = sorted(set(labels) - set(mask_dirs))
+    if unknown_labels:
+        raise SystemExit(f"--object-label provided without --object-mask-dir for: {', '.join(unknown_labels)}")
+    specs: list[ObjectExtractionSpec] = []
+    for index, (object_id, mask_dir) in enumerate(mask_dirs.items()):
+        specs.append(
+            ObjectExtractionSpec(
+                object_id=object_id,
+                label=labels.get(object_id, object_id),
+                mask_provider=ExternalMaskProvider(mask_dir),
+                z_index=10 + index * 10,
+            )
+        )
+    return specs
+
+
 def run_extract(args: argparse.Namespace) -> dict:
+    _validate_single_object_id(args.object_id)
+    if args.object_label and not args.object_mask_dir:
+        raise SystemExit("--object-label is only valid with --object-mask-dir")
+    if args.object_mask_dir:
+        specs = build_multi_object_specs(args)
+        scene = run_multi_object_pipeline(
+            video_path=args.video,
+            out_dir=args.out,
+            object_specs=specs,
+            sample_fps=args.sample_fps,
+            max_frames=args.max_frames,
+            min_area=args.min_area,
+            simplify_ratio=args.simplify,
+            feather=args.feather,
+            layer_padding=args.layer_padding,
+            sprite_format=args.sprite_format,
+            output_mode=args.output_mode,
+            production_avif=args.production_avif,
+        )
+        out = Path(args.out)
+        print(f"Wrote {out / 'scene_graph.json'}")
+        print(f"Wrote {out / 'object_motion.json'}")
+        print(f"Wrote {out / 'web_asset_manifest.json'}")
+        for spec in specs:
+            print(f"Wrote {out / 'objects' / spec.object_id / 'object_manifest.json'}")
+            print(f"Wrote {out / 'objects' / spec.object_id / 'object_motion.json'}")
+            print(f"Wrote {out / 'objects' / spec.object_id / 'web_asset_manifest.json'}")
+        print(f"Wrote {out / 'resource_profile.json'}")
+        print(f"Wrote {out / 'preview' / 'runtime'}")
+        print(f"Objects: {len(scene['objects'])}; frames: {scene['source']['sampledFrameCount']}; canvas: {scene['source']['width']}x{scene['source']['height']}")
+        return scene
+
     provider = build_provider(args)
     try:
         scene = run_pipeline(
@@ -422,7 +503,7 @@ def _write_export_manifest(args: argparse.Namespace, exports: list[dict[str, Any
         out_dir=args.out_dir,
         scene=scene,
         exports=exports,
-        object_id=args.object_id,
+        object_id=None if getattr(args, "all_objects", False) else args.object_id,
     )
     print(f"Wrote {manifest_path}")
 
@@ -434,9 +515,14 @@ def _fail_if_unavailable(entry: dict[str, Any]) -> None:
     raise SystemExit(f"{entry.get('type', 'export')} unavailable: {reason}")
 
 
-def _export_webm_alpha(args: argparse.Namespace, output_path: Path) -> dict[str, Any]:
+def _scene_object_ids(scene: dict[str, Any]) -> list[str]:
+    return [obj["id"] for obj in scene.get("objects", []) if obj.get("id")]
+
+
+def _export_webm_alpha(args: argparse.Namespace, output_path: Path, *, object_id: str | None = None) -> dict[str, Any]:
     scene = load_scene(args.out_dir)
-    obj = _first_object(scene, args.object_id)
+    selected_object_id = object_id or args.object_id
+    obj = _first_object(scene, selected_object_id)
     canvas = _canvas(scene)
     webm = export_transparent_webm_object(
         out_dir=args.out_dir,
@@ -459,11 +545,11 @@ def _export_webm_alpha(args: argparse.Namespace, output_path: Path) -> dict[str,
         frame_count=canvas["frameCount"],
         reason=webm.get("reason"),
         extra={
-            "objectId": args.object_id,
+            "objectId": selected_object_id,
             "encoder": webm.get("encoder", "ffmpeg"),
             "pixelFormat": "yuva420p",
             "cachedSource": webm.get("cachedSource", "cached_rgba_cutout_png_sequence"),
-            "cachedSources": ["scene_graph.json", f"objects/{args.object_id}/cutouts/*.png"],
+            "cachedSources": ["scene_graph.json", f"objects/{selected_object_id}/cutouts/*.png"],
             "source": webm.get("source", "cached_rgba_cutout_png_sequence_and_json_transforms"),
             "aiUsage": "none",
         },
@@ -471,6 +557,7 @@ def _export_webm_alpha(args: argparse.Namespace, output_path: Path) -> dict[str,
 
 
 def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
+    _validate_single_object_id(args.object_id)
     out_dir = Path(args.out_dir)
     if not (out_dir / "scene_graph.json").exists():
         raise SystemExit(f"{out_dir / 'scene_graph.json'} does not exist")
@@ -491,6 +578,16 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
         return exports
 
     if args.format == "webm-alpha":
+        if args.all_objects:
+            scene = load_scene(out_dir)
+            output.mkdir(parents=True, exist_ok=True)
+            for object_id in _scene_object_ids(scene):
+                entry = _export_webm_alpha(args, output / f"{object_id}.webm", object_id=object_id)
+                _fail_if_unavailable(entry)
+                exports.append(entry)
+                print(f"Wrote {output / f'{object_id}.webm'}")
+            _write_export_manifest(args, exports, output / "final_export_manifest.json")
+            return exports
         entry = _export_webm_alpha(args, output)
         _fail_if_unavailable(entry)
         exports.append(entry)
@@ -529,7 +626,12 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
             editor_state_path=args.editor_state,
         )
     )
-    exports.append(_export_webm_alpha(args, all_targets["webm-alpha"]))
+    if args.all_objects:
+        scene = load_scene(out_dir)
+        for object_id in _scene_object_ids(scene):
+            exports.append(_export_webm_alpha(args, output / f"{object_id}.webm", object_id=object_id))
+    else:
+        exports.append(_export_webm_alpha(args, all_targets["webm-alpha"]))
     exports.append(export_website_package(out_dir=out_dir, output_path=all_targets["website-zip"]))
     exports.append(write_remotion_plan(out_dir=out_dir, output_path=all_targets["remotion-plan"]))
     for entry in exports:

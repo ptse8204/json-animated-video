@@ -1,6 +1,6 @@
 import { loadRuntimeAssets } from "./assets.js";
 import { normalizeMotionJSON } from "./manifest.js";
-import { composeFrameTransform, frameAt, stateTransforms } from "./timeline.js";
+import { composeFrameTransform, frameAt, frameIndexAt, stateTransforms } from "./timeline.js";
 
 function fitContain(canvas, scene) {
   const rect = canvas.getBoundingClientRect();
@@ -52,18 +52,41 @@ export function drawCanvasFrame(ctx, scene, loadedAssets, options = {}) {
     ctx.strokeRect(0, 0, scene.canvas.width, scene.canvas.height);
   }
 
-  const frame = options.frame || frameAt(scene, options.timeSeconds || 0, { loop: options.loop });
-  const frameIndex = scene.assets.sequence.indexOf(frame);
-  const image = loadedAssets.spritesheet || loadedAssets.frames[frameIndex];
-  if (frame && image && frame.visible) {
-    const transform = composeFrameTransform(frame, stateTransforms(scene, options.state, options));
+  const defaultFrame = options.frame || frameAt(scene, options.timeSeconds || 0, { loop: options.loop });
+  const layers = Array.isArray(scene.layers) && scene.layers.length
+    ? scene.layers.slice().sort((a, b) => (a.zIndex - b.zIndex) || String(a.id).localeCompare(String(b.id)))
+    : [{ objectId: scene.assetId, visible: true, opacity: 1, transform: { translate: [0, 0], scale: 1, rotation: 0 } }];
+  const objects = new Map((scene.objects || [{ id: scene.assetId, assets: scene.assets, states: scene.states }]).map((object) => [object.id, object]));
+  let renderedFrame = defaultFrame;
+  for (const layer of layers) {
+    if (layer.visible === false || layer.opacity <= 0) continue;
+    const object = objects.get(layer.objectId);
+    if (!object) continue;
+    const sequence = object.assets?.sequence || [];
+    const frameIndex = options.frame
+      ? scene.assets.sequence.indexOf(options.frame)
+      : frameIndexAt(options.timeSeconds || 0, scene.canvas.fps, sequence.length, { loop: options.loop });
+    const frame = sequence[frameIndex] || null;
+    const objectAssets = loadedAssets.byObject?.[object.id] || loadedAssets;
+    const image = objectAssets.spritesheet || objectAssets.frames?.[frameIndex];
+    if (!frame || !image || !frame.visible) continue;
+    const layerTransform = {
+      translate: layer.transform?.translate || [0, 0],
+      scale: layer.transform?.scale ?? 1,
+      rotation: layer.transform?.rotation ?? 0,
+      opacity: layer.opacity ?? 1
+    };
+    const transform = composeFrameTransform(frame, [
+      ...stateTransforms({ ...scene, states: object.states || scene.states }, options.state, options),
+      layerTransform
+    ]);
     const { width, height } = spriteSize(frame, image);
     ctx.save();
     ctx.globalAlpha = transform.opacity;
     ctx.translate(frame.x + width / 2 + transform.translate[0], frame.y + height / 2 + transform.translate[1]);
     ctx.rotate(transform.rotation);
     ctx.scale(transform.scale, transform.scale);
-    if (loadedAssets.spritesheet && frame.sprite) {
+    if (objectAssets.spritesheet && frame.sprite) {
       ctx.drawImage(image, frame.sprite.x, frame.sprite.y, frame.sprite.w, frame.sprite.h, -width / 2, -height / 2, width, height);
     } else {
       ctx.drawImage(image, -width / 2, -height / 2, width, height);
@@ -74,9 +97,10 @@ export function drawCanvasFrame(ctx, scene, loadedAssets, options = {}) {
       ctx.strokeRect(-width / 2, -height / 2, width, height);
     }
     ctx.restore();
+    renderedFrame = frame;
   }
   ctx.restore();
-  return { frame, fit };
+  return { frame: renderedFrame, fit };
 }
 
 export function createCanvasRuntime(canvas, document, options = {}) {

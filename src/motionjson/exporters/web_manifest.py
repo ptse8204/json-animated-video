@@ -6,6 +6,40 @@ from typing import Any
 from .scene_graph import write_json
 
 
+def _prefix_rel(path: str | None, path_prefix: str) -> str | None:
+    if not path:
+        return path
+    value = str(path).replace("\\", "/")
+    if "://" in value or value.startswith(("/", "data:", "blob:")):
+        return value
+    return f"{path_prefix}{value}"
+
+
+def _prefix_sprite(sprite: dict[str, Any] | None, path_prefix: str) -> dict[str, Any] | None:
+    if not isinstance(sprite, dict):
+        return sprite
+    prefixed = dict(sprite)
+    prefixed["path"] = _prefix_rel(prefixed.get("path"), path_prefix)
+    return prefixed
+
+
+def _prefix_production(production: dict[str, Any] | None, path_prefix: str) -> dict[str, Any] | None:
+    if not isinstance(production, dict):
+        return production
+    prefixed = dict(production)
+    assets: dict[str, Any] = {}
+    for key, asset in (production.get("assets") or {}).items():
+        if isinstance(asset, dict):
+            asset_copy = dict(asset)
+            asset_copy["path"] = _prefix_rel(asset_copy.get("path"), path_prefix)
+            assets[key] = asset_copy
+        else:
+            assets[key] = asset
+    if assets:
+        prefixed["assets"] = assets
+    return prefixed
+
+
 def _first_object(scene: dict[str, Any], object_id: str) -> dict[str, Any]:
     for obj in scene.get("objects", []):
         if obj.get("id") == object_id:
@@ -13,18 +47,25 @@ def _first_object(scene: dict[str, Any], object_id: str) -> dict[str, Any]:
     raise ValueError(f"Object {object_id!r} not found in scene")
 
 
-def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[str, Any]:
+def build_web_asset_manifest(
+    scene: dict[str, Any],
+    *,
+    object_id: str,
+    path_prefix: str = "",
+    source_scene_graph: str = "scene_graph.json",
+) -> dict[str, Any]:
     """Build a website-optimized manifest from the authoring scene graph."""
     obj = _first_object(scene, object_id)
     profile = scene.get("resource_profile", {})
     sizes = profile.get("sizes", {})
     pixel_work = profile.get("pixelWork", {})
     source = scene.get("source", {})
-    sprite = obj.get("assets", {}).get("spritesheet")
-    production = obj.get("assets", {}).get("production")
+    sprite = _prefix_sprite(obj.get("assets", {}).get("spritesheet"), path_prefix)
+    raw_production = obj.get("assets", {}).get("production")
+    production = _prefix_production(raw_production, path_prefix)
     transparent_webm = (
-        production.get("assets", {}).get("transparentWebm", {})
-        if isinstance(production, dict)
+        raw_production.get("assets", {}).get("transparentWebm", {})
+        if isinstance(raw_production, dict)
         else {}
     )
     fallback_video = transparent_webm.get("path") if transparent_webm.get("status") == "ready" else None
@@ -38,7 +79,7 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
         frame = {
             "frame": entry.get("frame"),
             "t": entry.get("t"),
-            "asset": entry.get("asset"),
+            "asset": _prefix_rel(entry.get("asset"), path_prefix),
             "x": entry.get("x"),
             "y": entry.get("y"),
             "width": entry.get("w"),
@@ -54,11 +95,11 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
         frames.append(frame)
 
     assets = {
-        "poster": first_asset,
+        "poster": _prefix_rel(first_asset, path_prefix),
         "spritesheet": sprite,
         "sequence": frames,
-        "fallbackStaticPoster": first_asset,
-        "fallbackVideo": fallback_video,
+        "fallbackStaticPoster": _prefix_rel(first_asset, path_prefix),
+        "fallbackVideo": _prefix_rel(fallback_video, path_prefix),
         "fallbackVideoPlaceholder": "Add an exported MP4/WebM loop here for browsers that should not run canvas animation.",
     }
     if production:
@@ -69,7 +110,7 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
         "type": "web_motion_asset",
         "assetId": object_id,
         "label": obj.get("label", "selected_object"),
-        "sourceSceneGraph": "scene_graph.json",
+        "sourceSceneGraph": source_scene_graph,
         "renderMode": obj.get("renderMode", "raster_alpha_sequence"),
         "recommendedEmbedMode": "canvas_sprite_layer",
         "canvas": {
@@ -119,5 +160,20 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
     }
 
 
-def write_web_asset_manifest(path: str | Path, scene: dict[str, Any], *, object_id: str) -> None:
-    write_json(path, build_web_asset_manifest(scene, object_id=object_id))
+def write_web_asset_manifest(
+    path: str | Path,
+    scene: dict[str, Any],
+    *,
+    object_id: str,
+    path_prefix: str = "",
+    source_scene_graph: str = "scene_graph.json",
+) -> None:
+    write_json(
+        path,
+        build_web_asset_manifest(
+            scene,
+            object_id=object_id,
+            path_prefix=path_prefix,
+            source_scene_graph=source_scene_graph,
+        ),
+    )
