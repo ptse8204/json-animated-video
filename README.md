@@ -18,6 +18,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Optionally writes production assets from cached cutouts: a WebP sprite atlas, transparent VP9/WebM when local `ffmpeg` is available, and an AVIF sprite atlas when requested and supported by the local Pillow build.
 - Writes an editable `scene_graph.json` with object identity, motion, z-index, render mode, interaction states, quality scores, and rights placeholders.
 - Writes a website-focused `web_asset_manifest.json`.
+- Scores extraction quality from cached metadata: mask drift, edge quality, missing frames, occlusion risk, vector suitability, and production readiness.
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
@@ -164,6 +165,12 @@ JSON stores object identity and edits: timing, x/y, scale, rotation, opacity, z-
 ## Why Raster Stays Raster
 
 Photorealistic objects have texture, blur, hair, shadows, reflections, and edge detail that do not convert cleanly into SVG or Lottie. The safe default is `raster_alpha_sequence`. Lottie/SVG is kept for silhouettes, outlines, labels, annotations, logos, icons, and clean flat graphics.
+
+## Quality Routing
+
+MotionJSON computes quality from generated extraction metadata only: visibility, area, bbox, centroid, contour point count, and polygon. It does not rerun AI during editing or preview. Quality objects include mask drift consistency, edge quality, missing-frame coverage, occlusion risk, vector suitability, production readiness, readiness labels, and routing reasons.
+
+Routing is conservative. The default is `raster_alpha_sequence`; `hybrid_vector_silhouette_plus_raster` is used only for stable, simple, low-risk layers. Pure SVG/Lottie is never recommended for extracted photoreal objects. See `docs/quality_engine.md`.
 
 ## Resource Profile
 

@@ -52,6 +52,20 @@ Production assets are additive and opt in through extraction flags such as `--ou
 
 Each production export reports a status such as `ready`, `skipped`, `unavailable`, `unsupported`, or `error`. Transparent WebM reports `unavailable` when local `ffmpeg` is missing. AVIF reports `unsupported` when the installed Pillow build cannot encode AVIF. These assets are derived from cached raster/alpha cutouts and JSON transforms; they do not trigger AI inference.
 
+## Quality Fields
+
+Every core artifact that carries object quality uses the same quality contract:
+
+- Preserved compatibility fields: `maskStability`, `edgeComplexity`, `bboxStability`, and `vectorSuitability`.
+- Phase 9 scores: `maskDriftScore`, `edgeQualityScore`, `missingFrameScore`, `occlusionRiskScore`, and `productionReadinessScore`.
+- Diagnostics: `visibleFrameRatio`, `missingFrameRatio`, `longestMissingFrameRun`, `productionReadiness`, and `routingReasons`.
+
+All numeric score fields are deterministic, bounded `0..1`, rounded, and computed from generated extraction metadata only: visibility, area, bbox, centroid, contour point count, and polygon. Invisible or missing frames may use `centroid: null`.
+
+Routing remains conservative. `raster_alpha_sequence` is the default, and `hybrid_vector_silhouette_plus_raster` is allowed only for stable, simple, low-risk layers. Pure SVG/Lottie is not a recommended route for extracted photoreal objects.
+
+See `docs/quality_engine.md` for scoring and readiness rules.
+
 ## Auxiliary Lottie
 
 `silhouette_lottie.json` is intentionally not a MotionJSON core schema. It is an auxiliary Lottie export for simple vector-like silhouettes, outlines, labels, annotations, icons, and flat graphics. Photoreal objects remain raster/alpha assets by default and are controlled by MotionJSON transforms.

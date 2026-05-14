@@ -84,10 +84,7 @@
       "type": "object",
       "additionalProperties": true
     },
-    "quality": {
-      "type": "object",
-      "additionalProperties": true
-    },
+    "quality": { "$ref": "#/$defs/quality" },
     "estimatedPackageSizes": {
       "type": "object",
       "required": ["websitePackageBytes", "websitePackageToSourceRatio", "spriteBytes", "manifestBytes"],
@@ -130,6 +127,11 @@
       "type": "number",
       "minimum": 0
     },
+    "zeroToOne": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
     "numberPair": {
       "type": "array",
       "prefixItems": [{ "type": "number" }, { "type": "number" }],
@@ -168,6 +170,45 @@
     "productionAssets": {
       "type": ["object", "null"],
       "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "maskStability",
+        "edgeComplexity",
+        "bboxStability",
+        "maskDriftScore",
+        "edgeQualityScore",
+        "missingFrameScore",
+        "occlusionRiskScore",
+        "vectorSuitability",
+        "productionReadinessScore",
+        "visibleFrameRatio",
+        "missingFrameRatio",
+        "longestMissingFrameRun",
+        "productionReadiness",
+        "routingReasons"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "maskStability": { "$ref": "#/$defs/zeroToOne" },
+        "edgeComplexity": { "$ref": "#/$defs/zeroToOne" },
+        "bboxStability": { "$ref": "#/$defs/zeroToOne" },
+        "maskDriftScore": { "$ref": "#/$defs/zeroToOne" },
+        "edgeQualityScore": { "$ref": "#/$defs/zeroToOne" },
+        "missingFrameScore": { "$ref": "#/$defs/zeroToOne" },
+        "occlusionRiskScore": { "$ref": "#/$defs/zeroToOne" },
+        "vectorSuitability": { "$ref": "#/$defs/zeroToOne" },
+        "productionReadinessScore": { "$ref": "#/$defs/zeroToOne" },
+        "visibleFrameRatio": { "$ref": "#/$defs/zeroToOne" },
+        "missingFrameRatio": { "$ref": "#/$defs/zeroToOne" },
+        "longestMissingFrameRun": { "type": "integer", "minimum": 0 },
+        "productionReadiness": { "type": "string", "enum": ["ready", "review", "needs_correction"] },
+        "routingReasons": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
     },
     "webFrame": {
       "type": "object",

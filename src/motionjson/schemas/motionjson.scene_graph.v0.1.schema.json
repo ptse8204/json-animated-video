@@ -71,6 +71,11 @@
       "type": "number",
       "minimum": 0
     },
+    "zeroToOne": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
     "numberPair": {
       "type": "array",
       "prefixItems": [{ "type": "number" }, { "type": "number" }],
@@ -161,7 +166,7 @@
         "anchor": { "$ref": "#/$defs/numberPair" },
         "asset": { "type": ["string", "null"] },
         "mask": { "$ref": "#/$defs/nonEmptyString" },
-        "centroid": { "$ref": "#/$defs/numberPair" },
+        "centroid": { "anyOf": [{ "$ref": "#/$defs/numberPair" }, { "type": "null" }] },
         "sprite": { "$ref": "#/$defs/spriteFrame" }
       }
     },
@@ -192,7 +197,7 @@
         "visible": { "type": "boolean" },
         "area": { "$ref": "#/$defs/nonNegativeNumber" },
         "bbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
-        "centroid": { "$ref": "#/$defs/numberPair" },
+        "centroid": { "anyOf": [{ "$ref": "#/$defs/numberPair" }, { "type": "null" }] },
         "polygon": { "$ref": "#/$defs/polygon" },
         "contour_points": { "type": "integer", "minimum": 0 },
         "framePath": { "$ref": "#/$defs/nonEmptyString" },
@@ -203,11 +208,41 @@
     },
     "quality": {
       "type": "object",
-      "required": ["vectorSuitability", "maskStability"],
+      "required": [
+        "maskStability",
+        "edgeComplexity",
+        "bboxStability",
+        "maskDriftScore",
+        "edgeQualityScore",
+        "missingFrameScore",
+        "occlusionRiskScore",
+        "vectorSuitability",
+        "productionReadinessScore",
+        "visibleFrameRatio",
+        "missingFrameRatio",
+        "longestMissingFrameRun",
+        "productionReadiness",
+        "routingReasons"
+      ],
       "additionalProperties": true,
       "properties": {
-        "vectorSuitability": { "type": "number", "minimum": 0, "maximum": 1 },
-        "maskStability": { "type": "number", "minimum": 0, "maximum": 1 }
+        "maskStability": { "$ref": "#/$defs/zeroToOne" },
+        "edgeComplexity": { "$ref": "#/$defs/zeroToOne" },
+        "bboxStability": { "$ref": "#/$defs/zeroToOne" },
+        "maskDriftScore": { "$ref": "#/$defs/zeroToOne" },
+        "edgeQualityScore": { "$ref": "#/$defs/zeroToOne" },
+        "missingFrameScore": { "$ref": "#/$defs/zeroToOne" },
+        "occlusionRiskScore": { "$ref": "#/$defs/zeroToOne" },
+        "vectorSuitability": { "$ref": "#/$defs/zeroToOne" },
+        "productionReadinessScore": { "$ref": "#/$defs/zeroToOne" },
+        "visibleFrameRatio": { "$ref": "#/$defs/zeroToOne" },
+        "missingFrameRatio": { "$ref": "#/$defs/zeroToOne" },
+        "longestMissingFrameRun": { "type": "integer", "minimum": 0 },
+        "productionReadiness": { "type": "string", "enum": ["ready", "review", "needs_correction"] },
+        "routingReasons": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "objectLayer": {

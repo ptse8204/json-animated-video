@@ -72,41 +72,221 @@ def _clamp01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
-def build_quality_scores(frames: list[dict[str, Any]]) -> dict[str, float]:
-    """Estimate mask stability and whether vector export is likely useful.
+def _score(value: float) -> float:
+    return round(_clamp01(value), 4)
 
-    This is a conservative MVP heuristic. It favors raster output unless masks
-    have stable area and simple outlines.
+
+def _is_visible_frame(frame: dict[str, Any]) -> bool:
+    bbox = frame.get("bbox")
+    return bool(frame.get("visible") and bbox and float(frame.get("area") or 0) > 0)
+
+
+def _valid_centroid(frame: dict[str, Any]) -> list[float] | None:
+    centroid = frame.get("centroid")
+    if not isinstance(centroid, list | tuple) or len(centroid) != 2:
+        return None
+    try:
+        return [float(centroid[0]), float(centroid[1])]
+    except (TypeError, ValueError):
+        return None
+
+
+def _coefficient_of_variation(values: np.ndarray) -> float:
+    if values.size == 0:
+        return 1.0
+    mean = float(np.mean(values))
+    if mean <= 0:
+        return 1.0
+    return float(np.std(values) / mean)
+
+
+def _adjacent_relative_change(values: np.ndarray) -> float:
+    if values.size < 2:
+        return 0.0
+    previous = np.maximum(values[:-1], 1.0)
+    return float(np.mean(np.abs(np.diff(values)) / previous))
+
+
+def _longest_false_run(flags: list[bool]) -> int:
+    longest = 0
+    current = 0
+    for flag in flags:
+        if flag:
+            current = 0
+            continue
+        current += 1
+        longest = max(longest, current)
+    return longest
+
+
+def _centroid_jitter(centroids: list[list[float]], bboxes: np.ndarray) -> float:
+    if len(centroids) < 3 or bboxes.size == 0:
+        return 0.0
+    points = np.array(centroids, dtype=float)
+    velocities = np.diff(points, axis=0)
+    accelerations = np.diff(velocities, axis=0)
+    wh = np.maximum(bboxes[:, 2:4], 1.0)
+    diag = float(np.mean(np.sqrt((wh[:, 0] ** 2) + (wh[:, 1] ** 2)))) or 1.0
+    return float(np.mean(np.linalg.norm(accelerations, axis=1)) / diag)
+
+
+def _readiness_label(score: float, *, missing_ratio: float, longest_missing_run: int, occlusion_risk: float) -> str:
+    if missing_ratio >= 0.4 or longest_missing_run >= 4 or occlusion_risk >= 0.75:
+        return "needs_correction"
+    if score >= 0.82 and missing_ratio <= 0.05 and occlusion_risk <= 0.25:
+        return "ready"
+    if score >= 0.55:
+        return "review"
+    return "needs_correction"
+
+
+def _routing_reasons(quality: dict[str, Any]) -> list[str]:
+    reasons: list[str] = []
+    if quality["vectorSuitability"] < 0.82:
+        reasons.append("vector_suitability_below_hybrid_threshold")
+    if quality["productionReadinessScore"] < 0.82:
+        reasons.append("production_readiness_below_ready_threshold")
+    if quality["missingFrameRatio"] > 0.05:
+        reasons.append("missing_frame_risk_requires_raster_alpha")
+    if quality["occlusionRiskScore"] > 0.25:
+        reasons.append("occlusion_risk_requires_raster_alpha")
+    if quality["edgeQualityScore"] < 0.75:
+        reasons.append("edge_quality_below_vector_threshold")
+    if quality["maskDriftScore"] < 0.75:
+        reasons.append("mask_drift_score_below_hybrid_threshold")
+    if not reasons:
+        reasons.append("hybrid_vector_silhouette_route_allowed_for_simple_stable_object")
+    return reasons
+
+
+def build_quality_scores(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    """Score extraction quality from generated metadata only.
+
+    Scores are deterministic, bounded to 0..1, and rounded. Most scores are
+    high-is-good quality scores; occlusionRiskScore is a high-is-risk exception.
     """
-    visible = [frame for frame in frames if frame.get("visible") and frame.get("bbox")]
+    total_frames = len(frames)
+    visible_flags = [_is_visible_frame(frame) for frame in frames]
+    visible = [frame for frame, is_visible in zip(frames, visible_flags) if is_visible]
+    visible_count = len(visible)
+    missing_count = total_frames - visible_count
+    visible_frame_ratio = (visible_count / total_frames) if total_frames else 0.0
+    missing_frame_ratio = (missing_count / total_frames) if total_frames else 1.0
+    longest_missing_run = _longest_false_run(visible_flags)
+
     if not visible:
-        return {"maskStability": 0.0, "edgeComplexity": 1.0, "bboxStability": 0.0, "vectorSuitability": 0.0}
+        quality: dict[str, Any] = {
+            "maskStability": 0.0,
+            "edgeComplexity": 1.0,
+            "bboxStability": 0.0,
+            "maskDriftScore": 0.0,
+            "edgeQualityScore": 0.0,
+            "missingFrameScore": 0.0,
+            "occlusionRiskScore": 1.0,
+            "vectorSuitability": 0.0,
+            "productionReadinessScore": 0.0,
+            "visibleFrameRatio": _score(visible_frame_ratio),
+            "missingFrameRatio": _score(missing_frame_ratio),
+            "longestMissingFrameRun": longest_missing_run,
+            "productionReadiness": "needs_correction",
+        }
+        quality["routingReasons"] = _routing_reasons(quality)
+        return quality
 
     areas = np.array([float(frame.get("area") or 0) for frame in visible], dtype=float)
-    contour_points = np.array([float(frame.get("contour_points") or len(frame.get("polygon") or [])) for frame in visible], dtype=float)
+    contour_points = np.array(
+        [float(frame.get("contour_points") or len(frame.get("polygon") or [])) for frame in visible],
+        dtype=float,
+    )
+    polygon_point_counts = np.array([float(len(frame.get("polygon") or [])) for frame in visible], dtype=float)
     bboxes = np.array([frame["bbox"] for frame in visible], dtype=float)
+    wh = np.maximum(bboxes[:, 2:4], 1.0)
 
-    mean_area = float(np.mean(areas)) or 1.0
-    area_cv = float(np.std(areas) / mean_area)
-    mask_stability = _clamp01(1.0 - area_cv)
+    area_cv = _coefficient_of_variation(areas)
+    area_change = _adjacent_relative_change(areas)
+    bbox_size_cv = float(np.mean(np.std(wh, axis=0) / np.maximum(np.mean(wh, axis=0), 1.0)))
+    bbox_stability = _score(1.0 - bbox_size_cv)
+
+    centroids = [centroid for frame in visible if (centroid := _valid_centroid(frame)) is not None]
+    centroid_jitter = _centroid_jitter(centroids, bboxes) if len(centroids) == visible_count else 0.25
+
+    size_change = float(np.mean([_adjacent_relative_change(wh[:, 0]), _adjacent_relative_change(wh[:, 1])]))
+    mask_drift_risk = _score((area_change * 0.45) + (size_change * 0.25) + (centroid_jitter * 0.30))
+    mask_drift_score = _score(1.0 - mask_drift_risk)
+    mask_stability = _score(((1.0 - area_cv) * 0.50) + (bbox_stability * 0.25) + (mask_drift_score * 0.25))
 
     mean_edge_points = float(np.mean(contour_points))
-    edge_complexity = _clamp01(mean_edge_points / 240.0)
+    edge_complexity = _score(mean_edge_points / 240.0)
+    polygon_presence = float(np.mean(polygon_point_counts >= 3))
+    contour_cv = _coefficient_of_variation(contour_points)
+    edge_quality_score = _score(((1.0 - edge_complexity) * 0.65) + (polygon_presence * 0.25) + ((1.0 - contour_cv) * 0.10))
 
-    wh = np.maximum(bboxes[:, 2:4], 1)
-    size_cv = float(np.mean(np.std(wh, axis=0) / np.maximum(np.mean(wh, axis=0), 1)))
-    bbox_stability = _clamp01(1.0 - size_cv)
+    median_area = float(np.median(areas)) or 1.0
+    area_dip = _clamp01(1.0 - (float(np.min(areas)) / median_area))
+    longest_missing_ratio = (longest_missing_run / total_frames) if total_frames else 1.0
+    missing_frame_score = _score(1.0 - ((missing_frame_ratio * 0.75) + (longest_missing_ratio * 0.25)))
+    occlusion_risk_score = _score(
+        (missing_frame_ratio * 0.45)
+        + (longest_missing_ratio * 0.20)
+        + (area_dip * 0.20)
+        + (_clamp01(area_cv) * 0.10)
+        + (_clamp01(centroid_jitter) * 0.05)
+    )
 
-    vector_suitability = _clamp01((mask_stability * 0.45) + ((1.0 - edge_complexity) * 0.4) + (bbox_stability * 0.15))
-    return {
-        "maskStability": round(mask_stability, 4),
-        "edgeComplexity": round(edge_complexity, 4),
-        "bboxStability": round(bbox_stability, 4),
-        "vectorSuitability": round(vector_suitability, 4),
+    vector_suitability = _score(
+        (mask_stability * 0.24)
+        + (edge_quality_score * 0.34)
+        + (bbox_stability * 0.14)
+        + (mask_drift_score * 0.10)
+        + (visible_frame_ratio * 0.10)
+        + ((1.0 - occlusion_risk_score) * 0.08)
+    )
+    production_readiness_score = _score(
+        (mask_stability * 0.25)
+        + (edge_quality_score * 0.20)
+        + (bbox_stability * 0.15)
+        + (missing_frame_score * 0.20)
+        + ((1.0 - occlusion_risk_score) * 0.20)
+    )
+
+    if missing_frame_ratio >= 0.4 or longest_missing_run >= 4 or occlusion_risk_score >= 0.75:
+        production_readiness_score = min(production_readiness_score, 0.39)
+    elif missing_frame_ratio >= 0.15 or longest_missing_run >= 2 or occlusion_risk_score >= 0.45:
+        production_readiness_score = min(production_readiness_score, 0.69)
+
+    quality = {
+        "maskStability": mask_stability,
+        "edgeComplexity": edge_complexity,
+        "bboxStability": bbox_stability,
+        "maskDriftScore": mask_drift_score,
+        "edgeQualityScore": edge_quality_score,
+        "missingFrameScore": missing_frame_score,
+        "occlusionRiskScore": occlusion_risk_score,
+        "vectorSuitability": vector_suitability,
+        "productionReadinessScore": production_readiness_score,
+        "visibleFrameRatio": _score(visible_frame_ratio),
+        "missingFrameRatio": _score(missing_frame_ratio),
+        "longestMissingFrameRun": longest_missing_run,
+        "productionReadiness": _readiness_label(
+            production_readiness_score,
+            missing_ratio=missing_frame_ratio,
+            longest_missing_run=longest_missing_run,
+            occlusion_risk=occlusion_risk_score,
+        ),
     }
+    quality["routingReasons"] = _routing_reasons(quality)
+    return quality
 
 
-def recommended_output(quality: dict[str, float], *, threshold: float = 0.72) -> str:
-    if quality.get("vectorSuitability", 0.0) >= threshold:
+def recommended_output(quality: dict[str, Any], *, threshold: float = 0.82) -> str:
+    if (
+        quality.get("vectorSuitability", 0.0) >= threshold
+        and quality.get("productionReadinessScore", 0.0) >= 0.82
+        and quality.get("productionReadiness") == "ready"
+        and quality.get("missingFrameScore", 0.0) >= 0.95
+        and quality.get("occlusionRiskScore", 1.0) <= 0.25
+        and quality.get("edgeQualityScore", 0.0) >= 0.75
+        and quality.get("maskDriftScore", 0.0) >= 0.75
+    ):
         return "hybrid_vector_silhouette_plus_raster"
     return "raster_alpha_sequence"
