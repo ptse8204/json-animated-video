@@ -153,6 +153,63 @@ export class MotionJSONClient {
     const suffix = webhookId ? `?webhookId=${encodeURIComponent(webhookId)}` : "";
     return this.request(`/v1/webhook-deliveries${suffix}`);
   }
+
+  betaStatus() {
+    return this.request("/v1/beta/status");
+  }
+
+  acceptBetaInvite(inviteToken) {
+    return this.request("/v1/beta/accept", { method: "POST", body: { inviteToken } });
+  }
+
+  createFeedback({ projectId, type = "general", severity = "normal", subject = "", message = "", context = {} } = {}) {
+    return this.request("/v1/feedback", {
+      method: "POST",
+      body: { projectId, type, severity, subject, message, context }
+    });
+  }
+
+  createErrorReport({ projectId, jobId, severity = "error", message = "", stackTrace = "", context = {} } = {}) {
+    return this.request("/v1/error-reports", {
+      method: "POST",
+      body: { projectId, jobId, severity, message, stackTrace, context }
+    });
+  }
+
+  adminDashboard() {
+    return this.request("/v1/admin/dashboard");
+  }
+
+  createBetaInvite({ email, role = "member", ttlSeconds } = {}) {
+    return this.request("/v1/admin/beta/invites", {
+      method: "POST",
+      body: { email, role, ttlSeconds }
+    });
+  }
+
+  listBetaInvites({ includeRevoked = false } = {}) {
+    const suffix = includeRevoked ? "?includeRevoked=true" : "";
+    return this.request(`/v1/admin/beta/invites${suffix}`);
+  }
+
+  revokeBetaInvite(inviteId) {
+    return this.request(`/v1/admin/beta/invites/${encodeURIComponent(inviteId)}`, { method: "DELETE", body: {} });
+  }
+
+  listBetaMembers({ includeDisabled = false } = {}) {
+    const suffix = includeDisabled ? "?includeDisabled=true" : "";
+    return this.request(`/v1/admin/beta/members${suffix}`);
+  }
+
+  listFeedback({ includeResolved = false } = {}) {
+    const suffix = includeResolved ? "?includeResolved=true" : "";
+    return this.request(`/v1/admin/feedback${suffix}`);
+  }
+
+  listErrorReports({ includeResolved = false } = {}) {
+    const suffix = includeResolved ? "?includeResolved=true" : "";
+    return this.request(`/v1/admin/error-reports${suffix}`);
+  }
 }
 
 function bytes(value) {

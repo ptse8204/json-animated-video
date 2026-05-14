@@ -1,8 +1,10 @@
 # MotionJSON Developer API
 
 Phase 15 adds a local developer API for MotionJSON projects, assets, jobs,
-asset packages, renders, and webhooks. It is dependency-light and uses the
-stdlib HTTP server over the existing SQLite backend.
+asset packages, renders, and webhooks. Phase 17 adds closed beta status,
+feedback/error reporting, and admin-only dashboard endpoints. The API is
+dependency-light and uses the stdlib HTTP server over the existing SQLite
+backend.
 
 MotionJSON remains an AI object-layer editing system for video and web
 graphics. API extraction uses existing backend provider policy: deterministic
@@ -68,6 +70,17 @@ python -m motionjson.cli backend serve-api \
 - `GET /v1/webhooks`
 - `DELETE /v1/webhooks/{webhookId}`
 - `GET /v1/webhook-deliveries`
+- `GET /v1/beta/status`
+- `POST /v1/beta/accept`
+- `POST /v1/feedback`
+- `POST /v1/error-reports`
+- `GET /v1/admin/dashboard`
+- `POST /v1/admin/beta/invites`
+- `GET /v1/admin/beta/invites`
+- `DELETE /v1/admin/beta/invites/{inviteId}`
+- `GET /v1/admin/beta/members`
+- `GET /v1/admin/feedback`
+- `GET /v1/admin/error-reports`
 
 Asset upload accepts JSON with `dataBase64`, `filename`, `kind`,
 `contentType`, and optional `metadata`. This keeps the local server small and
@@ -77,6 +90,36 @@ avoids multipart dependencies.
 `cost_dashboard` events for extraction jobs. `GET /v1/projects/{projectId}/jobs`
 and `GET /v1/jobs/{jobId}` expose the job `result_json`, which may include
 `latencyMetrics` and `costDashboard` after the worker succeeds.
+
+## Closed Beta And Admin Routes
+
+Closed beta invites are created by beta admins through
+`POST /v1/admin/beta/invites`. The raw `inviteToken` is returned only in the
+create response; the database stores a SHA-256 token hash. Invite listing and
+the admin dashboard never expose raw invite tokens or token hashes. Invites are
+one-time, expirable, and revocable.
+
+Invitees authenticate with a normal API key and call `POST /v1/beta/accept`
+with the invite token. The invite email must match the authenticated user email.
+`GET /v1/beta/status` returns the caller's beta member status and role.
+
+Admin routes require an explicit beta member with role `admin`; normal beta
+members receive 403 responses. `GET /v1/admin/dashboard` summarizes beta
+membership, invites, job status, failures, recent events, usage/cost dashboard,
+unresolved feedback, and unresolved error reports without returning API-key
+hashes, webhook secrets, storage keys, uploaded bytes, or raw invite material.
+
+## Feedback And Error Reports
+
+`POST /v1/feedback` and `POST /v1/error-reports` accept authenticated,
+project-scoped support data. Error reports may also include `jobId`. Both flows
+redact obvious bearer tokens, API-key-like values, secret assignments, URL query
+strings, sensitive context keys, stack traces, and oversized metadata before
+storage.
+
+Admins list unresolved support records with `GET /v1/admin/feedback` and
+`GET /v1/admin/error-reports`; pass `includeResolved=true` to include resolved
+records.
 
 ## Asset Packages And Renders
 
@@ -156,6 +199,11 @@ const packageJob = await client.createAssetPackage(project.id, {
 const renderJob = await client.createRender(project.id, {
   sourceJobId: extraction.id,
   format: "remotion-plan"
+});
+await client.createFeedback({
+  projectId: project.id,
+  subject: "Beta issue",
+  message: "Layer timing looks wrong"
 });
 ```
 

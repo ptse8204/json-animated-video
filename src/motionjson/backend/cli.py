@@ -14,10 +14,21 @@ from .api import serve
 from .api_keys import create_api_key, list_api_keys, revoke_api_key
 from .assets import get_asset, register_upload
 from .auth import authenticate_user, create_session, register_user, require_session
+from .beta import (
+    accept_beta_invite,
+    bootstrap_beta_admin,
+    build_admin_dashboard,
+    create_beta_invite,
+    get_beta_status,
+    list_beta_invites,
+    list_beta_members,
+    revoke_beta_invite,
+)
 from .db import connect, initialize_database
 from .jobs import enqueue_export_job, enqueue_extract_job, get_job
 from .projects import create_project, get_project
 from .rights import list_asset_lineage, list_asset_rights
+from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
 from .usage import summarize_usage
 from .worker import worker_once
 
@@ -137,6 +148,69 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     asset_rights.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
     asset_rights.add_argument("asset_id")
 
+    beta_bootstrap = sub.add_parser("bootstrap-beta-admin", help="Grant the session user the local beta admin role")
+    _add_common(beta_bootstrap)
+    beta_bootstrap.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+
+    beta_status = sub.add_parser("beta-status", help="Print beta membership status for the session user")
+    _add_common(beta_status)
+    beta_status.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+
+    invite = sub.add_parser("create-beta-invite", help="Create a one-time closed beta invite as a beta admin")
+    _add_common(invite)
+    invite.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    invite.add_argument("--email", required=True)
+    invite.add_argument("--role", choices=["member", "admin"], default="member")
+    invite.add_argument("--ttl-seconds", type=int, default=7 * 24 * 60 * 60)
+
+    accept_invite = sub.add_parser("accept-beta-invite", help="Accept a closed beta invite for the session user")
+    _add_common(accept_invite)
+    accept_invite.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    accept_invite.add_argument("--invite-token", required=True)
+
+    invites = sub.add_parser("list-beta-invites", help="List closed beta invites as a beta admin")
+    _add_common(invites)
+    invites.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    invites.add_argument("--include-revoked", action="store_true")
+
+    revoke_invite = sub.add_parser("revoke-beta-invite", help="Revoke an unused beta invite as a beta admin")
+    _add_common(revoke_invite)
+    revoke_invite.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    revoke_invite.add_argument("invite_id")
+
+    members = sub.add_parser("list-beta-members", help="List beta members as a beta admin")
+    _add_common(members)
+    members.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    members.add_argument("--include-disabled", action="store_true")
+
+    feedback = sub.add_parser("feedback", help="Create or list redacted feedback")
+    _add_common(feedback)
+    feedback.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    feedback.add_argument("--admin-list", action="store_true")
+    feedback.add_argument("--include-resolved", action="store_true")
+    feedback.add_argument("--project-id", default=None)
+    feedback.add_argument("--type", default="general")
+    feedback.add_argument("--severity", default="normal")
+    feedback.add_argument("--subject", default="")
+    feedback.add_argument("--message", default="")
+    feedback.add_argument("--context-json", default="{}")
+
+    error_report = sub.add_parser("error-report", help="Create or list redacted error reports")
+    _add_common(error_report)
+    error_report.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    error_report.add_argument("--admin-list", action="store_true")
+    error_report.add_argument("--include-resolved", action="store_true")
+    error_report.add_argument("--project-id", default=None)
+    error_report.add_argument("--job-id", default=None)
+    error_report.add_argument("--severity", default="error")
+    error_report.add_argument("--message", default="")
+    error_report.add_argument("--stack-trace", default="")
+    error_report.add_argument("--context-json", default="{}")
+
+    dashboard = sub.add_parser("admin-dashboard", help="Print beta admin dashboard without raw secrets")
+    _add_common(dashboard)
+    dashboard.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+
 
 def _open(args: argparse.Namespace) -> tuple[sqlite3.Connection, LocalStorageProvider]:
     conn = initialize_database(connect(args.db))
@@ -159,6 +233,13 @@ def _session(conn: sqlite3.Connection, env_name: str) -> dict[str, Any]:
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _json_object(raw: str) -> dict[str, Any]:
+    parsed = json.loads(raw or "{}")
+    if not isinstance(parsed, dict):
+        raise SystemExit("expected JSON object")
+    return parsed
 
 
 def _rights_context(args: argparse.Namespace) -> dict[str, Any]:
@@ -270,5 +351,73 @@ def run_backend_command(args: argparse.Namespace) -> None:
                 "lineage": list_asset_lineage(conn, asset_id=args.asset_id),
             }
         )
+        return
+    if args.backend_command == "bootstrap-beta-admin":
+        session = _session(conn, args.session_token_env)
+        _print_json(bootstrap_beta_admin(conn, user_id=session["user_id"]))
+        return
+    if args.backend_command == "beta-status":
+        session = _session(conn, args.session_token_env)
+        _print_json(get_beta_status(conn, user_id=session["user_id"]))
+        return
+    if args.backend_command == "create-beta-invite":
+        session = _session(conn, args.session_token_env)
+        _print_json(create_beta_invite(conn, admin_user_id=session["user_id"], email=args.email, role=args.role, ttl_seconds=args.ttl_seconds))
+        return
+    if args.backend_command == "accept-beta-invite":
+        session = _session(conn, args.session_token_env)
+        _print_json(accept_beta_invite(conn, user_id=session["user_id"], token=args.invite_token))
+        return
+    if args.backend_command == "list-beta-invites":
+        session = _session(conn, args.session_token_env)
+        _print_json({"invites": list_beta_invites(conn, admin_user_id=session["user_id"], include_revoked=args.include_revoked)})
+        return
+    if args.backend_command == "revoke-beta-invite":
+        session = _session(conn, args.session_token_env)
+        _print_json({"revoked": revoke_beta_invite(conn, admin_user_id=session["user_id"], invite_id=args.invite_id)})
+        return
+    if args.backend_command == "list-beta-members":
+        session = _session(conn, args.session_token_env)
+        _print_json({"members": list_beta_members(conn, admin_user_id=session["user_id"], include_disabled=args.include_disabled)})
+        return
+    if args.backend_command == "feedback":
+        session = _session(conn, args.session_token_env)
+        if args.admin_list:
+            _print_json({"feedback": list_feedback_items(conn, admin_user_id=session["user_id"], include_resolved=args.include_resolved)})
+        else:
+            _print_json(
+                create_feedback_item(
+                    conn,
+                    user_id=session["user_id"],
+                    project_id=args.project_id,
+                    type=args.type,
+                    severity=args.severity,
+                    subject=args.subject,
+                    message=args.message,
+                    context=_json_object(args.context_json),
+                )
+            )
+        return
+    if args.backend_command == "error-report":
+        session = _session(conn, args.session_token_env)
+        if args.admin_list:
+            _print_json({"errorReports": list_error_reports(conn, admin_user_id=session["user_id"], include_resolved=args.include_resolved)})
+        else:
+            _print_json(
+                create_error_report(
+                    conn,
+                    user_id=session["user_id"],
+                    project_id=args.project_id,
+                    job_id=args.job_id,
+                    severity=args.severity,
+                    message=args.message,
+                    stack_trace=args.stack_trace,
+                    context=_json_object(args.context_json),
+                )
+            )
+        return
+    if args.backend_command == "admin-dashboard":
+        session = _session(conn, args.session_token_env)
+        _print_json(build_admin_dashboard(conn, admin_user_id=session["user_id"]))
         return
     raise SystemExit(f"unknown backend command: {args.backend_command}")

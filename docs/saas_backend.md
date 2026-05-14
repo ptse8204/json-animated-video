@@ -6,8 +6,10 @@ protocol, with `LocalStorageProvider` as the default implementation.
 
 The backend manages users, sessions, API keys, projects, assets, jobs, queue
 items, workers, usage events, rights metadata, asset lineage, audit events, and
-local webhook records. Billing, marketplace features, admin tools, and broad
-legal-advice workflows remain out of scope.
+local webhook records. Phase 17 adds closed beta invite/member records,
+project-scoped feedback, redacted error reports, and an admin dashboard.
+Billing, marketplace features, and broad legal-advice workflows remain out of
+scope.
 
 ## Product Boundary
 
@@ -66,6 +68,12 @@ python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
 python -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend bootstrap-beta-admin --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend create-beta-invite --email beta-user@example.com --role member --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend accept-beta-invite --invite-token mjb_... --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend feedback --project-id PROJECT_ID --subject "Beta issue" --message "Layer jumps" --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend error-report --project-id PROJECT_ID --message "Render failed" --stack-trace "$STACK_TRACE" --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend admin-dashboard --session-token-env MOTIONJSON_SESSION_TOKEN
 ```
 
 `--db` and `--storage-root` can be passed to every backend command. Defaults
@@ -77,6 +85,21 @@ Upload and extraction commands accept local rights metadata flags such as
 and `--commercial-use`. These flags only persist structured metadata; they do
 not call external services or establish legal clearance.
 
+## Closed Beta And Support
+
+Closed beta access uses `beta_invites` and `beta_members`. Invite tokens are
+printed once, stored only as SHA-256 hashes, and can be accepted once before
+expiry unless revoked. Admin commands and admin API routes require an explicit
+`beta_members.role = admin`; ordinary beta members receive 403 responses.
+
+Feedback and error reports are authenticated and can be scoped to projects and
+jobs. The backend redacts obvious bearer tokens, API-key-like values, URL query
+strings, sensitive metadata keys, storage keys, and oversized context before
+storage. Admin listing and dashboard responses avoid raw invite tokens, token
+hashes, API-key hashes, webhook secrets, storage keys, and uploaded bytes.
+
+See `docs/beta_readiness.md`, `docs/support.md`, and `docs/privacy.md`.
+
 ## Developer API
 
 Phase 15 adds a stdlib HTTP server under `motionjson.backend.api`. It validates
@@ -84,6 +107,9 @@ bearer API keys, stores only API-key hashes, and exposes local endpoints for
 project create/list/get, asset upload/list/get/download, extraction enqueue, job
 status/events, website asset-package enqueue, cached-asset render enqueue, and
 webhook management/delivery listing.
+Phase 17 adds `GET /v1/beta/status`, `POST /v1/beta/accept`,
+`POST /v1/feedback`, `POST /v1/error-reports`, admin beta invite/member routes,
+admin feedback/error listing, and `GET /v1/admin/dashboard`.
 
 Asset package jobs export website ZIPs from cached extraction outputs. Render
 jobs support deterministic `remotion-plan` output and local `mp4` or

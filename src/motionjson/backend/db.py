@@ -170,6 +170,57 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS beta_invites (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    invited_by_user_id TEXT NOT NULL REFERENCES users(id),
+    accepted_by_user_id TEXT REFERENCES users(id),
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    accepted_at TEXT,
+    revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS beta_members (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL UNIQUE REFERENCES users(id),
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    invite_id TEXT REFERENCES beta_invites(id),
+    created_at TEXT NOT NULL,
+    disabled_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS feedback_items (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id),
+    type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    message TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS error_reports (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id),
+    job_id TEXT REFERENCES jobs(id),
+    severity TEXT NOT NULL,
+    message TEXT NOT NULL,
+    stack_trace TEXT NOT NULL,
+    context_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id, revoked_at);
@@ -186,6 +237,11 @@ CREATE INDEX IF NOT EXISTS idx_lineage_derived ON asset_lineage(derived_asset_id
 CREATE INDEX IF NOT EXISTS idx_audit_scope ON audit_events(project_id, job_id, asset_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_webhooks_user ON webhook_endpoints(user_id, disabled_at);
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_user ON webhook_deliveries(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_beta_invites_token_hash ON beta_invites(token_hash);
+CREATE INDEX IF NOT EXISTS idx_beta_invites_email ON beta_invites(email, revoked_at, accepted_at);
+CREATE INDEX IF NOT EXISTS idx_beta_members_user ON beta_members(user_id, disabled_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_project_status ON feedback_items(project_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_error_reports_project_status ON error_reports(project_id, status, created_at);
 """
 
 

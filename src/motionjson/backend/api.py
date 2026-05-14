@@ -15,10 +15,20 @@ from motionjson.providers.local_storage import LocalStorageProvider
 
 from .api_keys import require_api_key
 from .assets import get_asset, list_project_assets, load_asset_bytes, register_upload
+from .beta import (
+    accept_beta_invite,
+    build_admin_dashboard,
+    create_beta_invite,
+    get_beta_status,
+    list_beta_invites,
+    list_beta_members,
+    revoke_beta_invite,
+)
 from .db import connect, initialize_database
 from .jobs import enqueue_asset_package_job, enqueue_extract_job, enqueue_render_job, get_job, list_job_events, list_jobs
 from .models import BackendError, ForbiddenError, NotFoundError, ProviderPolicyError, UnauthorizedError
 from .projects import create_project, get_project, list_projects
+from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
 from .webhooks import create_webhook, disable_webhook, list_webhook_deliveries, list_webhooks
 
 ALLOWED_UPLOAD_KINDS = {"source_video", "mask_sequence", "reference", "other"}
@@ -117,6 +127,61 @@ class MotionJSONAPI:
     ) -> Any:
         if parts[:1] != ["v1"]:
             raise NotFoundError("route not found")
+
+        if parts == ["v1", "beta", "status"] and method == "GET":
+            return get_beta_status(conn, user_id=user_id)
+        if parts == ["v1", "beta", "accept"] and method == "POST":
+            return accept_beta_invite(conn, user_id=user_id, token=str(payload["inviteToken"]))
+
+        if parts == ["v1", "feedback"] and method == "POST":
+            status = HTTPStatus.CREATED
+            created = create_feedback_item(
+                conn,
+                user_id=user_id,
+                project_id=payload.get("projectId"),
+                type=str(payload.get("type") or "general"),
+                severity=str(payload.get("severity") or "normal"),
+                subject=str(payload.get("subject") or ""),
+                message=str(payload.get("message") or ""),
+                context=payload.get("context") if isinstance(payload.get("context"), dict) else {},
+            )
+            return status, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+        if parts == ["v1", "error-reports"] and method == "POST":
+            status = HTTPStatus.CREATED
+            created = create_error_report(
+                conn,
+                user_id=user_id,
+                project_id=payload.get("projectId"),
+                job_id=payload.get("jobId"),
+                severity=str(payload.get("severity") or "error"),
+                message=str(payload.get("message") or ""),
+                stack_trace=str(payload.get("stackTrace") or payload.get("stack_trace") or ""),
+                context=payload.get("context") if isinstance(payload.get("context"), dict) else {},
+            )
+            return status, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+
+        if parts == ["v1", "admin", "dashboard"] and method == "GET":
+            return build_admin_dashboard(conn, admin_user_id=user_id)
+        if parts == ["v1", "admin", "beta", "invites"] and method == "GET":
+            return {"invites": list_beta_invites(conn, admin_user_id=user_id, include_revoked=query.get("includeRevoked", ["false"])[0] == "true")}
+        if parts == ["v1", "admin", "beta", "invites"] and method == "POST":
+            status = HTTPStatus.CREATED
+            created = create_beta_invite(
+                conn,
+                admin_user_id=user_id,
+                email=str(payload["email"]),
+                role=str(payload.get("role") or "member"),
+                ttl_seconds=int(payload.get("ttlSeconds") or 7 * 24 * 60 * 60),
+            )
+            return status, "application/json", json.dumps(created, sort_keys=True).encode("utf-8")
+        if len(parts) == 5 and parts[:4] == ["v1", "admin", "beta", "invites"] and method == "DELETE":
+            return {"revoked": revoke_beta_invite(conn, admin_user_id=user_id, invite_id=parts[4])}
+        if parts == ["v1", "admin", "beta", "members"] and method == "GET":
+            return {"members": list_beta_members(conn, admin_user_id=user_id, include_disabled=query.get("includeDisabled", ["false"])[0] == "true")}
+        if parts == ["v1", "admin", "feedback"] and method == "GET":
+            return {"feedback": list_feedback_items(conn, admin_user_id=user_id, include_resolved=query.get("includeResolved", ["false"])[0] == "true")}
+        if parts == ["v1", "admin", "error-reports"] and method == "GET":
+            return {"errorReports": list_error_reports(conn, admin_user_id=user_id, include_resolved=query.get("includeResolved", ["false"])[0] == "true")}
 
         if parts == ["v1", "projects"] and method == "GET":
             return {"projects": list_projects(conn, user_id=user_id)}

@@ -61,6 +61,46 @@ test("SDK upload helper accepts bytes and render/package helpers use API routes"
   assert.equal(paths[3].body.format, "remotion-plan");
 });
 
+test("SDK exposes beta, support, error, and admin helpers", async () => {
+  const calls = [];
+  const client = new MotionJSONClient({
+    apiKey: "mj_local_test",
+    fetch: async (url, init) => {
+      calls.push({ path: new URL(url).pathname, search: new URL(url).search, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      return jsonResponse({ ok: true });
+    }
+  });
+
+  await client.betaStatus();
+  await client.acceptBetaInvite("mjb_test");
+  await client.createFeedback({ projectId: "p1", subject: "UX", message: "Needs help" });
+  await client.createErrorReport({ projectId: "p1", jobId: "j1", message: "Boom", stackTrace: "Trace" });
+  await client.adminDashboard();
+  await client.createBetaInvite({ email: "beta@example.com", role: "member", ttlSeconds: 60 });
+  await client.listBetaInvites({ includeRevoked: true });
+  await client.revokeBetaInvite("invite1");
+  await client.listBetaMembers();
+  await client.listFeedback();
+  await client.listErrorReports({ includeResolved: true });
+
+  assert.deepEqual(calls.map((call) => call.path), [
+    "/v1/beta/status",
+    "/v1/beta/accept",
+    "/v1/feedback",
+    "/v1/error-reports",
+    "/v1/admin/dashboard",
+    "/v1/admin/beta/invites",
+    "/v1/admin/beta/invites",
+    "/v1/admin/beta/invites/invite1",
+    "/v1/admin/beta/members",
+    "/v1/admin/feedback",
+    "/v1/admin/error-reports"
+  ]);
+  assert.equal(calls[1].body.inviteToken, "mjb_test");
+  assert.equal(calls[6].search, "?includeRevoked=true");
+  assert.equal(calls[10].search, "?includeResolved=true");
+});
+
 test("verifyWebhookSignature validates MotionJSON HMAC signatures", async () => {
   const secret = "whsec_test";
   const payload = JSON.stringify({ type: "job.succeeded", data: { jobId: "j1" } });
