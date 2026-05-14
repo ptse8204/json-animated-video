@@ -15,6 +15,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
   - `sam2-local`: optional local SAM2-compatible provider with injected test fakes and lazy SAM2 imports.
   - `sam2-hosted`: hosted SAM2-compatible provider with injected client/transport and no default network calls.
 - Saves sampled frames, masks, cropped alpha cutouts, an object manifest, and a WebP/PNG sprite sheet.
+- Optionally writes production assets from cached cutouts: a WebP sprite atlas, transparent VP9/WebM when local `ffmpeg` is available, and an AVIF sprite atlas when requested and supported by the local Pillow build.
 - Writes an editable `scene_graph.json` with object identity, motion, z-index, render mode, interaction states, quality scores, and rights placeholders.
 - Writes a website-focused `web_asset_manifest.json`.
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
@@ -38,6 +39,7 @@ python -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --upper-hsv 12,255,255 \
   --sample-fps 12 \
   --max-frames 80 \
+  --output-mode both \
   --benchmark
 
 python -m http.server 8080
@@ -124,6 +126,9 @@ out/demo/
     object_0/
       cutouts/
         cutout_000001.png
+      production/
+        sprite_atlas.webp
+        transparent_layer.webm
       spritesheet.webp
       object_manifest.json
   preview/
@@ -147,15 +152,30 @@ Photorealistic objects have texture, blur, hair, shadows, reflections, and edge 
 
 - It reports source video size, extracted package size, frame/mask/cutout counts, scene graph size, Lottie size, sprite size, and preview strategy.
 - It warns when PNG sequences or the debug package are larger than the source video.
+- It compares authoring/debug assets with production assets when `--output-mode production` or `--output-mode both` is used.
 - It recommends transparent WebM, WebP/AVIF sprite atlases, or GPU texture atlases for production.
 - It frames the advantage as faster editing, cached preview reuse, partial invalidation, and avoiding repeated AI inference, not guaranteed smaller files.
+
+## Production Assets
+
+Authoring output remains the default. Add `--output-mode production` or `--output-mode both` to derive production assets from the already-cached PNG cutouts and JSON motion transforms. This does not rerun AI.
+
+```bash
+python -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/demo \
+  --mask-provider threshold \
+  --output-mode both \
+  --production-avif
+```
+
+The production package records explicit status for each asset. Transparent WebM requires local `ffmpeg`; if it is missing, the manifest reports `unavailable`. AVIF is optional; if Pillow lacks AVIF encoding, the manifest reports `unsupported` and tests do not require an AVIF file.
 
 ## Current Limitations
 
 - One object per run.
 - Demo mask providers are rough and CPU-first.
 - Sprite sheet packing is simple row-major packing.
-- No final video exporter yet.
+- Transparent object-layer WebM export is available for production packages when `ffmpeg` is installed; full final timeline export is still future work.
 - SAM2 providers are adapter-compatible, but real local SAM2 and hosted services are optional setup, not default dependencies.
 - Browser preview uses Canvas2D; production should move to WebGL/PixiJS for many objects or large assets.
 
@@ -163,7 +183,7 @@ Photorealistic objects have texture, blur, hair, shadows, reflections, and edge 
 
 1. Add mask smoothing, matting, and occlusion QA.
 2. Add multi-object extraction and timeline editing.
-3. Add transparent WebM/AVIF export and GPU atlas generation.
+3. Add GPU atlas generation and richer final timeline export.
 4. Add final export via FFmpeg, Remotion, or WebCodecs.
 5. Add editor integrations and website embed helpers.
 

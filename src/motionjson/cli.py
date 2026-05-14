@@ -9,10 +9,8 @@ from typing import Any
 
 from .benchmark import benchmark_scene
 from .exporters.scene_graph import write_json
-from .exporters.web_manifest import write_web_asset_manifest
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
-from .metrics import build_resource_profile
-from .pipeline import run_pipeline
+from .pipeline import run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider
@@ -94,6 +92,8 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--feather", type=int, default=0, help="Alpha feather kernel size; 0 disables")
     p.add_argument("--layer-padding", type=int, default=4, help="Padding around cropped reusable object layers")
     p.add_argument("--sprite-format", choices=["webp", "png"], default="webp", help="Sprite sheet image format")
+    p.add_argument("--output-mode", choices=["authoring", "production", "both"], default="authoring", help="authoring keeps current debug assets; production/both add production asset exports")
+    p.add_argument("--production-avif", action="store_true", help="Try to write an AVIF sprite atlas when Pillow AVIF encoding is available")
     p.add_argument("--benchmark", action="store_true", help="Write benchmark_report.json comparing naive video processing with cached layer preview")
     p.add_argument("--benchmark-iterations", type=int, default=3, help="Number of benchmark playback passes")
 
@@ -192,6 +192,8 @@ def run_extract(args: argparse.Namespace) -> dict:
             feather=args.feather,
             layer_padding=args.layer_padding,
             sprite_format=args.sprite_format,
+            output_mode=args.output_mode,
+            production_avif=args.production_avif,
         )
     except RuntimeError as exc:
         if args.mask_provider in {"sam2", "sam2-local", "sam2-hosted"}:
@@ -207,12 +209,13 @@ def run_extract(args: argparse.Namespace) -> dict:
             iterations=args.benchmark_iterations,
         )
         write_json(out / "benchmark_report.json", report)
-        profile = build_resource_profile(video_path=args.video, out_dir=out, object_id=args.object_id, scene=scene)
-        profile["benchmarkSummary"] = report["comparison"]
-        scene["resource_profile"] = profile
-        write_json(out / "resource_profile.json", profile)
-        write_json(out / "scene_graph.json", scene)
-        write_web_asset_manifest(out / "web_asset_manifest.json", scene, object_id=args.object_id)
+        write_profiled_outputs(
+            out_dir=out,
+            video_path=Path(args.video),
+            object_id=args.object_id,
+            scene=scene,
+            profile_updates={"benchmarkSummary": report["comparison"]},
+        )
         print(f"Wrote {out / 'benchmark_report.json'}")
 
     print(f"Wrote {out / 'scene_graph.json'}")

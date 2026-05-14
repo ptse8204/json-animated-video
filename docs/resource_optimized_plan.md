@@ -96,13 +96,18 @@ The starter repo now includes:
 - `resource_profile.json`
 - optional `benchmark_report.json`
 - Canvas preview
+- opt-in production asset generation from cached cutouts:
+  - WebP sprite atlas with frame metadata
+  - transparent VP9/WebM when local `ffmpeg` is available
+  - optional AVIF sprite atlas when requested and supported by Pillow
 
 `resource_profile.json` is the first step toward measuring whether an extraction actually improves an editing workflow. It records source size, object package size, payload breakdown, PNG warnings, sprite size, pixel work estimates, and the intended runtime strategy.
 `benchmark_report.json` adds a runtime comparison between naive sampled video decoding and cached cropped-layer compositing, which is closer to the browser preview loop used after extraction.
+When production mode is enabled, the profile also compares the authoring/debug package with production WebP/WebM/AVIF payloads and records explicit encoder support status.
 
 ## Production optimization path
 
-1. Replace PNG sequences with packed WebP/AVIF sprites or transparent WebM.
+1. Keep WebP/AVIF sprites and transparent WebM as production package options derived from cached cutouts.
 2. Use GPU texture atlases for browser preview.
 3. Cache mask tracks and object cutouts per source clip.
 4. Re-render only changed layers during preview.

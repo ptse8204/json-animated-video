@@ -45,6 +45,8 @@
         "websitePackageBytes": { "type": "integer", "minimum": 0 },
         "websitePackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
         "authoringPackageBytes": { "type": "integer", "minimum": 0 },
+        "productionPackageBytes": { "type": "integer", "minimum": 0 },
+        "productionPackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
         "payloads": {
           "type": "object",
           "required": [
@@ -71,11 +73,23 @@
             "mask_sequence_bytes": { "type": "integer", "minimum": 0 },
             "cutout_sequence_png_bytes": { "type": "integer", "minimum": 0 },
             "spritesheet_bytes": { "type": "integer", "minimum": 0 },
+            "production_webp_sprite_atlas_bytes": { "type": "integer", "minimum": 0 },
+            "production_avif_sprite_atlas_bytes": { "type": "integer", "minimum": 0 },
+            "production_transparent_webm_bytes": { "type": "integer", "minimum": 0 },
+            "production_asset_bytes": { "type": "integer", "minimum": 0 },
             "preview_html_bytes": { "type": "integer", "minimum": 0 },
             "benchmark_report_json_bytes": { "type": "integer", "minimum": 0 }
           }
         }
       }
+    },
+    "productionAssets": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "resourceComparison": {
+      "type": "object",
+      "additionalProperties": { "type": ["number", "integer", "string", "boolean", "null"] }
     },
     "previewStrategy": {
       "type": "object",

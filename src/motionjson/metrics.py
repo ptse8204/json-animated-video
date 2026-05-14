@@ -34,11 +34,18 @@ def _object(scene: dict[str, Any], object_id: str) -> dict[str, Any]:
     return {}
 
 
+def _asset_bytes(asset: dict[str, Any] | None) -> int:
+    if not isinstance(asset, dict):
+        return 0
+    return int(asset.get("bytes") or 0)
+
+
 def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, object_id: str, scene: dict[str, Any]) -> dict[str, Any]:
     """Build an honest profile of package size and preview/edit strategy."""
     video_path = Path(video_path)
     out_dir = Path(out_dir)
     object_dir = out_dir / "objects" / object_id
+    production_dir = object_dir / "production"
     cutout_dir = object_dir / "cutouts"
     mask_dir = out_dir / "masks" / object_id
     frames_dir = out_dir / "frames"
@@ -50,6 +57,10 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
     object_manifest_bytes = _safe_size(object_dir / "object_manifest.json")
     preview_bytes = _dir_size(out_dir / "preview")
     sprite_bytes = _safe_size(object_dir / "spritesheet.webp") or _safe_size(object_dir / "spritesheet.png")
+    production_webp_bytes = _safe_size(production_dir / "sprite_atlas.webp")
+    production_avif_bytes = _safe_size(production_dir / "sprite_atlas.avif")
+    production_webm_bytes = _safe_size(production_dir / "transparent_layer.webm")
+    production_asset_bytes = _dir_size(production_dir)
     cutout_bytes = _dir_size(cutout_dir)
     mask_bytes = _dir_size(mask_dir)
     sampled_frame_bytes = _dir_size(frames_dir)
@@ -65,12 +76,30 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
         "mask_sequence_bytes": mask_bytes,
         "cutout_sequence_png_bytes": cutout_bytes,
         "spritesheet_bytes": sprite_bytes,
+        "production_webp_sprite_atlas_bytes": production_webp_bytes,
+        "production_avif_sprite_atlas_bytes": production_avif_bytes,
+        "production_transparent_webm_bytes": production_webm_bytes,
+        "production_asset_bytes": production_asset_bytes,
         "preview_html_bytes": preview_bytes,
         "benchmark_report_json_bytes": benchmark_bytes,
     }
-    extracted_package_bytes = sum(payloads.values())
+    extracted_package_bytes = (
+        scene_graph_bytes
+        + object_motion_bytes
+        + object_manifest_bytes
+        + web_manifest_bytes
+        + lottie_bytes
+        + sampled_frame_bytes
+        + mask_bytes
+        + cutout_bytes
+        + sprite_bytes
+        + production_asset_bytes
+        + preview_bytes
+        + benchmark_bytes
+    )
     website_package_bytes = web_manifest_bytes + sprite_bytes
     authoring_package_bytes = scene_graph_bytes + cutout_bytes + mask_bytes + object_manifest_bytes
+    production_package_bytes = web_manifest_bytes + production_asset_bytes
 
     canvas = scene.get("canvas", {})
     frame_count = int(canvas.get("frame_count", 0) or scene.get("source", {}).get("sampledFrameCount", 0) or 0)
@@ -85,6 +114,7 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
     pixel_reduction = round(1 - pixel_ratio, 4) if pixel_ratio is not None else None
     package_ratio = round(extracted_package_bytes / source_bytes, 4) if source_bytes else None
     website_ratio = round(website_package_bytes / source_bytes, 4) if source_bytes else None
+    production_ratio = round(production_package_bytes / source_bytes, 4) if source_bytes and production_asset_bytes else None
     png_warning = bool(source_bytes and cutout_bytes > source_bytes)
     package_warning = bool(source_bytes and extracted_package_bytes > source_bytes)
 
@@ -99,6 +129,25 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
         warnings.append("PNG cutout sequence is larger than the source video. This is normal for a debug/authoring format; use WebP/AVIF sprites, transparent WebM, or a GPU texture atlas for production.")
     if package_warning:
         warnings.append("Full extracted package is larger than source video because it includes debug frames, masks, cutouts, manifests, and previews.")
+
+    production_assets = obj.get("assets", {}).get("production", {})
+    production_asset_status = production_assets.get("assets", {}) if isinstance(production_assets, dict) else {}
+    webp_asset = production_asset_status.get("webpSpriteAtlas")
+    avif_asset = production_asset_status.get("avifSpriteAtlas")
+    webm_asset = production_asset_status.get("transparentWebm")
+    resource_comparison = {
+        "sourceVideoBytes": source_bytes,
+        "authoringPackageBytes": authoring_package_bytes,
+        "productionPackageBytes": production_package_bytes,
+        "productionPackageToSourceRatio": production_ratio,
+        "cutoutSequencePngBytes": cutout_bytes,
+        "webpSpriteAtlasBytes": _asset_bytes(webp_asset),
+        "transparentWebmBytes": _asset_bytes(webm_asset),
+        "avifSpriteAtlasBytes": _asset_bytes(avif_asset),
+        "webpSpriteAtlasToCutoutRatio": round(_asset_bytes(webp_asset) / cutout_bytes, 4) if cutout_bytes and _asset_bytes(webp_asset) else None,
+        "transparentWebmToCutoutRatio": round(_asset_bytes(webm_asset) / cutout_bytes, 4) if cutout_bytes and _asset_bytes(webm_asset) else None,
+        "avifSpriteAtlasToCutoutRatio": round(_asset_bytes(avif_asset) / cutout_bytes, 4) if cutout_bytes and _asset_bytes(avif_asset) else None,
+    }
 
     return {
         "schema": "motionjson.resource_profile.v0.1",
@@ -119,8 +168,12 @@ def build_resource_profile(*, video_path: str | Path, out_dir: str | Path, objec
             "websitePackageBytes": website_package_bytes,
             "websitePackageToSourceRatio": website_ratio,
             "authoringPackageBytes": authoring_package_bytes,
+            "productionPackageBytes": production_package_bytes,
+            "productionPackageToSourceRatio": production_ratio,
             "payloads": payloads,
         },
+        "productionAssets": production_assets or None,
+        "resourceComparison": resource_comparison,
         "previewStrategy": {
             "runtime": "Canvas2D MVP; WebGL/PixiJS texture atlas recommended for production",
             "aiUsage": "Run AI at ingest/correction time, not during normal playback or transform edits.",

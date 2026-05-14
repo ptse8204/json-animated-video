@@ -49,6 +49,7 @@
       "properties": {
         "poster": { "type": ["string", "null"] },
         "spritesheet": { "$ref": "#/$defs/spritesheet" },
+        "production": { "$ref": "#/$defs/productionAssets" },
         "sequence": {
           "type": "array",
           "items": { "$ref": "#/$defs/webFrame" }
@@ -94,7 +95,11 @@
       "properties": {
         "websitePackageBytes": { "type": ["integer", "null"], "minimum": 0 },
         "websitePackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
+        "productionPackageBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "productionPackageToSourceRatio": { "type": ["number", "null"], "minimum": 0 },
         "spriteBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "productionSpriteBytes": { "type": ["integer", "null"], "minimum": 0 },
+        "transparentWebmBytes": { "type": ["integer", "null"], "minimum": 0 },
         "manifestBytes": { "type": ["integer", "null"], "minimum": 0 }
       }
     },
@@ -159,6 +164,10 @@
           "items": { "$ref": "#/$defs/spriteFrame" }
         }
       }
+    },
+    "productionAssets": {
+      "type": ["object", "null"],
+      "additionalProperties": true
     },
     "webFrame": {
       "type": "object",

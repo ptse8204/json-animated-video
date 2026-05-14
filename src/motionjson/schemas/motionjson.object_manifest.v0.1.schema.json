@@ -30,6 +30,7 @@
       "items": { "$ref": "#/$defs/nonEmptyString" }
     },
     "spritesheet": { "$ref": "#/$defs/spritesheet" },
+    "production": { "$ref": "#/$defs/productionAssets" },
     "motion": {
       "type": "array",
       "items": { "$ref": "#/$defs/motionFrame" }
@@ -80,6 +81,10 @@
           "items": { "$ref": "#/$defs/spriteFrame" }
         }
       }
+    },
+    "productionAssets": {
+      "type": ["object", "null"],
+      "additionalProperties": true
     },
     "motionFrame": {
       "type": "object",

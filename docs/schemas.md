@@ -5,10 +5,10 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 ## Core Schema IDs
 
 - `motionjson.scene_graph.v0.1`: authoring scene graph with source video metadata, object layers, editable motion frames, canvas metadata, and runtime guidance.
-- `motionjson.object_manifest.v0.1`: per-object asset manifest with cutouts, masks, spritesheet metadata, motion frames, quality scores, and the recommended output route.
+- `motionjson.object_manifest.v0.1`: per-object asset manifest with cutouts, masks, spritesheet metadata, optional production asset metadata, motion frames, quality scores, and the recommended output route.
 - `motionjson.object_motion.v0.1`: compact per-object motion track for JSON transform editing.
-- `motionjson.web_asset_manifest.v0.1`: website/runtime package for canvas sprite-layer playback.
-- `motionjson.resource_profile.v0.1`: measured package sizes, pixel-work estimates, warnings, and cached-preview strategy.
+- `motionjson.web_asset_manifest.v0.1`: website/runtime package for canvas sprite-layer playback, with optional production WebP/WebM/AVIF asset references.
+- `motionjson.resource_profile.v0.1`: measured package sizes, production resource comparisons, pixel-work estimates, warnings, and cached-preview strategy.
 
 Schema files are packaged under `src/motionjson/schemas/`.
 
@@ -37,6 +37,17 @@ objects/<object_id>/object_manifest.json
 ```
 
 It also recursively checks other JSON files that declare a recognized MotionJSON core schema. Auxiliary JSON files without a MotionJSON `schema` field are skipped. The default object id is `object_0`; use `--object-id` when validating an output directory generated with another id.
+
+## Production Asset Fields
+
+Production assets are additive and opt in through extraction flags such as `--output-mode production` or `--output-mode both`. The schemas accept optional production metadata under:
+
+- `scene_graph.json`: `objects[].assets.production`
+- `objects/<object_id>/object_manifest.json`: `production`
+- `web_asset_manifest.json`: `assets.production`
+- `resource_profile.json`: `productionAssets` and `resourceComparison`
+
+Each production export reports a status such as `ready`, `skipped`, `unavailable`, `unsupported`, or `error`. Transparent WebM reports `unavailable` when local `ffmpeg` is missing. AVIF reports `unsupported` when the installed Pillow build cannot encode AVIF. These assets are derived from cached raster/alpha cutouts and JSON transforms; they do not trigger AI inference.
 
 ## Auxiliary Lottie
 

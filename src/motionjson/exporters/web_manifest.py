@@ -21,6 +21,13 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
     pixel_work = profile.get("pixelWork", {})
     source = scene.get("source", {})
     sprite = obj.get("assets", {}).get("spritesheet")
+    production = obj.get("assets", {}).get("production")
+    transparent_webm = (
+        production.get("assets", {}).get("transparentWebm", {})
+        if isinstance(production, dict)
+        else {}
+    )
+    fallback_video = transparent_webm.get("path") if transparent_webm.get("status") == "ready" else None
     motion = obj.get("motion", [])
     first_asset = next((entry.get("asset") for entry in motion if entry.get("asset")), None)
 
@@ -46,6 +53,17 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
             frame["sprite"] = entry["sprite"]
         frames.append(frame)
 
+    assets = {
+        "poster": first_asset,
+        "spritesheet": sprite,
+        "sequence": frames,
+        "fallbackStaticPoster": first_asset,
+        "fallbackVideo": fallback_video,
+        "fallbackVideoPlaceholder": "Add an exported MP4/WebM loop here for browsers that should not run canvas animation.",
+    }
+    if production:
+        assets["production"] = production
+
     return {
         "schema": "motionjson.web_asset_manifest.v0.1",
         "type": "web_motion_asset",
@@ -60,14 +78,7 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
             "fps": source.get("sampleFps") or scene.get("canvas", {}).get("fps"),
             "frameCount": source.get("sampledFrameCount") or len(frames),
         },
-        "assets": {
-            "poster": first_asset,
-            "spritesheet": sprite,
-            "sequence": frames,
-            "fallbackStaticPoster": first_asset,
-            "fallbackVideo": None,
-            "fallbackVideoPlaceholder": "Add an exported MP4/WebM loop here for browsers that should not run canvas animation.",
-        },
+        "assets": assets,
         "responsive": {
             "mobile": {"maxWidth": 240, "fit": "contain"},
             "tablet": {"maxWidth": 380, "fit": "contain"},
@@ -89,7 +100,11 @@ def build_web_asset_manifest(scene: dict[str, Any], *, object_id: str) -> dict[s
         "estimatedPackageSizes": {
             "websitePackageBytes": sizes.get("websitePackageBytes"),
             "websitePackageToSourceRatio": sizes.get("websitePackageToSourceRatio"),
+            "productionPackageBytes": sizes.get("productionPackageBytes"),
+            "productionPackageToSourceRatio": sizes.get("productionPackageToSourceRatio"),
             "spriteBytes": sizes.get("payloads", {}).get("spritesheet_bytes"),
+            "productionSpriteBytes": sizes.get("payloads", {}).get("production_webp_sprite_atlas_bytes"),
+            "transparentWebmBytes": sizes.get("payloads", {}).get("production_transparent_webm_bytes"),
             "manifestBytes": sizes.get("payloads", {}).get("web_asset_manifest_json_bytes"),
         },
         "estimatedPixelWork": {

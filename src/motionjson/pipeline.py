@@ -9,6 +9,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from .exporters.lottie import write_silhouette_lottie
+from .exporters.production_assets import export_production_assets
 from .exporters.scene_graph import write_json
 from .exporters.web_manifest import write_web_asset_manifest
 from .layers import crop_rgba_layer, write_spritesheet
@@ -44,6 +45,39 @@ def _preview_copy(out_dir: Path) -> None:
 
 def _rel(path: Path, root: Path) -> str:
     return str(path.relative_to(root)).replace("\\", "/")
+
+
+def write_profiled_outputs(
+    *,
+    out_dir: Path,
+    video_path: Path,
+    object_id: str,
+    scene: dict[str, Any],
+    profile_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Write profile-dependent outputs until self-reported JSON sizes stabilize."""
+    profile: dict[str, Any] = {}
+    seen_payloads: set[tuple[tuple[str, Any], ...]] = set()
+    for _ in range(20):
+        profile = build_resource_profile(video_path=video_path, out_dir=out_dir, object_id=object_id, scene=scene)
+        if profile_updates:
+            profile.update(profile_updates)
+        scene["resource_profile"] = profile
+        write_json(out_dir / "resource_profile.json", profile)
+        write_json(out_dir / "scene_graph.json", scene)
+        write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
+        payloads = profile.get("sizes", {}).get("payloads", {})
+        actual_profile = build_resource_profile(video_path=video_path, out_dir=out_dir, object_id=object_id, scene=scene)
+        if profile_updates:
+            actual_profile.update(profile_updates)
+        actual_payloads = actual_profile.get("sizes", {}).get("payloads", {})
+        if actual_payloads == payloads:
+            break
+        payload_key = tuple(sorted(payloads.items()))
+        if payload_key in seen_payloads:
+            break
+        seen_payloads.add(payload_key)
+    return profile
 
 
 def _build_layer_frames(object_id: str, fps: float, motion: list[dict[str, Any]]) -> dict[str, Any]:
@@ -99,9 +133,13 @@ def run_pipeline(
     feather: int = 0,
     layer_padding: int = 4,
     sprite_format: str = "webp",
+    output_mode: str = "authoring",
+    production_avif: bool = False,
 ) -> dict[str, Any]:
     if sprite_format not in {"webp", "png"}:
         raise ValueError("sprite_format must be 'webp' or 'png'")
+    if output_mode not in {"authoring", "production", "both"}:
+        raise ValueError("output_mode must be 'authoring', 'production', or 'both'")
 
     video_path = Path(video_path)
     out_dir = Path(out_dir)
@@ -112,7 +150,7 @@ def run_pipeline(
     for directory in (frames_dir, mask_dir, cutout_dir, object_dir):
         directory.mkdir(parents=True, exist_ok=True)
     _clear_generated_frames(frames_dir, mask_dir, cutout_dir)
-    for stale_dir in (object_dir / "masks", object_dir / "layers"):
+    for stale_dir in (object_dir / "masks", object_dir / "layers", object_dir / "production"):
         if stale_dir.exists():
             shutil.rmtree(stale_dir)
     for stale in (out_dir / "benchmark_report.json", object_dir / "spritesheet.webp", object_dir / "spritesheet.png"):
@@ -250,6 +288,18 @@ def run_pipeline(
             "notes": "Rights and likeness review required before remixing third-party footage.",
         },
     }
+    if output_mode in {"production", "both"}:
+        production_assets = export_production_assets(
+            out_dir=out_dir,
+            object_id=object_id,
+            motion=motion,
+            canvas_width=info.width,
+            canvas_height=info.height,
+            fps=info.sample_fps,
+            include_avif=production_avif,
+        )
+        obj["assets"]["production"] = production_assets
+
     scene = {
         "schema": "motionjson.scene_graph.v0.1",
         "version": "0.1.0",
@@ -266,6 +316,7 @@ def run_pipeline(
         "rendering": {
             "recommendedRuntime": "Canvas/WebGL/PixiJS",
             "defaultRenderMode": "raster_alpha_sequence",
+            "outputMode": output_mode,
             "vectorPolicy": "Use SVG/Lottie only for simple silhouettes, outlines, labels, annotations, or clean flat graphics.",
         },
     }
@@ -281,6 +332,8 @@ def run_pipeline(
         "quality": quality,
         "recommendedOutput": route,
     }
+    if "production" in obj["assets"]:
+        object_manifest["production"] = obj["assets"]["production"]
     object_motion = {
         "schema": "motionjson.object_motion.v0.1",
         "objectId": object_id,
@@ -296,15 +349,6 @@ def run_pipeline(
     write_json(out_dir / "scene_graph.json", scene)
     write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
     _preview_copy(out_dir)
-    profile = build_resource_profile(video_path=video_path, out_dir=out_dir, object_id=object_id, scene=scene)
-    scene["resource_profile"] = profile
-    write_json(out_dir / "resource_profile.json", profile)
-    write_json(out_dir / "scene_graph.json", scene)
-    write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
-    profile = build_resource_profile(video_path=video_path, out_dir=out_dir, object_id=object_id, scene=scene)
-    scene["resource_profile"] = profile
-    write_json(out_dir / "resource_profile.json", profile)
-    write_json(out_dir / "scene_graph.json", scene)
-    write_web_asset_manifest(out_dir / "web_asset_manifest.json", scene, object_id=object_id)
+    write_profiled_outputs(out_dir=out_dir, video_path=video_path, object_id=object_id, scene=scene)
 
     return scene

@@ -50,6 +50,10 @@
       "properties": {
         "recommendedRuntime": { "type": "string" },
         "defaultRenderMode": { "const": "raster_alpha_sequence" },
+        "outputMode": {
+          "type": "string",
+          "enum": ["authoring", "production", "both"]
+        },
         "vectorPolicy": { "type": "string" }
       }
     },
@@ -117,6 +121,10 @@
           "items": { "$ref": "#/$defs/spriteFrame" }
         }
       }
+    },
+    "productionAssets": {
+      "type": ["object", "null"],
+      "additionalProperties": true
     },
     "motionFrame": {
       "type": "object",
@@ -232,7 +240,8 @@
           "additionalProperties": false,
           "properties": {
             "cutoutPattern": { "$ref": "#/$defs/nonEmptyString" },
-            "spritesheet": { "$ref": "#/$defs/spritesheet" }
+            "spritesheet": { "$ref": "#/$defs/spritesheet" },
+            "production": { "$ref": "#/$defs/productionAssets" }
           }
         },
         "zIndex": { "type": "integer" },
