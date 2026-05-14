@@ -52,6 +52,7 @@ Open:
 - Pixi/WebGL path with graceful Canvas2D fallback: `http://localhost:8080/examples/pixi_player.html?scene=/out/demo/web_asset_manifest.json`
 - Plain JS embed: `http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo/web_asset_manifest.json`
 - Object selection workflow: `http://localhost:8080/examples/object_selection_workflow.html?manifest=/out/demo/web_asset_manifest.json&scene=/out/demo/scene_graph.json`
+- Timeline editor MVP: `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
 
 ## Schema Validation
@@ -139,6 +140,8 @@ out/demo/
     plain_js_embed.html
     object_selection_workflow.html
     object_selection_workflow.js
+    timeline_editor.html
+    timeline_editor.js
     website_graphics_hero.html
     runtime/
       index.js
@@ -149,6 +152,8 @@ out/demo/
 The runtime package lives in `packages/motionjson-runtime`. It accepts both `web_asset_manifest.json` and `scene_graph.json`, resolves relative asset URLs, prefers spritesheets, falls back to alpha PNG sequences, and exposes cleanup through `destroy()`.
 
 Runtime playback and interactions use cached assets plus JSON transforms only. Pixi/WebGL and React are optional peer-style integrations: applications inject `PIXI` or `React`; tests run without installing either package. See `docs/runtime.md`.
+
+The timeline editor MVP lives at `examples/timeline_editor.html` and is copied into generated `preview/` folders. It provides a layer panel, canvas stage drag/scale/rotate handles, opacity and z-index controls, timeline scrub/playback, duplicate/reuse layer instances, and background replacement by compositing a checker, solid color, or local image behind alpha object layers. Duplicate/reuse creates a new layer instance that references the same cached object asset in JSON; it does not copy raster frames or rerun extraction.
 
 ## Why JSON
 
@@ -190,6 +195,7 @@ The production package records explicit status for each asset. Transparent WebM 
 - Transparent object-layer WebM export is available for production packages when `ffmpeg` is installed; full final timeline export is still future work.
 - SAM2 providers are adapter-compatible, but real local SAM2 and hosted services are optional setup, not default dependencies.
 - Browser runtime includes Canvas2D, optional Pixi/WebGL injection, plain JS embed, and a React component factory.
+- Timeline editor MVP is browser-side authoring only; final multi-layer render export remains future work.
 
 ## Roadmap
 

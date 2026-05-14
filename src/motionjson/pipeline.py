@@ -39,6 +39,8 @@ def _preview_copy(out_dir: Path) -> None:
         "website_graphics_hero.html",
         "object_selection_workflow.html",
         "object_selection_workflow.js",
+        "timeline_editor.html",
+        "timeline_editor.js",
     ):
         src = repo_root / "examples" / name
         if src.exists():

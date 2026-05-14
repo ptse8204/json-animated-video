@@ -8,11 +8,20 @@ import {
   autoMountMotionJSON,
   createMotionJSONReactComponent,
   createPixiRuntime,
+  duplicateLayer,
   frameAt,
   frameIndexAt,
+  initializeEditorState,
   mountMotionJSON,
   normalizeMotionJSON,
   resolveAssetUrl,
+  serializeEditState,
+  setBackground,
+  setCurrentFrame,
+  setLayerClip,
+  setLayerOpacity,
+  setLayerZIndex,
+  sortVisibleLayers,
   stateTransforms
 } from "../src/index.js";
 
@@ -127,6 +136,46 @@ test("runtime exports include plain embed and React factory", () => {
   assert.equal(typeof mountMotionJSON, "function");
   assert.equal(typeof autoMountMotionJSON, "function");
   assert.equal(typeof createMotionJSONReactComponent, "function");
+});
+
+test("editor state initializes from normalized MotionJSON and serializes JSON-only edits", () => {
+  const scene = normalizeMotionJSON(sampleSceneGraph(), { baseUrl: "/out/demo/scene_graph.json" });
+  let editor = initializeEditorState(scene);
+
+  assert.equal(editor.layers.length, 1);
+  assert.equal(editor.layers[0].sourceAssetId, "object_0");
+  assert.equal(editor.layers[0].zIndex, 10);
+
+  editor = setLayerOpacity(editor, editor.layers[0].id, 0.42);
+  editor = setLayerOpacity(editor, editor.layers[0].id, Number.NaN);
+  editor = setLayerZIndex(editor, editor.layers[0].id, 22);
+  editor = setBackground(editor, { type: "solid", color: "#101319" });
+  editor = setCurrentFrame(editor, 2);
+  editor = setLayerClip(editor, editor.layers[0].id, { startFrame: 99, endFrame: 120 });
+  const serialized = serializeEditState(editor);
+
+  assert.equal(serialized.background.type, "solid");
+  assert.equal(serialized.layers[0].opacity, 0);
+  assert.equal(serialized.layers[0].zIndex, 22);
+  assert.deepEqual(serialized.layers[0].clip, { startFrame: 2, endFrame: 2 });
+  assert.deepEqual(serialized.layers[0].transform.translate, [0, 0]);
+  assert.equal(Object.hasOwn(serialized.layers[0], "asset"), false);
+  assert.equal(serialized.currentFrame, 2);
+});
+
+test("duplicate layer reuses the cached source asset and sorts by z-index", () => {
+  const scene = normalizeMotionJSON(sampleManifest());
+  let editor = initializeEditorState(scene);
+  const original = editor.layers[0];
+  editor = duplicateLayer(editor, original.id, { id: "object_0_reuse_a", offsetX: 12, offsetY: -8 });
+
+  const duplicate = editor.layers.find((layer) => layer.id === "object_0_reuse_a");
+  assert.equal(editor.layers.length, 2);
+  assert.equal(duplicate.sourceAssetId, original.sourceAssetId);
+  assert.equal(duplicate.reusedFromLayerId, original.id);
+  assert.notEqual(duplicate.id, original.id);
+  assert.deepEqual(duplicate.transform.translate, [12, -8]);
+  assert.deepEqual(sortVisibleLayers(editor).map((layer) => layer.id), [original.id, duplicate.id]);
 });
 
 test("Pixi runtime accepts injected fake Pixi without installing pixi.js", async () => {
@@ -318,10 +367,15 @@ test("examples use local runtime imports and expose required embed surfaces", ()
   const canvas = readFileSync(join(repoRoot, "examples/canvas_player.html"), "utf8");
   const website = readFileSync(join(repoRoot, "examples/website_graphics_hero.html"), "utf8");
   const plain = readFileSync(join(repoRoot, "examples/plain_js_embed.html"), "utf8");
+  const timeline = readFileSync(join(repoRoot, "examples/timeline_editor.html"), "utf8");
+  const timelineJs = readFileSync(join(repoRoot, "examples/timeline_editor.js"), "utf8");
 
   assert.match(canvas, /motionjson-runtime\/src\/index\.js/);
   assert.match(website, /motionjson-runtime\/src\/index\.js/);
   assert.match(plain, /data-motionjson-src/);
   assert.match(plain, /autoMountMotionJSON/);
-  assert.doesNotMatch(canvas + website + plain, /https?:\/\/(?:unpkg|cdn|jsdelivr|cdnjs)\./);
+  assert.match(timeline, /timeline_editor\.js/);
+  assert.match(timelineJs, /motionjson-runtime\/src\/index\.js/);
+  assert.match(timelineJs, /duplicateLayer/);
+  assert.doesNotMatch(canvas + website + plain + timeline + timelineJs, /https?:\/\/(?:unpkg|cdn|jsdelivr|cdnjs)\./);
 });

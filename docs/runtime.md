@@ -1,6 +1,6 @@
 # MotionJSON Web Runtime
 
-Phase 6 adds a small browser runtime for MotionJSON web packages. It plays cached raster/alpha object layers from `web_asset_manifest.json` or `scene_graph.json` using JSON timing and transform data.
+MotionJSON includes a small browser runtime for web packages and a Phase 7 timeline editor MVP. It plays cached raster/alpha object layers from `web_asset_manifest.json` or `scene_graph.json` using JSON timing and transform data.
 
 The runtime does not call ingest-time systems during preview or interaction. Normal hover, click, scroll, drag, scale, rotate, and opacity changes are JSON transform updates over cached spritesheets or PNG alpha sequences.
 
@@ -13,6 +13,7 @@ packages/motionjson-runtime/
     assets.js     Load spritesheet-first assets, with PNG sequence fallback.
     timeline.js   Frame index and state transform math.
     canvas.js     Canvas2D renderer.
+    editor.js     Pure timeline editor state helpers.
     pixi.js       Optional Pixi/WebGL renderer through injected PIXI.
     embed.js      Plain JavaScript mount helper and data-attribute auto-mount.
     react.js      React component factory with injected React.
@@ -98,6 +99,31 @@ Serve the repo and open:
 - `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/scene_graph.json`
 - `http://localhost:8080/examples/pixi_player.html?scene=/out/demo/web_asset_manifest.json`
 - `http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo/web_asset_manifest.json`
+- `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 - `http://localhost:8080/examples/website_graphics_hero.html?manifest=/out/demo/web_asset_manifest.json`
 
 Generated preview folders copy the runtime source into `preview/runtime/`, so `out/.../preview/*.html` works without a build step or CDN dependency.
+
+## Timeline Editor MVP
+
+`examples/timeline_editor.html` uses `editor.js` helpers to keep authoring state separate from cached assets. The helper API initializes editable state from normalized MotionJSON, selects layers, updates translate/scale/rotation, opacity, z-index, visibility, clip frame range, duplicate/reuse layer instances, background settings, visible layer sorting, and serialized edit JSON.
+
+```js
+import {
+  duplicateLayer,
+  initializeEditorState,
+  serializeEditState,
+  updateLayerTransform
+} from "../packages/motionjson-runtime/src/index.js";
+
+let editor = initializeEditorState(scene);
+editor = updateLayerTransform(editor, editor.selectedLayerId, {
+  translate: [32, 12],
+  scale: 1.15,
+  rotation: 0.08
+});
+editor = duplicateLayer(editor, editor.selectedLayerId);
+const editJson = serializeEditState(editor);
+```
+
+Duplicate/reuse records a second layer instance with the same `sourceAssetId`. It does not copy image data. Background replacement is preview compositing behind alpha layers only; it is not clean-plate generation or hidden-pixel reconstruction.

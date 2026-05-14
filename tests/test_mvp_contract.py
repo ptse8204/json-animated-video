@@ -86,3 +86,5 @@ def test_pipeline_writes_mvp_schema_and_profile(tmp_path):
     assert (out / "preview" / "runtime" / "index.js").exists()
     assert (out / "preview" / "object_selection_workflow.html").exists()
     assert (out / "preview" / "object_selection_workflow.js").exists()
+    assert (out / "preview" / "timeline_editor.html").exists()
+    assert (out / "preview" / "timeline_editor.js").exists()
