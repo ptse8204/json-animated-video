@@ -12,6 +12,7 @@ from .base import (
     StorageProvider,
 )
 from .mask_cache import MaskCache, normalize_binary_mask
+from .local_storage import LocalStorageProvider
 from .mocks import MockExportProvider, MockLLMProvider, MockMattingProvider, MockRenderProvider, MockSegmentationProvider, MockStorageProvider
 from .sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider, SAM2HostedSegmentationProvider, SAM2LocalSegmentationProvider
 from .segmentation import MaskProviderSegmentationAdapter, SegmentationMaskProvider, as_segmentation_provider
@@ -21,6 +22,7 @@ __all__ = [
     "HostedSAM2SegmentationProvider",
     "LLMProvider",
     "LocalSAM2SegmentationProvider",
+    "LocalStorageProvider",
     "MaskCache",
     "MaskProviderSegmentationAdapter",
     "MattingProvider",

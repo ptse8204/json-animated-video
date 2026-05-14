@@ -142,6 +142,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_correct_args(correct)
     export = sub.add_parser("export", help="Export final video, object alpha video, website package, or adapter plan")
     add_export_args(export)
+    backend = sub.add_parser("backend", help="Run local backend commands")
+    from .backend.cli import add_backend_parser
+
+    add_backend_parser(backend)
     return parser
 
 
@@ -643,7 +647,7 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate", "correct", "export"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "correct", "export", "backend"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -661,6 +665,11 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "export":
         run_export(args)
+        return
+    if args.command == "backend":
+        from .backend.cli import run_backend_command
+
+        run_backend_command(args)
         return
     parser.print_help()
 

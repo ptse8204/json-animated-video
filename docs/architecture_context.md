@@ -85,6 +85,15 @@ Remotion for programmatic timeline rendering
 Website package for web graphics
 ```
 
+## Backend placement
+
+The SaaS backend sits behind the ingest/export boundary. It owns users,
+sessions, projects, assets, jobs, queues, workers, local storage, and usage
+events, while the extraction and export engines still operate on cached
+raster/alpha assets and JSON transforms. Backend workers call MotionJSON Python
+functions directly; they do not shell out to the CLI and do not run AI during
+normal drag, scale, rotate, or preview edits.
+
 ## Core artifacts
 
 ```text
