@@ -31,7 +31,12 @@ def _preview_copy(out_dir: Path) -> None:
     preview_dir = out_dir / "preview"
     preview_dir.mkdir(parents=True, exist_ok=True)
     repo_root = Path(__file__).resolve().parents[2]
-    for name in ("canvas_player.html", "website_graphics_hero.html"):
+    for name in (
+        "canvas_player.html",
+        "website_graphics_hero.html",
+        "object_selection_workflow.html",
+        "object_selection_workflow.js",
+    ):
         src = repo_root / "examples" / name
         if src.exists():
             shutil.copyfile(src, preview_dir / name)

@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MotionJSON Object Selection Workflow</title>
+    <link rel="icon" href="data:," />
+    <style>
+    :root {
+      --bg: #15161a;
+      --panel: #202228;
+      --panel-2: #292c33;
+      --panel-3: #17191e;
+      --text: #f4f1ea;
+      --muted: #a9adb8;
+      --soft: #7d8491;
+      --line: #3a3e47;
+      --line-2: #4a505c;
+      --accent: #6dc9b8;
+      --accent-2: #2c8f7f;
+      --warn: #f0b35a;
+      --danger: #d86f62;
+      --canvas: #111216;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 6px;
+      min-height: 32px;
+      padding: 0 10px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+    }
+
+    button:hover,
+    button:focus-visible {
+      border-color: var(--accent);
+      outline: none;
+    }
+
+    button.primary {
+      background: #224b48;
+      border-color: #377d73;
+    }
+
+    button.warning {
+      background: #4b3822;
+      border-color: #7f6334;
+      color: #ffe0a6;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    input[type="number"],
+    input[type="text"],
+    select {
+      width: 100%;
+      min-height: 32px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #15171c;
+      color: var(--text);
+      padding: 0 8px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(21, 22, 26, .94);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .product-note {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--warn);
+      box-shadow: 0 0 0 3px rgba(240, 179, 90, .13);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 300px minmax(420px, 1fr) 340px;
+      min-height: calc(100vh - 64px);
+      background: var(--line);
+      gap: 1px;
+    }
+
+    aside,
+    .workbench {
+      min-width: 0;
+      background: var(--panel);
+    }
+
+    aside {
+      overflow: auto;
+      padding: 12px;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-rows: minmax(320px, 1fr) minmax(260px, .78fr);
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .panel,
+    .stage-panel {
+      background: var(--panel);
+      min-width: 0;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 10px 8px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h2,
+    h3 {
+      margin: 0;
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .panel-body {
+      display: grid;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field-label,
+    .range-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .field-value {
+      color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-3);
+    }
+
+    .segmented button {
+      border: 0;
+      min-height: 28px;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .segmented button.active {
+      background: var(--panel-2);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px var(--line-2);
+    }
+
+    .stage-panel {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
+    }
+
+    .stage-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 44px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .stage-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--panel-3);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .pill.teal {
+      color: #bff5e9;
+      border-color: rgba(109, 201, 184, .45);
+      background: rgba(44, 143, 127, .16);
+    }
+
+    .pill.amber {
+      color: #ffe0a6;
+      border-color: rgba(240, 179, 90, .5);
+      background: rgba(240, 179, 90, .12);
+    }
+
+    .video-shell,
+    .asset-shell {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 0;
+      background:
+        linear-gradient(45deg, #202228 25%, transparent 25%),
+        linear-gradient(-45deg, #202228 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #202228 75%),
+        linear-gradient(-45deg, transparent 75%, #202228 75%);
+      background-color: var(--canvas);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+      padding: 14px;
+    }
+
+    .video-frame,
+    .asset-frame {
+      position: relative;
+      width: min(100%, 980px);
+      height: 100%;
+      min-height: 250px;
+      border: 1px solid rgba(244, 241, 234, .12);
+      border-radius: 8px;
+      background: #090a0d;
+      overflow: hidden;
+    }
+
+    video,
+    canvas.preview-canvas,
+    canvas.overlay-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    video {
+      object-fit: contain;
+      background: #090a0d;
+    }
+
+    .overlay-canvas {
+      cursor: crosshair;
+    }
+
+    .stage-foot {
+      display: grid;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .scrub-row,
+    .button-row,
+    .metrics-grid {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .scrub-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      color: var(--muted);
+      font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .button-row {
+      flex-wrap: wrap;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-3);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      color: var(--text);
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .status-list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .status-step {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-3);
+      color: var(--soft);
+      font-size: 12px;
+      transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+    }
+
+    .status-step.active {
+      color: var(--warn);
+      border-color: rgba(240, 179, 90, .55);
+      background: rgba(240, 179, 90, .08);
+    }
+
+    .status-step.done {
+      color: var(--accent);
+      border-color: rgba(109, 201, 184, .38);
+    }
+
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #111216;
+      color: #d9efe8;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-3);
+      overflow: hidden;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 9px 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    details pre {
+      border: 0;
+      border-top: 1px solid var(--line);
+      border-radius: 0;
+      max-height: 360px;
+    }
+
+    .small-note {
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .empty-state {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .empty-state strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .json-edit {
+      max-height: 190px;
+    }
+
+    @media (max-width: 1100px) {
+      .app {
+        grid-template-columns: minmax(260px, .86fr) minmax(420px, 1.4fr);
+      }
+
+      .right-rail {
+        grid-column: 1 / -1;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+    }
+
+    @media (max-width: 780px) {
+      header {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .header-status {
+        text-align: left;
+      }
+
+      .app,
+      .right-rail {
+        display: block;
+      }
+
+      .workbench {
+        min-height: 760px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        transition-duration: 1ms !important;
+        animation-duration: 1ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>MotionJSON Object Selection Workflow</h1>
+      <div class="product-note">AI object-layer editing for video and web graphics. Cached raster/alpha assets stay editable through JSON transforms.</div>
+    </div>
+    <div class="header-status">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="headerStatus">Prototype loaded. No extraction network calls are made.</span>
+    </div>
+  </header>
+
+  <main class="app">
+    <aside>
+      <section class="panel" aria-labelledby="sourceTitle">
+        <div class="panel-head">
+          <h2 id="sourceTitle">Source</h2>
+          <span class="pill amber">local only</span>
+        </div>
+        <div class="panel-body">
+          <label class="field">
+            <span class="field-label">Upload video</span>
+            <input id="videoUpload" type="file" accept="video/*" />
+          </label>
+          <div class="metrics-grid">
+            <div class="metric"><span>Duration</span><strong id="durationOut">0.00s</strong></div>
+            <div class="metric"><span>Frame</span><strong id="frameOut">0</strong></div>
+            <div class="metric"><span>Size</span><strong id="videoSizeOut">n/a</strong></div>
+            <div class="metric"><span>Prompt</span><strong id="promptFrameOut">none</strong></div>
+          </div>
+          <p class="small-note">Use a click point or drag a box on the preview. The browser records prompt coordinates and simulates the extraction queue.</p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="selectTitle">
+        <div class="panel-head">
+          <h2 id="selectTitle">Selection</h2>
+          <span class="pill teal" id="selectionSummary">no prompt</span>
+        </div>
+        <div class="panel-body">
+          <div class="segmented" role="group" aria-label="Selection mode">
+            <button id="pointMode" class="active" type="button" data-mode="point">Point</button>
+            <button id="boxMode" type="button" data-mode="box">Box</button>
+          </div>
+          <div class="metrics-grid">
+            <div class="metric"><span>X</span><strong id="selectionX">-</strong></div>
+            <div class="metric"><span>Y</span><strong id="selectionY">-</strong></div>
+            <div class="metric"><span>W</span><strong id="selectionW">-</strong></div>
+            <div class="metric"><span>H</span><strong id="selectionH">-</strong></div>
+          </div>
+          <label class="field">
+            <span class="field-label">Segmentation provider</span>
+            <select id="providerSelect">
+              <option value="threshold" selected>threshold demo</option>
+              <option value="motion">motion demo</option>
+              <option value="sam2-local">sam2-local</option>
+              <option value="sam2-hosted">sam2-hosted</option>
+              <option value="external">external masks</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Object label</span>
+            <input id="labelInput" type="text" value="selected_object" />
+          </label>
+          <div class="button-row">
+            <button class="primary" id="simulateJob" type="button">Simulate Extract</button>
+            <button id="clearSelection" type="button">Clear</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="jobTitle">
+        <div class="panel-head">
+          <h2 id="jobTitle">Extraction Job</h2>
+          <span class="pill amber" id="jobBadge">queued</span>
+        </div>
+        <div class="panel-body">
+          <div class="status-list" id="statusList"></div>
+          <pre id="cliCommand"></pre>
+        </div>
+      </section>
+    </aside>
+
+    <section class="workbench">
+      <section class="stage-panel" aria-labelledby="videoTitle">
+        <div class="stage-head">
+          <div class="stage-title">
+            <h2 id="videoTitle">Video Prompt Preview</h2>
+            <span class="pill" id="fitBadge">contain mapping</span>
+          </div>
+          <div class="button-row">
+            <button id="playPause" type="button">Play</button>
+            <button id="capturePromptFrame" type="button">Use Current Frame</button>
+          </div>
+        </div>
+        <div class="video-shell">
+          <div class="video-frame" id="videoFrame">
+            <video id="sourceVideo" muted playsinline></video>
+            <canvas class="overlay-canvas" id="selectionOverlay"></canvas>
+            <div class="empty-state" id="videoEmpty">
+              <div><strong>Upload a local video</strong>Then click or drag in the preview to create a segmentation prompt.</div>
+            </div>
+          </div>
+        </div>
+        <div class="stage-foot">
+          <div class="scrub-row">
+            <span id="currentTimeOut">0.00</span>
+            <input id="scrub" type="range" min="0" max="0" step="0.001" value="0" />
+            <span id="durationScrubOut">0.00</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="stage-panel" aria-labelledby="assetTitle">
+        <div class="stage-head">
+          <div class="stage-title">
+            <h2 id="assetTitle">Extracted Object Preview</h2>
+            <span class="pill teal" id="assetStatus">loading cached assets</span>
+          </div>
+          <span class="pill" id="assetSource">web_asset_manifest.json</span>
+        </div>
+        <div class="asset-shell">
+          <div class="asset-frame">
+            <canvas class="preview-canvas" id="assetCanvas"></canvas>
+            <div class="empty-state" id="assetEmpty">
+              <div><strong>Waiting for generated demo assets</strong>Serve the repo root and use the default /out/demo manifests, or pass ?manifest= and ?scene=.</div>
+            </div>
+          </div>
+        </div>
+        <div class="stage-foot">
+          <div class="scrub-row">
+            <span>frame</span>
+            <input id="assetFrame" type="range" min="0" max="0" step="1" value="0" />
+            <span id="assetFrameOut">0</span>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="right-rail">
+      <section class="panel" aria-labelledby="transformTitle">
+        <div class="panel-head">
+          <h2 id="transformTitle">Transform Preview</h2>
+          <span class="pill teal">JSON only</span>
+        </div>
+        <div class="panel-body">
+          <label class="field">
+            <span class="range-label"><span>X</span><span class="field-value" id="xOut">0px</span></span>
+            <input id="xControl" type="range" min="-220" max="220" value="0" />
+          </label>
+          <label class="field">
+            <span class="range-label"><span>Y</span><span class="field-value" id="yOut">0px</span></span>
+            <input id="yControl" type="range" min="-160" max="160" value="0" />
+          </label>
+          <label class="field">
+            <span class="range-label"><span>Scale</span><span class="field-value" id="scaleOut">1.00</span></span>
+            <input id="scaleControl" type="range" min="30" max="220" value="100" />
+          </label>
+          <label class="field">
+            <span class="range-label"><span>Rotation</span><span class="field-value" id="rotationOut">0deg</span></span>
+            <input id="rotationControl" type="range" min="-90" max="90" value="0" />
+          </label>
+          <label class="field">
+            <span class="range-label"><span>Opacity</span><span class="field-value" id="opacityOut">100%</span></span>
+            <input id="opacityControl" type="range" min="0" max="100" value="100" />
+          </label>
+          <pre class="json-edit" id="transformJson"></pre>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="graphTitle">
+        <div class="panel-head">
+          <h2 id="graphTitle">Scene Graph</h2>
+          <span class="pill" id="graphSummary">not loaded</span>
+        </div>
+        <div class="panel-body">
+          <div class="metrics-grid" id="graphMetrics"></div>
+          <details open>
+            <summary>scene_graph.json</summary>
+            <pre id="sceneGraphPre"></pre>
+          </details>
+          <details>
+            <summary>web_asset_manifest.json</summary>
+            <pre id="manifestPre"></pre>
+          </details>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <script src="object_selection_workflow.js"></script>
+</body>
+</html>

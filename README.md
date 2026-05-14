@@ -47,6 +47,7 @@ Open:
 
 - Runtime package: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/web_asset_manifest.json`
 - Authoring graph: `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/scene_graph.json`
+- Object selection workflow: `http://localhost:8080/examples/object_selection_workflow.html?manifest=/out/demo/web_asset_manifest.json&scene=/out/demo/scene_graph.json`
 - Website hero: `http://localhost:8080/examples/website_graphics_hero.html`
 
 ## Schema Validation
@@ -127,6 +128,8 @@ out/demo/
       object_manifest.json
   preview/
     canvas_player.html
+    object_selection_workflow.html
+    object_selection_workflow.js
     website_graphics_hero.html
 ```
 

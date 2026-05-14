@@ -79,3 +79,7 @@ def test_pipeline_writes_mvp_schema_and_profile(tmp_path):
     assert (out / "resource_profile.json").exists()
     assert (out / "web_asset_manifest.json").exists()
     assert (out / "objects" / "object_0" / "object_manifest.json").exists()
+    assert (out / "preview" / "canvas_player.html").exists()
+    assert (out / "preview" / "website_graphics_hero.html").exists()
+    assert (out / "preview" / "object_selection_workflow.html").exists()
+    assert (out / "preview" / "object_selection_workflow.js").exists()
