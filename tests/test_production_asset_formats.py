@@ -85,6 +85,8 @@ def test_production_mode_exports_cached_asset_formats_and_validates(tmp_path):
         assert avif["reason"]
 
     webm = production["assets"]["transparentWebm"]
+    assert webm["aiUsage"] == "none"
+    assert webm["cachedSource"] == "cached_rgba_cutout_png_sequence"
     if shutil.which("ffmpeg"):
         assert webm["status"] == "ready"
         assert webm["path"].endswith("production/transparent_layer.webm")

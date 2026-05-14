@@ -21,6 +21,7 @@ This prototype is not a “convert video to JSON/SVG/Lottie” project. The prac
 - Writes `resource_profile.json` with honest size and workflow tradeoffs.
 - Writes `silhouette_lottie.json` as auxiliary Lottie for optional vector-like silhouette use.
 - Copies dependency-light browser previews and runtime modules into `out/.../preview/`.
+- Exports final MP4 renders, transparent object WebM files, website ZIP packages, and Remotion adapter plans from cached assets and JSON transforms.
 
 ## Quick Start
 
@@ -64,6 +65,7 @@ Core MotionJSON artifacts declare JSON Schema Draft 2020-12 ids in their top-lev
 - `motionjson.object_motion.v0.1`
 - `motionjson.web_asset_manifest.v0.1`
 - `motionjson.resource_profile.v0.1`
+- `motionjson.final_export_manifest.v0.1`
 
 Validate one file or a generated output directory:
 
@@ -187,22 +189,36 @@ python -m motionjson.cli extract examples/demo_red_ball.mp4 \
 
 The production package records explicit status for each asset. Transparent WebM requires local `ffmpeg`; if it is missing, the manifest reports `unavailable`. AVIF is optional; if Pillow lacks AVIF encoding, the manifest reports `unsupported` and tests do not require an AVIF file.
 
+## Final Export
+
+Final exports consume cached raster/alpha assets and JSON transforms only. They do not rerun AI providers.
+
+```bash
+python3 -m motionjson.cli export out/demo --format mp4 --out out/demo/exports/final.mp4 --background-color "#fbfaf6"
+python3 -m motionjson.cli export out/demo --format webm-alpha --out out/demo/exports/object_0.webm --object-id object_0
+python3 -m motionjson.cli export out/demo --format website-zip --out out/demo/exports/website_package.zip
+python3 -m motionjson.cli export out/demo --format remotion-plan --out out/demo/exports/remotion_export_plan.json
+python3 -m motionjson.cli export out/demo --format all --out out/demo/exports --background-color "#fbfaf6"
+```
+
+MP4 and transparent WebM require local `ffmpeg`; direct CLI exports fail clearly if the requested encoder is unavailable. The Remotion export is an honest plan file only: it does not add dependencies, run npm, call the network, or invoke APIs. See `docs/final_export.md`.
+
 ## Current Limitations
 
 - One object per run.
 - Demo mask providers are rough and CPU-first.
 - Sprite sheet packing is simple row-major packing.
-- Transparent object-layer WebM export is available for production packages when `ffmpeg` is installed; full final timeline export is still future work.
+- Transparent object-layer WebM and final MP4 export are available when `ffmpeg` is installed.
 - SAM2 providers are adapter-compatible, but real local SAM2 and hosted services are optional setup, not default dependencies.
 - Browser runtime includes Canvas2D, optional Pixi/WebGL injection, plain JS embed, and a React component factory.
-- Timeline editor MVP is browser-side authoring only; final multi-layer render export remains future work.
+- Timeline editor MVP is browser-side authoring; final MP4 export is local FFmpeg-based, while hosted/batched render orchestration remains future work.
 
 ## Roadmap
 
 1. Add mask smoothing, matting, and occlusion QA.
 2. Add multi-object extraction and timeline editing.
 3. Add GPU atlas generation and richer final timeline export.
-4. Add final export via FFmpeg, Remotion, or WebCodecs.
+4. Add hosted/batched render infrastructure and WebCodecs experiments.
 5. Add editor integrations and website embed helpers.
 
 ## Positioning

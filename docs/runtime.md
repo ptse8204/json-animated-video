@@ -104,6 +104,16 @@ Serve the repo and open:
 
 Generated preview folders copy the runtime source into `preview/runtime/`, so `out/.../preview/*.html` works without a build step or CDN dependency.
 
+## Website ZIP Export
+
+Phase 8 can package a self-contained website ZIP from generated output:
+
+```bash
+python3 -m motionjson.cli export out/demo --format website-zip --out out/demo/exports/website_package.zip
+```
+
+The ZIP includes relative runtime paths, previews, `web_asset_manifest.json`, scene/object/resource JSON, cached cutouts and spritesheets needed by the runtime, and ready production assets. It excludes `.env*`, caches, `node_modules`, masks, and debug frames by default.
+
 ## Timeline Editor MVP
 
 `examples/timeline_editor.html` uses `editor.js` helpers to keep authoring state separate from cached assets. The helper API initializes editable state from normalized MotionJSON, selects layers, updates translate/scale/rotation, opacity, z-index, visibility, clip frame range, duplicate/reuse layer instances, background settings, visible layer sorting, and serialized edit JSON.
@@ -127,3 +137,9 @@ const editJson = serializeEditState(editor);
 ```
 
 Duplicate/reuse records a second layer instance with the same `sourceAssetId`. It does not copy image data. Background replacement is preview compositing behind alpha layers only; it is not clean-plate generation or hidden-pixel reconstruction.
+
+Use serialized editor state with final MP4 export when Phase 7 layer transforms should be reflected in a rendered video:
+
+```bash
+python3 -m motionjson.cli export out/demo --format mp4 --out out/demo/exports/final.mp4 --editor-state out/demo/editor_state.json
+```

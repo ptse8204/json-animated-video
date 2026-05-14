@@ -13,7 +13,10 @@ from ..layers import write_spritesheet
 
 
 def _rel(path: Path, root: Path) -> str:
-    return str(path.relative_to(root)).replace("\\", "/")
+    try:
+        return str(path.relative_to(root)).replace("\\", "/")
+    except ValueError:
+        return str(path)
 
 
 def _safe_size(path: Path) -> int:
@@ -177,6 +180,29 @@ def _export_transparent_webm(
     fps: float,
 ) -> dict[str, Any]:
     output_path = production_dir / "transparent_layer.webm"
+    return export_transparent_webm_object(
+        out_dir=out_dir,
+        output_path=output_path,
+        motion=motion,
+        width=width,
+        height=height,
+        fps=fps,
+    )
+
+
+def export_transparent_webm_object(
+    *,
+    out_dir: str | Path,
+    output_path: str | Path,
+    motion: list[dict[str, Any]],
+    width: int,
+    height: int,
+    fps: float,
+) -> dict[str, Any]:
+    """Write a transparent VP9/WebM object layer from cached cutouts and JSON transforms."""
+    out_dir = Path(out_dir)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     base = {
         "type": "transparent_webm_vp9_alpha",
         "format": "webm",
@@ -189,6 +215,8 @@ def _export_transparent_webm(
         "frameCount": len(motion),
         "encoder": "ffmpeg",
         "source": "cached_rgba_cutout_png_sequence_and_json_transforms",
+        "cachedSource": "cached_rgba_cutout_png_sequence",
+        "aiUsage": "none",
     }
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:

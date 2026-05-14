@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import benchmark_scene
+from .exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
+from .exporters.production_assets import export_transparent_webm_object
+from .exporters.remotion import write_remotion_plan
 from .exporters.scene_graph import write_json
+from .exporters.website_package import export_website_package
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .pipeline import run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
@@ -106,6 +110,8 @@ def build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate", help="Validate a MotionJSON file or output directory")
     validate.add_argument("path", type=str, help="MotionJSON JSON file or output directory")
     validate.add_argument("--object-id", type=str, default="object_0", help="Object id to require when validating an output directory")
+    export = sub.add_parser("export", help="Export final video, object alpha video, website package, or adapter plan")
+    add_export_args(export)
     return parser
 
 
@@ -113,6 +119,20 @@ def _legacy_extract_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Convert video object masks into JSON motion assets")
     add_extract_args(parser)
     return parser
+
+
+def add_export_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("out_dir", type=str, help="Existing MotionJSON extraction output directory")
+    p.add_argument(
+        "--format",
+        choices=["mp4", "webm-alpha", "website-zip", "remotion-plan", "all"],
+        required=True,
+        help="Final export format",
+    )
+    p.add_argument("--out", type=str, required=True, help="Output file for one format, or output directory for --format all")
+    p.add_argument("--object-id", type=str, default="object_0", help="Object id for object-specific exports")
+    p.add_argument("--background-color", type=str, default="#fbfaf6", help="Final render background color")
+    p.add_argument("--editor-state", type=str, default=None, help="Optional Phase 7 timeline editor-state JSON")
 
 
 def build_provider(args: argparse.Namespace):
@@ -242,9 +262,151 @@ def run_validate(args: argparse.Namespace) -> None:
     raise SystemExit(1)
 
 
+def _first_object(scene: dict[str, Any], object_id: str) -> dict[str, Any]:
+    for obj in scene.get("objects", []):
+        if obj.get("id") == object_id:
+            return obj
+    raise SystemExit(f"Object {object_id!r} not found in scene_graph.json")
+
+
+def _canvas(scene: dict[str, Any]) -> dict[str, Any]:
+    source = scene.get("source", {})
+    canvas = scene.get("canvas", {})
+    return {
+        "width": int(source.get("width") or canvas.get("width") or 1),
+        "height": int(source.get("height") or canvas.get("height") or 1),
+        "fps": float(source.get("sampleFps") or canvas.get("fps") or 12),
+        "frameCount": int(source.get("sampledFrameCount") or canvas.get("frame_count") or 0),
+    }
+
+
+def _write_export_manifest(args: argparse.Namespace, exports: list[dict[str, Any]], manifest_path: Path) -> None:
+    scene = load_scene(args.out_dir)
+    write_final_export_manifest(
+        manifest_path=manifest_path,
+        out_dir=args.out_dir,
+        scene=scene,
+        exports=exports,
+        object_id=args.object_id,
+    )
+    print(f"Wrote {manifest_path}")
+
+
+def _fail_if_unavailable(entry: dict[str, Any]) -> None:
+    if entry.get("status") in {"ready", "plan_ready"}:
+        return
+    reason = entry.get("reason") or f"export status is {entry.get('status')}"
+    raise SystemExit(f"{entry.get('type', 'export')} unavailable: {reason}")
+
+
+def _export_webm_alpha(args: argparse.Namespace, output_path: Path) -> dict[str, Any]:
+    scene = load_scene(args.out_dir)
+    obj = _first_object(scene, args.object_id)
+    canvas = _canvas(scene)
+    webm = export_transparent_webm_object(
+        out_dir=args.out_dir,
+        output_path=output_path,
+        motion=obj.get("motion", []),
+        width=canvas["width"],
+        height=canvas["height"],
+        fps=canvas["fps"],
+    )
+    return final_export_entry(
+        export_type="transparent_webm_object",
+        format_name="webm-alpha",
+        output_path=output_path,
+        out_dir=args.out_dir,
+        status=webm.get("status", "error"),
+        mime_type=webm.get("mimeType", "video/webm"),
+        width=canvas["width"],
+        height=canvas["height"],
+        fps=canvas["fps"],
+        frame_count=canvas["frameCount"],
+        reason=webm.get("reason"),
+        extra={
+            "objectId": args.object_id,
+            "encoder": webm.get("encoder", "ffmpeg"),
+            "pixelFormat": "yuva420p",
+            "cachedSource": webm.get("cachedSource", "cached_rgba_cutout_png_sequence"),
+            "cachedSources": ["scene_graph.json", f"objects/{args.object_id}/cutouts/*.png"],
+            "source": webm.get("source", "cached_rgba_cutout_png_sequence_and_json_transforms"),
+            "aiUsage": "none",
+        },
+    )
+
+
+def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
+    out_dir = Path(args.out_dir)
+    if not (out_dir / "scene_graph.json").exists():
+        raise SystemExit(f"{out_dir / 'scene_graph.json'} does not exist")
+
+    exports: list[dict[str, Any]] = []
+    output = Path(args.out)
+    if args.format == "mp4":
+        entry = export_mp4(
+            out_dir=out_dir,
+            output_path=output,
+            background_color=args.background_color,
+            editor_state_path=args.editor_state,
+        )
+        _fail_if_unavailable(entry)
+        exports.append(entry)
+        print(f"Wrote {output}")
+        _write_export_manifest(args, exports, output.parent / "final_export_manifest.json")
+        return exports
+
+    if args.format == "webm-alpha":
+        entry = _export_webm_alpha(args, output)
+        _fail_if_unavailable(entry)
+        exports.append(entry)
+        print(f"Wrote {output}")
+        _write_export_manifest(args, exports, output.parent / "final_export_manifest.json")
+        return exports
+
+    if args.format == "website-zip":
+        entry = export_website_package(out_dir=out_dir, output_path=output)
+        _fail_if_unavailable(entry)
+        exports.append(entry)
+        print(f"Wrote {output}")
+        _write_export_manifest(args, exports, output.parent / "final_export_manifest.json")
+        return exports
+
+    if args.format == "remotion-plan":
+        entry = write_remotion_plan(out_dir=out_dir, output_path=output)
+        _fail_if_unavailable(entry)
+        exports.append(entry)
+        print(f"Wrote {output}")
+        _write_export_manifest(args, exports, output.parent / "final_export_manifest.json")
+        return exports
+
+    output.mkdir(parents=True, exist_ok=True)
+    all_targets = {
+        "mp4": output / "final.mp4",
+        "webm-alpha": output / f"{args.object_id}.webm",
+        "website-zip": output / "website_package.zip",
+        "remotion-plan": output / "remotion_export_plan.json",
+    }
+    exports.append(
+        export_mp4(
+            out_dir=out_dir,
+            output_path=all_targets["mp4"],
+            background_color=args.background_color,
+            editor_state_path=args.editor_state,
+        )
+    )
+    exports.append(_export_webm_alpha(args, all_targets["webm-alpha"]))
+    exports.append(export_website_package(out_dir=out_dir, output_path=all_targets["website-zip"]))
+    exports.append(write_remotion_plan(out_dir=out_dir, output_path=all_targets["remotion-plan"]))
+    for entry in exports:
+        _fail_if_unavailable(entry)
+        print(f"Wrote {entry['path']}")
+    _write_export_manifest(args, exports, output / "final_export_manifest.json")
+    return exports
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "export"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -256,6 +418,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "validate":
         run_validate(args)
+        return
+    if args.command == "export":
+        run_export(args)
         return
     parser.print_help()
 
