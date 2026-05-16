@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS job_events (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS correction_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    job_id TEXT NOT NULL REFERENCES jobs(id),
+    created_by_user_id TEXT NOT NULL REFERENCES users(id),
+    operation TEXT NOT NULL,
+    object_id TEXT,
+    target_object_id TEXT,
+    payload_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS usage_events (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -294,6 +308,8 @@ CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_assets_source_job ON assets(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_project ON jobs(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_queue_claim ON queue_items(status, run_after, priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_corrections_job ON correction_events(job_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_corrections_project ON correction_events(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_usage_project ON usage_events(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_rights_asset ON rights_metadata(asset_id, object_id);
 CREATE INDEX IF NOT EXISTS idx_rights_project ON rights_metadata(project_id, created_at);

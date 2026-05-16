@@ -17,6 +17,13 @@ from urllib.parse import parse_qs, urlparse
 from motionjson import __version__
 from motionjson.backend.assets import get_asset, list_assets_for_job, list_project_assets, register_upload
 from motionjson.backend.auth import register_user
+from motionjson.backend.corrections import (
+    apply_track_edit,
+    apply_track_correction_state,
+    build_track_correction_state,
+    list_track_corrections,
+    record_track_edit_action,
+)
 from motionjson.backend.db import connect, initialize_database
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
@@ -165,6 +172,12 @@ def _truthy_payload(payload: dict[str, Any], *keys: str) -> bool:
         if isinstance(value, str) and value.strip().lower() in {"1", "true", "yes", "on", "run", "start"}:
             return True
     return False
+
+
+def _is_export_inclusion_action(payload: dict[str, Any]) -> bool:
+    action = payload.get("action") if isinstance(payload.get("action"), dict) else payload
+    action_type = str(action.get("type") or action.get("operation") or "").strip().lower().replace("-", "_")
+    return action_type in {"set_export_inclusion", "include_in_export", "set_track_export", "exclude_track"}
 
 
 def _asset_id_from_uri(value: Any) -> str | None:
@@ -378,6 +391,8 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/events",
                     "/api/jobs/{jobId}/artifacts",
                     "/api/jobs/{jobId}/review",
+                    "/api/jobs/{jobId}/corrections",
+                    "/api/jobs/{jobId}/track-edits",
                     "/api/jobs/{jobId}/run",
                     "/api/progress",
                     "/api/artifacts",
@@ -516,6 +531,46 @@ class LocalUIApp:
                         ),
                         "worker": self._start_worker(),
                     }
+                if len(parts) == 4 and parts[3] in {"corrections", "track-edits"}:
+                    job = get_job(conn, user_id=user_id, job_id=parts[2])
+                    action_payload = payload.get("action") or payload.get("correction") or payload
+                    if parts[3] == "track-edits" and not _is_export_inclusion_action(payload):
+                        edit_result = apply_track_edit(
+                            conn,
+                            storage=self.storage(),
+                            user_id=user_id,
+                            job_id=parts[2],
+                            payload=payload,
+                        )
+                        correction = edit_result.get("correction") if isinstance(edit_result.get("correction"), dict) else {}
+                    else:
+                        edit_result = {}
+                        correction = record_track_edit_action(
+                            conn,
+                            user_id=user_id,
+                            job_id=parts[2],
+                            action=action_payload,
+                        )
+                    job = get_job(conn, user_id=user_id, job_id=parts[2])
+                    assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    correction_state = build_track_correction_state(corrections, job_id=parts[2])
+                    history = correction_state.get("history") if isinstance(correction_state.get("history"), list) else []
+                    if history and correction:
+                        correction = {**correction, "operation": history[-1].get("type") or correction.get("operation")}
+                    response: dict[str, Any] = {
+                        **_public_review_value(edit_result),
+                        "correction": _public_review_value(correction),
+                        "correctionState": _public_review_value(correction_state),
+                        "corrections": _public_review_value(correction_state),
+                        "review": self._review_metadata(assets, corrections=corrections, job_id=parts[2]),
+                    }
+                    result = correction.get("result") if isinstance(correction.get("result"), dict) else {}
+                    if isinstance(result.get("repairDiagnostics"), dict):
+                        response["repairDiagnostics"] = _public_review_value(result["repairDiagnostics"])
+                    if isinstance(result.get("partialRerun"), dict):
+                        response["partialRerun"] = _public_review_value(result["partialRerun"])
+                    return response
             if path.startswith("/api/jobs/") and method == "GET":
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 3:
@@ -527,18 +582,29 @@ class LocalUIApp:
                 if len(parts) == 4 and parts[3] == "artifacts":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
-                    return self._artifacts_response(assets)
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    return self._artifacts_response(assets, corrections=corrections, job_id=parts[2])
                 if len(parts) == 4 and parts[3] == "review":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
-                    return {"review": self._review_metadata(assets)}
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    return {"review": self._review_metadata(assets, corrections=corrections, job_id=parts[2])}
+                if len(parts) == 4 and parts[3] == "corrections":
+                    get_job(conn, user_id=user_id, job_id=parts[2])
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    correction_state = build_track_correction_state(corrections, job_id=parts[2])
+                    return {
+                        "correctionState": _public_review_value(correction_state),
+                        "corrections": _public_review_value(correction_state),
+                    }
             if path == "/api/artifacts" and method == "GET":
                 job_id = self._query_one(query, "jobId")
                 if not job_id:
                     return {"artifacts": [], "review": self._review_metadata([])}
                 job = get_job(conn, user_id=user_id, job_id=job_id)
                 assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job_id)
-                return self._artifacts_response(assets)
+                corrections = list_track_corrections(conn, user_id=user_id, job_id=job_id)
+                return self._artifacts_response(assets, corrections=corrections, job_id=job_id)
             raise NotFoundError("route not found")
         finally:
             conn.close()
@@ -798,10 +864,16 @@ class LocalUIApp:
         finally:
             conn.close()
 
-    def _artifacts_response(self, assets: list[dict[str, Any]]) -> dict[str, Any]:
+    def _artifacts_response(
+        self,
+        assets: list[dict[str, Any]],
+        *,
+        corrections: list[dict[str, Any]] | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         return {
             "artifacts": [self._public_artifact(asset) for asset in assets],
-            "review": self._review_metadata(assets),
+            "review": self._review_metadata(assets, corrections=corrections, job_id=job_id),
         }
 
     def _public_artifact(self, row: dict[str, Any]) -> dict[str, Any]:
@@ -815,7 +887,13 @@ class LocalUIApp:
         content_type = str(asset.get("content_type") or "")
         return content_type.startswith(PUBLIC_ARTIFACT_CONTENT_TYPES)
 
-    def _review_metadata(self, assets: list[dict[str, Any]]) -> dict[str, Any]:
+    def _review_metadata(
+        self,
+        assets: list[dict[str, Any]],
+        *,
+        corrections: list[dict[str, Any]] | None = None,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         review: dict[str, Any] = {
             "format": "motionjson.local_ui_review.v0.1",
             "artifactCountsByKind": {},
@@ -864,6 +942,9 @@ class LocalUIApp:
         if not accepted_tracks and review["fallbackDiagnostics"]:
             first = review["fallbackDiagnostics"][0]
             review["vectorUnavailableReason"] = first.get("reasonCode") or first.get("message")
+        correction_state = build_track_correction_state(corrections or [], job_id=job_id or "")
+        if corrections is not None:
+            review = apply_track_correction_state(review, correction_state)
         return _public_review_value(review)
 
     def _read_review_json(

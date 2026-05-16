@@ -65,6 +65,9 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `GET /api/jobs/JOB_ID`
 - `GET /api/jobs/JOB_ID/events`
 - `GET /api/jobs/JOB_ID/artifacts`
+- `GET /api/jobs/JOB_ID/review`
+- `GET /api/jobs/JOB_ID/corrections`
+- `POST /api/jobs/JOB_ID/track-edits`
 - `GET /api/artifacts?jobId=JOB_ID`
 
 The local UI creates a reserved local user in the selected SQLite database and
@@ -79,6 +82,33 @@ normalized `runConfig` when validation succeeds. Provider warnings are sourced
 from capability diagnostics and job policy checks, so unavailable CUDA, SAM2,
 detectors, FFmpeg-adjacent dependencies, or model weights remain visible before
 a run is queued.
+
+`POST /api/jobs/JOB_ID/track-edits` records deterministic local correction
+events, applies artifact edits where possible, and updates review/export-
+inclusion state for the job. Supported operations are `relabel`, `hide`,
+`show`, `delete`, `merge`, `split`, `add_object`, and `repair`:
+
+```json
+{"operation": "relabel", "objectId": "object_0", "label": "Cue Ball"}
+```
+
+```json
+{"operation": "merge", "keepObjectId": "object_0", "mergeObjectId": "object_1"}
+```
+
+```json
+{"operation": "split", "objectId": "object_0", "newObjectId": "object_0_tail", "frameRange": [24, 48]}
+```
+
+Corrections are stored in the local SQLite database and are returned from
+`GET /api/jobs/JOB_ID/corrections` and the `correctionHistory` field on review
+responses. Relabel, hide/show, delete, merge, and split update the editable
+project review state used by local review and export-inclusion metadata.
+`add_object` and `repair` are no-model partial-rerun hooks in this phase: the
+request is persisted with `aiUsage: "none"` and `partialRerun.available:
+false` instead of silently pretending that SAM2, detectors, or other ML
+providers ran. The correction UI surfaces these repair and partial-rerun
+diagnostics in the saved edit message and correction history.
 
 ## Project And Video Flow
 

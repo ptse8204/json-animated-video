@@ -11,11 +11,15 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}",
     "/api/jobs/{jobId}/events",
     "/api/jobs/{jobId}/artifacts",
+    "/api/jobs/{jobId}/review",
+    "/api/jobs/{jobId}/corrections",
+    "/api/jobs/{jobId}/track-edits",
     "/api/progress",
     "/api/artifacts",
   ];
 
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
+  const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "external"]);
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
@@ -65,6 +69,18 @@ const MotionJSONUI = (() => {
     hosted_allow_network: false,
   };
 
+  const emptyCorrectionState = (jobId = "") => ({
+    format: CORRECTION_STATE_FORMAT,
+    jobId,
+    trackEdits: {},
+    syntheticTracks: [],
+    history: [],
+    mergeSuggestions: [],
+    loaded: false,
+    persistenceStatus: "not_loaded",
+    persistenceMessage: "Correction state has not been loaded yet.",
+  });
+
   const defaultState = () => ({
     health: null,
     capabilities: null,
@@ -81,6 +97,9 @@ const MotionJSONUI = (() => {
     jobArtifacts: [],
     reviewTracks: [],
     trackVisibility: {},
+    correctionState: emptyCorrectionState(),
+    selectedCorrectionTrackId: "",
+    mergeSelection: new Set(),
     runConfigsByJob: {},
     lastRunConfig: null,
     polling: false,
@@ -811,6 +830,379 @@ const MotionJSONUI = (() => {
     return `${track.frameStart ?? 0}-${track.frameEnd ?? Math.max(0, count - 1)} (${Math.round((visible / count) * 100)}%)`;
   }
 
+  function correctionRoute(jobId) {
+    return `/api/jobs/${encodeURIComponent(jobId)}/corrections`;
+  }
+
+  function trackEditRoute(jobId) {
+    return `/api/jobs/${encodeURIComponent(jobId)}/track-edits`;
+  }
+
+  function normalizedActionType(action) {
+    const raw = String(action.type || action.action || action.kind || "correction").replace(/-/g, "_");
+    const aliases = {
+      hide_track: "set_track_visibility",
+      show_track: "set_track_visibility",
+      rename_track: "relabel_track",
+      update_label: "relabel_track",
+      include_in_export: "set_export_inclusion",
+      set_track_export: "set_export_inclusion",
+      exclude_track: "set_export_inclusion",
+      remove_track: "delete_track",
+    };
+    return aliases[raw] || raw;
+  }
+
+  function correctionTrackId(value) {
+    return String(value?.trackId || value?.track_id || value?.objectId || value?.object_id || value?.id || "");
+  }
+
+  function normalizeHistoryEntry(entry, index = 0) {
+    const type = normalizedActionType(entry);
+    return {
+      ...entry,
+      id: entry.id || entry.correctionId || entry.correction_id || `correction_${index}`,
+      type,
+      trackId: correctionTrackId(entry),
+      createdAt: entry.createdAt || entry.created_at || entry.timestamp || new Date().toISOString(),
+      actor: entry.actor || "local_ui",
+      persistenceStatus: entry.persistenceStatus || entry.persistence_status || "loaded",
+    };
+  }
+
+  function normalizeTrackEditRecord(record, fallbackId = "") {
+    const trackId = correctionTrackId(record) || fallbackId;
+    const exportStatus = String(record.exportStatus || record.export_status || "");
+    const edit = { trackId };
+    if (record.label != null) edit.label = String(record.label);
+    if (record.visible != null) edit.visible = record.visible !== false;
+    if (record.hidden != null) edit.visible = record.hidden !== true;
+    if (record.exportIncluded != null) edit.exportIncluded = record.exportIncluded !== false;
+    if (record.includeInExport != null) edit.exportIncluded = record.includeInExport !== false;
+    if (record.include_in_export != null) edit.exportIncluded = record.include_in_export !== false;
+    if (exportStatus) {
+      edit.exportIncluded = !/excluded|deleted|rejected|failed/.test(exportStatus);
+    }
+    if (record.deleted != null) edit.deleted = record.deleted === true;
+    if (record.mergedInto || record.merged_into) edit.mergedInto = record.mergedInto || record.merged_into;
+    if (record.splitFrom || record.split_from) edit.splitFrom = record.splitFrom || record.split_from;
+    if (record.repairRequested || record.repair_requested) edit.repairRequested = true;
+    return edit;
+  }
+
+  function applyActionToTrackEdits(edits, action) {
+    const type = normalizedActionType(action);
+    const trackId = correctionTrackId(action);
+    const ensure = (id) => {
+      if (!id) return null;
+      edits[id] = { trackId: id, ...(edits[id] || {}) };
+      return edits[id];
+    };
+
+    if (type === "relabel_track") {
+      const edit = ensure(trackId);
+      if (edit) edit.label = String(action.label || action.value || "").trim();
+    } else if (type === "set_track_visibility") {
+      const edit = ensure(trackId);
+      if (edit) edit.visible = action.visible != null ? action.visible !== false : action.hidden !== true;
+    } else if (type === "set_export_inclusion") {
+      const edit = ensure(trackId);
+      if (edit) edit.exportIncluded = action.included != null ? action.included !== false : action.exportIncluded !== false;
+    } else if (type === "delete_track") {
+      const edit = ensure(trackId);
+      if (edit) {
+        edit.deleted = true;
+        edit.visible = false;
+        edit.exportIncluded = false;
+      }
+    } else if (type === "merge_tracks") {
+      const trackIds = asArray(action.trackIds || action.track_ids).map(String).filter(Boolean);
+      const keepTrackId = String(action.keepTrackId || action.keep_track_id || trackIds[0] || "");
+      for (const id of trackIds) {
+        const edit = ensure(id);
+        if (!edit || id === keepTrackId) continue;
+        edit.deleted = true;
+        edit.visible = false;
+        edit.exportIncluded = false;
+        edit.mergedInto = keepTrackId;
+      }
+    } else if (type === "repair_track") {
+      const edit = ensure(trackId);
+      if (edit) edit.repairRequested = true;
+    }
+  }
+
+  function trackEditsFromRecords(records, history) {
+    const edits = {};
+    if (Array.isArray(records)) {
+      for (const record of records) {
+        if (!record || typeof record !== "object") continue;
+        const edit = normalizeTrackEditRecord(record);
+        if (edit.trackId) edits[edit.trackId] = { ...(edits[edit.trackId] || {}), ...edit };
+      }
+    } else if (records && typeof records === "object") {
+      for (const [id, record] of Object.entries(records)) {
+        if (record && typeof record === "object") {
+          const edit = normalizeTrackEditRecord(record, id);
+          if (edit.trackId) edits[edit.trackId] = { ...(edits[edit.trackId] || {}), ...edit };
+        }
+      }
+    }
+    for (const entry of asArray(history)) applyActionToTrackEdits(edits, entry);
+    return edits;
+  }
+
+  function normalizeCorrectionState(payload, jobId = "") {
+    const raw = payload?.correctionState || payload?.state || payload?.projectState || {};
+    const history = asArray(
+      raw.history ||
+        payload?.history ||
+        payload?.correctionHistory ||
+        (Array.isArray(payload?.corrections) ? payload.corrections : []),
+    ).map(normalizeHistoryEntry);
+    const trackRecords = raw.trackEdits || raw.track_states || raw.trackStates || raw.tracks || payload?.trackEdits || payload?.trackStates || {};
+    const serverTracks = Array.isArray(payload?.tracks)
+      ? payload.tracks
+      : Array.isArray(raw.tracks) && raw.tracks.some((track) => track?.frames || track?.frameCount || track?.frame_count)
+        ? raw.tracks
+        : [];
+    return {
+      ...emptyCorrectionState(jobId),
+      ...raw,
+      jobId: raw.jobId || raw.job_id || payload?.jobId || payload?.job_id || jobId,
+      trackEdits: trackEditsFromRecords(trackRecords, history),
+      syntheticTracks: asArray(raw.syntheticTracks || raw.synthetic_tracks || payload?.syntheticTracks),
+      serverTracks,
+      history,
+      mergeSuggestions: asArray(raw.mergeSuggestions || raw.merge_suggestions || payload?.mergeSuggestions || payload?.review?.mergeSuggestions),
+      loaded: true,
+      persistenceStatus: "loaded",
+      persistenceMessage: "Correction history loaded from the local backend.",
+    };
+  }
+
+  function cloneTrack(track) {
+    return {
+      ...track,
+      warnings: [...asArray(track.warnings)],
+      frames: asArray(track.frames).map((frame) => ({ ...frame, bbox: frame.bbox ? { ...frame.bbox } : null })),
+    };
+  }
+
+  function correctionRequestOperations(prompts, frameRange = null) {
+    const operations = [];
+    for (const prompt of asArray(prompts)) {
+      const frame = Math.max(1, toInteger(prompt.frame_index ?? prompt.frameIndex, 0) + 1);
+      if (prompt.kind === "box") {
+        operations.push({
+          type: "box",
+          frame,
+          x: roundPixel(prompt.data?.x),
+          y: roundPixel(prompt.data?.y),
+          w: Math.max(1, roundPixel(prompt.data?.w)),
+          h: Math.max(1, roundPixel(prompt.data?.h)),
+          mode: "constrain",
+        });
+      } else if (prompt.kind === "mask") {
+        for (const stroke of asArray(prompt.data?.strokes)) {
+          operations.push({
+            type: "brush",
+            frame,
+            radius: Math.max(1, toInteger(stroke.brush_size, 10)),
+            mode: stroke.mode === "erase" ? "remove" : "add",
+            points: asArray(stroke.points).map((point) => [roundPixel(point.x), roundPixel(point.y)]),
+          });
+        }
+      } else if (prompt.kind === "negative_point") {
+        operations.push({
+          type: "remove_point",
+          frame,
+          x: roundPixel(prompt.data?.x),
+          y: roundPixel(prompt.data?.y),
+          radius: 10,
+        });
+      } else {
+        operations.push({
+          type: "add_point",
+          frame,
+          x: roundPixel(prompt.data?.x),
+          y: roundPixel(prompt.data?.y),
+          radius: 10,
+        });
+      }
+    }
+    return operations.map((operation) => (frameRange ? { ...operation, propagate: true } : operation));
+  }
+
+  function buildCorrectionRequestFromPrompts(objectId, prompts, frameRange = null) {
+    const schemaRange = frameRange ? frameRange.map((frame) => Math.max(1, toInteger(frame, 0) + 1)) : null;
+    return {
+      schema: "motionjson.correction_request.v0.1",
+      objectId,
+      operations: correctionRequestOperations(prompts, schemaRange),
+      propagation: {
+        enabled: Boolean(schemaRange),
+        mode: schemaRange ? "same_coordinates" : "none",
+        ...(schemaRange ? { frameRange: schemaRange } : {}),
+      },
+      temporalSmoothing: { enabled: false, radius: 1, threshold: 0.5 },
+      aiUsage: "none",
+    };
+  }
+
+  function syntheticTrackFromPromptAction(action, index = 0) {
+    const prompts = asArray(action.prompts);
+    const prompt = prompts[0] || null;
+    const width = state.video.width || 1920;
+    const height = state.video.height || 1080;
+    const frameRange = asArray(action.frameRange).length === 2 ? action.frameRange : [state.video.currentFrame, state.video.currentFrame];
+    const start = Math.max(0, toInteger(frameRange[0], 0));
+    const end = Math.max(start, toInteger(frameRange[1], start));
+    const id = slugObjectId(action.objectId || action.trackId || `added_object_${index}`, `added_object_${index}`);
+    const box = boxFromPrompt(prompt, width, height, index);
+    return {
+      id,
+      objectId: id,
+      label: action.label || prompt?.label || id,
+      source: "correction/add_object",
+      confidence: null,
+      frameCount: end - start + 1,
+      visibleFrameCount: end - start + 1,
+      frameStart: start,
+      frameEnd: end,
+      warnings: ["pending_backend_correction"],
+      exportStatus: "included",
+      providerName: "correction",
+      color: TRACK_COLORS[(index + 2) % TRACK_COLORS.length],
+      frames: Array.from({ length: end - start + 1 }, (_, offset) => ({
+        frame: start + offset,
+        visible: true,
+        bbox: box,
+      })),
+      reviewSource: "correction-local",
+      exportIncluded: true,
+      visible: true,
+    };
+  }
+
+  function splitTrackFromAction(sourceTrack, action, index = 0) {
+    const frameRange = asArray(action.frameRange).length === 2 ? action.frameRange : [state.video.currentFrame, state.video.currentFrame];
+    const start = Math.max(0, toInteger(frameRange[0], 0));
+    const end = Math.max(start, toInteger(frameRange[1], start));
+    const frames = asArray(sourceTrack.frames).filter((frame) => frame.frame >= start && frame.frame <= end);
+    return {
+      ...cloneTrack(sourceTrack),
+      id: slugObjectId(action.newTrackId || `${sourceTrack.id}_split_${start}_${end}`, `${sourceTrack.id}_split_${start}_${end}`),
+      objectId: slugObjectId(action.newTrackId || `${sourceTrack.objectId}_split_${start}_${end}`, `${sourceTrack.objectId}_split_${start}_${end}`),
+      label: action.label || `${sourceTrack.label || sourceTrack.objectId} split ${start}-${end}`,
+      source: `${sourceTrack.source || "track"}/split`,
+      frameCount: Math.max(1, frames.length),
+      visibleFrameCount: frames.filter((frame) => frame.visible !== false).length || frames.length,
+      frameStart: start,
+      frameEnd: end,
+      warnings: [...asArray(sourceTrack.warnings), "pending_backend_split"],
+      frames: frames.length ? frames : [trackFrameForDisplay(sourceTrack, start)].filter(Boolean),
+      reviewSource: "correction-local",
+      exportIncluded: true,
+      visible: true,
+    };
+  }
+
+  function applyCorrectionStateToTracks(baseTracks, correctionState) {
+    const serverTracks = asArray(correctionState?.serverTracks);
+    const sourceTracks = serverTracks.length ? serverTracks.map(normalizeApiTrack) : asArray(baseTracks).map(cloneTrack);
+    const tracks = sourceTracks.map((track) => {
+      const edit = correctionState?.trackEdits?.[track.id] || correctionState?.trackEdits?.[track.objectId] || {};
+      const next = { ...track };
+      if (edit.label) next.label = edit.label;
+      if (edit.visible != null) next.visible = edit.visible !== false;
+      if (edit.exportIncluded != null) next.exportIncluded = edit.exportIncluded !== false;
+      if (edit.deleted) next.deleted = true;
+      if (edit.mergedInto) next.mergedInto = edit.mergedInto;
+      next.warnings = [...asArray(track.warnings)];
+      if (next.visible === false && !next.warnings.includes("hidden_by_user")) next.warnings.push("hidden_by_user");
+      if (next.exportIncluded === false && !next.warnings.includes("excluded_from_export")) next.warnings.push("excluded_from_export");
+      if (next.deleted && !next.warnings.includes("deleted_by_user")) next.warnings.push("deleted_by_user");
+      if (next.mergedInto && !next.warnings.includes(`merged_into_${next.mergedInto}`)) next.warnings.push(`merged_into_${next.mergedInto}`);
+      if (edit.repairRequested && !next.warnings.includes("repair_requested")) next.warnings.push("repair_requested");
+      if (next.deleted) next.exportStatus = "deleted";
+      else if (next.exportIncluded === false) next.exportStatus = "excluded";
+      return next;
+    });
+
+    const ids = new Set(tracks.map((track) => track.id));
+    const history = asArray(correctionState?.history);
+    for (const entry of history) {
+      const type = normalizedActionType(entry);
+      if (type === "split_track") {
+        const source = tracks.find((track) => track.id === entry.trackId || track.objectId === entry.trackId);
+        if (!source) continue;
+        const split = splitTrackFromAction(source, entry, ids.size);
+        if (!ids.has(split.id)) {
+          ids.add(split.id);
+          tracks.push(split);
+        }
+      }
+      if (type === "add_object") {
+        const added = syntheticTrackFromPromptAction(entry, ids.size);
+        if (!ids.has(added.id)) {
+          ids.add(added.id);
+          tracks.push(added);
+        }
+      }
+    }
+    for (const synthetic of asArray(correctionState?.syntheticTracks)) {
+      const track = normalizeApiTrack(synthetic, ids.size);
+      if (!ids.has(track.id)) {
+        ids.add(track.id);
+        tracks.push(track);
+      }
+    }
+    return tracks;
+  }
+
+  function isTrackVisibleInReview(track) {
+    if (track.deleted || track.visible === false) return false;
+    return state.trackVisibility[track.id] !== false;
+  }
+
+  function isTrackExportIncluded(track) {
+    if (track.deleted || track.exportIncluded === false) return false;
+    if (track.exportIncluded === true) return true;
+    return !/deleted|excluded|rejected|failed|fallback_raster|review_pending/.test(String(track.exportStatus || ""));
+  }
+
+  function correctionDiagnosticMessages(entry) {
+    const messages = [];
+    const repair = entry?.repairDiagnostics || {};
+    const partial = entry?.partialRerun || repair.partialRerun || {};
+    if (repair.status && repair.status !== "available") {
+      messages.push(`repair ${repair.status}`);
+    }
+    for (const diagnostic of asArray(repair.diagnostics)) {
+      const code = diagnostic.code || "repair_provider_unavailable";
+      const provider = diagnostic.provider ? ` (${diagnostic.provider})` : "";
+      const message = diagnostic.message || asArray(diagnostic.suggestedFixes).join(" ");
+      messages.push(`${code}${provider}${message ? `: ${message}` : ""}`);
+    }
+    if (partial.available === false || partial.status === "not_enqueued") {
+      messages.push(`partial rerun unavailable: ${partial.reason || partial.status || "not available in this local backend"}`);
+    }
+    return messages.filter(Boolean);
+  }
+
+  function correctionResponseMessage(response) {
+    const messages = [];
+    messages.push(...correctionDiagnosticMessages(response || {}));
+    if (response?.repairDiagnostics) {
+      messages.push(...correctionDiagnosticMessages({ repairDiagnostics: response.repairDiagnostics }));
+    }
+    if (response?.partialRerun) {
+      messages.push(...correctionDiagnosticMessages({ partialRerun: response.partialRerun }));
+    }
+    return messages.filter(Boolean).join(" - ");
+  }
+
   function collectDiagnostics(job, events, artifacts, tracks, review) {
     const diagnostics = [];
     const push = (kind, message, severity = "warn") => {
@@ -1162,11 +1554,13 @@ const MotionJSONUI = (() => {
       $("#trackList").innerHTML = state.reviewTracks.length
         ? state.reviewTracks
             .map((track) => {
-              const visible = state.trackVisibility[track.id] !== false;
+              const visible = isTrackVisibleInReview(track);
+              const exportIncluded = isTrackExportIncluded(track);
+              const selectedForMerge = state.mergeSelection.has(track.id);
               const confidence = typeof track.confidence === "number" ? `${Math.round(track.confidence * 100)}%` : "not reported";
               const warnings = asArray(track.warnings);
               return `
-                <div class="track-row ${visible ? "" : "is-muted"}" style="--track-color: ${escapeAttribute(track.color)}">
+                <div class="track-row ${visible ? "" : "is-muted"} ${track.deleted ? "is-deleted" : ""}" style="--track-color: ${escapeAttribute(track.color)}">
                   <div class="track-topline">
                     <span class="track-meta"><span class="track-swatch" aria-hidden="true"></span><strong>${escapeHtml(track.label || track.objectId)}</strong></span>
                     ${statusChip(track.exportStatus || "review", track.exportStatus || "review", !/rejected|failed|pending/.test(String(track.exportStatus || "")))}
@@ -1178,9 +1572,19 @@ const MotionJSONUI = (() => {
                   </div>
                   <div class="track-actions">
                     <label class="track-toggle">
-                      <input type="checkbox" data-track-visibility="${escapeAttribute(track.id)}" ${visible ? "checked" : ""} />
-                      <span>overlay</span>
+                      <input type="checkbox" data-track-visible="${escapeAttribute(track.id)}" data-track-visibility="${escapeAttribute(track.id)}" ${visible ? "checked" : ""} ${track.deleted ? "disabled" : ""} />
+                      <span>show</span>
                     </label>
+                    <label class="track-toggle">
+                      <input type="checkbox" data-track-export="${escapeAttribute(track.id)}" ${exportIncluded ? "checked" : ""} ${track.deleted ? "disabled" : ""} />
+                      <span>export</span>
+                    </label>
+                    <label class="track-toggle">
+                      <input type="checkbox" data-track-merge="${escapeAttribute(track.id)}" ${selectedForMerge ? "checked" : ""} ${track.deleted ? "disabled" : ""} />
+                      <span>merge</span>
+                    </label>
+                    <button class="mini-action" type="button" data-track-edit="${escapeAttribute(track.id)}">Edit</button>
+                    <button class="mini-action danger-action" type="button" data-track-delete="${escapeAttribute(track.id)}" ${track.deleted ? "disabled" : ""}>Delete</button>
                     ${detailChip(track.reviewSource || "review")}
                     ${warnings.map((warning) => detailChip(warning)).join("")}
                   </div>
@@ -1189,6 +1593,83 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Start or select a run to review object tracks.</div>`;
+    }
+
+    function renderCorrectionPanel() {
+      const status = state.correctionState.persistenceStatus || "not_loaded";
+      const statusLabel = status === "loaded" ? "Loaded" : status === "saved" ? "Saved" : status === "saving" ? "Saving" : status === "failed" ? "Save failed" : status === "unavailable" ? "Route unavailable" : "Not loaded";
+      $("#correctionStatus").textContent = statusLabel;
+      $("#correctionStatus").className = `status-chip ${statusClass(statusLabel, status === "loaded" || status === "saved")}`;
+      $("#correctionPersistenceMessage").textContent = state.correctionState.persistenceMessage || "Correction edits will be saved through the local backend correction API.";
+
+      const selectableTracks = state.reviewTracks.filter((track) => !track.deleted);
+      if (!state.selectedCorrectionTrackId || !selectableTracks.some((track) => track.id === state.selectedCorrectionTrackId)) {
+        state.selectedCorrectionTrackId = selectableTracks[0]?.id || "";
+      }
+      $("#correctionTrackSelect").innerHTML = selectableTracks.length
+        ? selectableTracks
+            .map((track) => `<option value="${escapeAttribute(track.id)}">${escapeHtml(track.label || track.objectId)}</option>`)
+            .join("")
+        : `<option value="">No editable tracks</option>`;
+      $("#correctionTrackSelect").value = state.selectedCorrectionTrackId;
+      const selected = state.reviewTracks.find((track) => track.id === state.selectedCorrectionTrackId);
+      if (document.activeElement !== $("#correctionLabelInput")) {
+        $("#correctionLabelInput").value = selected?.label || "";
+      }
+      const promptCount = allPromptsForDisplay().length;
+      $("#correctionPromptCount").textContent = `${promptCount} prompt${promptCount === 1 ? "" : "s"}`;
+      $("#mergeSelectionCount").textContent = `${state.mergeSelection.size} selected`;
+      $("#mergeTracksButton").disabled = state.mergeSelection.size < 2;
+      $("#repairTrackButton").disabled = !state.selectedCorrectionTrackId || promptCount === 0;
+      $("#splitTrackButton").disabled = !state.selectedCorrectionTrackId;
+      $("#addObjectButton").disabled = promptCount === 0;
+
+      const suggestions = asArray(state.correctionState.mergeSuggestions);
+      $("#mergeSuggestionList").innerHTML = suggestions.length
+        ? suggestions
+            .map((item) => {
+              const keep = item.keepObjectId || item.keep_object_id || item.keepTrackId || item.keep_track_id;
+              const merge = item.mergeObjectId || item.merge_object_id || item.mergeTrackId || item.merge_track_id;
+              const score = typeof item.meanIou === "number" ? `IoU ${item.meanIou.toFixed(2)}` : item.reason || "duplicate candidate";
+              return `
+                <button class="suggestion-row" type="button" data-merge-suggestion="${escapeAttribute([keep, merge].filter(Boolean).join(","))}">
+                  <strong>${escapeHtml([keep, merge].filter(Boolean).join(" + ") || "merge suggestion")}</strong>
+                  <span class="row-meta">${escapeHtml(score)}</span>
+                </button>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">No duplicate-track merge suggestions reported for this run.</div>`;
+    }
+
+    function renderCorrectionHistory() {
+      const history = asArray(state.correctionState.history);
+      $("#correctionHistoryCount").textContent = `${history.length} edit${history.length === 1 ? "" : "s"}`;
+      $("#correctionHistory").innerHTML = history.length
+        ? history
+            .slice()
+            .reverse()
+            .map((entry) => {
+              const label = entry.label || entry.trackId || asArray(entry.trackIds).join(", ") || entry.objectId || entry.type;
+              const diagnostics = correctionDiagnosticMessages(entry);
+              const detail = [
+                entry.frameRange ? `frames ${entry.frameRange.join("-")}` : "",
+                entry.persistenceStatus || state.correctionState.persistenceStatus,
+                entry.createdAt || "",
+                ...diagnostics,
+              ]
+                .filter(Boolean)
+                .join(" - ");
+              return `
+                <div class="history-row">
+                  <strong>${escapeHtml(entry.type)}</strong>
+                  <span class="row-meta">${escapeHtml(label)}</span>
+                  <span class="row-meta">${escapeHtml(detail || "pending")}</span>
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">Track edits will appear here after relabel, hide/show, export, merge, split, add-object, or repair actions.</div>`;
     }
 
     function renderFallbackDiagnostics() {
@@ -1210,6 +1691,8 @@ const MotionJSONUI = (() => {
       renderEventLog();
       renderArtifactBrowser();
       renderTrackList();
+      renderCorrectionPanel();
+      renderCorrectionHistory();
       renderFallbackDiagnostics();
       drawOverlay();
     }
@@ -1419,7 +1902,7 @@ const MotionJSONUI = (() => {
       }
 
       state.reviewTracks.forEach((track) => {
-        if (state.trackVisibility[track.id] === false) return;
+        if (!isTrackVisibleInReview(track)) return;
         drawTrackBox(track, trackFrameForDisplay(track, state.video.currentFrame), view);
       });
 
@@ -1468,6 +1951,7 @@ const MotionJSONUI = (() => {
       $("#configStatus").className = `status-chip ${configWarnings.length || warnings.length ? "is-warn" : "is-ready"}`;
       $("#configPreview").textContent = JSON.stringify(config, null, 2);
       renderPromptList();
+      renderCorrectionPanel();
       drawOverlay();
     }
 
@@ -1549,26 +2033,37 @@ const MotionJSONUI = (() => {
         state.jobEvents = [];
         state.jobArtifacts = [];
         state.reviewTracks = [];
+        state.correctionState = emptyCorrectionState();
         renderJobReview();
         return;
       }
 
-      const [jobBody, eventsBody, artifactsBody] = await Promise.all([
+      const [jobBody, eventsBody, artifactsBody, correctionsBody] = await Promise.all([
         api(`/api/jobs/${encodeURIComponent(jobId)}`),
         api(`/api/jobs/${encodeURIComponent(jobId)}/events`),
         api(`/api/jobs/${encodeURIComponent(jobId)}/artifacts`),
+        api(correctionRoute(jobId)).catch((error) => ({ correctionStateError: error.message })),
       ]);
 
       state.selectedJob = jobBody.job || null;
       state.jobEvents = asArray(eventsBody.events);
       state.jobArtifacts = asArray(artifactsBody.artifacts);
       state.jobReview = artifactsBody.review || null;
-      state.reviewTracks = buildReviewTracks({
+      state.correctionState = correctionsBody.correctionStateError
+        ? {
+            ...emptyCorrectionState(jobId),
+            loaded: false,
+            persistenceStatus: "unavailable",
+            persistenceMessage: correctionsBody.correctionStateError,
+          }
+        : normalizeCorrectionState(correctionsBody, jobId);
+      const baseTracks = buildReviewTracks({
         job: state.selectedJob,
         config: jobConfig(state.selectedJob),
         artifacts: state.jobArtifacts,
         review: state.jobReview,
       });
+      state.reviewTracks = applyCorrectionStateToTracks(baseTracks, state.correctionState);
       for (const track of state.reviewTracks) {
         if (!(track.id in state.trackVisibility)) {
           state.trackVisibility[track.id] = true;
@@ -1920,17 +2415,19 @@ const MotionJSONUI = (() => {
         state.jobEvents = [];
         state.jobArtifacts = [];
         state.reviewTracks = [];
+        state.correctionState = emptyCorrectionState();
         renderJobReview();
         return;
       }
 
       const id = state.selectedJobId;
-      const [jobResult, eventsResult, artifactsResult, artifactsAliasResult] = await Promise.all(
+      const [jobResult, eventsResult, artifactsResult, artifactsAliasResult, correctionsResult] = await Promise.all(
         [
           ["job", `/api/jobs/${encodeURIComponent(id)}`],
           ["events", `/api/jobs/${encodeURIComponent(id)}/events`],
           ["artifacts", `/api/jobs/${encodeURIComponent(id)}/artifacts`],
           ["artifactsAlias", `/api/artifacts?jobId=${encodeURIComponent(id)}`],
+          ["corrections", correctionRoute(id)],
         ].map(async ([key, route]) => {
           try {
             return [key, await api(route), null];
@@ -1946,8 +2443,20 @@ const MotionJSONUI = (() => {
       state.jobArtifacts = artifacts;
       state.jobReview = artifactsResult[1]?.review || artifactsAliasResult[1]?.review || null;
       state.errors.selectedJob = [jobResult[2], eventsResult[2], artifactsResult[2], artifactsAliasResult[2]].filter(Boolean).join(" ");
+      state.correctionState = correctionsResult[2]
+        ? {
+            ...emptyCorrectionState(id),
+            loaded: false,
+            persistenceStatus: "unavailable",
+            persistenceMessage: correctionsResult[2],
+          }
+        : normalizeCorrectionState(correctionsResult[1], id);
+      if (!state.correctionState.mergeSuggestions.length && state.jobReview?.mergeSuggestions) {
+        state.correctionState.mergeSuggestions = asArray(state.jobReview.mergeSuggestions);
+      }
       const config = jobConfig(state.selectedJob);
-      state.reviewTracks = buildReviewTracks({ job: state.selectedJob, config, artifacts: state.jobArtifacts, review: state.jobReview });
+      const baseTracks = buildReviewTracks({ job: state.selectedJob, config, artifacts: state.jobArtifacts, review: state.jobReview });
+      state.reviewTracks = applyCorrectionStateToTracks(baseTracks, state.correctionState);
       for (const track of state.reviewTracks) {
         if (!(track.id in state.trackVisibility)) state.trackVisibility[track.id] = true;
       }
@@ -2091,6 +2600,7 @@ const MotionJSONUI = (() => {
         state.jobs = [created.job, ...state.jobs.filter((job) => jobIdentifier(job) !== id)];
         state.jobEvents = [];
         state.jobArtifacts = [];
+        state.correctionState = emptyCorrectionState(id);
         state.reviewTracks = buildReviewTracks({ job: created.job, config: runtimeConfig, artifacts: [] });
         for (const track of state.reviewTracks) state.trackVisibility[track.id] = true;
         renderJobs();
@@ -2109,6 +2619,209 @@ const MotionJSONUI = (() => {
       }
     }
 
+    function selectedCorrectionFrameRange() {
+      const start = toInteger($("#correctionFrameStart").value, state.video.currentFrame);
+      const end = toInteger($("#correctionFrameEnd").value, start);
+      return [Math.max(0, Math.min(start, end)), Math.max(0, Math.max(start, end))];
+    }
+
+    function correctionPromptsFromCurrentTools() {
+      return allPromptsForDisplay().map((prompt) => ({
+        kind: prompt.kind,
+        frame_index: toInteger(prompt.frame_index, state.video.currentFrame),
+        object_id: prompt.object_id,
+        label: prompt.label,
+        data: { ...prompt.data },
+      }));
+    }
+
+    function rebuildTracksFromCorrectionState() {
+      const baseTracks = buildReviewTracks({
+        job: selectedJob(),
+        config: jobConfig(selectedJob()),
+        artifacts: state.jobArtifacts,
+        review: state.jobReview,
+      });
+      state.reviewTracks = applyCorrectionStateToTracks(baseTracks, state.correctionState);
+      for (const track of state.reviewTracks) {
+        if (!(track.id in state.trackVisibility)) state.trackVisibility[track.id] = true;
+      }
+    }
+
+    function markCorrectionFailure(message) {
+      state.correctionState.persistenceStatus = "failed";
+      state.correctionState.persistenceMessage = `Backend correction API did not save the last edit: ${message}`;
+      const last = state.correctionState.history[state.correctionState.history.length - 1];
+      if (last) last.persistenceStatus = "failed";
+      rebuildTracksFromCorrectionState();
+      renderJobReview();
+    }
+
+    function appendOptimisticCorrection(action) {
+      const entry = normalizeHistoryEntry(
+        {
+          ...action,
+          id: action.id || `local_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+          createdAt: new Date().toISOString(),
+          persistenceStatus: "saving",
+        },
+        state.correctionState.history.length,
+      );
+      const trackEdits = { ...(state.correctionState.trackEdits || {}) };
+      applyActionToTrackEdits(trackEdits, entry);
+      state.correctionState = {
+        ...state.correctionState,
+        trackEdits,
+        history: [...asArray(state.correctionState.history), entry],
+        persistenceStatus: "saving",
+        persistenceMessage: "Saving correction edit through the local backend correction API.",
+      };
+      rebuildTracksFromCorrectionState();
+      renderJobReview();
+      return entry;
+    }
+
+    function applyCorrectionResponse(response, fallbackState) {
+      const normalized = normalizeCorrectionState(response, state.selectedJobId);
+      if (!normalized.history.length) normalized.history = fallbackState.history;
+      if (!Object.keys(normalized.trackEdits || {}).length) normalized.trackEdits = fallbackState.trackEdits;
+      if (!normalized.syntheticTracks.length) normalized.syntheticTracks = fallbackState.syntheticTracks;
+      const diagnosticMessage = correctionResponseMessage(response);
+      normalized.persistenceStatus = "saved";
+      normalized.persistenceMessage = diagnosticMessage
+        ? `Correction edit saved; ${diagnosticMessage}`
+        : "Correction edit saved in the local backend project state.";
+      normalized.history = normalized.history.map((entry) => ({ ...entry, persistenceStatus: "saved" }));
+      if (response?.review) state.jobReview = response.review;
+      state.correctionState = normalized;
+      rebuildTracksFromCorrectionState();
+      renderJobReview();
+    }
+
+    async function postCorrectionAction(jobId, payload) {
+      try {
+        return await api(trackEditRoute(jobId), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        if (!/route not found|not found|404/i.test(error.message)) throw error;
+        return api(correctionRoute(jobId), {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
+    async function submitCorrectionAction(action) {
+      if (!state.selectedJobId) {
+        state.correctionState = {
+          ...emptyCorrectionState(),
+          persistenceStatus: "failed",
+          persistenceMessage: "Select a run before applying track corrections.",
+        };
+        renderJobReview();
+        return;
+      }
+
+      appendOptimisticCorrection(action);
+      const fallbackState = {
+        ...state.correctionState,
+        trackEdits: { ...(state.correctionState.trackEdits || {}) },
+        history: [...state.correctionState.history],
+        syntheticTracks: [...asArray(state.correctionState.syntheticTracks)],
+      };
+      try {
+        const response = await postCorrectionAction(state.selectedJobId, {
+          projectId: state.selectedProjectId,
+          jobId: state.selectedJobId,
+          action,
+          correction: action,
+          correctionState: {
+            format: CORRECTION_STATE_FORMAT,
+            jobId: state.selectedJobId,
+            trackEdits: state.correctionState.trackEdits,
+            syntheticTracks: state.correctionState.syntheticTracks,
+            history: state.correctionState.history,
+          },
+        });
+        applyCorrectionResponse(response, fallbackState);
+      } catch (error) {
+        markCorrectionFailure(error.message);
+      }
+    }
+
+    function relabelSelectedTrack() {
+      const trackId = state.selectedCorrectionTrackId;
+      const label = $("#correctionLabelInput").value.trim();
+      if (!trackId || !label) {
+        markCorrectionFailure("Select a track and enter a non-empty label.");
+        return;
+      }
+      submitCorrectionAction({ type: "relabel_track", trackId, label });
+    }
+
+    function mergeSelectedTracks() {
+      const trackIds = [...state.mergeSelection].filter(Boolean);
+      if (trackIds.length < 2) {
+        markCorrectionFailure("Select at least two tracks to merge.");
+        return;
+      }
+      const keepTrackId = trackIds.includes(state.selectedCorrectionTrackId) ? state.selectedCorrectionTrackId : trackIds[0];
+      submitCorrectionAction({ type: "merge_tracks", trackIds, keepTrackId });
+    }
+
+    function splitSelectedTrack() {
+      const trackId = state.selectedCorrectionTrackId;
+      if (!trackId) {
+        markCorrectionFailure("Select a track before splitting.");
+        return;
+      }
+      const frameRange = selectedCorrectionFrameRange();
+      submitCorrectionAction({ type: "split_track", trackId, frameRange });
+    }
+
+    function addObjectFromPrompts() {
+      const prompts = correctionPromptsFromCurrentTools();
+      if (!prompts.length) {
+        markCorrectionFailure("Draw a point, box, or brush prompt before adding an object.");
+        return;
+      }
+      const { objectId, label } = currentObjectIdentity();
+      const existing = new Set(state.reviewTracks.map((track) => track.id));
+      const nextObjectId = existing.has(objectId) ? `${objectId}_added_${state.correctionState.history.length + 1}` : objectId;
+      const frameRange = selectedCorrectionFrameRange();
+      submitCorrectionAction({
+        type: "add_object",
+        objectId: nextObjectId,
+        label,
+        prompts,
+        frameRange,
+        correctionRequest: buildCorrectionRequestFromPrompts(nextObjectId, prompts, frameRange),
+      });
+    }
+
+    function repairSelectedTrackFromPrompts() {
+      const trackId = state.selectedCorrectionTrackId;
+      const prompts = correctionPromptsFromCurrentTools();
+      if (!trackId) {
+        markCorrectionFailure("Select a track before repairing it.");
+        return;
+      }
+      if (!prompts.length) {
+        markCorrectionFailure("Draw a point, box, or brush prompt before repairing a track.");
+        return;
+      }
+      const frameRange = selectedCorrectionFrameRange();
+      submitCorrectionAction({
+        type: "repair_track",
+        trackId,
+        prompts,
+        frameRange,
+        correctionRequest: buildCorrectionRequestFromPrompts(trackId, prompts, frameRange),
+      });
+    }
+
     $("#refreshButton").addEventListener("click", refreshAll);
     $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
@@ -2123,11 +2836,75 @@ const MotionJSONUI = (() => {
     });
 
     $("#trackList").addEventListener("change", (event) => {
-      const toggle = event.target.closest("[data-track-visibility]");
-      if (!toggle) return;
-      state.trackVisibility[toggle.dataset.trackVisibility] = toggle.checked;
+      const visibleToggle = event.target.closest("[data-track-visible]");
+      if (visibleToggle) {
+        const trackId = visibleToggle.dataset.trackVisible;
+        state.trackVisibility[trackId] = visibleToggle.checked;
+        submitCorrectionAction({ type: "set_track_visibility", trackId, visible: visibleToggle.checked });
+        return;
+      }
+
+      const exportToggle = event.target.closest("[data-track-export]");
+      if (exportToggle) {
+        submitCorrectionAction({
+          type: "set_export_inclusion",
+          trackId: exportToggle.dataset.trackExport,
+          included: exportToggle.checked,
+        });
+        return;
+      }
+
+      const mergeToggle = event.target.closest("[data-track-merge]");
+      if (mergeToggle) {
+        if (mergeToggle.checked) state.mergeSelection.add(mergeToggle.dataset.trackMerge);
+        else state.mergeSelection.delete(mergeToggle.dataset.trackMerge);
+        renderTrackList();
+        renderCorrectionPanel();
+      }
+    });
+
+    $("#trackList").addEventListener("click", (event) => {
+      const editButton = event.target.closest("[data-track-edit]");
+      if (editButton) {
+        state.selectedCorrectionTrackId = editButton.dataset.trackEdit;
+        renderCorrectionPanel();
+        return;
+      }
+
+      const deleteButton = event.target.closest("[data-track-delete]");
+      if (deleteButton) {
+        submitCorrectionAction({ type: "delete_track", trackId: deleteButton.dataset.trackDelete });
+      }
+    });
+
+    $("#correctionTrackSelect").addEventListener("change", (event) => {
+      state.selectedCorrectionTrackId = event.target.value;
+      renderCorrectionPanel();
+    });
+
+    $("#relabelTrackButton").addEventListener("click", relabelSelectedTrack);
+    $("#mergeTracksButton").addEventListener("click", mergeSelectedTracks);
+    $("#splitTrackButton").addEventListener("click", splitSelectedTrack);
+    $("#addObjectButton").addEventListener("click", addObjectFromPrompts);
+    $("#repairTrackButton").addEventListener("click", repairSelectedTrackFromPrompts);
+
+    $("#useCurrentFrameRangeButton").addEventListener("click", () => {
+      $("#correctionFrameStart").value = String(state.video.currentFrame);
+      $("#correctionFrameEnd").value = String(state.video.currentFrame);
+      renderCorrectionPanel();
+    });
+
+    $("#mergeSuggestionList").addEventListener("click", (event) => {
+      const suggestion = event.target.closest("[data-merge-suggestion]");
+      if (!suggestion) return;
+      state.mergeSelection = new Set(
+        suggestion.dataset.mergeSuggestion
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+      );
       renderTrackList();
-      drawOverlay();
+      renderCorrectionPanel();
     });
 
     document.querySelectorAll(".goal").forEach((button) => {
@@ -2165,6 +2942,7 @@ const MotionJSONUI = (() => {
       state.jobEvents = [];
       state.jobArtifacts = [];
       state.reviewTracks = [];
+      state.correctionState = emptyCorrectionState();
       await refreshProjectData();
     });
 
@@ -2344,11 +3122,17 @@ const MotionJSONUI = (() => {
 
   const publicApi = {
     API_ROUTES,
+    CORRECTION_STATE_FORMAT,
     PRESETS,
     RUN_CONFIG_SCHEMA,
+    applyCorrectionStateToTracks,
+    buildCorrectionRequestFromPrompts,
     buildRunConfig,
     buildReviewTracks,
     containedVideoRect,
+    correctionDiagnosticMessages,
+    correctionResponseMessage,
+    normalizeCorrectionState,
     mapClientPointToVideo,
     normalizePrompt,
     parseCsv,

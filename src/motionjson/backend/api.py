@@ -25,6 +25,7 @@ from .beta import (
     revoke_beta_invite,
 )
 from .billing import get_billing_status, list_plan_catalog
+from .corrections import apply_track_edit, list_track_corrections
 from .db import connect, initialize_database
 from .jobs import enqueue_asset_package_job, enqueue_extract_job, enqueue_render_job, get_job, list_job_events, list_jobs
 from .library import (
@@ -303,6 +304,17 @@ class MotionJSONAPI:
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "artifacts" and method == "GET":
             job = get_job(conn, user_id=user_id, job_id=parts[2])
             return {"artifacts": [_public_asset(asset) for asset in list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])]}
+        if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "corrections" and method == "GET":
+            return {"corrections": list_track_corrections(conn, user_id=user_id, job_id=parts[2])}
+        if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "track-edits" and method == "POST":
+            result = apply_track_edit(
+                conn,
+                storage=self.storage(),
+                user_id=user_id,
+                job_id=parts[2],
+                payload=payload,
+            )
+            return HTTPStatus.CREATED, "application/json", json.dumps(result, sort_keys=True).encode("utf-8")
         if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "asset-packages" and method == "POST":
             job = enqueue_asset_package_job(
                 conn,

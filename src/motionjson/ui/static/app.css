@@ -686,7 +686,9 @@ input[type="range"] {
 
 .event-row strong,
 .track-row strong,
-.diagnostic-row strong {
+.diagnostic-row strong,
+.history-row strong,
+.suggestion-row strong {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--ink);
@@ -706,10 +708,16 @@ input[type="range"] {
   opacity: 0.58;
 }
 
+.track-row.is-deleted {
+  border-style: dashed;
+}
+
 .track-topline,
 .track-meta,
 .track-actions,
-.diagnostic-actions {
+.diagnostic-actions,
+.correction-actions,
+.correction-meta {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -747,6 +755,77 @@ input[type="range"] {
   width: 15px;
   min-height: 15px;
   accent-color: var(--ready);
+}
+
+.mini-action {
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.danger-action {
+  border-color: #f0a29b;
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.correction-editor,
+.correction-range {
+  display: grid;
+  gap: 8px;
+}
+
+.correction-editor {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.correction-range {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-top: 8px;
+}
+
+.correction-range button {
+  grid-column: 1 / -1;
+}
+
+.correction-actions {
+  margin-top: 10px;
+}
+
+.correction-actions button {
+  flex: 1 1 118px;
+}
+
+.correction-meta {
+  margin-top: 8px;
+}
+
+.panel-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.suggestion-list,
+.history-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.suggestion-row,
+.history-row {
+  display: grid;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
+.suggestion-row {
+  width: 100%;
+  text-align: left;
 }
 
 .diagnostic-list {

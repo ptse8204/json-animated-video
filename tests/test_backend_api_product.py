@@ -7,7 +7,7 @@ from pathlib import Path
 
 from motionjson.backend.api import MotionJSONAPI
 from motionjson.backend.api_keys import create_api_key, list_api_keys, require_api_key, revoke_api_key
-from motionjson.backend.assets import list_assets_for_job, register_upload
+from motionjson.backend.assets import list_assets_for_job, register_generated_asset, register_upload
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
 from motionjson.backend.jobs import enqueue_asset_package_job, enqueue_extract_job, enqueue_render_job
@@ -112,6 +112,77 @@ def test_dependency_light_rest_api_covers_projects_assets_jobs_and_webhooks(tmp_
     status, _headers, body = api.handle("GET", f"/v1/jobs/{extract_job['id']}/events", headers, b"")
     assert status == 200
     assert json.loads(body)["events"][0]["event_type"] == "queued"
+
+
+def test_rest_api_track_edits_persist_corrections_and_update_artifacts(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    key = create_api_key(conn, user_id=user["id"], name="API")["apiKey"]
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="mock", max_frames=2)
+    tracks_payload = {
+        "format": "motionjson.tracks.v0.1",
+        "tracks": [
+            {
+                "objectId": "object_0",
+                "label": "red ball",
+                "source": "mock",
+                "frameCount": 2,
+                "visibleFrameCount": 2,
+                "exportStatus": "accepted",
+                "warnings": [],
+                "frames": [
+                    {"frame": 1, "visible": True, "bbox": [10, 10, 12, 12]},
+                    {"frame": 2, "visible": True, "bbox": [11, 10, 12, 12]},
+                ],
+            }
+        ],
+    }
+    register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        source_job_id=job["id"],
+        kind="track_summary",
+        data=json.dumps(tracks_payload).encode("utf-8"),
+        rel_path="tracks.json",
+        content_type="application/json",
+        metadata={"aiUsage": "none", "fixture": "rest-track-edits"},
+    )
+    conn.close()
+
+    api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    headers = {"authorization": f"Bearer {key}"}
+    status, _headers, body = api.handle(
+        "POST",
+        f"/v1/jobs/{job['id']}/track-edits",
+        headers,
+        json.dumps({"operation": "relabel", "objectId": "object_0", "label": "API ball"}).encode(),
+    )
+
+    assert status == 201
+    edited = json.loads(body)
+    assert edited["correction"]["operation"] == "relabel"
+    assert edited["updatedAssets"][0]["kind"] == "track_summary"
+
+    status, _headers, body = api.handle(
+        "POST",
+        f"/v1/jobs/{job['id']}/track-edits",
+        headers,
+        json.dumps({"action": {"type": "set_export_inclusion", "trackId": "object_0", "included": False}}).encode(),
+    )
+
+    assert status == 201
+    export_edit = json.loads(body)
+    assert export_edit["correction"]["operation"] == "set_export_inclusion"
+    assert export_edit["result"]["exportIncluded"] is False
+    assert export_edit["result"]["visibleFrameCount"] == 2
+
+    status, _headers, body = api.handle("GET", f"/v1/jobs/{job['id']}/corrections", headers, b"")
+    assert status == 200
+    corrections = json.loads(body)["corrections"]
+    assert corrections[0]["operation"] == "relabel"
+    assert corrections[0]["result"]["label"] == "API ball"
+    assert corrections[1]["operation"] == "set_export_inclusion"
 
 
 def test_worker_render_job_registers_remotion_plan_and_manifest_with_no_ai_usage(tmp_path):

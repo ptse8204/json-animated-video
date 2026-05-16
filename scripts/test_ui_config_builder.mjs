@@ -217,11 +217,81 @@ const fallbackTerminalTracks = ui.buildReviewTracks({
 });
 assert.deepEqual(fallbackTerminalTracks, [], "terminal fallback jobs must not synthesize fake overlay tracks");
 
+const correctionRequest = ui.buildCorrectionRequestFromPrompts(
+  "red_ball",
+  [
+    { kind: "positive_point", frame_index: 2, data: { x: 120, y: 90 } },
+    { kind: "negative_point", frame_index: 2, data: { x: 8, y: 10 } },
+    { kind: "box", frame_index: 2, data: { x: 100, y: 80, w: 40, h: 38 } },
+  ],
+  [2, 4],
+);
+assert.equal(correctionRequest.schema, "motionjson.correction_request.v0.1");
+assert.equal(correctionRequest.aiUsage, "none");
+assert.deepEqual(correctionRequest.propagation.frameRange, [3, 5]);
+assert.deepEqual(
+  correctionRequest.operations.map((operation) => operation.type),
+  ["add_point", "remove_point", "box"],
+);
+
+const normalizedCorrectionState = ui.normalizeCorrectionState(
+  {
+    history: [
+      { type: "relabel_track", trackId: "red_ball", label: "ball corrected" },
+      { type: "set_export_inclusion", trackId: "red_ball", included: false },
+    ],
+  },
+  "job_1",
+);
+const correctedTracks = ui.applyCorrectionStateToTracks(
+  [
+    {
+      id: "red_ball",
+      objectId: "red_ball",
+      label: "red ball",
+      source: "mock",
+      confidence: 0.9,
+      frameCount: 3,
+      visibleFrameCount: 3,
+      frameStart: 0,
+      frameEnd: 2,
+      warnings: [],
+      exportStatus: "accepted",
+      color: "#10a37f",
+      frames: [{ frame: 0, bbox: { x: 10, y: 10, w: 30, h: 30 }, visible: true }],
+    },
+  ],
+  normalizedCorrectionState,
+);
+assert.equal(correctedTracks[0].label, "ball corrected");
+assert.equal(correctedTracks[0].exportIncluded, false);
+assert.equal(correctedTracks[0].exportStatus, "excluded");
+
+const repairMessage = ui.correctionResponseMessage({
+  repairDiagnostics: {
+    status: "unavailable",
+    diagnostics: [
+      {
+        code: "repair_provider_unavailable",
+        provider: "sam2-local",
+        message: "SAM2 local repair is not configured.",
+      },
+    ],
+    partialRerun: {
+      available: false,
+      status: "not_enqueued",
+      reason: "Partial rerun worker is not implemented.",
+    },
+  },
+});
+assert.match(repairMessage, /repair_provider_unavailable/);
+assert.match(repairMessage, /sam2-local/);
+
 console.log(
   JSON.stringify(
     {
       status: "ok",
-      checked: ["coordinate-mapping", "run-config-builder", "review-track-gating", "python-config-validation"],
+      checked: ["coordinate-mapping", "run-config-builder", "review-track-gating", "correction-state", "python-config-validation"],
     },
     null,
     2,

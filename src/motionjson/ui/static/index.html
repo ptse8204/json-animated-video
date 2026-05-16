@@ -44,8 +44,8 @@
       <section class="workspace" aria-label="Video prompt workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Phase 9</p>
-            <h1>Job runs and result review</h1>
+            <p class="eyebrow">Phase 10</p>
+            <h1>Track correction workflow</h1>
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
@@ -300,6 +300,53 @@
             <span id="trackCount" class="subtle-chip">0 tracks</span>
           </div>
           <div id="trackList" class="track-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Corrections</h2>
+            <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
+          </div>
+          <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
+          <div class="correction-editor">
+            <label>
+              <span>Track</span>
+              <select id="correctionTrackSelect" aria-label="Correction target track"></select>
+            </label>
+            <label>
+              <span>Label</span>
+              <input id="correctionLabelInput" type="text" placeholder="object label" />
+            </label>
+            <button id="relabelTrackButton" type="button">Relabel</button>
+          </div>
+          <div class="correction-range">
+            <label>
+              <span>Start frame</span>
+              <input id="correctionFrameStart" type="number" min="0" step="1" value="0" />
+            </label>
+            <label>
+              <span>End frame</span>
+              <input id="correctionFrameEnd" type="number" min="0" step="1" value="0" />
+            </label>
+            <button id="useCurrentFrameRangeButton" type="button">Use current</button>
+          </div>
+          <div class="correction-actions">
+            <button id="mergeTracksButton" type="button">Merge selected</button>
+            <button id="splitTrackButton" type="button">Split track</button>
+            <button id="addObjectButton" type="button">Add from prompts</button>
+            <button id="repairTrackButton" class="primary-action" type="button">Repair with prompts</button>
+          </div>
+          <div class="correction-meta">
+            <span id="mergeSelectionCount" class="subtle-chip">0 selected</span>
+            <span id="correctionPromptCount" class="subtle-chip">0 prompts</span>
+          </div>
+          <div id="mergeSuggestionList" class="suggestion-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Correction History</h2>
+            <span id="correctionHistoryCount" class="subtle-chip">0 edits</span>
+          </div>
+          <div id="correctionHistory" class="history-list"></div>
         </section>
         <section class="compact-panel">
           <h2>Fallback Diagnostics</h2>

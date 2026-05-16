@@ -76,7 +76,8 @@ packages are not mistaken for successful extraction.
 
 The local UI exposes `/api/health`, `/api/capabilities`, `/api/projects`,
 `/api/videos`, `/api/videos/{videoId}/content`, `/api/run-config/validate`,
-`/api/jobs`, `/api/progress`, job event/artifact routes, and
+`/api/jobs`, `/api/progress`, job event/artifact/review routes, correction
+history and track-edit routes, and
 `/api/exports/formats`. It omits internal storage keys and local `file://`
 storage URIs from public asset responses. `POST /api/run-config/validate`
 normalizes Phase 8 wizard configs with `ExtractionRunConfig` and reports
@@ -109,6 +110,8 @@ smoke command.
 - `GET /v1/jobs/{jobId}/events`
 - `POST /v1/jobs/{jobId}/cancel`
 - `GET /v1/jobs/{jobId}/artifacts`
+- `GET /v1/jobs/{jobId}/corrections`
+- `POST /v1/jobs/{jobId}/track-edits`
 - `POST /v1/projects/{projectId}/asset-packages`
 - `POST /v1/projects/{projectId}/renders`
 - `POST /v1/webhooks`
