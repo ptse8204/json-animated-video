@@ -76,6 +76,13 @@ def _add_rights_flags(p: argparse.ArgumentParser) -> None:
 def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="backend_command")
 
+    diagnostics = sub.add_parser("diagnostics", help="Print provider and environment capability diagnostics")
+    diagnostics.add_argument("--json", action="store_true", help="Emit machine-readable JSON diagnostics (default output)")
+    diagnostics.add_argument("--video", default=None, help="Optional video path to probe with local video IO")
+    diagnostics.add_argument("--output-dir", "--out", dest="output_dir", default=None, help="Optional output directory to check for writability")
+    diagnostics.add_argument("--sam2-checkpoint", default=None, help="Optional local SAM2 checkpoint path to validate")
+    diagnostics.add_argument("--sam2-config", "--sam2-model-config", dest="sam2_model_config", default=None, help="Optional local SAM2 model config path to validate")
+
     init = sub.add_parser("init", help="Initialize backend SQLite schema and storage root")
     _add_common(init)
 
@@ -354,6 +361,18 @@ def _rights_context(args: argparse.Namespace) -> dict[str, Any]:
 def run_backend_command(args: argparse.Namespace) -> None:
     if args.backend_command is None:
         raise SystemExit("backend command is required")
+    if args.backend_command == "diagnostics":
+        from motionjson.capabilities import build_capability_report
+
+        _print_json(
+            build_capability_report(
+                output_dir=args.output_dir,
+                video_path=args.video,
+                sam2_checkpoint=args.sam2_checkpoint,
+                sam2_model_config=args.sam2_model_config,
+            )
+        )
+        return
     conn, storage = _open(args)
     if args.backend_command == "init":
         Path(args.storage_root).mkdir(parents=True, exist_ok=True)

@@ -227,6 +227,22 @@ They are deterministic, require no credentials, and make no network calls. Tests
 
 SAM2 provider tests inject fake predictors or fake hosted clients. They do not import SAM2, torch, Replicate, RunPod, or touch the network.
 
+## Capability Diagnostics
+
+`motionjson.capabilities` reports provider and environment readiness as JSON
+without instantiating extraction providers. The backend CLI exposes it through:
+
+```bash
+python -m motionjson.cli backend diagnostics --json
+```
+
+Diagnostics include dependency availability, CUDA status, FFmpeg status, video
+IO checks, output-directory writability, provider status, install hints, network
+requirements, no-model safety, and mock availability. Hosted provider checks are
+presence-only for endpoint/auth environment variables; token values are not
+printed. The command is intended for UI preflight, local troubleshooting, and
+backend smoke checks before launching expensive or optional ML workflows.
+
 ## Environment Variables
 
 Use `.env.example` for placeholders only:

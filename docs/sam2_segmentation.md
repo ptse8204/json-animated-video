@@ -30,6 +30,25 @@ Both SAM2 modes accept prompts:
 
 `--prompt-box` is `x,y,w,h` at the CLI boundary.
 
+## Diagnose Before Running
+
+Use provider diagnostics to confirm whether SAM2, torch, CUDA, model paths,
+hosted endpoint settings, FFmpeg, video IO, and local output permissions are
+available:
+
+```bash
+python -m motionjson.cli backend diagnostics --json \
+  --video examples/demo_red_ball.mp4 \
+  --output-dir out/sam2-local \
+  --sam2-checkpoint /path/to/sam2_checkpoint.pt \
+  --sam2-config /path/to/sam2_config.yaml
+```
+
+Diagnostics do not import SAM2, download weights, call hosted services, or read
+secret token values. `sam2-local` can report `missing_dependency`,
+`not_configured`, `missing_model`, or `available_cpu_only`; those statuses
+should be surfaced before a user starts an extraction run.
+
 ## Local SAM2 Setup
 
 The local provider lives at `motionjson.providers.sam2.LocalSAM2SegmentationProvider`. SAM2 and torch are optional and are not default MotionJSON dependencies.

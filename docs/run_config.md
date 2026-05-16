@@ -78,4 +78,7 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 - `sam2-local` and `sam2-hosted` require a point or box prompt in the config.
 - Hosted SAM2 config stores auth environment variable names, not token values.
 - `sample_fps <= 0` remains accepted for CLI compatibility and keeps the current source-FPS sampling behavior.
-- Provider capability checks, CUDA/model diagnostics, and artifact-directory `run_config.json` emission are later-phase work.
+- Provider capability checks and CUDA/model diagnostics are available through
+  `python -m motionjson.cli backend diagnostics --json`; see
+  [Provider capabilities and diagnostics](provider_capabilities.md).
+- Artifact-directory `run_config.json` emission remains later-phase work.

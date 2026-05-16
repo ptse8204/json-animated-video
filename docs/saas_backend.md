@@ -39,6 +39,20 @@ OpenRouter-style LLM/VLM routing remains reasoning-only and is explicitly not
 accepted as a pixel segmentation provider. Hosted/SAM2/network providers remain
 separate opt-in integration points and are not used by backend tests.
 
+## Diagnostics
+
+Provider diagnostics are available without initializing the backend database or
+storage root:
+
+```bash
+python -m motionjson.cli backend diagnostics --json
+```
+
+Use `--video` and `--output-dir` to probe a planned source video and output
+location. Diagnostics are advisory preflight data for UI and CLI workflows; they
+do not change backend provider policy, start jobs, make hosted network calls, or
+print secret values.
+
 ## Usage, Latency, And Cost Dashboard
 
 Phase 16 records extraction performance data without changing provider policy.
@@ -59,6 +73,7 @@ store secrets.
 
 ```bash
 python -m motionjson.cli backend init --db .motionjson/backend.sqlite --storage-root .motionjson/storage
+python -m motionjson.cli backend diagnostics --json
 python -m motionjson.cli backend create-user --email user@example.com --password-stdin
 python -m motionjson.cli backend login --email user@example.com --password-stdin
 python -m motionjson.cli backend create-project --session-token-env MOTIONJSON_SESSION_TOKEN --name "Demo"
