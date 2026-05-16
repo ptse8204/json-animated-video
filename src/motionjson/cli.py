@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .benchmark import benchmark_scene
+from .config import ConfigValidationError, build_extraction_run_config_from_args
 from .corrections import build_correction_request, correct_output_dir
 from .exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
 from .exporters.production_assets import export_transparent_webm_object
@@ -330,27 +331,31 @@ def build_rights_context_from_args(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run_extract(args: argparse.Namespace) -> dict:
+    try:
+        run_config = build_extraction_run_config_from_args(args)
+    except ConfigValidationError as exc:
+        raise SystemExit(f"Invalid extraction config: {exc}") from exc
     _validate_single_object_id(args.object_id)
     if args.object_label and not args.object_mask_dir:
         raise SystemExit("--object-label is only valid with --object-mask-dir")
     if args.object_mask_dir:
         specs = build_multi_object_specs(args)
         scene = run_multi_object_pipeline(
-            video_path=args.video,
-            out_dir=args.out,
+            video_path=run_config.input_video.path,
+            out_dir=run_config.output.directory,
             object_specs=specs,
-            sample_fps=args.sample_fps,
-            max_frames=args.max_frames,
-            min_area=args.min_area,
-            simplify_ratio=args.simplify,
-            feather=args.feather,
-            layer_padding=args.layer_padding,
-            sprite_format=args.sprite_format,
-            output_mode=args.output_mode,
-            production_avif=args.production_avif,
+            sample_fps=run_config.sampling.sample_fps,
+            max_frames=run_config.sampling.max_frames,
+            min_area=run_config.filters.min_area,
+            simplify_ratio=run_config.filters.simplify_ratio,
+            feather=run_config.export.feather,
+            layer_padding=run_config.export.layer_padding,
+            sprite_format=run_config.export.sprite_format,
+            output_mode=run_config.export.output_mode,
+            production_avif=run_config.export.production_avif,
             rights_context=build_rights_context_from_args(args),
         )
-        out = Path(args.out)
+        out = Path(run_config.output.directory)
         print(f"Wrote {out / 'scene_graph.json'}")
         print(f"Wrote {out / 'object_motion.json'}")
         print(f"Wrote {out / 'web_asset_manifest.json'}")
@@ -367,20 +372,20 @@ def run_extract(args: argparse.Namespace) -> dict:
     provider = build_provider(args)
     try:
         scene = run_pipeline(
-            video_path=args.video,
-            out_dir=args.out,
+            video_path=run_config.input_video.path,
+            out_dir=run_config.output.directory,
             mask_provider=provider,
-            object_id=args.object_id,
-            object_label=args.label,
-            sample_fps=args.sample_fps,
-            max_frames=args.max_frames,
-            min_area=args.min_area,
-            simplify_ratio=args.simplify,
-            feather=args.feather,
-            layer_padding=args.layer_padding,
-            sprite_format=args.sprite_format,
-            output_mode=args.output_mode,
-            production_avif=args.production_avif,
+            object_id=run_config.object_id,
+            object_label=run_config.label,
+            sample_fps=run_config.sampling.sample_fps,
+            max_frames=run_config.sampling.max_frames,
+            min_area=run_config.filters.min_area,
+            simplify_ratio=run_config.filters.simplify_ratio,
+            feather=run_config.export.feather,
+            layer_padding=run_config.export.layer_padding,
+            sprite_format=run_config.export.sprite_format,
+            output_mode=run_config.export.output_mode,
+            production_avif=run_config.export.production_avif,
             rights_context=build_rights_context_from_args(args),
         )
     except RuntimeError as exc:
@@ -388,19 +393,19 @@ def run_extract(args: argparse.Namespace) -> dict:
             raise SystemExit(str(exc)) from exc
         raise
 
-    out = Path(args.out)
-    if args.benchmark:
+    out = Path(run_config.output.directory)
+    if run_config.debug.benchmark:
         report = benchmark_scene(
-            video_path=args.video,
+            video_path=run_config.input_video.path,
             out_dir=out,
             scene=scene,
-            iterations=args.benchmark_iterations,
+            iterations=run_config.debug.benchmark_iterations,
         )
         write_json(out / "benchmark_report.json", report)
         write_profiled_outputs(
             out_dir=out,
-            video_path=Path(args.video),
-            object_id=args.object_id,
+            video_path=Path(run_config.input_video.path),
+            object_id=run_config.object_id,
             scene=scene,
             profile_updates={"benchmarkSummary": report["comparison"]},
         )

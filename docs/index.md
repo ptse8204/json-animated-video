@@ -14,6 +14,7 @@ flat graphics.
 - [Onboarding guide](onboarding.md)
 - [Security checklist](security_checklist.md)
 - [Developer API](developer_api.md)
+- [Extraction run config](run_config.md)
 - [Runtime guide](runtime.md)
 - [Privacy and data handling](privacy.md)
 
