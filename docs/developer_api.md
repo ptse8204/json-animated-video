@@ -53,6 +53,34 @@ python -m motionjson.cli backend serve-api \
   --port 8765
 ```
 
+## Local UI Server
+
+Phase 7 also adds a local UI launcher for browser-based project selection,
+health checks, and provider capability visibility:
+
+```bash
+motionjson ui
+```
+
+For no-model development and smoke checks on CPU-only machines, use:
+
+```bash
+python3 -m motionjson.cli ui --no-open --mock
+```
+
+The UI server is local-first: it uses the configured SQLite database and local
+storage root, does not require secrets in mock mode, and does not contact
+hosted model providers by default. Provider failures should remain visible in
+diagnostics so missing CUDA, SAM2 weights, FFmpeg, detectors, or optional
+packages are not mistaken for successful extraction.
+
+The local UI exposes `/api/health`, `/api/capabilities`, `/api/projects`,
+`/api/videos`, `/api/jobs`, `/api/progress`, job event/artifact routes, and
+`/api/exports/formats`. It omits internal storage keys and local `file://`
+storage URIs from public asset responses. `POST /api/jobs` enqueues a local
+extract job and defaults to `mock` when the UI is launched with `--mock`. See
+[Local UI](local_ui.md) for route details and the static build smoke command.
+
 ## Endpoints
 
 - `POST /v1/projects`

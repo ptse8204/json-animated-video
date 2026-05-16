@@ -100,11 +100,19 @@ python -m motionjson.cli backend error-report --project-id PROJECT_ID --message 
 python -m motionjson.cli backend admin-dashboard --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend list-plans
 python -m motionjson.cli backend billing-status --session-token-env MOTIONJSON_SESSION_TOKEN
+motionjson ui
+python3 -m motionjson.cli ui --no-open --mock
 ```
 
 `--db` and `--storage-root` can be passed to every backend command. Defaults
 come from `MOTIONJSON_BACKEND_DB` and `MOTIONJSON_STORAGE_ROOT`, falling back to
 `.motionjson/backend.sqlite` and `.motionjson/storage`.
+
+The local UI launcher uses the same local-first storage model for projects,
+videos, jobs, and artifacts. `--mock` starts the UI in no-model mode so
+CPU-only environments can exercise health, capabilities, project setup, and UI
+smoke flows without CUDA, SAM2 weights, detector packages, hosted models, or
+secrets.
 
 Upload and extraction commands accept local rights metadata flags such as
 `--rights-display-text`, `--license`, `--license-name`, `--creator-approved`,

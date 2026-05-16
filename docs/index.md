@@ -14,6 +14,7 @@ flat graphics.
 - [Onboarding guide](onboarding.md)
 - [Security checklist](security_checklist.md)
 - [Developer API](developer_api.md)
+- [Local UI](local_ui.md)
 - [Extraction run config](run_config.md)
 - [Job artifacts and progress](job_artifacts.md)
 - [Extraction provider pipeline](provider_pipeline.md)

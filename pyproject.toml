@@ -16,4 +16,4 @@ motionjson = "motionjson.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-motionjson = ["schemas/*.json"]
+motionjson = ["schemas/*.json", "ui/static/*", "ui/static/**/*"]

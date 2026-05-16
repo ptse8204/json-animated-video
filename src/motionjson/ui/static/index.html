@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MotionJSON Local UI</title>
+    <link rel="stylesheet" href="/ui/app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <strong>MotionJSON</strong>
+            <span>Local object tracing</span>
+          </div>
+        </div>
+        <nav class="goal-list" aria-label="Tracing goals">
+          <button class="goal is-active" type="button" data-goal="Trace one object">Trace one object</button>
+          <button class="goal" type="button" data-goal="Find objects from text">Find objects from text</button>
+          <button class="goal" type="button" data-goal="Find moving objects">Find moving objects</button>
+          <button class="goal" type="button" data-goal="Propose all visible segments">Propose all visible segments</button>
+          <button class="goal" type="button" data-goal="Review existing result">Review existing result</button>
+        </nav>
+        <section class="compact-panel">
+          <h2>Local API</h2>
+          <dl id="healthStatus" class="facts"></dl>
+        </section>
+        <section class="compact-panel">
+          <h2>Mock / no-model</h2>
+          <dl id="mockStatus" class="facts"></dl>
+        </section>
+      </aside>
+
+      <section class="workspace" aria-label="Local UI shell">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Phase 7 shell</p>
+            <h1>Backend readiness and project setup</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="apiStatus" class="status-chip">Checking API</span>
+            <button id="refreshButton" class="primary-action" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section class="overview-grid">
+          <article class="panel status-panel">
+            <div class="panel-heading">
+              <h2>Capabilities</h2>
+              <span id="capabilitySummary" class="status-chip">Checking</span>
+            </div>
+            <p id="capabilityNotice" class="panel-note"></p>
+            <div id="capabilityList" class="capability-list" aria-live="polite"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>Project</h2>
+              <span id="projectCount" class="subtle-chip">0 projects</span>
+            </div>
+            <form id="projectForm" class="inline-form">
+              <label>
+                <span>Project name</span>
+                <input id="projectName" type="text" value="MotionJSON local project" required />
+              </label>
+              <button type="submit">Create</button>
+            </form>
+            <select id="projectSelect" aria-label="Project"></select>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>Video</h2>
+              <span id="videoCount" class="subtle-chip">0 videos</span>
+            </div>
+            <form id="videoForm" class="inline-form">
+              <label>
+                <span>Local path</span>
+                <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
+              </label>
+              <button type="submit">Add video</button>
+            </form>
+            <select id="videoSelect" aria-label="Video"></select>
+            <div id="videoList" class="artifact-list"></div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-heading">
+              <h2>Run Defaults</h2>
+              <span class="subtle-chip">No-model safe</span>
+            </div>
+            <dl id="runDefaults" class="facts"></dl>
+          </article>
+        </section>
+      </section>
+
+      <aside class="right-rail" aria-label="Jobs and artifacts">
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Jobs</h2>
+            <span id="jobSummary" class="subtle-chip">0 active</span>
+          </div>
+          <div id="jobList" class="artifact-list"></div>
+        </section>
+        <section class="compact-panel">
+          <h2>Next APIs</h2>
+          <div id="routeList" class="route-list"></div>
+        </section>
+      </aside>
+    </main>
+    <script src="/ui/app.js"></script>
+  </body>
+</html>

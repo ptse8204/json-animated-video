@@ -178,6 +178,13 @@ def build_parser() -> argparse.ArgumentParser:
     from .backend.cli import add_backend_parser
 
     add_backend_parser(backend)
+    ui = sub.add_parser("ui", help="Launch the local MotionJSON UI", description="Launch the local MotionJSON UI")
+    ui.add_argument("--db", type=str, default=os.environ.get("MOTIONJSON_BACKEND_DB", ".motionjson/backend.sqlite"), help="SQLite database path for local projects and jobs")
+    ui.add_argument("--storage-root", type=str, default=os.environ.get("MOTIONJSON_STORAGE_ROOT", ".motionjson/storage"), help="Local file storage root for uploaded videos and artifacts")
+    ui.add_argument("--host", type=str, default="127.0.0.1", help="Host interface for the local UI server")
+    ui.add_argument("--port", type=int, default=8766, help="Port for the local UI server; use 0 to choose a free port")
+    ui.add_argument("--no-open", action="store_true", help="Do not open a browser automatically")
+    ui.add_argument("--mock", action="store_true", help="Start the UI in no-model mock mode for CPU-only smoke checks")
     return parser
 
 
@@ -852,9 +859,27 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
     return exports
 
 
+def run_ui(args: argparse.Namespace) -> None:
+    from .ui.server import serve_ui
+
+    db_path = Path(args.db)
+    storage_root = Path(args.storage_root)
+    print(f"Database: {db_path}")
+    print(f"Storage: {storage_root}")
+    print(f"Mock mode: {'on' if args.mock else 'off'}")
+    serve_ui(
+        db_path=db_path,
+        storage_root=storage_root,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_open,
+        mock_mode=args.mock,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate", "correct", "export", "backend"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "correct", "export", "backend", "ui"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -877,6 +902,9 @@ def main(argv: list[str] | None = None) -> None:
         from .backend.cli import run_backend_command
 
         run_backend_command(args)
+        return
+    if args.command == "ui":
+        run_ui(args)
         return
     parser.print_help()
 
