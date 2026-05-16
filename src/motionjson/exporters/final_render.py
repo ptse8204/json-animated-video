@@ -300,15 +300,18 @@ def build_final_export_manifest(
     scene: dict[str, Any],
     exports: list[dict[str, Any]],
     object_id: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     canvas = _canvas(scene)
-    return {
+    manifest: dict[str, Any] = {
         "schema": FINAL_EXPORT_SCHEMA,
         "version": "0.1.0",
         "aiUsage": "none",
         "source": {
             "sceneGraph": "scene_graph.json",
-            "directory": str(Path(out_dir)),
+            "directory": ".",
             "objectId": object_id,
             "width": canvas["width"],
             "height": canvas["height"],
@@ -323,6 +326,13 @@ def build_final_export_manifest(
             "No segmentation, matting, LLM, VLM, or external AI provider is invoked during export.",
         ],
     }
+    if provenance is not None:
+        manifest["provenance"] = provenance
+    if config is not None:
+        manifest["config"] = config
+    if validation is not None:
+        manifest["validation"] = validation
+    return manifest
 
 
 def write_final_export_manifest(
@@ -332,8 +342,19 @@ def write_final_export_manifest(
     scene: dict[str, Any],
     exports: list[dict[str, Any]],
     object_id: str | None = None,
+    provenance: dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    manifest = build_final_export_manifest(out_dir=out_dir, scene=scene, exports=exports, object_id=object_id)
+    manifest = build_final_export_manifest(
+        out_dir=out_dir,
+        scene=scene,
+        exports=exports,
+        object_id=object_id,
+        provenance=provenance,
+        config=config,
+        validation=validation,
+    )
     write_json(manifest_path, manifest)
     return manifest
 

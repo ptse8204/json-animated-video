@@ -14,8 +14,12 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}/review",
     "/api/jobs/{jobId}/corrections",
     "/api/jobs/{jobId}/track-edits",
+    "/api/jobs/{jobId}/validate",
+    "/api/jobs/{jobId}/exports",
     "/api/progress",
     "/api/artifacts",
+    "/api/exports/formats",
+    "/api/projects/{projectId}/imports/motionjson",
   ];
 
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
@@ -23,6 +27,12 @@ const MotionJSONUI = (() => {
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "external"]);
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
+  const EXPORT_PRESET_DEFAULTS = {
+    compact: { includeMasks: false, includeContours: false, includePreview: true },
+    debug: { includeMasks: true, includeContours: true, includePreview: true },
+    "vector-heavy": { includeMasks: false, includeContours: true, includePreview: true },
+    "raster-fallback": { includeMasks: true, includeContours: false, includePreview: true },
+  };
 
   const PRESETS = {
     trace_one_object: {
@@ -55,6 +65,12 @@ const MotionJSONUI = (() => {
       maskProvider: "external",
       outputMode: "authoring",
     },
+    review_existing: {
+      label: "Review existing result",
+      discoveryMode: "manual_prompt",
+      maskProvider: "mock",
+      outputMode: "authoring",
+    },
   };
 
   const EMPTY_SAM2 = {
@@ -85,6 +101,7 @@ const MotionJSONUI = (() => {
     health: null,
     capabilities: null,
     runDefaults: null,
+    exportFormats: null,
     projects: [],
     selectedProjectId: "",
     videos: [],
@@ -98,6 +115,9 @@ const MotionJSONUI = (() => {
     reviewTracks: [],
     trackVisibility: {},
     correctionState: emptyCorrectionState(),
+    exportValidation: null,
+    exportResult: null,
+    importStatus: "",
     selectedCorrectionTrackId: "",
     mergeSelection: new Set(),
     runConfigsByJob: {},
@@ -1172,6 +1192,45 @@ const MotionJSONUI = (() => {
     return !/deleted|excluded|rejected|failed|fallback_raster|review_pending/.test(String(track.exportStatus || ""));
   }
 
+  function trackObjectId(track) {
+    return String(track?.objectId || track?.id || "").trim();
+  }
+
+  function uniqueIds(ids) {
+    const seen = new Set();
+    const result = [];
+    for (const value of asArray(ids)) {
+      const id = String(value || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      result.push(id);
+    }
+    return result;
+  }
+
+  function buildExportPanelSummary({ exportState = {}, reviewExport = {}, reviewTracks = [], reviewObjects = [] } = {}) {
+    const materializedIds = new Set(
+      asArray(reviewObjects)
+        .map((object) => String(object?.objectId || object?.id || "").trim())
+        .filter(Boolean),
+    );
+    const reviewIncludedIds = uniqueIds(
+      asArray(reviewExport.includedObjectIds).length
+        ? reviewExport.includedObjectIds
+        : asArray(reviewTracks).filter(isTrackExportIncluded).map(trackObjectId),
+    );
+    const authoritativeIncludedIds = uniqueIds(exportState.includedObjectIds);
+    const includedIds = authoritativeIncludedIds.length
+      ? authoritativeIncludedIds
+      : reviewIncludedIds.filter((id) => materializedIds.has(id));
+    const pendingIds = reviewIncludedIds.filter((id) => !materializedIds.has(id));
+    const authoritativeExcludedIds = uniqueIds(exportState.excludedObjectIds);
+    const excludedIds = authoritativeExcludedIds.length
+      ? authoritativeExcludedIds
+      : uniqueIds([...asArray(reviewExport.excludedObjectIds), ...pendingIds]);
+    return { includedIds, excludedIds, pendingIds, materializedIds };
+  }
+
   function correctionDiagnosticMessages(entry) {
     const messages = [];
     const repair = entry?.repairDiagnostics || {};
@@ -1537,11 +1596,15 @@ const MotionJSONUI = (() => {
               ]
                 .filter(Boolean)
                 .join(" - ");
+              const contentLink = artifact.contentUrl
+                ? `<a class="artifact-link" href="${escapeAttribute(artifact.contentUrl)}" target="_blank" rel="noreferrer">Open</a>`
+                : "";
               return `
                 <div class="artifact-row">
                   <strong>${escapeHtml(relPath || "artifact")}</strong>
                   ${statusChip(artifact.kind || "artifact", artifact.kind || "artifact", true)}
                   <span class="row-meta">${escapeHtml(detail || artifact.id || "metadata only")}</span>
+                  ${contentLink}
                 </div>
               `;
             })
@@ -1672,6 +1735,105 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Track edits will appear here after relabel, hide/show, export, merge, split, add-object, or repair actions.</div>`;
     }
 
+    function exportPayloadFromControls() {
+      return {
+        preset: $("#exportPresetSelect").value || "compact",
+        includeMasks: $("#exportIncludeMasks").checked,
+        includeContours: $("#exportIncludeContours").checked,
+        includePreview: $("#exportIncludePreview").checked,
+      };
+    }
+
+    function applyExportPresetDefaults() {
+      const presetId = $("#exportPresetSelect").value || "compact";
+      const apiPreset = asArray(state.exportFormats?.presets).find((preset) => preset.id === presetId);
+      const defaults = apiPreset || EXPORT_PRESET_DEFAULTS[presetId] || EXPORT_PRESET_DEFAULTS.compact;
+      $("#exportIncludeMasks").checked = defaults.includeMasks === true;
+      $("#exportIncludeContours").checked = defaults.includeContours === true;
+      $("#exportIncludePreview").checked = defaults.includePreview !== false;
+      renderExportPanel();
+    }
+
+    function renderExportPresetOptions() {
+      const select = $("#exportPresetSelect");
+      const current = select.value || "compact";
+      const presets = asArray(state.exportFormats?.presets);
+      if (presets.length) {
+        select.innerHTML = presets
+          .map((preset) => `<option value="${escapeAttribute(preset.id)}">${escapeHtml(preset.id)}</option>`)
+          .join("");
+      }
+      select.value = presets.some((preset) => preset.id === current) || EXPORT_PRESET_DEFAULTS[current] ? current : "compact";
+    }
+
+    function exportIssueRows(issues) {
+      return asArray(issues)
+        .slice(0, 4)
+        .map((issue) => {
+          const path = issue.path || "export";
+          const message = issue.message || issue.reason || "validation issue";
+          return `<div class="diagnostic-row is-bad"><strong>${escapeHtml(path)}</strong><span class="row-meta">${escapeHtml(message)}</span></div>`;
+        })
+        .join("");
+    }
+
+    function renderExportPanel() {
+      const job = selectedJob();
+      const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
+      const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
+      const storedExportArtifacts = state.jobArtifacts.filter((artifact) =>
+        ["validated_motionjson_scene", "final_export_manifest", "export_validation_report", "preview_overlay", "contours_boxes", "motionjson_export_zip"].includes(artifact.kind),
+      );
+      const storedValidationArtifact = storedExportArtifacts
+        .slice()
+        .reverse()
+        .find((artifact) => artifact.kind === "export_validation_report" && artifact.metadata?.validation);
+      const exportState = exported || validation || {};
+      const reviewExport = state.jobReview?.export || {};
+      const { includedIds, excludedIds, pendingIds } = buildExportPanelSummary({
+        exportState,
+        reviewExport,
+        reviewTracks: state.reviewTracks,
+        reviewObjects: state.jobReview?.objects,
+      });
+      const status = exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation;
+      const ok = status?.ok === true;
+      $("#exportStatus").textContent = !job ? "No run" : ok ? "Valid" : status ? "Needs review" : "Not validated";
+      $("#exportStatus").className = `status-chip ${!job ? "is-muted" : ok ? "is-ready" : status ? "is-warn" : "is-muted"}`;
+      $("#validateExportButton").disabled = !job;
+      $("#exportMotionJsonButton").disabled = !job || includedIds.length === 0;
+
+      const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : storedExportArtifacts;
+      const artifactLinks = exportArtifacts
+        .filter((asset) => asset.contentUrl)
+        .map((asset) => {
+          const relPath = asset.metadata?.rel_path || asset.path || asset.kind || asset.id;
+          return `<a class="artifact-link" href="${escapeAttribute(asset.contentUrl)}" target="_blank" rel="noreferrer">${escapeHtml(relPath)}</a>`;
+        })
+        .join("");
+      const issueRows = exportIssueRows(status?.issues);
+      $("#exportSummary").innerHTML = job
+        ? `
+            <div class="diagnostic-row is-${ok ? "ready" : status ? "warn" : "warn"}">
+              <strong>${escapeHtml(includedIds.length ? `${includedIds.length} included` : "no included tracks")}</strong>
+              <span class="row-meta">${escapeHtml(excludedIds.length ? `${excludedIds.length} excluded from export` : "no excluded tracks reported")}</span>
+            </div>
+            ${
+              pendingIds.length
+                ? `<div class="diagnostic-row is-warn"><strong>pending corrections</strong><span class="row-meta">${escapeHtml(`${pendingIds.length} track${pendingIds.length === 1 ? "" : "s"} need materialized assets before export`)}</span></div>`
+                : ""
+            }
+            ${
+              status
+                ? `<div class="diagnostic-row is-${ok ? "ready" : "bad"}"><strong>validation</strong><span class="row-meta">${escapeHtml(`${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}`)}</span></div>`
+                : ""
+            }
+            ${issueRows}
+            ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta">${artifactLinks}</span></div>` : ""}
+          `
+        : `<div class="empty-state">Select a completed run before validating or exporting MotionJSON.</div>`;
+    }
+
     function renderFallbackDiagnostics() {
       const diagnostics = collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview);
       $("#fallbackDiagnostics").innerHTML = diagnostics.length
@@ -1691,6 +1853,7 @@ const MotionJSONUI = (() => {
       renderEventLog();
       renderArtifactBrowser();
       renderTrackList();
+      renderExportPanel();
       renderCorrectionPanel();
       renderCorrectionHistory();
       renderFallbackDiagnostics();
@@ -2376,6 +2539,7 @@ const MotionJSONUI = (() => {
           ["health", "/api/health"],
           ["capabilities", "/api/capabilities"],
           ["runDefaults", "/api/run-config/defaults"],
+          ["exportFormats", "/api/exports/formats"],
           ["projects", "/api/projects"],
         ].map(async ([key, route]) => {
           try {
@@ -2392,6 +2556,7 @@ const MotionJSONUI = (() => {
         if (key === "health") state.health = payload;
         if (key === "capabilities") state.capabilities = payload;
         if (key === "runDefaults") state.runDefaults = payload;
+        if (key === "exportFormats") state.exportFormats = payload;
         if (key === "projects") state.projects = payload?.projects || [];
       }
     }
@@ -2529,6 +2694,7 @@ const MotionJSONUI = (() => {
       renderCapabilities();
       renderRunDefaults();
       renderProjects();
+      renderExportPresetOptions();
       renderMaskProviderOptions();
       renderPresetFields();
       renderApiStatus(state.errors.health ? "is-bad" : "is-ready", state.errors.health ? "API unavailable" : "API ready");
@@ -2822,9 +2988,95 @@ const MotionJSONUI = (() => {
       });
     }
 
+    async function validateSelectedExport() {
+      if (!state.selectedJobId) return;
+      const payload = exportPayloadFromControls();
+      state.exportValidation = {
+        jobId: state.selectedJobId,
+        validation: null,
+        message: "Validating export.",
+      };
+      renderExportPanel();
+      try {
+        const response = await api(`/api/jobs/${encodeURIComponent(state.selectedJobId)}/validate`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.exportValidation = { ...response, jobId: state.selectedJobId };
+      } catch (error) {
+        state.exportValidation = {
+          jobId: state.selectedJobId,
+          validation: { ok: false, checked: 0, issueCount: 1, issues: [{ path: "export", message: error.message }] },
+        };
+      }
+      renderExportPanel();
+    }
+
+    async function exportSelectedMotionJson() {
+      if (!state.selectedJobId) return;
+      const payload = exportPayloadFromControls();
+      state.exportResult = {
+        jobId: state.selectedJobId,
+        validation: null,
+        assets: [],
+      };
+      $("#exportStatus").textContent = "Exporting";
+      $("#exportStatus").className = "status-chip is-neutral";
+      try {
+        const response = await api(`/api/jobs/${encodeURIComponent(state.selectedJobId)}/exports`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.exportResult = { ...(response.export || {}), jobId: state.selectedJobId };
+        state.exportValidation = {
+          jobId: state.selectedJobId,
+          validation: state.exportResult.validation,
+          includedObjectIds: state.exportResult.includedObjectIds,
+          excludedObjectIds: state.exportResult.excludedObjectIds,
+        };
+        if (response.review) state.jobReview = response.review;
+        await refreshSelectedJobReview();
+      } catch (error) {
+        state.exportResult = {
+          jobId: state.selectedJobId,
+          assets: [],
+          validation: { ok: false, checked: 0, issueCount: 1, issues: [{ path: "export", message: error.message }] },
+        };
+        renderExportPanel();
+      }
+    }
+
+    async function importExistingMotionJson() {
+      if (!state.selectedProjectId) {
+        state.importStatus = "Create or select a project before importing a result.";
+        $("#importStatus").textContent = "No project";
+        return;
+      }
+      const importPath = $("#motionJsonImportPath").value.trim();
+      if (!importPath) return;
+      $("#importStatus").textContent = "Importing";
+      try {
+        const response = await api(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/imports/motionjson`, {
+          method: "POST",
+          body: JSON.stringify({ path: importPath }),
+        });
+        const imported = response.import || {};
+        state.importStatus = imported.validation?.ok ? "Imported and valid" : "Imported with validation issues";
+        $("#importStatus").textContent = imported.validation?.ok ? "Valid import" : "Review import";
+        state.selectedJobId = jobIdentifier(imported.job || {});
+        await refreshProjectData();
+      } catch (error) {
+        state.importStatus = error.message;
+        $("#importStatus").textContent = "Import failed";
+      }
+    }
+
     $("#refreshButton").addEventListener("click", refreshAll);
     $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
+    $("#validateExportButton").addEventListener("click", validateSelectedExport);
+    $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
+    $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
 
     $("#jobList").addEventListener("click", async (event) => {
       const choice = event.target.closest("[data-job-id]");
@@ -2973,6 +3225,11 @@ const MotionJSONUI = (() => {
       } catch (error) {
         $("#videoList").innerHTML = `<div class="error-state">${escapeHtml(error.message)}</div>`;
       }
+    });
+
+    $("#importMotionJsonForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await importExistingMotionJson();
     });
 
     $("#videoFileInput").addEventListener("change", () => {
@@ -3127,6 +3384,7 @@ const MotionJSONUI = (() => {
     RUN_CONFIG_SCHEMA,
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,
+    buildExportPanelSummary,
     buildRunConfig,
     buildReviewTracks,
     containedVideoRect,

@@ -33,6 +33,33 @@
       "additionalProperties": true
     },
     "rightsManifest": { "type": "string", "minLength": 1 },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "app": { "const": "motionjson" },
+        "version": { "type": "string" },
+        "sourceJobId": { "type": ["string", "null"] },
+        "sourceAssetId": { "type": ["string", "null"] },
+        "exportId": { "type": "string" },
+        "exportPreset": { "type": "string" },
+        "correctionEventCount": { "type": "integer", "minimum": 0 },
+        "aiUsage": { "const": "none" }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ok": { "type": "boolean" },
+        "checked": { "type": "integer", "minimum": 0 },
+        "issueCount": { "type": "integer", "minimum": 0 }
+      }
+    },
     "notes": {
       "type": "array",
       "items": { "type": "string" }

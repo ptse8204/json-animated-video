@@ -68,6 +68,7 @@ def test_mp4_final_render_reports_cached_no_ai_manifest(tmp_path):
         object_id="object_0",
     )
     assert validate_document(manifest) == []
+    assert manifest["source"]["directory"] == "."
 
 
 def test_mp4_export_handles_odd_canvas_dimensions(tmp_path):

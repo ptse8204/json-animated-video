@@ -267,6 +267,28 @@ assert.equal(correctedTracks[0].label, "ball corrected");
 assert.equal(correctedTracks[0].exportIncluded, false);
 assert.equal(correctedTracks[0].exportStatus, "excluded");
 
+const pendingExportSummary = ui.buildExportPanelSummary({
+  exportState: {},
+  reviewExport: { includedObjectIds: ["object_0", "manual_object"], excludedObjectIds: [] },
+  reviewTracks: [
+    { id: "object_0", objectId: "object_0", exportStatus: "accepted" },
+    { id: "manual_object", objectId: "manual_object", exportStatus: "accepted" },
+  ],
+  reviewObjects: [{ objectId: "object_0" }],
+});
+assert.deepEqual(pendingExportSummary.includedIds, ["object_0"]);
+assert.deepEqual(pendingExportSummary.pendingIds, ["manual_object"]);
+assert.deepEqual(pendingExportSummary.excludedIds, ["manual_object"]);
+
+const validatedExportSummary = ui.buildExportPanelSummary({
+  exportState: { includedObjectIds: ["object_0"], excludedObjectIds: ["manual_object"] },
+  reviewExport: { includedObjectIds: ["object_0", "manual_object"] },
+  reviewObjects: [{ objectId: "object_0" }],
+});
+assert.deepEqual(validatedExportSummary.includedIds, ["object_0"]);
+assert.deepEqual(validatedExportSummary.pendingIds, ["manual_object"]);
+assert.deepEqual(validatedExportSummary.excludedIds, ["manual_object"]);
+
 const repairMessage = ui.correctionResponseMessage({
   repairDiagnostics: {
     status: "unavailable",

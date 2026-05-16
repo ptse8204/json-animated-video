@@ -50,7 +50,7 @@ Extraction job files such as `run_config.json`, `job.json`, `events.jsonl`,
 extraction run config and provider diagnostics schemas because they are
 preflight/job metadata, not MotionJSON render payloads.
 
-Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively.
+Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively. Phase 11 validated UI exports also validate the corrected `scene_graph.json` and manifest before registering export artifacts.
 
 Correction request and manifest files are optional for ordinary extraction outputs. When `motionjson correct` writes `correction_request.json` and `correction_manifest.json`, directory validation checks them recursively.
 
@@ -124,3 +124,10 @@ Correction schemas are provider-neutral. They do not encode OpenRouter, hosted s
 ## Final Export Manifest
 
 Phase 8 writes `final_export_manifest.json` next to final exports. Each entry reports type, format, status, output path, bytes, fps, frame count, source scene, optional object id, rights passthrough, `rightsManifest`, and `aiUsage: none`. Export status can be `ready`, `plan_ready`, `not_configured`, `skipped`, `unavailable`, `unsupported`, or `error`.
+
+Phase 11 adds optional `provenance`, `config`, and `validation` blocks to the
+same schema for local UI validated exports. These blocks record sanitized
+source job/config metadata, correction history state, export preset, included
+and excluded object ids, validation status, and `aiUsage: none`. Export
+manifests now use `source.directory: "."` instead of embedding local absolute
+paths.

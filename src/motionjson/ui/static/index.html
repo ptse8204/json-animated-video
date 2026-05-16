@@ -23,6 +23,7 @@
           <button class="goal" type="button" data-preset="sam_auto_masks">Propose all visible segments</button>
           <button class="goal" type="button" data-preset="motion_foreground">Find moving objects</button>
           <button class="goal" type="button" data-preset="external_masks">Import external masks</button>
+          <button class="goal" type="button" data-preset="review_existing">Review existing result</button>
         </nav>
 
         <section class="compact-panel">
@@ -85,6 +86,18 @@
               <input id="videoFileInput" type="file" accept="video/*" />
             </label>
             <div id="videoList" class="artifact-list"></div>
+
+            <div class="panel-heading secondary-heading">
+              <h2>Existing Result</h2>
+              <span id="importStatus" class="subtle-chip">Not imported</span>
+            </div>
+            <form id="importMotionJsonForm" class="inline-form">
+              <label>
+                <span>MotionJSON path</span>
+                <input id="motionJsonImportPath" type="text" value="out/demo" />
+              </label>
+              <button type="submit">Import</button>
+            </form>
           </article>
 
           <article class="panel viewer-panel" aria-label="Video viewer">
@@ -300,6 +313,40 @@
             <span id="trackCount" class="subtle-chip">0 tracks</span>
           </div>
           <div id="trackList" class="track-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Export</h2>
+            <span id="exportStatus" class="status-chip is-muted">Not validated</span>
+          </div>
+          <div class="export-panel">
+            <label>
+              <span>Preset</span>
+              <select id="exportPresetSelect">
+                <option value="compact">compact</option>
+                <option value="debug">debug</option>
+                <option value="vector-heavy">vector-heavy</option>
+                <option value="raster-fallback">raster-fallback</option>
+              </select>
+            </label>
+            <label class="track-toggle">
+              <input id="exportIncludeMasks" type="checkbox" />
+              <span>masks</span>
+            </label>
+            <label class="track-toggle">
+              <input id="exportIncludeContours" type="checkbox" />
+              <span>contours</span>
+            </label>
+            <label class="track-toggle">
+              <input id="exportIncludePreview" type="checkbox" checked />
+              <span>preview</span>
+            </label>
+          </div>
+          <div class="export-actions">
+            <button id="validateExportButton" type="button">Validate</button>
+            <button id="exportMotionJsonButton" class="primary-action" type="button">Export MotionJSON</button>
+          </div>
+          <div id="exportSummary" class="export-summary"></div>
         </section>
         <section class="compact-panel">
           <div class="panel-heading compact-heading">

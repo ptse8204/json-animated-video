@@ -319,7 +319,9 @@ h2 {
 .prompt-summary,
 .capability-list,
 .artifact-list,
-.route-list {
+.route-list,
+.export-panel,
+.export-summary {
   display: grid;
   gap: 8px;
 }
@@ -579,6 +581,13 @@ input[type="range"] {
   color: var(--muted);
 }
 
+.artifact-link {
+  justify-self: start;
+  color: #1f4e67;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .warning-box {
   color: #72470b;
   background: var(--warn-soft);
@@ -796,6 +805,22 @@ input[type="range"] {
   flex: 1 1 118px;
 }
 
+.export-panel {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: end;
+}
+
+.export-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.export-summary {
+  margin-top: 8px;
+}
+
 .correction-meta {
   margin-top: 8px;
 }
@@ -912,6 +937,11 @@ input[type="range"] {
   }
 
   .advanced-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .export-panel,
+  .export-actions {
     grid-template-columns: 1fr;
   }
 

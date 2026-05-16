@@ -25,6 +25,12 @@ from motionjson.backend.corrections import (
     record_track_edit_action,
 )
 from motionjson.backend.db import connect, initialize_database
+from motionjson.backend.export_workflows import (
+    export_motionjson_job,
+    export_presets,
+    import_motionjson_result,
+    validate_motionjson_export_job,
+)
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
@@ -39,12 +45,20 @@ LOCAL_UI_EMAIL = "local-ui@motionjson.local"
 LOCAL_UI_FORMAT = "motionjson.local_ui.v0.1"
 STORAGE_KEY_ASSIGNMENT_RE = re.compile(r"(?i)\bstorage[_-]?key=([^\s&]+)")
 STORAGE_KEY_PATH_RE = re.compile(r"\bprojects/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
-LOCAL_FILE_URI_RE = re.compile(r"(?i)\bfile://[^\s\"']+")
+LOCAL_FILE_URI_RE = re.compile(r"(?i)\bfile://[^\r\n]+")
 LOCAL_UI_ASSET_URI_RE = re.compile(r"^(?:local-ui|motionjson)://assets/([^/?#]+)$")
-LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\s\"']+")
+LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+")
 LOCAL_PATH_FIELD_NAMES = {"sourceuri", "sourcepath", "localpath"}
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
 PUBLIC_ARTIFACT_CONTENT_TYPES = ("image/", "video/")
+PUBLIC_DOWNLOAD_ARTIFACT_KINDS = {
+    "contours_boxes",
+    "export_validation_report",
+    "final_export_manifest",
+    "motionjson_export_zip",
+    "preview_overlay",
+    "validated_motionjson_scene",
+}
 REVIEW_JSON_ARTIFACT_KINDS = {
     "candidate_summary",
     "fallback_diagnostics",
@@ -366,6 +380,8 @@ class LocalUIApp:
             return self._error(HTTPStatus.BAD_REQUEST, f"invalid json: {exc}")
         except NotFoundError as exc:
             return self._error(HTTPStatus.NOT_FOUND, str(exc))
+        except FileNotFoundError as exc:
+            return self._error(HTTPStatus.BAD_REQUEST, str(exc))
         except (ValueError, BackendError) as exc:
             return self._error(HTTPStatus.BAD_REQUEST, str(exc))
 
@@ -393,11 +409,14 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/review",
                     "/api/jobs/{jobId}/corrections",
                     "/api/jobs/{jobId}/track-edits",
+                    "/api/jobs/{jobId}/validate",
+                    "/api/jobs/{jobId}/exports",
                     "/api/jobs/{jobId}/run",
                     "/api/progress",
                     "/api/artifacts",
                     "/api/artifacts/{artifactId}/content",
                     "/api/exports/formats",
+                    "/api/projects/{projectId}/imports/motionjson",
                 ],
             }
         if path == "/api/capabilities" and method == "GET":
@@ -423,11 +442,13 @@ class LocalUIApp:
             return {
                 "format": "motionjson.local_ui_export_formats.v0.1",
                 "exports": [
+                    {"id": "motionjson", "label": "Validated MotionJSON", "requires": []},
                     {"id": "mp4", "label": "MP4 final video", "requires": ["ffmpeg"]},
                     {"id": "webm-alpha", "label": "Transparent WebM object", "requires": ["ffmpeg"]},
                     {"id": "website-zip", "label": "Website package", "requires": []},
                     {"id": "remotion-plan", "label": "Remotion adapter plan", "requires": []},
                 ],
+                "presets": export_presets(),
             }
 
         conn = self.connection()
@@ -445,6 +466,26 @@ class LocalUIApp:
                         description=str(payload.get("description") or ""),
                     )
                 }
+            if path.startswith("/api/projects/") and method == "POST":
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 5 and parts[3] == "imports" and parts[4] == "motionjson":
+                    imported = import_motionjson_result(
+                        conn,
+                        storage=self.storage(),
+                        user_id=user_id,
+                        project_id=parts[2],
+                        path=str(payload.get("path") or ""),
+                    )
+                    assets = [_public_value(self._public_artifact(asset)) for asset in imported["assets"]]
+                    return {
+                        "import": _public_value(
+                            {
+                                **imported,
+                                "job": _public_job_snapshot(imported["job"], events=list_job_events(conn, job_id=imported["job"]["id"])),
+                                "assets": assets,
+                            }
+                        )
+                    }
             if path == "/api/videos" and method == "GET":
                 project_id = self._query_one(query, "projectId")
                 if not project_id:
@@ -571,6 +612,44 @@ class LocalUIApp:
                     if isinstance(result.get("partialRerun"), dict):
                         response["partialRerun"] = _public_review_value(result["partialRerun"])
                     return response
+                if len(parts) == 4 and parts[3] == "validate":
+                    get_job(conn, user_id=user_id, job_id=parts[2])
+                    validation = validate_motionjson_export_job(
+                        conn,
+                        storage=self.storage(),
+                        user_id=user_id,
+                        job_id=parts[2],
+                        preset=str(payload.get("preset") or "compact"),
+                        include_masks=payload.get("includeMasks"),
+                        include_contours=payload.get("includeContours"),
+                        include_preview=payload.get("includePreview"),
+                    )
+                    return _public_value(validation)
+                if len(parts) == 4 and parts[3] == "exports":
+                    job = get_job(conn, user_id=user_id, job_id=parts[2])
+                    exported = export_motionjson_job(
+                        conn,
+                        storage=self.storage(),
+                        user_id=user_id,
+                        job_id=parts[2],
+                        preset=str(payload.get("preset") or "compact"),
+                        include_masks=payload.get("includeMasks"),
+                        include_contours=payload.get("includeContours"),
+                        include_preview=payload.get("includePreview"),
+                    )
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    assets = [_public_value(self._public_artifact(asset)) for asset in exported["assets"]]
+                    return _public_value(
+                        {
+                            "export": {**exported, "assets": assets},
+                            "artifacts": assets,
+                            "review": self._review_metadata(
+                                list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2]),
+                                corrections=corrections,
+                                job_id=parts[2],
+                            ),
+                        }
+                    )
             if path.startswith("/api/jobs/") and method == "GET":
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 3:
@@ -885,7 +964,9 @@ class LocalUIApp:
     @staticmethod
     def _has_public_artifact_content(asset: dict[str, Any]) -> bool:
         content_type = str(asset.get("content_type") or "")
-        return content_type.startswith(PUBLIC_ARTIFACT_CONTENT_TYPES)
+        if content_type == "image/svg+xml":
+            return str(asset.get("kind") or "") in PUBLIC_DOWNLOAD_ARTIFACT_KINDS
+        return content_type.startswith(PUBLIC_ARTIFACT_CONTENT_TYPES) or str(asset.get("kind") or "") in PUBLIC_DOWNLOAD_ARTIFACT_KINDS
 
     def _review_metadata(
         self,
@@ -1108,7 +1189,7 @@ class LocalUIApp:
         return HTTPStatus.OK, {"content-type": f"{content_type}; charset=utf-8"}, data
 
     def _error(self, status: HTTPStatus, message: str) -> tuple[int, dict[str, str], bytes]:
-        return _json_response({"error": message}, status=status)
+        return _json_response({"error": _redact_public_text(message)}, status=status)
 
     @staticmethod
     def _query_one(query: dict[str, list[str]], key: str) -> str | None:

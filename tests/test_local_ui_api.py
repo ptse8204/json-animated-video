@@ -5,11 +5,12 @@ import sqlite3
 import time
 from pathlib import Path
 
-from motionjson.backend.assets import register_generated_asset
+from motionjson.backend.assets import list_assets_for_job, register_generated_asset
 from motionjson.backend.jobs import record_job_event
 from motionjson.ui import server as ui_server
 from motionjson.ui.server import LOCAL_UI_EMAIL
 from motionjson.ui.server import LocalUIApp
+from motionjson.validation import validate_document
 
 
 def demo_video() -> Path:
@@ -33,6 +34,37 @@ def wait_for_job(app: LocalUIApp, job_id: str, *, timeout: float = 10.0) -> dict
     raise AssertionError(f"job {job_id} did not finish; last status: {last_job}")
 
 
+def create_completed_mock_job(app: LocalUIApp, project_name: str = "Export Project") -> tuple[dict, dict, dict]:
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": project_name}).encode("utf-8"))
+    assert status == 200
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    assert status == 200
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 2, "run": True}).encode("utf-8"),
+    )
+    assert status == 200
+    job = wait_for_job(app, decode(body)["job"]["id"])
+    assert job["status"] == "succeeded"
+    return project, video, job
+
+
+def scene_asset_for_job(app: LocalUIApp, job: dict) -> dict:
+    conn = app.connection()
+    try:
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+    finally:
+        conn.close()
+    return next(asset for asset in assets if asset["kind"] == "scene_graph")
+
+
 def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
@@ -51,6 +83,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/run-config/validate" in health["routes"]
     assert "/api/jobs/{jobId}/run" in health["routes"]
     assert "/api/jobs/{jobId}/review" in health["routes"]
+    assert "/api/jobs/{jobId}/exports" in health["routes"]
+    assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
 
     status, _headers, body = app.handle("GET", "/api/capabilities")
     capabilities = decode(body)
@@ -69,7 +103,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     status, _headers, body = app.handle("GET", "/api/exports/formats")
     exports = decode(body)
     assert status == 200
-    assert {entry["id"] for entry in exports["exports"]} >= {"mp4", "website-zip", "remotion-plan"}
+    assert {entry["id"] for entry in exports["exports"]} >= {"motionjson", "mp4", "website-zip", "remotion-plan"}
+    assert {entry["id"] for entry in exports["presets"]} >= {"compact", "debug", "vector-heavy", "raster-fallback"}
 
 
 def test_local_ui_serves_static_shell(tmp_path):
@@ -396,6 +431,304 @@ def test_local_ui_api_runs_mock_job_from_run_config_and_exposes_review_metadata(
     status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
     assert status == 200
     assert decode(body)["review"]["tracks"][0]["objectId"] == "object_0"
+
+
+def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_imports_previous_result(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Export Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 2, "run": True}).encode("utf-8"),
+    )
+    job = wait_for_job(app, decode(body)["job"]["id"])
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-edits",
+        body=json.dumps({"operation": "relabel", "objectId": "object_0", "label": "Export Ball"}).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "debug"}).encode("utf-8"),
+    )
+    validation_payload = decode(body)
+    assert status == 200
+    assert validation_payload["validation"]["ok"] is True
+    assert validation_payload["includedObjectIds"] == ["object_0"]
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps(
+            {
+                "preset": "compact",
+                "includeMasks": True,
+                "includeContours": True,
+                "includePreview": False,
+            }
+        ).encode("utf-8"),
+    )
+    validation_payload = decode(body)
+    assert status == 200
+    assert validation_payload["config"]["preset"] == "compact"
+    assert validation_payload["config"]["includeMasks"] is True
+    assert validation_payload["config"]["includeContours"] is True
+    assert validation_payload["config"]["includePreview"] is False
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "debug", "includeMasks": True, "includeContours": True, "includePreview": True}).encode("utf-8"),
+    )
+    export_payload = decode(body)
+    assert status == 200
+    exported = export_payload["export"]
+    assert exported["validation"]["ok"] is True
+    assert exported["provenance"]["sourceJobId"] == job["id"]
+    assert exported["provenance"]["correctionEventCount"] == 1
+    assert exported["config"]["preset"] == "debug"
+    kinds = {asset["kind"] for asset in exported["assets"]}
+    assert {"validated_motionjson_scene", "final_export_manifest", "export_validation_report", "preview_overlay", "contours_boxes", "motionjson_export_zip"}.issubset(kinds)
+
+    scene_asset = next(asset for asset in exported["assets"] if asset["kind"] == "validated_motionjson_scene")
+    assert scene_asset["contentUrl"].startswith("/api/artifacts/")
+    status, headers, scene_body = app.handle("GET", scene_asset["contentUrl"])
+    assert status == 200
+    assert headers["content-type"].startswith("application/json")
+    scene = decode(scene_body)
+    assert validate_document(scene) == []
+    assert scene["objects"][0]["label"] == "Export Ball"
+    assert "exportStatus" not in scene["objects"][0]
+    assert str(tmp_path) not in scene_body.decode("utf-8")
+    assert "projects/" not in scene_body.decode("utf-8")
+
+    manifest_asset = next(asset for asset in exported["assets"] if asset["kind"] == "final_export_manifest")
+    status, _headers, manifest_body = app.handle("GET", manifest_asset["contentUrl"])
+    manifest = decode(manifest_body)
+    assert status == 200
+    assert validate_document(manifest) == []
+    assert manifest["source"]["directory"] == "."
+    assert manifest["validation"]["ok"] is True
+    assert manifest["provenance"]["aiUsage"] == "none"
+
+    imported_scene = tmp_path / "imported_scene_graph.json"
+    imported_scene.write_bytes(scene_body)
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/imports/motionjson",
+        body=json.dumps({"path": str(imported_scene)}).encode("utf-8"),
+    )
+    imported = decode(body)["import"]
+    assert status == 200
+    assert imported["validation"]["ok"] is True
+    assert imported["job"]["type"] == "motionjson_import"
+    assert imported["job"]["status"] == "succeeded"
+    assert "projects/" not in body.decode("utf-8")
+    assert str(tmp_path) not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{imported['job']['id']}/review")
+    assert status == 200
+    imported_review = decode(body)["review"]
+    assert imported_review["objects"][0]["objectId"] == "object_0"
+    assert imported_review["objects"][0]["label"] == "Export Ball"
+
+
+def test_local_ui_motionjson_import_missing_path_returns_redacted_bad_request(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Import Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    missing_path = tmp_path / "o'brien missing folder" / "secret scene.json"
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/imports/motionjson",
+        body=json.dumps({"path": str(missing_path)}).encode("utf-8"),
+    )
+
+    assert status == 400
+    assert "does not exist" in decode(body)["error"]
+    assert "[LOCAL_PATH_REDACTED]" in body.decode("utf-8")
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "secret scene" not in body.decode("utf-8")
+    assert "brien" not in body.decode("utf-8")
+
+
+def test_local_ui_motionjson_import_rejects_directory_symlinks_before_registration(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Import Symlink Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    import_dir = tmp_path / "motionjson-result"
+    import_dir.mkdir()
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"secret": "SUPER_SECRET"}\n', encoding="utf-8")
+    (import_dir / "linked_secret.json").symlink_to(secret)
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/imports/motionjson",
+        body=json.dumps({"path": str(import_dir)}).encode("utf-8"),
+    )
+
+    assert status == 400
+    assert "symlinks" in decode(body)["error"]
+    assert "SUPER_SECRET" not in body.decode("utf-8")
+    status, _headers, body = app.handle("GET", f"/api/jobs?projectId={project['id']}")
+    assert status == 200
+    assert decode(body)["jobs"] == []
+
+
+def test_local_ui_imported_svg_is_not_served_as_public_same_origin_content(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Import SVG Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    svg_path = tmp_path / "preview.svg"
+    svg_path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>\n', encoding="utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/imports/motionjson",
+        body=json.dumps({"path": str(svg_path)}).encode("utf-8"),
+    )
+    imported = decode(body)["import"]
+    assert status == 200
+    assert imported["validation"]["ok"] is False
+    assert imported["assets"][0]["kind"] == "imported_preview"
+    assert imported["assets"][0]["content_type"] == "image/svg+xml"
+    assert "contentUrl" not in imported["assets"][0]
+
+    status, _headers, body = app.handle("GET", f"/api/artifacts/{imported['assets'][0]['id']}/content")
+    assert status == 404
+    assert "<script>" not in body.decode("utf-8")
+
+
+def test_local_ui_export_preview_svg_escapes_corrected_labels(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Escaped Preview Project")
+    malicious_label = "Ball </text><script>alert(1)</script>"
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-edits",
+        body=json.dumps({"operation": "relabel", "objectId": "object_0", "label": malicious_label}).encode("utf-8"),
+    )
+    assert status == 200
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "compact", "includePreview": True}).encode("utf-8"),
+    )
+    assert status == 200
+    exported = decode(body)["export"]
+    preview_asset = next(asset for asset in exported["assets"] if asset["kind"] == "preview_overlay")
+    status, headers, svg_body = app.handle("GET", preview_asset["contentUrl"])
+
+    assert status == 200
+    assert headers["content-type"].startswith("image/svg+xml")
+    svg = svg_body.decode("utf-8")
+    assert "<script" not in svg
+    assert "&lt;/text&gt;&lt;script&gt;alert(1)&lt;/script&gt;" in svg
+
+
+def test_local_ui_export_excludes_pending_add_object_until_assets_are_materialized(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Pending Add Object Project")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-edits",
+        body=json.dumps(
+            {
+                "operation": "add-object",
+                "objectId": "object_1",
+                "label": "Missing ball",
+                "prompt": {"type": "box", "frame": 1, "x": 8, "y": 9, "w": 20, "h": 18},
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "compact"}).encode("utf-8"),
+    )
+    validation = decode(body)
+    assert status == 200
+    assert validation["includedObjectIds"] == ["object_0"]
+    assert validation["excludedObjectIds"] == ["object_1"]
+    assert validation["diagnostics"][0]["code"] == "correction_track_not_materialized"
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "compact"}).encode("utf-8"),
+    )
+    exported = decode(body)["export"]
+    assert status == 200
+    assert exported["includedObjectIds"] == ["object_0"]
+    assert exported["excludedObjectIds"] == ["object_1"]
+    scene_asset = next(asset for asset in exported["assets"] if asset["kind"] == "validated_motionjson_scene")
+    status, _headers, scene_body = app.handle("GET", scene_asset["contentUrl"])
+    scene = decode(scene_body)
+    assert status == 200
+    assert [item["id"] for item in scene["objects"]] == ["object_0"]
+
+
+def test_local_ui_export_validation_failure_does_not_register_public_export_assets(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Invalid Export Project")
+    scene_asset = scene_asset_for_job(app, job)
+    scene = json.loads(app.storage().load_bytes(scene_asset["storage_key"]).decode("utf-8"))
+    scene["source"]["width"] = 0
+    app.storage().save_bytes(
+        scene_asset["storage_key"],
+        (json.dumps(scene, sort_keys=True) + "\n").encode("utf-8"),
+        content_type="application/json",
+    )
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "compact"}).encode("utf-8"),
+    )
+    validation = decode(body)
+    assert status == 200
+    assert validation["validation"]["ok"] is False
+    assert validation["validation"]["issueCount"] > 0
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "compact"}).encode("utf-8"),
+    )
+    assert status == 400
+    assert "validation failed" in decode(body)["error"]
+
+    conn = app.connection()
+    try:
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+    finally:
+        conn.close()
+    export_kinds = {asset["kind"] for asset in assets}
+    assert "validated_motionjson_scene" not in export_kinds
+    assert "motionjson_export_zip" not in export_kinds
 
 
 def test_local_ui_api_run_endpoint_executes_current_simple_payload(tmp_path):

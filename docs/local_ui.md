@@ -68,7 +68,10 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `GET /api/jobs/JOB_ID/review`
 - `GET /api/jobs/JOB_ID/corrections`
 - `POST /api/jobs/JOB_ID/track-edits`
+- `POST /api/jobs/JOB_ID/validate`
+- `POST /api/jobs/JOB_ID/exports`
 - `GET /api/artifacts?jobId=JOB_ID`
+- `POST /api/projects/PROJECT_ID/imports/motionjson`
 
 The local UI creates a reserved local user in the selected SQLite database and
 uses that user for project, video, and job queries. API responses omit internal
@@ -110,6 +113,36 @@ false` instead of silently pretending that SAM2, detectors, or other ML
 providers ran. The correction UI surfaces these repair and partial-rerun
 diagnostics in the saved edit message and correction history.
 
+`POST /api/jobs/JOB_ID/validate` validates the corrected export state without
+writing new artifacts. It accepts the same `preset`, `includeMasks`,
+`includeContours`, and `includePreview` fields as the export route so the
+preflight reflects the exact handoff settings. `POST /api/jobs/JOB_ID/exports`
+writes a validated MotionJSON handoff from the corrected review state,
+registers the generated artifacts on the selected job, and returns public
+content links for export files. The local UI supports these presets:
+
+- `compact`: corrected `scene_graph.json`, final export manifest, validation
+  report, and SVG overlay preview.
+- `debug`: compact output plus contour/box JSON and copied cached mask PNGs.
+- `vector-heavy`: corrected MotionJSON plus contour/box JSON for downstream
+  vector tooling.
+- `raster-fallback`: corrected MotionJSON plus mask and fallback-oriented
+  diagnostics for runs where vector/object tracks need extra review.
+
+Generated export JSON, ZIP assets, and generated overlay previews are safe to
+open through `/api/artifacts/ARTIFACT_ID/content`; raw extraction JSON and
+imported SVG files remain metadata-only unless they are part of this explicit
+export workflow. Export manifests include
+source job id, source asset id when known, preset, correction event count,
+included/excluded object ids, sanitized run config/correction state, validation
+status, and `aiUsage: "none"`. Local absolute paths and storage keys are
+redacted from public export payloads.
+
+`POST /api/projects/PROJECT_ID/imports/motionjson` imports an existing
+MotionJSON file or output directory into a succeeded `motionjson_import` job
+for review. It validates the supplied path, copies the result into local
+storage, and exposes the imported scene through the normal job review routes.
+
 ## Project And Video Flow
 
 1. Open the UI command above.
@@ -119,11 +152,15 @@ diagnostics in the saved edit message and correction history.
 5. Select the video from the video picker or video list.
 6. Choose a wizard preset: `Trace one object`, `Find objects from text`,
    `Propose all visible segments`, `Find moving objects`, or `Import external
-   masks`.
+   masks`. Use `Review existing result` to import a previous MotionJSON file
+   or output directory for inspection.
 7. Draw point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay. Prompt coordinates are native video pixels, not CSS canvas pixels.
 8. Review the generated config and use `Validate config` to run backend
    validation plus provider availability checks before saving or starting work.
+9. After a run succeeds, correct track labels/visibility/export inclusion if
+   needed, validate the export preset, then use `Export MotionJSON` to write a
+   validated local handoff with preview and optional contour/mask artifacts.
 
 Video registration copies the selected local file into the configured local
 storage root and records rights source metadata for the upload. Missing paths

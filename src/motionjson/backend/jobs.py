@@ -84,6 +84,46 @@ def _insert_job(
     return job
 
 
+def create_completed_job(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    project_id: str,
+    job_type: str,
+    payload: dict[str, Any],
+    result: dict[str, Any] | None = None,
+) -> dict:
+    get_project(conn, user_id=user_id, project_id=project_id)
+    now = utc_now()
+    job = {
+        "id": uuid.uuid4().hex,
+        "project_id": project_id,
+        "created_by_user_id": user_id,
+        "type": job_type,
+        "status": "succeeded",
+        "payload_json": json.dumps(payload, sort_keys=True),
+        "result_json": json.dumps(result or {}, sort_keys=True),
+        "error": None,
+        "attempts": 0,
+        "created_at": now,
+        "updated_at": now,
+        "started_at": now,
+        "finished_at": now,
+    }
+    conn.execute(
+        """
+        INSERT INTO jobs
+        (id, project_id, created_by_user_id, type, status, payload_json, result_json, error, attempts, created_at, updated_at, started_at, finished_at)
+        VALUES (:id, :project_id, :created_by_user_id, :type, :status, :payload_json, :result_json, :error, :attempts, :created_at, :updated_at, :started_at, :finished_at)
+        """,
+        job,
+    )
+    conn.commit()
+    record_job_event(conn, job_id=job["id"], event_type="completed", message=f"{job_type} job recorded", metadata=result or {})
+    record_usage_event(conn, user_id=user_id, project_id=project_id, job_id=job["id"], event_type="jobs_created", quantity=1, unit="job", metadata={"type": job_type})
+    return job
+
+
 def enqueue_extract_job(
     conn: sqlite3.Connection,
     *,

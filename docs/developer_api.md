@@ -78,13 +78,18 @@ The local UI exposes `/api/health`, `/api/capabilities`, `/api/projects`,
 `/api/videos`, `/api/videos/{videoId}/content`, `/api/run-config/validate`,
 `/api/jobs`, `/api/progress`, job event/artifact/review routes, correction
 history and track-edit routes, and
-`/api/exports/formats`. It omits internal storage keys and local `file://`
-storage URIs from public asset responses. `POST /api/run-config/validate`
-normalizes Phase 8 wizard configs with `ExtractionRunConfig` and reports
-provider/job-policy warnings before a run is queued. `POST /api/jobs` enqueues
-a local extract job and defaults to `mock` when the UI is launched with
-`--mock`. See [Local UI](local_ui.md) for route details and the static build
-smoke command.
+`/api/exports/formats`. Phase 11 adds
+`POST /api/jobs/{jobId}/validate`, `POST /api/jobs/{jobId}/exports`, and
+`POST /api/projects/{projectId}/imports/motionjson` for validated corrected
+MotionJSON export and import-for-review. It omits internal storage keys and
+local `file://` storage URIs from public asset responses. Validation and export
+accept the same preset/toggle payload, and imported SVG files are not served as
+same-origin public artifact content. `POST
+/api/run-config/validate` normalizes Phase 8 wizard configs with
+`ExtractionRunConfig` and reports provider/job-policy warnings before a run is
+queued. `POST /api/jobs` enqueues a local extract job and defaults to `mock`
+when the UI is launched with `--mock`. See [Local UI](local_ui.md) for route
+details and the static build smoke command.
 
 ## Endpoints
 
