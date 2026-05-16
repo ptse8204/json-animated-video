@@ -87,3 +87,5 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   [Provider capabilities and diagnostics](provider_capabilities.md).
 - Extraction writes `run_config.json` into each output directory as part of the
   local job artifact set; see [Job artifacts and progress](job_artifacts.md).
+- The local UI Phase 8 wizard generates this same schema and validates it via
+  `POST /api/run-config/validate` before users save or queue work.

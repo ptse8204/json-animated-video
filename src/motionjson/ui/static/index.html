@@ -16,28 +16,36 @@
             <span>Local object tracing</span>
           </div>
         </div>
-        <nav class="goal-list" aria-label="Tracing goals">
-          <button class="goal is-active" type="button" data-goal="Trace one object">Trace one object</button>
-          <button class="goal" type="button" data-goal="Find objects from text">Find objects from text</button>
-          <button class="goal" type="button" data-goal="Find moving objects">Find moving objects</button>
-          <button class="goal" type="button" data-goal="Propose all visible segments">Propose all visible segments</button>
-          <button class="goal" type="button" data-goal="Review existing result">Review existing result</button>
+
+        <nav class="goal-list" aria-label="Extraction wizard presets">
+          <button class="goal is-active" type="button" data-preset="trace_one_object">Trace one object</button>
+          <button class="goal" type="button" data-preset="text_detector">Find objects from text</button>
+          <button class="goal" type="button" data-preset="sam_auto_masks">Propose all visible segments</button>
+          <button class="goal" type="button" data-preset="motion_foreground">Find moving objects</button>
+          <button class="goal" type="button" data-preset="external_masks">Import external masks</button>
         </nav>
+
         <section class="compact-panel">
           <h2>Local API</h2>
           <dl id="healthStatus" class="facts"></dl>
         </section>
+
         <section class="compact-panel">
-          <h2>Mock / no-model</h2>
-          <dl id="mockStatus" class="facts"></dl>
+          <h2>Provider Warnings</h2>
+          <div id="providerWarning" class="warning-box" role="status"></div>
+        </section>
+
+        <section class="compact-panel">
+          <h2>Capabilities</h2>
+          <div id="capabilityList" class="capability-list" aria-live="polite"></div>
         </section>
       </aside>
 
-      <section class="workspace" aria-label="Local UI shell">
+      <section class="workspace" aria-label="Video prompt workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Phase 7 shell</p>
-            <h1>Backend readiness and project setup</h1>
+            <p class="eyebrow">Phase 8</p>
+            <h1>Video prompts and extraction wizard</h1>
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
@@ -45,17 +53,8 @@
           </div>
         </header>
 
-        <section class="overview-grid">
-          <article class="panel status-panel">
-            <div class="panel-heading">
-              <h2>Capabilities</h2>
-              <span id="capabilitySummary" class="status-chip">Checking</span>
-            </div>
-            <p id="capabilityNotice" class="panel-note"></p>
-            <div id="capabilityList" class="capability-list" aria-live="polite"></div>
-          </article>
-
-          <article class="panel">
+        <section class="workspace-grid">
+          <article class="panel setup-panel" aria-label="Project and video setup">
             <div class="panel-heading">
               <h2>Project</h2>
               <span id="projectCount" class="subtle-chip">0 projects</span>
@@ -68,35 +67,203 @@
               <button type="submit">Create</button>
             </form>
             <select id="projectSelect" aria-label="Project"></select>
-          </article>
 
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>Video</h2>
+            <div class="panel-heading secondary-heading">
+              <h2>Source Video</h2>
               <span id="videoCount" class="subtle-chip">0 videos</span>
             </div>
             <form id="videoForm" class="inline-form">
               <label>
-                <span>Local path</span>
+                <span>Register local path</span>
                 <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
               </label>
               <button type="submit">Add video</button>
             </form>
-            <select id="videoSelect" aria-label="Video"></select>
+            <select id="videoSelect" aria-label="Registered video"></select>
+            <label class="file-control">
+              <span>Browser preview</span>
+              <input id="videoFileInput" type="file" accept="video/*" />
+            </label>
             <div id="videoList" class="artifact-list"></div>
           </article>
 
-          <article class="panel">
-            <div class="panel-heading">
-              <h2>Run Defaults</h2>
-              <span class="subtle-chip">No-model safe</span>
+          <article class="panel viewer-panel" aria-label="Video viewer">
+            <div class="viewer-toolbar" role="toolbar" aria-label="Prompt tools">
+              <div class="tool-group" aria-label="Drawing tools">
+                <button class="tool-button is-active" type="button" data-tool="point" title="Point tool">Point</button>
+                <button class="tool-button" type="button" data-tool="box" title="Box tool">Box</button>
+                <button class="tool-button" type="button" data-tool="brush" title="Mask brush">Brush</button>
+                <button class="tool-button" type="button" data-tool="eraser" title="Mask erase">Erase</button>
+                <button class="tool-button" type="button" data-tool="label" title="Label selected object">Label</button>
+                <button class="tool-button" type="button" data-tool="keyframe" title="Mark keyframe">Keyframe</button>
+              </div>
+              <div class="tool-group" aria-label="Point polarity">
+                <button id="positivePointButton" class="tool-button is-active" type="button" data-point-kind="positive_point">Positive</button>
+                <button id="negativePointButton" class="tool-button" type="button" data-point-kind="negative_point">Negative</button>
+              </div>
+              <label class="compact-field">
+                <span>Brush</span>
+                <input id="brushSize" type="number" min="2" max="96" step="1" value="18" />
+              </label>
             </div>
-            <dl id="runDefaults" class="facts"></dl>
+
+            <div id="viewerStage" class="viewer-stage" tabindex="0" aria-label="Video frame and prompt overlay">
+              <video id="previewVideo" class="preview-video" muted playsinline preload="metadata"></video>
+              <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+              <div id="emptyViewerState" class="empty-viewer-state">
+                <strong>No browser preview loaded</strong>
+                <span>Use the browser preview control to draw on native video pixels.</span>
+              </div>
+            </div>
+
+            <div class="viewer-status">
+              <span id="coordinateReadout">x: -, y: -</span>
+              <span id="frameReadout">frame 0</span>
+              <span id="videoMetricReadout">video pixels unavailable</span>
+            </div>
+
+            <div class="timeline-controls">
+              <button id="playPauseButton" type="button">Play</button>
+              <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
+              <button id="markKeyframeButton" type="button">Mark keyframe</button>
+            </div>
+          </article>
+
+          <article class="panel wizard-panel" aria-label="Extraction wizard">
+            <div class="panel-heading">
+              <h2>Wizard</h2>
+              <span id="presetSummary" class="status-chip is-neutral">Trace one object</span>
+            </div>
+
+            <div class="wizard-fields">
+              <label>
+                <span>Object label</span>
+                <input id="objectLabel" type="text" value="selected_object" />
+              </label>
+              <label>
+                <span>Object ID</span>
+                <input id="objectId" type="text" value="object_0" />
+              </label>
+              <label id="textPromptField">
+                <span>Text prompt</span>
+                <input id="textPrompt" type="text" value="red ball . hand . cup" />
+              </label>
+              <label id="classListField">
+                <span>Classes</span>
+                <input id="classList" type="text" value="person, ball" />
+              </label>
+              <label id="externalMaskField">
+                <span>Mask directory</span>
+                <input id="externalMaskDir" type="text" value="masks/object_0" />
+              </label>
+              <label>
+                <span>Mask provider</span>
+                <select id="maskProviderSelect"></select>
+              </label>
+              <label>
+                <span>Device</span>
+                <select id="deviceSelect">
+                  <option value="auto">auto</option>
+                  <option value="cpu">cpu</option>
+                  <option value="cuda">cuda</option>
+                  <option value="mps">mps</option>
+                </select>
+              </label>
+            </div>
+
+            <details class="advanced-panel" open>
+              <summary>Advanced parameters</summary>
+              <div class="advanced-grid">
+                <label>
+                  <span>Sample FPS</span>
+                  <input id="sampleFps" type="number" min="0.1" step="0.1" value="12" />
+                </label>
+                <label>
+                  <span>Max frames</span>
+                  <input id="maxFrames" type="number" min="1" step="1" value="48" />
+                </label>
+                <label>
+                  <span>Min area</span>
+                  <input id="minArea" type="number" min="0" step="1" value="100" />
+                </label>
+                <label>
+                  <span>Max area ratio</span>
+                  <input id="maxAreaRatio" type="number" min="0.01" max="1" step="0.01" value="0.65" />
+                </label>
+                <label>
+                  <span>Stability</span>
+                  <input id="stabilityThreshold" type="number" min="0" max="1" step="0.01" value="0.82" />
+                </label>
+                <label>
+                  <span>Duplicate IoU</span>
+                  <input id="overlapThreshold" type="number" min="0" max="1" step="0.01" value="0.72" />
+                </label>
+                <label>
+                  <span>Box threshold</span>
+                  <input id="boxThreshold" type="number" min="0" max="1" step="0.01" value="0.35" />
+                </label>
+                <label>
+                  <span>Text threshold</span>
+                  <input id="textThreshold" type="number" min="0" max="1" step="0.01" value="0.25" />
+                </label>
+                <label>
+                  <span>Sensitivity</span>
+                  <input id="motionSensitivity" type="number" min="1" max="255" step="1" value="32" />
+                </label>
+                <label>
+                  <span>Max objects</span>
+                  <input id="maxObjects" type="number" min="1" step="1" value="12" />
+                </label>
+                <label>
+                  <span>Model</span>
+                  <input id="modelName" type="text" value="auto" />
+                </label>
+                <label>
+                  <span>Output mode</span>
+                  <select id="outputMode">
+                    <option value="authoring">authoring</option>
+                    <option value="production">production</option>
+                    <option value="both">both</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <div class="prompt-summary">
+              <div class="panel-heading compact-heading">
+                <h2>Prompts</h2>
+                <span id="promptCount" class="subtle-chip">0 prompts</span>
+              </div>
+              <div id="promptList" class="artifact-list"></div>
+            </div>
+          </article>
+
+          <article class="panel config-panel" aria-label="Config preview">
+            <div class="panel-heading">
+              <h2>Config Preview</h2>
+              <span id="configStatus" class="status-chip is-neutral">Ready</span>
+            </div>
+            <div class="config-actions">
+              <button id="validateConfigButton" type="button">Validate config</button>
+              <button id="saveConfigButton" type="button">Save config</button>
+              <label class="load-config-button">
+                <span>Load config</span>
+                <input id="loadConfigInput" type="file" accept="application/json,.json" />
+              </label>
+            </div>
+            <pre id="configPreview" class="config-preview" aria-live="polite"></pre>
           </article>
         </section>
       </section>
 
-      <aside class="right-rail" aria-label="Jobs and artifacts">
+      <aside class="right-rail" aria-label="Jobs and diagnostics">
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Run Defaults</h2>
+            <span class="subtle-chip">No-model safe</span>
+          </div>
+          <dl id="runDefaults" class="facts"></dl>
+        </section>
         <section class="compact-panel">
           <div class="panel-heading compact-heading">
             <h2>Jobs</h2>
@@ -105,11 +272,11 @@
           <div id="jobList" class="artifact-list"></div>
         </section>
         <section class="compact-panel">
-          <h2>Next APIs</h2>
+          <h2>Routes</h2>
           <div id="routeList" class="route-list"></div>
         </section>
       </aside>
     </main>
-    <script src="/ui/app.js"></script>
+    <script type="module" src="/ui/app.js"></script>
   </body>
 </html>

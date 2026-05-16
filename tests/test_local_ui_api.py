@@ -33,6 +33,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/capabilities" in health["routes"]
     assert "/api/progress" in health["routes"]
     assert "/api/artifacts" in health["routes"]
+    assert "/api/videos/{videoId}/content" in health["routes"]
+    assert "/api/run-config/validate" in health["routes"]
 
     status, _headers, body = app.handle("GET", "/api/capabilities")
     capabilities = decode(body)
@@ -84,16 +86,21 @@ def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     video = decode(body)["video"]
     assert status == 200
     assert video["kind"] == "source_video"
+    assert video["contentUrl"] == f"/api/videos/{video['id']}/content"
     assert "storage_key" not in video
     assert "uri" not in video
     assert video["metadata"]["filename"] == "demo_red_ball.mp4"
+    assert str(demo_video()) not in body.decode("utf-8")
+    assert "file://" not in body.decode("utf-8")
 
     status, _headers, body = app.handle("GET", f"/api/videos?projectId={project['id']}")
     videos = decode(body)["videos"]
     assert status == 200
     assert videos[0]["id"] == video["id"]
+    assert videos[0]["contentUrl"] == video["contentUrl"]
     assert videos[0]["metadata"]["filename"] == "demo_red_ball.mp4"
     assert "uri" not in videos[0]
+    assert str(demo_video()) not in body.decode("utf-8")
 
     status, _headers, body = app.handle("GET", f"/api/jobs?projectId={project['id']}")
     assert status == 200
@@ -102,6 +109,126 @@ def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     status, _headers, body = app.handle("GET", f"/api/progress?projectId={project['id']}")
     assert status == 200
     assert decode(body)["progress"] == []
+
+
+def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/projects",
+        body=json.dumps({"name": "UI Project"}).encode("utf-8"),
+    )
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    original = demo_video().read_bytes()
+
+    assert status == 200
+    assert "file://" not in video["contentUrl"]
+    assert "projects/" not in video["contentUrl"]
+
+    status, headers, body = app.handle("GET", video["contentUrl"])
+    assert status == 200
+    assert headers["content-type"] == "video/mp4"
+    assert headers["accept-ranges"] == "bytes"
+    assert "file://" not in json.dumps(headers)
+    assert "projects/" not in json.dumps(headers)
+    assert body == original
+
+    status, headers, body = app.handle("HEAD", video["contentUrl"])
+    assert status == 200
+    assert headers["content-length"] == str(len(original))
+    assert body == b""
+
+    status, headers, body = app.handle("GET", video["contentUrl"], headers={"Range": "bytes=0-7"})
+    assert status == 206
+    assert headers["content-range"] == f"bytes 0-7/{len(original)}"
+    assert body == original[:8]
+
+    status, headers, body = app.handle("HEAD", video["contentUrl"], headers={"Range": "bytes=0-7"})
+    assert status == 206
+    assert headers["content-range"] == f"bytes 0-7/{len(original)}"
+    assert headers["content-length"] == "8"
+    assert body == b""
+
+    status, headers, body = app.handle(
+        "GET",
+        video["contentUrl"],
+        headers={"Range": f"bytes={len(original)}-"},
+    )
+    assert status == 416
+    assert headers["content-range"] == f"bytes */{len(original)}"
+    assert body == b""
+
+
+def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_path, monkeypatch):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda: {
+            "providers": [
+                {
+                    "name": "sam2-local",
+                    "kind": "mask_provider",
+                    "available": False,
+                    "status": "missing_dependency",
+                    "reasons": ["sam2 package is not importable"],
+                    "installHint": "Install SAM2 separately.",
+                },
+                {"name": "manual_prompt", "kind": "discovery_provider", "available": True, "status": "ready"},
+            ]
+        },
+    )
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "motionjson://assets/source-video"},
+        "output": {"directory": "out/ui-preview"},
+        "provider": {"name": "sam2-local"},
+        "discovery": {"mode": "manual_prompt"},
+        "prompts": [
+            {
+                "kind": "positive_point",
+                "frame_index": 3,
+                "object_id": "object_0",
+                "label": "Ball",
+                "data": {"x": 12, "y": 8},
+            }
+        ],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": run_config}).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["format"] == "motionjson.local_ui_run_config_validation.v0.1"
+    assert payload["valid"] is True
+    assert payload["errors"] == []
+    assert payload["runConfig"]["prompts"][0]["data"] == {"x": 12, "y": 8}
+    assert {warning["code"] for warning in payload["warnings"]} >= {
+        "provider_unavailable",
+        "local_job_policy",
+    }
+
+    invalid = {**run_config, "prompts": []}
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps(invalid).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["valid"] is False
+    assert "requires a point or box prompt" in payload["errors"][0]["message"]
 
 
 def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):

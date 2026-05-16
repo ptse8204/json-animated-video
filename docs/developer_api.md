@@ -75,11 +75,15 @@ diagnostics so missing CUDA, SAM2 weights, FFmpeg, detectors, or optional
 packages are not mistaken for successful extraction.
 
 The local UI exposes `/api/health`, `/api/capabilities`, `/api/projects`,
-`/api/videos`, `/api/jobs`, `/api/progress`, job event/artifact routes, and
+`/api/videos`, `/api/videos/{videoId}/content`, `/api/run-config/validate`,
+`/api/jobs`, `/api/progress`, job event/artifact routes, and
 `/api/exports/formats`. It omits internal storage keys and local `file://`
-storage URIs from public asset responses. `POST /api/jobs` enqueues a local
-extract job and defaults to `mock` when the UI is launched with `--mock`. See
-[Local UI](local_ui.md) for route details and the static build smoke command.
+storage URIs from public asset responses. `POST /api/run-config/validate`
+normalizes Phase 8 wizard configs with `ExtractionRunConfig` and reports
+provider/job-policy warnings before a run is queued. `POST /api/jobs` enqueues
+a local extract job and defaults to `mock` when the UI is launched with
+`--mock`. See [Local UI](local_ui.md) for route details and the static build
+smoke command.
 
 ## Endpoints
 

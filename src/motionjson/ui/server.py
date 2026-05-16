@@ -13,14 +13,14 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from motionjson import __version__
-from motionjson.backend.assets import list_assets_for_job, list_project_assets, register_upload
+from motionjson.backend.assets import get_asset, list_assets_for_job, list_project_assets, register_upload
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import connect, initialize_database
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs
-from motionjson.backend.models import BackendError, NotFoundError
+from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.capabilities import build_capability_report
-from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS
+from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
 from motionjson.providers.discovery import discovery_provider_schemas
 from motionjson.providers.local_storage import LocalStorageProvider
 
@@ -28,6 +28,8 @@ from motionjson.providers.local_storage import LocalStorageProvider
 LOCAL_UI_EMAIL = "local-ui@motionjson.local"
 LOCAL_UI_FORMAT = "motionjson.local_ui.v0.1"
 STORAGE_KEY_ASSIGNMENT_RE = re.compile(r"(?i)\bstorage[_-]?key=([^\s&]+)")
+LOCAL_FILE_URI_RE = re.compile(r"(?i)\bfile://[^\s\"']+")
+LOCAL_PATH_FIELD_NAMES = {"sourceuri", "sourcepath", "localpath"}
 
 
 def _json_loads(data: bytes) -> dict[str, Any]:
@@ -53,13 +55,29 @@ def _is_storage_key_field(key: Any) -> bool:
     return normalized == "storagekey"
 
 
-def _public_value(value: Any) -> Any:
+def _is_local_path_field(key: Any) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+    return normalized in LOCAL_PATH_FIELD_NAMES
+
+
+def _public_value(value: Any, *, key: Any | None = None) -> Any:
+    if _is_local_path_field(key) and isinstance(value, str) and (
+        value.startswith("/") or value.lower().startswith("file://")
+    ):
+        return "[LOCAL_PATH_REDACTED]"
     if isinstance(value, dict):
-        return {str(key): _public_value(item) for key, item in value.items() if not _is_storage_key_field(key)}
+        return {
+            str(key): _public_value(item, key=key)
+            for key, item in value.items()
+            if not _is_storage_key_field(key)
+        }
     if isinstance(value, list):
         return [_public_value(item) for item in value]
     if isinstance(value, str):
-        return STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value)
+        return LOCAL_FILE_URI_RE.sub(
+            "[LOCAL_FILE_URI_REDACTED]",
+            STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value),
+        )
     return value
 
 
@@ -69,6 +87,12 @@ def _public_asset(row: dict[str, Any]) -> dict[str, Any]:
     data.pop("uri", None)
     _parse_json_field(data, "metadata_json")
     return _public_value(data)
+
+
+def _public_video(row: dict[str, Any]) -> dict[str, Any]:
+    data = _public_asset(row)
+    data["contentUrl"] = f"/api/videos/{data['id']}/content"
+    return data
 
 
 def _public_job(row: dict[str, Any]) -> dict[str, Any]:
@@ -91,6 +115,34 @@ def _optional_int_payload(payload: dict[str, Any], key: str) -> int | None:
     return int(value)
 
 
+def _header_value(headers: dict[str, str], key: str) -> str | None:
+    target = key.lower()
+    for name, value in headers.items():
+        if name.lower() == target:
+            return value
+    return None
+
+
+def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
+    if not value.startswith("bytes=") or "," in value:
+        raise ValueError("invalid range")
+    start_text, separator, end_text = value.removeprefix("bytes=").partition("-")
+    if separator != "-" or (not start_text and not end_text):
+        raise ValueError("invalid range")
+    if start_text:
+        start = int(start_text)
+        end = int(end_text) if end_text else size - 1
+    else:
+        suffix_length = int(end_text)
+        if suffix_length <= 0:
+            raise ValueError("invalid range")
+        start = max(size - suffix_length, 0)
+        end = size - 1
+    if size <= 0 or start < 0 or start >= size or end < start:
+        raise ValueError("unsatisfiable range")
+    return start, min(end, size - 1)
+
+
 class LocalUIApp:
     """Small local-only UI app over the existing SQLite backend."""
 
@@ -106,7 +158,7 @@ class LocalUIApp:
         return LocalStorageProvider(self.storage_root)
 
     def handle(self, method: str, raw_path: str, headers: dict[str, str] | None = None, body: bytes = b"") -> tuple[int, dict[str, str], bytes]:
-        del headers
+        request_headers = headers or {}
         parsed = urlparse(raw_path)
         path = parsed.path.rstrip("/") or "/"
         query = parse_qs(parsed.query)
@@ -119,6 +171,10 @@ class LocalUIApp:
             return self._error(HTTPStatus.NOT_FOUND, "route not found")
 
         try:
+            if method in {"GET", "HEAD"} and path.startswith("/api/videos/") and path.endswith("/content"):
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 4:
+                    return self._video_content(parts[2], headers=request_headers, head=method == "HEAD")
             payload = _json_loads(body) if method in {"POST", "PATCH", "PUT", "DELETE"} else {}
             return _json_response(self._route(method, path, query, payload))
         except json.JSONDecodeError as exc:
@@ -142,7 +198,9 @@ class LocalUIApp:
                     "/api/capabilities",
                     "/api/projects",
                     "/api/videos",
+                    "/api/videos/{videoId}/content",
                     "/api/run-config/defaults",
+                    "/api/run-config/validate",
                     "/api/jobs",
                     "/api/jobs/{jobId}",
                     "/api/jobs/{jobId}/events",
@@ -169,6 +227,8 @@ class LocalUIApp:
                     "outputMode": "authoring",
                 },
             }
+        if path == "/api/run-config/validate" and method == "POST":
+            return self._validate_run_config(payload)
         if path == "/api/exports/formats" and method == "GET":
             return {
                 "format": "motionjson.local_ui_export_formats.v0.1",
@@ -203,7 +263,7 @@ class LocalUIApp:
                 if not project_id:
                     return {"videos": []}
                 videos = list_project_assets(conn, user_id=user_id, project_id=project_id, kind="source_video")
-                return {"videos": [_public_asset(asset) for asset in videos]}
+                return {"videos": [_public_video(asset) for asset in videos]}
             if path == "/api/videos" and method == "POST":
                 project_id = str(payload.get("projectId") or "")
                 source_path = Path(str(payload.get("path") or "")).expanduser()
@@ -220,7 +280,7 @@ class LocalUIApp:
                     kind="source_video",
                     metadata={"rights_context": {"source_uri": str(source_path), "source_type": "user_upload"}},
                 )
-                return {"video": _public_asset(asset)}
+                return {"video": _public_video(asset)}
             if path == "/api/jobs" and method == "GET":
                 project_id = self._query_one(query, "projectId")
                 if not project_id:
@@ -276,6 +336,124 @@ class LocalUIApp:
         finally:
             conn.close()
 
+    def _validate_run_config(self, payload: dict[str, Any]) -> dict[str, Any]:
+        run_config_payload = payload.get("runConfig", payload)
+        if not isinstance(run_config_payload, dict):
+            raise ValueError("runConfig must be a JSON object")
+
+        response: dict[str, Any] = {
+            "format": "motionjson.local_ui_run_config_validation.v0.1",
+            "valid": False,
+            "errors": [],
+            "warnings": [],
+        }
+        try:
+            config = ExtractionRunConfig.from_dict(run_config_payload)
+        except ConfigValidationError as exc:
+            response["errors"] = [{"message": str(exc)}]
+            return response
+
+        response["valid"] = True
+        response["runConfig"] = _public_value(config.to_dict())
+        response["warnings"] = self._run_config_warnings(config)
+        return response
+
+    def _run_config_warnings(self, config: ExtractionRunConfig) -> list[dict[str, Any]]:
+        warnings: list[dict[str, Any]] = []
+        providers = {
+            (str(provider.get("kind") or ""), str(provider.get("name") or "")): provider
+            for provider in build_capability_report().get("providers", [])
+            if isinstance(provider, dict)
+        }
+        self._append_provider_warning(
+            warnings,
+            providers,
+            kind="mask_provider",
+            name=config.provider.name,
+            field="provider.name",
+        )
+        if config.discovery.mode:
+            self._append_provider_warning(
+                warnings,
+                providers,
+                kind="discovery_provider",
+                name=config.discovery.mode,
+                field="discovery.mode",
+            )
+
+        try:
+            validate_extract_provider_policy(config.provider.name)
+        except BackendError as exc:
+            warnings.append(
+                {
+                    "code": "local_job_policy",
+                    "field": "provider.name",
+                    "provider": config.provider.name,
+                    "message": str(exc),
+                }
+            )
+        return warnings
+
+    @staticmethod
+    def _append_provider_warning(
+        warnings: list[dict[str, Any]],
+        providers: dict[tuple[str, str], dict[str, Any]],
+        *,
+        kind: str,
+        name: str,
+        field: str,
+    ) -> None:
+        provider = providers.get((kind, name))
+        if not provider or provider.get("available") is not False:
+            return
+        warnings.append(
+            {
+                "code": "provider_unavailable",
+                "field": field,
+                "provider": name,
+                "kind": kind,
+                "status": provider.get("status"),
+                "message": f"{name} is not available on this machine.",
+                "reasons": _public_value(provider.get("reasons") or []),
+                "installHint": provider.get("installHint"),
+            }
+        )
+
+    def _video_content(self, asset_id: str, *, headers: dict[str, str], head: bool = False) -> tuple[int, dict[str, str], bytes]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            asset = get_asset(conn, user_id=user["id"], asset_id=asset_id)
+            if asset["kind"] != "source_video":
+                raise NotFoundError("video not found")
+            try:
+                data = self.storage().load_bytes(asset["storage_key"])
+            except FileNotFoundError as exc:
+                raise NotFoundError("video content not found in local storage") from exc
+            content_type = asset["content_type"] or "application/octet-stream"
+            response_headers = {"content-type": content_type, "cache-control": "no-store", "accept-ranges": "bytes"}
+            range_header = _header_value(headers, "range")
+            if range_header:
+                try:
+                    start, end = _parse_single_byte_range(range_header, len(data))
+                except ValueError:
+                    return (
+                        HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE,
+                        {**response_headers, "content-range": f"bytes */{len(data)}", "content-length": "0"},
+                        b"",
+                    )
+                response_headers["content-range"] = f"bytes {start}-{end}/{len(data)}"
+                if head:
+                    response_headers["content-length"] = str(end - start + 1)
+                    return HTTPStatus.PARTIAL_CONTENT, response_headers, b""
+                return HTTPStatus.PARTIAL_CONTENT, response_headers, data[start : end + 1]
+            if head:
+                response_headers["content-length"] = str(len(data))
+                return HTTPStatus.OK, response_headers, b""
+            return HTTPStatus.OK, response_headers, data
+        finally:
+            conn.close()
+
     def _local_user(self, conn: sqlite3.Connection) -> dict[str, Any]:
         row = conn.execute("SELECT * FROM users WHERE email = ?", (LOCAL_UI_EMAIL,)).fetchone()
         if row is not None:
@@ -320,6 +498,9 @@ def make_handler(app: LocalUIApp) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             self._handle()
 
+        def do_HEAD(self) -> None:
+            self._handle()
+
         def do_POST(self) -> None:
             self._handle()
 
@@ -333,9 +514,11 @@ def make_handler(app: LocalUIApp) -> type[BaseHTTPRequestHandler]:
             self.send_response(int(status))
             for key, value in headers.items():
                 self.send_header(key, value)
-            self.send_header("content-length", str(len(response_body)))
+            if not any(key.lower() == "content-length" for key in headers):
+                self.send_header("content-length", str(len(response_body)))
             self.end_headers()
-            self.wfile.write(response_body)
+            if self.command != "HEAD":
+                self.wfile.write(response_body)
 
     return Handler
 
