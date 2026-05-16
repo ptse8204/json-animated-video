@@ -26,7 +26,10 @@ The job layer adds these auxiliary files:
   canceled.
 - `candidates.json`: Phase 4 object-candidate discovery summary.
 - `tracks.json`: Phase 4 linked object-track summary with frame coverage,
-  visibility, boxes, masks, assets, and vectorization metadata.
+  visibility, boxes, masks, assets, vectorization metadata, and Phase 6 track
+  filter decisions.
+- `fallback_diagnostics.json`: Phase 6 raster fallback reason codes,
+  suggested fixes, affected tracks, and aggregate fallback counts.
 - `discovery/`: Phase 5 generated candidate assets such as CPU motion
   foreground mask sequences.
 

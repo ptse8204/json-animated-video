@@ -59,3 +59,12 @@ Phase 5 adds discovery providers that can feed this same pipeline:
 
 See [Discovery providers](discovery_providers.md) for mode guidance and CLI
 examples.
+
+## Track Filtering
+
+Phase 6 runs linked tracks through deterministic filtering and duplicate
+analysis before writing `tracks.json`. Whole-frame masks, no-mask tracks, short
+tracks, and duplicate tracks receive explicit reason codes and suggested fixes
+in `fallback_diagnostics.json`. Core scene output remains schema-compatible;
+review tooling should read the auxiliary diagnostics when deciding what to
+show, hide, merge, or repair.

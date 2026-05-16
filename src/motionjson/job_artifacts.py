@@ -52,6 +52,7 @@ GENERATED_EXTRACTION_FILES = {
     "resource_profile.json",
     "candidates.json",
     "tracks.json",
+    "fallback_diagnostics.json",
     "silhouette_lottie.json",
     "benchmark_report.json",
 }
@@ -88,6 +89,8 @@ def artifact_kind_for_rel_path(rel_path: str) -> str:
         return "candidate_summary"
     if rel_path == "tracks.json":
         return "track_summary"
+    if rel_path == "fallback_diagnostics.json":
+        return "fallback_diagnostics"
     if rel_path == "scene_graph.json":
         return "scene_graph"
     if rel_path == "rights_manifest.json":

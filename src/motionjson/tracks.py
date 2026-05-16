@@ -186,6 +186,8 @@ class ObjectTrack:
     z_index: int = 10
     confidence: float | None = None
     provider_name: str | None = None
+    warnings: list[str] = field(default_factory=list)
+    export_status: str = "accepted"
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_summary(self) -> dict[str, Any]:
@@ -197,6 +199,8 @@ class ObjectTrack:
             "providerName": self.provider_name,
             "frameCount": len(self.frames),
             "visibleFrameCount": sum(1 for frame in self.frames if frame.visible),
+            "warnings": list(self.warnings),
+            "exportStatus": self.export_status,
             "frames": [frame.to_summary() for frame in self.frames],
             "metadata": _json_safe(self.metadata),
         }

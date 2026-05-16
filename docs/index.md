@@ -18,6 +18,7 @@ flat graphics.
 - [Job artifacts and progress](job_artifacts.md)
 - [Extraction provider pipeline](provider_pipeline.md)
 - [Discovery providers](discovery_providers.md)
+- [Track filtering and fallback diagnostics](track_filtering.md)
 - [Provider capabilities and diagnostics](provider_capabilities.md)
 - [Runtime guide](runtime.md)
 - [Privacy and data handling](privacy.md)

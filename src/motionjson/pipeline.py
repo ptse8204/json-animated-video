@@ -25,6 +25,7 @@ from .providers.pipeline_adapters import (
     PerFrameMaskVideoTracker,
 )
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
+from .track_filters import TrackFilterConfig, build_raster_fallback, filter_and_dedupe_tracks
 from .tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
 from .vectorize import build_quality_scores, recommended_output
 from .video import iter_sampled_frames
@@ -102,6 +103,14 @@ def _rel(path: Path, root: Path) -> str:
 
 def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
+
+
+def _fallback_payload(*, diagnostics: list[dict[str, Any]], summary: dict[str, Any] | None = None) -> dict[str, Any]:
+    return {
+        "format": "motionjson.raster_fallback_diagnostics.v0.1",
+        "diagnostics": diagnostics,
+        "summary": dict(summary or {}),
+    }
 
 
 def _job_emit(
@@ -544,6 +553,20 @@ def run_multi_object_pipeline(
         metadata={"provider": active_candidate_provider.name},
     )
     candidates = list(active_candidate_provider.propose(video_source, active_candidate_config, run_context))
+    if candidate_provider is not None and not candidates:
+        fallback = build_raster_fallback(
+            "no_candidates",
+            metadata={"provider": active_candidate_provider.name, "config": active_candidate_config},
+            severity="error",
+        )
+        write_json(
+            out_dir / "fallback_diagnostics.json",
+            _fallback_payload(
+                diagnostics=[fallback.to_dict()],
+                summary={"fallbackReasonCounts": {"no_candidates": 1}, "acceptedTracks": 0, "rejectedTracks": 0},
+            ),
+        )
+        raise ValueError(f"Discovery provider {active_candidate_provider.name!r} produced no candidates")
     if candidate_provider is not None and candidate_to_specs is not None:
         object_specs = candidate_to_specs(candidates)
         if not object_specs:
@@ -626,11 +649,32 @@ def run_multi_object_pipeline(
     )
     linker = IdentityTrackLinker()
     linked_tracks = list(linker.link(object_tracks, {}, run_context))
+    track_filter_report = filter_and_dedupe_tracks(
+        linked_tracks,
+        width=info.width,
+        height=info.height,
+        config=TrackFilterConfig(min_area=min_area),
+    )
+    track_filter_payload = track_filter_report.to_dict()
+    fallback_diagnostics = [
+        decision["fallback"]
+        for decision in track_filter_payload["decisions"]
+        if decision.get("fallback")
+    ]
+    write_json(
+        out_dir / "fallback_diagnostics.json",
+        _fallback_payload(
+            diagnostics=fallback_diagnostics,
+            summary=track_filter_payload["summary"],
+        ),
+    )
     write_json(
         out_dir / "tracks.json",
         {
             "format": "motionjson.tracks.v0.1",
             "provider": linker.name,
+            "filterReport": track_filter_payload,
+            "fallbackDiagnostics": fallback_diagnostics,
             "tracks": [track.to_summary() for track in linked_tracks],
         },
     )
@@ -641,7 +685,7 @@ def run_multi_object_pipeline(
         "succeeded",
         "object tracks linked",
         progress={"stageRatio": 1.0, "overallRatio": 0.75},
-        metadata={"tracks": len(linked_tracks)},
+        metadata={"tracks": len(linked_tracks), "acceptedTracks": track_filter_payload["summary"]["acceptedTracks"], "rejectedTracks": track_filter_payload["summary"]["rejectedTracks"]},
     )
 
     latency_metrics = {
@@ -654,6 +698,8 @@ def run_multi_object_pipeline(
     provider_performance = {
         "schema": "motionjson.provider_performance.v0.1",
         "objects": provider_performance_objects,
+        "trackFilter": track_filter_payload,
+        "fallbackDiagnostics": fallback_diagnostics,
     }
     scene = {
         "schema": "motionjson.scene_graph.v0.1",

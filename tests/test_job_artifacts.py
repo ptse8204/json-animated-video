@@ -60,6 +60,7 @@ def test_cli_extract_job_artifacts_preserve_legacy_outputs(tmp_path, capsys):
     assert (out / "provider_diagnostics.json").exists()
     assert (out / "candidates.json").exists()
     assert (out / "tracks.json").exists()
+    assert (out / "fallback_diagnostics.json").exists()
 
     job = read_json(out / "job.json")
     metrics = read_json(out / "metrics.json")
@@ -70,7 +71,15 @@ def test_cli_extract_job_artifacts_preserve_legacy_outputs(tmp_path, capsys):
 
     assert job["status"] == "succeeded"
     assert metrics["latencyMetrics"]["sampledFrames"] == 2
-    assert {"run_config.json", "scene_graph.json", "events.jsonl", "metrics.json", "candidates.json", "tracks.json"}.issubset({artifact["path"] for artifact in artifacts})
+    assert {
+        "run_config.json",
+        "scene_graph.json",
+        "events.jsonl",
+        "metrics.json",
+        "candidates.json",
+        "tracks.json",
+        "fallback_diagnostics.json",
+    }.issubset({artifact["path"] for artifact in artifacts})
     assert {
         "validating_config",
         "video_read",
@@ -201,7 +210,7 @@ def test_backend_extract_job_registers_structured_artifacts_and_progress(tmp_pat
 
     assert result["status"] == "succeeded"
     assert {"run_config", "job_state", "job_events", "job_logs", "job_metrics", "artifact_manifest", "provider_diagnostics"}.issubset(kinds)
-    assert {"candidate_summary", "track_summary"}.issubset(kinds)
+    assert {"candidate_summary", "track_summary", "fallback_diagnostics"}.issubset(kinds)
     assert {"scene_graph", "object_manifest", "web_manifest"}.issubset(kinds)
     assert {"debug_frame", "mask", "cutout", "preview"}.issubset(kinds)
     assert any(event["event_type"] == "progress" and "video" in event["message"] for event in events)
