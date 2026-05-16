@@ -6,6 +6,7 @@ from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
+from ..tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
 from ..video import VideoInfo
 
 
@@ -78,6 +79,92 @@ class CompressionOutcome:
         saved = max(0, self.source_bytes - self.bytes) if self.status == "ready" else 0
         ratio = round(self.bytes / self.source_bytes, 4) if self.source_bytes and self.status == "ready" else None
         return {**asdict(self), "bytesSaved": saved, "ratioToSource": ratio, "aiUsage": "none"}
+
+
+@runtime_checkable
+class ObjectCandidateProvider(Protocol):
+    """Discovery provider that proposes object-level extraction candidates."""
+
+    name: str
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        """Return object candidates without owning segmentation or tracking."""
+
+
+@runtime_checkable
+class MaskProvider(Protocol):
+    """Initial mask provider for candidates produced by discovery."""
+
+    name: str
+
+    def initialize_masks(
+        self,
+        video: VideoSource,
+        candidates: Sequence[ObjectCandidate],
+        ctx: RunContext,
+    ) -> Sequence[InitialMask]:
+        """Return seed/initial masks or seed metadata for candidate objects."""
+
+
+@runtime_checkable
+class VideoTracker(Protocol):
+    """Video tracker that expands initial masks into object tracks."""
+
+    name: str
+
+    def track(
+        self,
+        video: VideoSource,
+        masks: Sequence[InitialMask],
+        config: Mapping[str, Any],
+        ctx: RunContext,
+    ) -> Sequence[ObjectTrack]:
+        """Return object tracks in sampled-frame order."""
+
+
+@runtime_checkable
+class TrackLinker(Protocol):
+    """Link, dedupe, or merge tracks produced by one or more trackers."""
+
+    name: str
+
+    def link(
+        self,
+        tracks: Sequence[ObjectTrack],
+        config: Mapping[str, Any],
+        ctx: RunContext,
+    ) -> Sequence[ObjectTrack]:
+        """Return linked tracks with stable object identities."""
+
+
+@runtime_checkable
+class Vectorizer(Protocol):
+    """Vectorize masks/track frames into contours and quality metadata."""
+
+    name: str
+
+    def vectorize(
+        self,
+        tracks: Sequence[ObjectTrack],
+        config: Mapping[str, Any],
+        ctx: RunContext,
+    ) -> Sequence[ObjectTrack]:
+        """Return tracks enriched with vector contours and frame geometry."""
+
+
+@runtime_checkable
+class Exporter(Protocol):
+    """Export linked/vectorized tracks to MotionJSON artifacts."""
+
+    name: str
+
+    def export(
+        self,
+        project: Mapping[str, Any],
+        config: Mapping[str, Any],
+        ctx: RunContext,
+    ) -> Sequence[Mapping[str, Any]]:
+        """Write or describe generated artifacts."""
 
 
 @runtime_checkable

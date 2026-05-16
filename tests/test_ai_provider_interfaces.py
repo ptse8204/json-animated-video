@@ -8,19 +8,31 @@ from motionjson.providers import (
     BatchSegmentationProvider,
     BatchSegmentationRequest,
     ExportProvider,
+    Exporter,
     FallbackSegmentationProvider,
     LLMProvider,
+    MaskProvider,
     MattingProvider,
     MockExportProvider,
     MockLLMProvider,
+    MockMaskProvider,
     MockMattingProvider,
+    MockObjectCandidateProvider,
+    MockPipelineExporter,
     MockRenderProvider,
     MockSegmentationProvider,
     MockStorageProvider,
+    MockTrackLinker,
+    MockVectorizer,
+    MockVideoTracker,
+    ObjectCandidateProvider,
     RenderProvider,
     SegmentationMaskProvider,
     SegmentationProvider,
     StorageProvider,
+    TrackLinker,
+    Vectorizer,
+    VideoTracker,
 )
 from motionjson.providers.base import ProviderExecutionError
 from motionjson.providers.segmentation import MaskProviderSegmentationAdapter
@@ -39,6 +51,12 @@ def test_provider_protocols_are_exported_and_mocked(tmp_path):
     render = MockRenderProvider()
     storage = MockStorageProvider()
     exporter = MockExportProvider()
+    candidate_provider = MockObjectCandidateProvider()
+    mask_provider = MockMaskProvider()
+    tracker = MockVideoTracker()
+    linker = MockTrackLinker()
+    vectorizer = MockVectorizer()
+    pipeline_exporter = MockPipelineExporter()
 
     assert isinstance(llm, LLMProvider)
     assert isinstance(segmentation, SegmentationProvider)
@@ -47,6 +65,12 @@ def test_provider_protocols_are_exported_and_mocked(tmp_path):
     assert isinstance(storage, StorageProvider)
     assert isinstance(exporter, ExportProvider)
     assert isinstance(segmentation, BatchSegmentationProvider)
+    assert isinstance(candidate_provider, ObjectCandidateProvider)
+    assert isinstance(mask_provider, MaskProvider)
+    assert isinstance(tracker, VideoTracker)
+    assert isinstance(linker, TrackLinker)
+    assert isinstance(vectorizer, Vectorizer)
+    assert isinstance(pipeline_exporter, Exporter)
 
     assert llm.complete([{"role": "user", "content": "label"}])["choices"][0]["message"]["content"] == "object label"
     segmentation.prepare(VideoInfo(width=10, height=8, source_fps=12, sample_fps=12, total_source_frames=1))

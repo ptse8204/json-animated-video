@@ -11,7 +11,7 @@ MotionJSON outputs. The legacy files remain in the output directory:
 - `objects/<object_id>/...`
 - `frames/`, `masks/`, `preview/`
 
-Phase 3 adds these auxiliary files:
+The job layer adds these auxiliary files:
 
 - `run_config.json`: typed extraction config used for the run.
 - `job.json`: local job state with status, timestamps, result, and failure.
@@ -24,6 +24,9 @@ Phase 3 adds these auxiliary files:
 - `provider_diagnostics.json`: capability diagnostics snapshot for the run.
 - `failure.json`: readable failure diagnostics when the run fails or is
   canceled.
+- `candidates.json`: Phase 4 object-candidate discovery summary.
+- `tracks.json`: Phase 4 linked object-track summary with frame coverage,
+  visibility, boxes, masks, assets, and vectorization metadata.
 
 These files are auxiliary; `motionjson validate out/demo` skips non-core job
 and config JSON while still validating MotionJSON scene/object/resource files.
@@ -58,8 +61,10 @@ Current extraction emits coarse stages for UI/API polling:
 - `vectorization`
 - `export`
 
-Discovery, propagation, and track linking may be `skipped` until the provider
-pipeline phases split those stages into dedicated providers.
+Phase 4 routes the legacy single-object flow through provider-stage adapters, so
+`candidate_discovery`, `initial_masks`, `propagation`, `track_linking`, and
+`vectorization` now report real provider-stage work even when the provider is a
+deterministic no-model mock.
 
 ## Failure Diagnostics
 

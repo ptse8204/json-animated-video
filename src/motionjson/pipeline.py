@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import cv2
 from PIL import Image
 from tqdm import tqdm
 
@@ -16,12 +15,20 @@ from .exporters.production_assets import export_production_assets
 from .exporters.scene_graph import write_json
 from .exporters.web_manifest import write_web_asset_manifest
 from .layers import crop_rgba_layer, write_spritesheet
-from .masks import MaskProvider
+from .masks import MaskProvider as LegacyMaskProvider
 from .metrics import build_cost_dashboard, build_resource_profile
+from .providers.pipeline_adapters import (
+    ContourVectorizer,
+    IdentityTrackLinker,
+    ObjectSpecCandidateProvider,
+    ObjectSpecInitialMaskProvider,
+    PerFrameMaskVideoTracker,
+)
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
-from .vectorize import build_quality_scores, mask_to_largest_polygon, recommended_output
+from .tracks import InitialMask, ObjectTrack, RunContext, VideoSource
+from .vectorize import build_quality_scores, recommended_output
 from .video import iter_sampled_frames
-from .providers.base import BatchSegmentationRequest, PhaseTiming, ProviderAttempt
+from .providers.base import PhaseTiming
 
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -31,7 +38,7 @@ SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 class ObjectExtractionSpec:
     object_id: str
     label: str
-    mask_provider: MaskProvider
+    mask_provider: LegacyMaskProvider
     z_index: int = 10
 
 
@@ -212,6 +219,9 @@ def _extract_object(
     frames_dir: Path,
     info: Any,
     frames: list[Any],
+    video_source: VideoSource,
+    initial_masks: list[InitialMask],
+    run_context: RunContext,
     spec: ObjectExtractionSpec,
     min_area: float,
     simplify_ratio: float,
@@ -222,7 +232,7 @@ def _extract_object(
     production_avif: bool,
     rights_context: dict[str, Any] | None,
     job_context: Any | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any], ObjectTrack]:
     object_id = spec.object_id
     mask_dir = out_dir / "masks" / object_id
     object_dir = _object_dir(out_dir, object_id)
@@ -237,137 +247,104 @@ def _extract_object(
         if stale.exists():
             stale.unlink()
 
-    spec.mask_provider.prepare(info)
     detailed_frames: list[dict[str, Any]] = []
     motion: list[dict[str, Any]] = []
     cutout_paths: list[Path] = []
-    mask_timings: list[float] = []
-    mask_attempts: list[dict[str, Any]] = []
-    batch_summary = {"supported": callable(getattr(spec.mask_provider, "get_masks_batch", None)), "used": False}
-    prepared_frames: list[tuple[Any, Any]] = []
-    batch_masks: dict[int, Any] = {}
 
-    try:
-        _job_emit(job_context, "initial_masks", "running", f"preparing masks for {object_id}", progress={"overallRatio": 0.34}, metadata={"objectId": object_id})
-        for frame in frames:
-            _job_check_cancel(job_context, "initial_masks")
-            prepared_frames.append((frame, cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)))
-        batch_getter = getattr(spec.mask_provider, "get_masks_batch", None)
-        if callable(batch_getter):
-            batch_start = time.perf_counter()
-            requests = [
-                BatchSegmentationRequest(frame_index=frame.index, frame_bgr=frame_bgr)
-                for frame, frame_bgr in prepared_frames
-            ]
-            masks = list(batch_getter(requests))
-            batch_summary.update({"used": True, "requestCount": len(requests), "elapsedMs": _elapsed_ms(batch_start)})
-            batch_masks = {frame.index: mask for (frame, _frame_bgr), mask in zip(prepared_frames, masks)}
-        for frame in tqdm(frames, desc=f"processing {object_id}"):
-            _job_check_cancel(job_context, "initial_masks")
-            frame_number = frame.out_index + 1
-            frame_name = f"frame_{frame_number:06d}.png"
-            mask_name = f"mask_{frame_number:06d}.png"
-            cutout_name = f"cutout_{frame_number:06d}.png"
-
-            frame_path = frames_dir / frame_name
-            mask_path = mask_dir / mask_name
-            cutout_path = cutout_dir / cutout_name
-
-            if not frame_path.exists():
-                Image.fromarray(frame.rgb).save(frame_path)
-            frame_bgr = next(frame_bgr for current_frame, frame_bgr in prepared_frames if current_frame.index == frame.index)
-            mask_start = time.perf_counter()
-            if frame.index in batch_masks:
-                mask = batch_masks[frame.index]
-            else:
-                mask = spec.mask_provider.get_mask(frame.index, frame_bgr)
-            mask_elapsed_ms = _elapsed_ms(mask_start)
-            mask_timings.append(mask_elapsed_ms)
-            if not callable(getattr(spec.mask_provider, "performance_summary", None)):
-                mask_attempts.append(
-                    ProviderAttempt(
-                        provider=spec.mask_provider.__class__.__name__,
-                        operation="get_mask",
-                        status="success",
-                        elapsed_ms=mask_elapsed_ms,
-                        frame_index=frame.index,
-                    ).to_dict()
-                )
-            contour = mask_to_largest_polygon(mask, min_area=min_area, simplify_ratio=simplify_ratio)
-            Image.fromarray(mask).save(mask_path)
-
-            visible = bool(contour.visible and contour.bbox)
-            x = y = w = h = 0
-            anchor = [0.0, 0.0]
-            cutout_rel: str | None = None
-            if visible:
-                layer_crop = crop_rgba_layer(
-                    frame.rgb,
-                    mask,
-                    contour.bbox or [0, 0, 1, 1],
-                    centroid=contour.centroid,
-                    feather=feather,
-                    padding=layer_padding,
-                )
-                Image.fromarray(layer_crop.rgba, mode="RGBA").save(cutout_path)
-                cutout_paths.append(cutout_path)
-                x, y, w, h = layer_crop.bbox
-                anchor = layer_crop.anchor
-                cutout_rel = _rel(cutout_path, out_dir)
-
-            frame_record = {
-                "source_frame_index": frame.index,
-                "frame": frame_number,
-                "out_index": frame.out_index,
-                "t": round(frame.time_sec, 6),
-                "visible": visible,
-                "area": contour.area,
-                "bbox": [x, y, w, h] if visible else None,
-                "centroid": contour.centroid,
-                "polygon": contour.polygon,
-                "contour_points": contour.contour_points,
-                "framePath": _rel(frame_path, out_dir),
-                "mask": _rel(mask_path, out_dir),
-                "asset": cutout_rel,
-                "anchor": anchor,
-            }
-            detailed_frames.append(frame_record)
-            motion.append(
-                {
-                    "frame": frame_number,
-                    "sourceFrameIndex": frame.index,
-                    "t": round(frame.time_sec, 6),
-                    "visible": visible,
-                    "x": x,
-                    "y": y,
-                    "w": w,
-                    "h": h,
-                    "scale": 1.0,
-                    "rotation": 0.0,
-                    "opacity": 1.0 if visible else 0.0,
-                    "anchor": anchor,
-                    "asset": cutout_rel,
-                    "mask": _rel(mask_path, out_dir),
-                    "centroid": contour.centroid,
-                }
-            )
-            _job_emit(
-                job_context,
-                "initial_masks",
-                "running",
-                f"processed mask frame {frame_number} for {object_id}",
-                progress={
-                    "current": frame_number,
-                    "total": len(frames),
-                    "stageRatio": round(frame_number / len(frames), 4) if frames else 1.0,
-                    "overallRatio": round(0.34 + ((frame_number / len(frames)) if frames else 1.0) * 0.3, 4),
-                },
-                metadata={"objectId": object_id, "sourceFrameIndex": frame.index, "visible": visible},
-            )
-    finally:
-        spec.mask_provider.close()
-    _job_emit(job_context, "initial_masks", "succeeded", f"masks completed for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.66}, metadata={"objectId": object_id})
+    tracker = PerFrameMaskVideoTracker([spec])
+    track = tracker.track(
+        video_source,
+        [mask for mask in initial_masks if mask.object_id == object_id],
+        {},
+        run_context,
+    )[0]
+    _job_emit(job_context, "propagation", "succeeded", f"tracking completed for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.66}, metadata={"objectId": object_id})
+    vectorizer = ContourVectorizer(min_area=min_area, simplify_ratio=simplify_ratio)
+    track = vectorizer.vectorize(
+        [track],
+        {"min_area": min_area, "simplify_ratio": simplify_ratio},
+        run_context,
+    )[0]
     _job_emit(job_context, "vectorization", "succeeded", f"contours vectorized for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.7}, metadata={"objectId": object_id})
+    provider_performance = dict(track.metadata.get("providerPerformance") or {})
+
+    for track_frame in tqdm(track.frames, desc=f"processing {object_id}"):
+        _job_check_cancel(job_context, "export")
+        frame_number = track_frame.frame
+        frame_name = f"frame_{frame_number:06d}.png"
+        mask_name = f"mask_{frame_number:06d}.png"
+        cutout_name = f"cutout_{frame_number:06d}.png"
+
+        frame_path = frames_dir / frame_name
+        mask_path = mask_dir / mask_name
+        cutout_path = cutout_dir / cutout_name
+
+        if track_frame.rgb is None:
+            raise RuntimeError(f"Track frame {frame_number} for {object_id} is missing RGB frame data")
+        if track_frame.mask is None:
+            raise RuntimeError(f"Track frame {frame_number} for {object_id} is missing mask data")
+        if not frame_path.exists():
+            Image.fromarray(track_frame.rgb).save(frame_path)
+        Image.fromarray(track_frame.mask).save(mask_path)
+
+        visible = bool(track_frame.visible and track_frame.bbox)
+        x = y = w = h = 0
+        anchor = [0.0, 0.0]
+        cutout_rel: str | None = None
+        if visible:
+            layer_crop = crop_rgba_layer(
+                track_frame.rgb,
+                track_frame.mask,
+                track_frame.bbox or [0, 0, 1, 1],
+                centroid=track_frame.centroid,
+                feather=feather,
+                padding=layer_padding,
+            )
+            Image.fromarray(layer_crop.rgba, mode="RGBA").save(cutout_path)
+            cutout_paths.append(cutout_path)
+            x, y, w, h = layer_crop.bbox
+            anchor = layer_crop.anchor
+            cutout_rel = _rel(cutout_path, out_dir)
+        track_frame.mask_ref = _rel(mask_path, out_dir)
+        track_frame.asset_ref = cutout_rel
+        track_frame.anchor = anchor
+
+        frame_record = {
+            "source_frame_index": track_frame.source_frame_index,
+            "frame": frame_number,
+            "out_index": track_frame.out_index,
+            "t": round(track_frame.t, 6),
+            "visible": visible,
+            "area": track_frame.area,
+            "bbox": [x, y, w, h] if visible else None,
+            "centroid": track_frame.centroid,
+            "polygon": track_frame.polygon,
+            "contour_points": track_frame.contour_points,
+            "framePath": _rel(frame_path, out_dir),
+            "mask": _rel(mask_path, out_dir),
+            "asset": cutout_rel,
+            "anchor": anchor,
+        }
+        detailed_frames.append(frame_record)
+        motion.append(
+            {
+                "frame": frame_number,
+                "sourceFrameIndex": track_frame.source_frame_index,
+                "t": round(track_frame.t, 6),
+                "visible": visible,
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+                "scale": 1.0,
+                "rotation": 0.0,
+                "opacity": 1.0 if visible else 0.0,
+                "anchor": anchor,
+                "asset": cutout_rel,
+                "mask": _rel(mask_path, out_dir),
+                "centroid": track_frame.centroid,
+            }
+        )
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
@@ -444,22 +421,12 @@ def _extract_object(
     write_json(object_dir / "object_manifest.json", object_manifest)
     _write_object_motion(out_dir, object_id, object_motion)
     layer = _build_layer_frames(object_id, info.sample_fps, motion, z_index=spec.z_index)
-    provider_summary_getter = getattr(spec.mask_provider, "performance_summary", None)
-    provider_summary = provider_summary_getter() if callable(provider_summary_getter) else None
-    total_mask_ms = round(sum(mask_timings), 3)
-    provider_performance = {
-        "objectId": object_id,
-        "providerName": spec.mask_provider.__class__.__name__,
-        "frames": len(frames),
-        "maskCalls": len(mask_timings),
-        "maskTotalMs": total_mask_ms,
-        "maskAvgMs": round(total_mask_ms / len(mask_timings), 3) if mask_timings else 0.0,
-        "batching": batch_summary,
-        "providerSummary": provider_summary,
-        "attempts": provider_summary.get("attempts", []) if isinstance(provider_summary, dict) else mask_attempts,
-        "cache": provider_summary.get("cache") if isinstance(provider_summary, dict) else None,
-    }
-    return obj, layer, object_motion, detailed_frames, provider_performance
+    provider_performance.setdefault("objectId", object_id)
+    provider_performance.setdefault("providerName", spec.mask_provider.__class__.__name__)
+    provider_performance.setdefault("frames", len(frames))
+    track.metadata["quality"] = quality
+    track.metadata["recommendedOutput"] = route
+    return obj, layer, object_motion, detailed_frames, provider_performance, track
 
 
 def run_multi_object_pipeline(
@@ -553,27 +520,51 @@ def run_multi_object_pipeline(
         "totalSourceFrames": info.total_source_frames,
         "sampledFrameCount": len(frames),
     }
+    video_source = VideoSource(path=video_path, info=info, frames=frames)
+    run_context = RunContext(out_dir=out_dir, job_context=job_context)
+
+    candidate_start = time.perf_counter()
+    _job_check_cancel(job_context, "candidate_discovery")
+    _job_emit(job_context, "candidate_discovery", "running", "discovering object candidates", progress={"overallRatio": 0.31}, metadata={"provider": "object-spec-candidates"})
+    candidate_provider = ObjectSpecCandidateProvider(object_specs)
+    candidates = list(candidate_provider.propose(video_source, {"frame_index": 0}, run_context))
+    write_json(
+        out_dir / "candidates.json",
+        {
+            "format": "motionjson.candidates.v0.1",
+            "provider": candidate_provider.name,
+            "video": video_source.to_summary(),
+            "candidates": [candidate.to_dict() for candidate in candidates],
+        },
+    )
+    phase_timings.append(PhaseTiming(phase="candidate_discovery", elapsed_ms=_elapsed_ms(candidate_start), count=len(candidates)).to_dict())
+    _job_emit(job_context, "candidate_discovery", "succeeded", "object candidates discovered", progress={"stageRatio": 1.0, "overallRatio": 0.32}, metadata={"candidates": len(candidates)})
+
+    initial_masks_start = time.perf_counter()
+    _job_check_cancel(job_context, "initial_masks")
+    _job_emit(job_context, "initial_masks", "running", "initializing candidate masks", progress={"overallRatio": 0.33}, metadata={"provider": "object-spec-initial-masks"})
+    initial_mask_provider = ObjectSpecInitialMaskProvider(object_specs)
+    initial_masks = list(initial_mask_provider.initialize_masks(video_source, candidates, run_context))
+    phase_timings.append(PhaseTiming(phase="initial_masks", elapsed_ms=_elapsed_ms(initial_masks_start), count=len(initial_masks)).to_dict())
+    _job_emit(job_context, "initial_masks", "succeeded", "candidate masks initialized", progress={"stageRatio": 1.0, "overallRatio": 0.34}, metadata={"masks": len(initial_masks)})
+
     objects: list[dict[str, Any]] = []
     layers: list[dict[str, Any]] = []
     object_motions: dict[str, dict[str, Any]] = {}
     first_detailed_frames: list[dict[str, Any]] = []
     provider_performance_objects: list[dict[str, Any]] = []
+    object_tracks: list[ObjectTrack] = []
     extract_start = time.perf_counter()
-    _job_emit(
-        job_context,
-        "candidate_discovery",
-        "skipped",
-        "candidate discovery is not split from the current mask-provider pipeline until Phase 4",
-        progress={"overallRatio": 0.32},
-        metadata={"reason": "provider_pipeline_refactor_pending"},
-    )
     for index, spec in enumerate(object_specs):
         _job_check_cancel(job_context, "extract_objects")
-        obj, layer, object_motion, detailed_frames, provider_performance = _extract_object(
+        obj, layer, object_motion, detailed_frames, provider_performance, object_track = _extract_object(
             out_dir=out_dir,
             frames_dir=frames_dir,
             info=info,
             frames=frames,
+            video_source=video_source,
+            initial_masks=initial_masks,
+            run_context=run_context,
             spec=spec,
             min_area=min_area,
             simplify_ratio=simplify_ratio,
@@ -589,24 +580,37 @@ def run_multi_object_pipeline(
         layers.append(layer)
         object_motions[spec.object_id] = object_motion
         provider_performance_objects.append(provider_performance)
+        object_tracks.append(object_track)
         if index == 0:
             first_detailed_frames = detailed_frames
     phase_timings.append(PhaseTiming(phase="extract_objects", elapsed_ms=_elapsed_ms(extract_start), count=len(object_specs)).to_dict())
-    _job_emit(
-        job_context,
-        "propagation",
-        "skipped",
-        "dedicated propagation/tracking provider is planned for Phase 4",
-        progress={"overallRatio": 0.72},
-        metadata={"reason": "video_tracker_abstraction_pending"},
-    )
+    link_start = time.perf_counter()
     _job_emit(
         job_context,
         "track_linking",
-        "skipped",
-        "track linking is not needed for the current single-provider extraction path",
+        "running",
+        "linking object tracks",
         progress={"overallRatio": 0.74},
-        metadata={"reason": "track_linker_abstraction_pending"},
+        metadata={"provider": "identity-track-linker", "tracks": len(object_tracks)},
+    )
+    linker = IdentityTrackLinker()
+    linked_tracks = list(linker.link(object_tracks, {}, run_context))
+    write_json(
+        out_dir / "tracks.json",
+        {
+            "format": "motionjson.tracks.v0.1",
+            "provider": linker.name,
+            "tracks": [track.to_summary() for track in linked_tracks],
+        },
+    )
+    phase_timings.append(PhaseTiming(phase="track_linking", elapsed_ms=_elapsed_ms(link_start), count=len(linked_tracks)).to_dict())
+    _job_emit(
+        job_context,
+        "track_linking",
+        "succeeded",
+        "object tracks linked",
+        progress={"stageRatio": 1.0, "overallRatio": 0.75},
+        metadata={"tracks": len(linked_tracks)},
     )
 
     latency_metrics = {
@@ -682,7 +686,7 @@ def run_pipeline(
     *,
     video_path: str | Path,
     out_dir: str | Path,
-    mask_provider: MaskProvider,
+    mask_provider: LegacyMaskProvider,
     object_id: str = "object_0",
     object_label: str = "selected_object",
     sample_fps: float | None = None,
