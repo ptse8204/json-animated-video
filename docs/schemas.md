@@ -44,6 +44,12 @@ objects/<object_id>/object_manifest.json
 
 It also recursively checks other JSON files that declare a recognized MotionJSON core schema. Auxiliary JSON files without a MotionJSON `schema` field are skipped. The default object id is `object_0`; use `--object-id` when validating an output directory generated with another id.
 
+Extraction job files such as `run_config.json`, `job.json`, `events.jsonl`,
+`metrics.json`, `artifacts.json`, `provider_diagnostics.json`, and
+`failure.json` are auxiliary artifacts. Directory validation skips the
+extraction run config and provider diagnostics schemas because they are
+preflight/job metadata, not MotionJSON render payloads.
+
 Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively.
 
 Correction request and manifest files are optional for ordinary extraction outputs. When `motionjson correct` writes `correction_request.json` and `correction_manifest.json`, directory validation checks them recursively.

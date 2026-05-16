@@ -13,7 +13,7 @@ PROJECT_CONFIG_SCHEMA = "motionjson.project_config.v0.1"
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
-MASK_PROVIDERS = {"external", "threshold", "motion", "sam2", "sam2-local", "sam2-hosted"}
+MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"}
 FALLBACK_MASK_PROVIDERS = {"threshold", "motion"}
 PROMPT_KINDS = {"point", "positive_point", "negative_point", "box", "mask"}
 OUTPUT_MODES = {"authoring", "production", "both"}

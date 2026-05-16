@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from motionjson.providers.local_storage import LocalStorageProvider
 
 from .api_keys import require_api_key
-from .assets import get_asset, list_project_assets, load_asset_bytes, register_upload
+from .assets import get_asset, list_assets_for_job, list_project_assets, load_asset_bytes, register_upload
 from .beta import (
     accept_beta_invite,
     build_admin_dashboard,
@@ -40,6 +40,7 @@ from .library import (
 )
 from .models import BackendError, ForbiddenError, NotFoundError, ProviderPolicyError, UnauthorizedError
 from .projects import create_project, get_project, list_projects
+from .queue import request_cancel_job
 from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
 from .webhooks import create_webhook, disable_webhook, list_webhook_deliveries, list_webhooks
 
@@ -295,6 +296,13 @@ class MotionJSONAPI:
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "events" and method == "GET":
             get_job(conn, user_id=user_id, job_id=parts[2])
             return {"events": [_public_event(event) for event in list_job_events(conn, job_id=parts[2])]}
+        if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "cancel" and method == "POST":
+            get_job(conn, user_id=user_id, job_id=parts[2])
+            canceled = request_cancel_job(conn, job_id=parts[2], reason=str(payload.get("reason") or "user_canceled"))
+            return _public_job(canceled)
+        if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "artifacts" and method == "GET":
+            job = get_job(conn, user_id=user_id, job_id=parts[2])
+            return {"artifacts": [_public_asset(asset) for asset in list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])]}
         if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "asset-packages" and method == "POST":
             job = enqueue_asset_package_job(
                 conn,

@@ -39,6 +39,7 @@ from .library import (
     save_library_asset,
 )
 from .projects import create_project, get_project
+from .queue import request_cancel_job
 from .rights import list_asset_lineage, list_asset_rights
 from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
 from .usage import summarize_usage
@@ -156,6 +157,12 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
     _add_common(status)
     status.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
     status.add_argument("job_id")
+
+    cancel_job = sub.add_parser("cancel-job", help="Cancel a pending backend job, or request cancellation for a running job")
+    _add_common(cancel_job)
+    cancel_job.add_argument("--session-token-env", default="MOTIONJSON_SESSION_TOKEN")
+    cancel_job.add_argument("--reason", default="user_canceled")
+    cancel_job.add_argument("job_id")
 
     usage = sub.add_parser("usage", help="Print usage events and totals")
     _add_common(usage)
@@ -439,6 +446,11 @@ def run_backend_command(args: argparse.Namespace) -> None:
     if args.backend_command == "job-status":
         session = _session(conn, args.session_token_env)
         _print_json(get_job(conn, user_id=session["user_id"], job_id=args.job_id))
+        return
+    if args.backend_command == "cancel-job":
+        session = _session(conn, args.session_token_env)
+        get_job(conn, user_id=session["user_id"], job_id=args.job_id)
+        _print_json(request_cancel_job(conn, job_id=args.job_id, reason=args.reason))
         return
     if args.backend_command == "usage":
         session = _session(conn, args.session_token_env)

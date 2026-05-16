@@ -10,6 +10,11 @@ from jsonschema.exceptions import ValidationError
 
 from .schemas import SCHEMA_IDS, schema_path
 
+AUXILIARY_SCHEMA_IDS = {
+    "motionjson.extraction_run_config.v0.1",
+    "motionjson.provider_diagnostics.v0.1",
+}
+
 
 class MotionJSONValidationError(ValueError):
     """Raised when a MotionJSON document cannot be validated."""
@@ -102,6 +107,8 @@ def _validate_candidate(candidate: Path) -> tuple[bool, tuple[ValidationIssue, .
 
     schema_id = document.get("schema")
     if schema_id is None:
+        return False, ()
+    if schema_id in AUXILIARY_SCHEMA_IDS:
         return False, ()
     if schema_id not in SCHEMA_IDS:
         return True, (ValidationIssue(path=candidate, message=f"Unsupported MotionJSON schema: {schema_id}"),)

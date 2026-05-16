@@ -60,6 +60,53 @@ def mark_succeeded(conn: sqlite3.Connection, *, job_id: str, result: dict[str, A
     return dict(conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
 
 
+def mark_canceled(conn: sqlite3.Connection, *, job_id: str, reason: str = "user_canceled") -> dict:
+    now = utc_now()
+    conn.execute(
+        """
+        UPDATE jobs
+        SET status = 'canceled', error = ?, updated_at = ?, finished_at = COALESCE(finished_at, ?)
+        WHERE id = ?
+        """,
+        (reason, now, now, job_id),
+    )
+    conn.execute("UPDATE queue_items SET status = 'canceled', locked_by = NULL, locked_at = NULL WHERE job_id = ?", (job_id,))
+    conn.commit()
+    record_job_event(conn, job_id=job_id, event_type="canceled", message=reason, metadata={"reason": reason})
+    canceled = conn.execute("SELECT created_by_user_id, project_id FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if canceled is not None:
+        record_usage_event(
+            conn,
+            user_id=canceled["created_by_user_id"],
+            project_id=canceled["project_id"],
+            job_id=job_id,
+            event_type="job_cancellations",
+            quantity=1,
+            unit="cancellation",
+            metadata={"reason": reason},
+        )
+    return dict(conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
+
+
+def request_cancel_job(conn: sqlite3.Connection, *, job_id: str, reason: str = "user_canceled") -> dict:
+    job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    if job is None:
+        raise ValueError(f"job not found: {job_id}")
+    if job["status"] in {"succeeded", "failed", "canceled"}:
+        return dict(job)
+    if job["status"] in {"pending", "queued"}:
+        return mark_canceled(conn, job_id=job_id, reason=reason)
+    if job["status"] == "running":
+        now = utc_now()
+        conn.execute(
+            "UPDATE jobs SET status = 'cancel_requested', error = ?, updated_at = ? WHERE id = ?",
+            (reason, now, job_id),
+        )
+        conn.commit()
+    record_job_event(conn, job_id=job_id, event_type="cancellation_requested", message=reason, metadata={"reason": reason})
+    return dict(conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
+
+
 def mark_failed(
     conn: sqlite3.Connection,
     *,

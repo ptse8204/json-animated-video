@@ -84,6 +84,7 @@ python -m motionjson.cli backend worker --once
 python -m motionjson.cli backend create-api-key --session-token-env MOTIONJSON_SESSION_TOKEN --name "local sdk"
 python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
 python -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python -m motionjson.cli backend cancel-job JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 python -m motionjson.cli backend save-library-asset --project-id PROJECT_ID --asset-id ASSET_ID --type motion_sticker --title "Launch sticker" --tag hero --session-token-env MOTIONJSON_SESSION_TOKEN
@@ -159,6 +160,12 @@ jobs support deterministic `remotion-plan` output and local `mp4` or
 `webm-alpha` rendering when `ffmpeg` is available. If `ffmpeg` is unavailable,
 the job result reports `unavailable` through the existing exporter contract.
 Render jobs preserve rights, lineage, audit metadata, and `aiUsage: none`.
+
+Phase 3 extraction jobs register local run artifacts, including `run_config`,
+`job_state`, `job_events`, `job_logs`, `job_metrics`, `artifact_manifest`,
+`provider_diagnostics`, and failure diagnostics when a job fails. The API also
+exposes `POST /v1/jobs/{jobId}/cancel` for cooperative cancellation and
+`GET /v1/jobs/{jobId}/artifacts` for artifact listing.
 
 Webhook delivery uses signed HMAC payloads and records local delivery rows. The
 default worker transport records deliveries without making real network calls;

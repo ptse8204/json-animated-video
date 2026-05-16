@@ -75,6 +75,8 @@ python -m motionjson.cli backend serve-api \
 - `GET /v1/projects/{projectId}/jobs`
 - `GET /v1/jobs/{jobId}`
 - `GET /v1/jobs/{jobId}/events`
+- `POST /v1/jobs/{jobId}/cancel`
+- `GET /v1/jobs/{jobId}/artifacts`
 - `POST /v1/projects/{projectId}/asset-packages`
 - `POST /v1/projects/{projectId}/renders`
 - `POST /v1/webhooks`

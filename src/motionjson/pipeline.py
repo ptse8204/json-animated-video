@@ -89,6 +89,26 @@ def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
 
 
+def _job_emit(
+    job_context: Any | None,
+    stage: str,
+    status: str,
+    message: str,
+    *,
+    progress: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    emit = getattr(job_context, "emit", None)
+    if callable(emit):
+        emit(stage, status, message, progress=progress, metadata=metadata)
+
+
+def _job_check_cancel(job_context: Any | None, stage: str) -> None:
+    check = getattr(job_context, "check_cancel", None)
+    if callable(check):
+        check(stage)
+
+
 def _object_dir(out_dir: Path, object_id: str) -> Path:
     return out_dir / "objects" / object_id
 
@@ -201,6 +221,7 @@ def _extract_object(
     output_mode: str,
     production_avif: bool,
     rights_context: dict[str, Any] | None,
+    job_context: Any | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
     object_id = spec.object_id
     mask_dir = out_dir / "masks" / object_id
@@ -227,7 +248,9 @@ def _extract_object(
     batch_masks: dict[int, Any] = {}
 
     try:
+        _job_emit(job_context, "initial_masks", "running", f"preparing masks for {object_id}", progress={"overallRatio": 0.34}, metadata={"objectId": object_id})
         for frame in frames:
+            _job_check_cancel(job_context, "initial_masks")
             prepared_frames.append((frame, cv2.cvtColor(frame.rgb, cv2.COLOR_RGB2BGR)))
         batch_getter = getattr(spec.mask_provider, "get_masks_batch", None)
         if callable(batch_getter):
@@ -240,6 +263,7 @@ def _extract_object(
             batch_summary.update({"used": True, "requestCount": len(requests), "elapsedMs": _elapsed_ms(batch_start)})
             batch_masks = {frame.index: mask for (frame, _frame_bgr), mask in zip(prepared_frames, masks)}
         for frame in tqdm(frames, desc=f"processing {object_id}"):
+            _job_check_cancel(job_context, "initial_masks")
             frame_number = frame.out_index + 1
             frame_name = f"frame_{frame_number:06d}.png"
             mask_name = f"mask_{frame_number:06d}.png"
@@ -327,8 +351,23 @@ def _extract_object(
                     "centroid": contour.centroid,
                 }
             )
+            _job_emit(
+                job_context,
+                "initial_masks",
+                "running",
+                f"processed mask frame {frame_number} for {object_id}",
+                progress={
+                    "current": frame_number,
+                    "total": len(frames),
+                    "stageRatio": round(frame_number / len(frames), 4) if frames else 1.0,
+                    "overallRatio": round(0.34 + ((frame_number / len(frames)) if frames else 1.0) * 0.3, 4),
+                },
+                metadata={"objectId": object_id, "sourceFrameIndex": frame.index, "visible": visible},
+            )
     finally:
         spec.mask_provider.close()
+    _job_emit(job_context, "initial_masks", "succeeded", f"masks completed for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.66}, metadata={"objectId": object_id})
+    _job_emit(job_context, "vectorization", "succeeded", f"contours vectorized for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.7}, metadata={"objectId": object_id})
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
@@ -438,6 +477,7 @@ def run_multi_object_pipeline(
     output_mode: str = "authoring",
     production_avif: bool = False,
     rights_context: dict[str, Any] | None = None,
+    job_context: Any | None = None,
 ) -> dict[str, Any]:
     if sprite_format not in {"webp", "png"}:
         raise ValueError("sprite_format must be 'webp' or 'png'")
@@ -480,16 +520,29 @@ def run_multi_object_pipeline(
 
     total_start = time.perf_counter()
     sample_start = time.perf_counter()
+    _job_check_cancel(job_context, "video_read")
+    _job_emit(job_context, "video_read", "running", "reading source video metadata", progress={"overallRatio": 0.05}, metadata={"video": str(video_path)})
     info, frame_iter = iter_sampled_frames(video_path, sample_fps=sample_fps, max_frames=max_frames)
     frames = list(frame_iter)
+    _job_emit(
+        job_context,
+        "video_read",
+        "succeeded",
+        "source video sampled",
+        progress={"current": len(frames), "total": len(frames), "overallRatio": 0.2},
+        metadata={"width": info.width, "height": info.height, "sourceFps": info.source_fps, "sampleFps": info.sample_fps},
+    )
+    _job_emit(job_context, "keyframe_selection", "succeeded", "sampled frames selected", progress={"overallRatio": 0.25}, metadata={"sampledFrames": len(frames)})
     phase_timings = [
         PhaseTiming(phase="sample_frames", elapsed_ms=_elapsed_ms(sample_start), count=len(frames)).to_dict()
     ]
     write_frames_start = time.perf_counter()
     for frame in frames:
+        _job_check_cancel(job_context, "write_debug_frames")
         frame_number = frame.out_index + 1
         Image.fromarray(frame.rgb).save(frames_dir / f"frame_{frame_number:06d}.png")
     phase_timings.append(PhaseTiming(phase="write_debug_frames", elapsed_ms=_elapsed_ms(write_frames_start), count=len(frames)).to_dict())
+    _job_emit(job_context, "debug_artifacts", "succeeded", "debug frames written", progress={"overallRatio": 0.3}, metadata={"frames": len(frames)})
 
     source = {
         "video": str(video_path),
@@ -506,7 +559,16 @@ def run_multi_object_pipeline(
     first_detailed_frames: list[dict[str, Any]] = []
     provider_performance_objects: list[dict[str, Any]] = []
     extract_start = time.perf_counter()
+    _job_emit(
+        job_context,
+        "candidate_discovery",
+        "skipped",
+        "candidate discovery is not split from the current mask-provider pipeline until Phase 4",
+        progress={"overallRatio": 0.32},
+        metadata={"reason": "provider_pipeline_refactor_pending"},
+    )
     for index, spec in enumerate(object_specs):
+        _job_check_cancel(job_context, "extract_objects")
         obj, layer, object_motion, detailed_frames, provider_performance = _extract_object(
             out_dir=out_dir,
             frames_dir=frames_dir,
@@ -521,6 +583,7 @@ def run_multi_object_pipeline(
             output_mode=output_mode,
             production_avif=production_avif,
             rights_context=rights_payload,
+            job_context=job_context,
         )
         objects.append(obj)
         layers.append(layer)
@@ -529,6 +592,22 @@ def run_multi_object_pipeline(
         if index == 0:
             first_detailed_frames = detailed_frames
     phase_timings.append(PhaseTiming(phase="extract_objects", elapsed_ms=_elapsed_ms(extract_start), count=len(object_specs)).to_dict())
+    _job_emit(
+        job_context,
+        "propagation",
+        "skipped",
+        "dedicated propagation/tracking provider is planned for Phase 4",
+        progress={"overallRatio": 0.72},
+        metadata={"reason": "video_tracker_abstraction_pending"},
+    )
+    _job_emit(
+        job_context,
+        "track_linking",
+        "skipped",
+        "track linking is not needed for the current single-provider extraction path",
+        progress={"overallRatio": 0.74},
+        metadata={"reason": "track_linker_abstraction_pending"},
+    )
 
     latency_metrics = {
         "schema": "motionjson.latency_metrics.v0.1",
@@ -571,6 +650,8 @@ def run_multi_object_pipeline(
     )
     rights_manifest = build_rights_manifest(source=source, objects=objects, context=rights_payload)
 
+    _job_check_cancel(job_context, "export")
+    _job_emit(job_context, "export", "running", "writing MotionJSON artifacts", progress={"overallRatio": 0.78}, metadata={"objects": len(objects)})
     default_object_id = object_specs[0].object_id
     _write_object_motion(out_dir, default_object_id, object_motions[default_object_id], legacy=True)
     write_silhouette_lottie(
@@ -592,6 +673,7 @@ def run_multi_object_pipeline(
         production_assets=objects[0].get("assets", {}).get("production") if objects else None,
     )
     write_profiled_outputs(out_dir=out_dir, video_path=video_path, object_id=default_object_id, scene=scene)
+    _job_emit(job_context, "export", "succeeded", "MotionJSON artifacts written", progress={"overallRatio": 0.95}, metadata={"objects": len(objects), "frames": len(frames)})
 
     return scene
 
@@ -613,6 +695,7 @@ def run_pipeline(
     output_mode: str = "authoring",
     production_avif: bool = False,
     rights_context: dict[str, Any] | None = None,
+    job_context: Any | None = None,
 ) -> dict[str, Any]:
     return run_multi_object_pipeline(
         video_path=video_path,
@@ -628,4 +711,5 @@ def run_pipeline(
         output_mode=output_mode,
         production_avif=production_avif,
         rights_context=rights_context,
+        job_context=job_context,
     )

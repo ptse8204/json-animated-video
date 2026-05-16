@@ -180,11 +180,12 @@ def test_project_config_round_trips_embedded_run_configs(tmp_path):
     assert reloaded.runs[0].provider.name == "threshold"
 
 
-def test_run_extract_builds_config_before_existing_pipeline_call(monkeypatch):
+def test_run_extract_builds_config_before_existing_pipeline_call(tmp_path, monkeypatch):
+    out_dir = tmp_path / "configured"
     args = parse_extract_args(
         "input.mp4",
         "--out",
-        "out/configured",
+        str(out_dir),
         "--mask-provider",
         "threshold",
         "--sample-fps",
@@ -209,7 +210,7 @@ def test_run_extract_builds_config_before_existing_pipeline_call(monkeypatch):
     cli.run_extract(args)
 
     assert captured["video_path"] == "input.mp4"
-    assert captured["out_dir"] == "out/configured"
+    assert captured["out_dir"] == str(out_dir)
     assert captured["sample_fps"] == 6
     assert captured["max_frames"] == 2
     assert captured["output_mode"] == "production"

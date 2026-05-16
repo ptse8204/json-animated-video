@@ -16,9 +16,11 @@ from .exporters.production_assets import export_transparent_webm_object
 from .exporters.remotion import write_remotion_plan
 from .exporters.scene_graph import write_json
 from .exporters.website_package import export_website_package
+from .job_artifacts import JobCanceled, LocalJobRun
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
+from .providers.mocks import MockSegmentationProvider
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import FallbackSegmentationProvider, MaskProviderSegmentationAdapter, SegmentationMaskProvider
 from .validation import MotionJSONValidationError, validate_document, validate_path
@@ -95,7 +97,7 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
         "--mask-provider",
         "--mode",
         dest="mask_provider",
-        choices=["external", "threshold", "motion", "sam2", "sam2-local", "sam2-hosted"],
+        choices=["external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"],
         default="threshold",
     )
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
@@ -236,6 +238,8 @@ def build_provider(args: argparse.Namespace):
         mask_provider = ExternalMaskProvider(args.mask_dir)
     elif args.mask_provider == "motion":
         mask_provider = MotionMaskProvider()
+    elif args.mask_provider == "mock":
+        return fallback_wrap("mock", MockSegmentationProvider())
     elif args.mask_provider == "sam2":
         mask_provider = SAM2Provider(prompt_point=args.prompt_point, prompt_box=args.prompt_box)
     elif args.mask_provider == "sam2-local":
@@ -338,59 +342,69 @@ def run_extract(args: argparse.Namespace) -> dict:
     _validate_single_object_id(args.object_id)
     if args.object_label and not args.object_mask_dir:
         raise SystemExit("--object-label is only valid with --object-mask-dir")
-    if args.object_mask_dir:
-        specs = build_multi_object_specs(args)
-        scene = run_multi_object_pipeline(
-            video_path=run_config.input_video.path,
-            out_dir=run_config.output.directory,
-            object_specs=specs,
-            sample_fps=run_config.sampling.sample_fps,
-            max_frames=run_config.sampling.max_frames,
-            min_area=run_config.filters.min_area,
-            simplify_ratio=run_config.filters.simplify_ratio,
-            feather=run_config.export.feather,
-            layer_padding=run_config.export.layer_padding,
-            sprite_format=run_config.export.sprite_format,
-            output_mode=run_config.export.output_mode,
-            production_avif=run_config.export.production_avif,
-            rights_context=build_rights_context_from_args(args),
-        )
-        out = Path(run_config.output.directory)
-        print(f"Wrote {out / 'scene_graph.json'}")
-        print(f"Wrote {out / 'object_motion.json'}")
-        print(f"Wrote {out / 'web_asset_manifest.json'}")
-        print(f"Wrote {out / 'rights_manifest.json'}")
-        for spec in specs:
-            print(f"Wrote {out / 'objects' / spec.object_id / 'object_manifest.json'}")
-            print(f"Wrote {out / 'objects' / spec.object_id / 'object_motion.json'}")
-            print(f"Wrote {out / 'objects' / spec.object_id / 'web_asset_manifest.json'}")
-        print(f"Wrote {out / 'resource_profile.json'}")
-        print(f"Wrote {out / 'preview' / 'runtime'}")
-        print(f"Objects: {len(scene['objects'])}; frames: {scene['source']['sampledFrameCount']}; canvas: {scene['source']['width']}x{scene['source']['height']}")
-        return scene
-
-    provider = build_provider(args)
+    out = Path(run_config.output.directory)
+    job_run = LocalJobRun(run_dir=out, run_config=run_config.to_dict())
+    job_run.initialize(
+        video_path=run_config.input_video.path,
+        output_dir=run_config.output.directory,
+        sam2_checkpoint=run_config.provider.sam2.checkpoint,
+        sam2_model_config=run_config.provider.sam2.model_config,
+    )
+    job_run.start()
+    job_run.emit("validating_config", "succeeded", "extraction run config validated", progress={"overallRatio": 0.03}, metadata={"provider": run_config.provider.name})
+    specs: list[ObjectExtractionSpec] = []
     try:
-        scene = run_pipeline(
-            video_path=run_config.input_video.path,
-            out_dir=run_config.output.directory,
-            mask_provider=provider,
-            object_id=run_config.object_id,
-            object_label=run_config.label,
-            sample_fps=run_config.sampling.sample_fps,
-            max_frames=run_config.sampling.max_frames,
-            min_area=run_config.filters.min_area,
-            simplify_ratio=run_config.filters.simplify_ratio,
-            feather=run_config.export.feather,
-            layer_padding=run_config.export.layer_padding,
-            sprite_format=run_config.export.sprite_format,
-            output_mode=run_config.export.output_mode,
-            production_avif=run_config.export.production_avif,
-            rights_context=build_rights_context_from_args(args),
-        )
+        if args.object_mask_dir:
+            specs = build_multi_object_specs(args)
+            scene = run_multi_object_pipeline(
+                video_path=run_config.input_video.path,
+                out_dir=run_config.output.directory,
+                object_specs=specs,
+                sample_fps=run_config.sampling.sample_fps,
+                max_frames=run_config.sampling.max_frames,
+                min_area=run_config.filters.min_area,
+                simplify_ratio=run_config.filters.simplify_ratio,
+                feather=run_config.export.feather,
+                layer_padding=run_config.export.layer_padding,
+                sprite_format=run_config.export.sprite_format,
+                output_mode=run_config.export.output_mode,
+                production_avif=run_config.export.production_avif,
+                rights_context=build_rights_context_from_args(args),
+                job_context=job_run,
+            )
+        else:
+            provider = build_provider(args)
+            scene = run_pipeline(
+                video_path=run_config.input_video.path,
+                out_dir=run_config.output.directory,
+                mask_provider=provider,
+                object_id=run_config.object_id,
+                object_label=run_config.label,
+                sample_fps=run_config.sampling.sample_fps,
+                max_frames=run_config.sampling.max_frames,
+                min_area=run_config.filters.min_area,
+                simplify_ratio=run_config.filters.simplify_ratio,
+                feather=run_config.export.feather,
+                layer_padding=run_config.export.layer_padding,
+                sprite_format=run_config.export.sprite_format,
+                output_mode=run_config.export.output_mode,
+                production_avif=run_config.export.production_avif,
+                rights_context=build_rights_context_from_args(args),
+                job_context=job_run,
+            )
+    except JobCanceled as exc:
+        job_run.cancel(str(exc))
+        raise SystemExit(str(exc)) from exc
     except RuntimeError as exc:
+        job_run.fail(exc)
         if args.mask_provider in {"sam2", "sam2-local", "sam2-hosted"}:
             raise SystemExit(str(exc)) from exc
+        raise
+    except SystemExit as exc:
+        job_run.fail(exc, user_message=str(exc))
+        raise
+    except Exception as exc:
+        job_run.fail(exc)
         raise
 
     out = Path(run_config.output.directory)
@@ -410,6 +424,29 @@ def run_extract(args: argparse.Namespace) -> dict:
             profile_updates={"benchmarkSummary": report["comparison"]},
         )
         print(f"Wrote {out / 'benchmark_report.json'}")
+
+    job_run.succeed(
+        scene=scene,
+        result={
+            "frames": scene["source"]["sampledFrameCount"],
+            "objects": len(scene["objects"]),
+            "sceneGraph": "scene_graph.json",
+        },
+    )
+
+    if specs:
+        print(f"Wrote {out / 'scene_graph.json'}")
+        print(f"Wrote {out / 'object_motion.json'}")
+        print(f"Wrote {out / 'web_asset_manifest.json'}")
+        print(f"Wrote {out / 'rights_manifest.json'}")
+        for spec in specs:
+            print(f"Wrote {out / 'objects' / spec.object_id / 'object_manifest.json'}")
+            print(f"Wrote {out / 'objects' / spec.object_id / 'object_motion.json'}")
+            print(f"Wrote {out / 'objects' / spec.object_id / 'web_asset_manifest.json'}")
+        print(f"Wrote {out / 'resource_profile.json'}")
+        print(f"Wrote {out / 'preview' / 'runtime'}")
+        print(f"Objects: {len(scene['objects'])}; frames: {scene['source']['sampledFrameCount']}; canvas: {scene['source']['width']}x{scene['source']['height']}")
+        return scene
 
     print(f"Wrote {out / 'scene_graph.json'}")
     print(f"Wrote {out / 'object_motion.json'}")

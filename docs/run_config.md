@@ -81,4 +81,5 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 - Provider capability checks and CUDA/model diagnostics are available through
   `python -m motionjson.cli backend diagnostics --json`; see
   [Provider capabilities and diagnostics](provider_capabilities.md).
-- Artifact-directory `run_config.json` emission remains later-phase work.
+- Extraction writes `run_config.json` into each output directory as part of the
+  local job artifact set; see [Job artifacts and progress](job_artifacts.md).

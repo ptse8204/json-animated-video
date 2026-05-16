@@ -9,10 +9,20 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from motionjson.config import (
+    ExtractionRunConfig,
+    ExternalMaskProviderConfig,
+    OutputConfig,
+    ProviderConfig,
+    SamplingConfig,
+    ThresholdProviderConfig,
+    VideoInputConfig,
+)
 from motionjson.exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
 from motionjson.exporters.production_assets import export_transparent_webm_object
 from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
+from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
 from motionjson.masks import ExternalMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_pipeline
 from motionjson.providers.base import StorageProvider
@@ -22,7 +32,7 @@ from motionjson.providers.segmentation import SegmentationMaskProvider
 from .assets import _asset_row, list_assets_for_job, register_generated_asset
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
-from .queue import claim_next, mark_failed, mark_running, mark_succeeded
+from .queue import claim_next, mark_canceled, mark_failed, mark_running, mark_succeeded
 from .rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from .usage import record_usage_event
 from .webhooks import WebhookTransport, deliver_event
@@ -36,6 +46,9 @@ def _json(row: dict[str, Any], field: str) -> dict[str, Any]:
 
 
 def _kind_for_rel_path(rel_path: str) -> str:
+    job_kind = artifact_kind_for_rel_path(rel_path)
+    if job_kind != "extraction_file":
+        return job_kind
     name = Path(rel_path).name
     if rel_path == "scene_graph.json":
         return "scene_graph"
@@ -138,6 +151,50 @@ def _materialize_job_assets(
         dest.write_bytes(storage.load_bytes(asset["storage_key"]))
 
 
+def _event_mirror(conn: sqlite3.Connection, job_id: str):
+    def mirror(event: dict[str, Any]) -> None:
+        event_type = "progress" if event.get("type") == "progress" else f"job_{event.get('status', 'event')}"
+        record_job_event(
+            conn,
+            job_id=job_id,
+            event_type=event_type,
+            message=str(event.get("message") or event.get("stage") or "job event"),
+            metadata=event,
+        )
+
+    return mirror
+
+
+def _backend_cancel_requested(conn: sqlite3.Connection, job_id: str) -> bool:
+    row = conn.execute("SELECT status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+    return bool(row and row["status"] in {"cancel_requested", "canceled"})
+
+
+def _run_config_from_backend_payload(
+    *,
+    video_path: Path,
+    out_dir: Path,
+    provider_name: str,
+    payload: dict[str, Any],
+) -> ExtractionRunConfig:
+    return ExtractionRunConfig(
+        input_video=VideoInputConfig(path=str(video_path)),
+        output=OutputConfig(directory=str(out_dir)),
+        sampling=SamplingConfig(
+            sample_fps=float(payload.get("sample_fps") or 12.0),
+            max_frames=payload.get("max_frames"),
+        ),
+        provider=ProviderConfig(
+            name=provider_name,
+            threshold=ThresholdProviderConfig(
+                lower_hsv=tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80])),
+                upper_hsv=tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255])),
+            ),
+            external=ExternalMaskProviderConfig(mask_dir=payload.get("mask_dir")),
+        ),
+    )
+
+
 def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
     payload = _json(job, "payload_json")
     provider_name = validate_extract_provider_policy(str(payload.get("mask_provider") or "threshold"))
@@ -157,35 +214,74 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         video_path = tmp_dir / f"source{suffix}"
         video_path.write_bytes(source_bytes)
         out_dir = tmp_dir / "out"
-
-        if provider_name == "external":
-            mask_dir = payload.get("mask_dir")
-            if not mask_dir:
-                raise ValueError("mask_dir is required for external mask provider")
-            mask_provider = ExternalMaskProvider(mask_dir)
-        elif provider_name == "mock":
-            mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
-        else:
-            lower = tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80]))
-            upper = tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255]))
-            mask_provider = ThresholdMaskProvider(lower, upper)
-
-        scene = run_pipeline(
-            video_path=video_path,
-            out_dir=out_dir,
-            mask_provider=mask_provider,
-            sample_fps=float(payload.get("sample_fps") or 12.0),
-            max_frames=payload.get("max_frames"),
-            rights_context=rights_context,
-        )
-        assets = _register_output_tree(
-            conn,
-            storage=storage,
-            project_id=job["project_id"],
+        try:
+            run_config_payload = _run_config_from_backend_payload(video_path=video_path, out_dir=out_dir, provider_name=provider_name, payload=payload).to_dict()
+        except Exception:
+            run_config_payload = {
+                "schema": "motionjson.extraction_run_config.v0.1",
+                "input": {"path": str(video_path)},
+                "output": {"directory": str(out_dir)},
+                "provider": {"name": provider_name, "payload": payload},
+                "error": "backend payload could not be normalized into a validated run config",
+            }
+        job_run = LocalJobRun(
+            run_dir=out_dir,
+            run_config=run_config_payload,
             job_id=job["id"],
-            out_dir=out_dir,
-            source_asset_id=source_asset["id"],
+            event_callback=_event_mirror(conn, job["id"]),
+            cancel_check=lambda: _backend_cancel_requested(conn, job["id"]),
         )
+        job_run.initialize(video_path=video_path, output_dir=out_dir)
+        job_run.start()
+        job_run.emit("validating_config", "succeeded", "backend extraction payload validated", progress={"overallRatio": 0.03}, metadata={"provider": provider_name})
+
+        try:
+            if provider_name == "external":
+                mask_dir = payload.get("mask_dir")
+                if not mask_dir:
+                    raise ValueError("mask_dir is required for external mask provider")
+                mask_provider = ExternalMaskProvider(mask_dir)
+            elif provider_name == "mock":
+                mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
+            else:
+                lower = tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80]))
+                upper = tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255]))
+                mask_provider = ThresholdMaskProvider(lower, upper)
+            job_run.emit("provider_preflight", "succeeded", "mask provider constructed", progress={"overallRatio": 0.06}, metadata={"provider": provider_name})
+
+            scene = run_pipeline(
+                video_path=video_path,
+                out_dir=out_dir,
+                mask_provider=mask_provider,
+                sample_fps=float(payload.get("sample_fps") or 12.0),
+                max_frames=payload.get("max_frames"),
+                rights_context=rights_context,
+                job_context=job_run,
+            )
+        except JobCanceled as exc:
+            job_run.cancel(str(exc))
+            _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
+            raise
+        except Exception as exc:
+            job_run.fail(exc)
+            _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
+            raise
+
+        try:
+            job_run.check_cancel("finalize")
+        except JobCanceled as exc:
+            job_run.cancel(str(exc))
+            _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
+            raise
+        job_run.succeed(
+            scene=scene,
+            result={
+                "frames": int(scene.get("source", {}).get("sampledFrameCount") or 0),
+                "objects": len(scene.get("objects", [])),
+                "sceneGraph": "scene_graph.json",
+            },
+        )
+        assets = _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
 
     frames = int(scene.get("source", {}).get("sampledFrameCount") or 0)
     objects = len(scene.get("objects", []))
@@ -630,6 +726,16 @@ def worker_once(
         return None
     try:
         result = process_job(conn, storage=storage, job=claimed)
+    except JobCanceled as exc:
+        canceled = mark_canceled(conn, job_id=claimed["id"], reason=str(exc))
+        deliver_event(
+            conn,
+            user_id=canceled["created_by_user_id"],
+            event_type="job.canceled",
+            payload={"jobId": canceled["id"], "projectId": canceled["project_id"], "type": canceled["type"], "status": canceled["status"], "error": canceled["error"]},
+            transport=webhook_transport,
+        )
+        return canceled
     except Exception as exc:
         failed = mark_failed(conn, job_id=claimed["id"], error=str(exc), max_attempts=max_attempts)
         if failed["status"] == "failed":
