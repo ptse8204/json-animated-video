@@ -44,3 +44,18 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/mock --ma
 
 The mock provider path produces stable masks, tracks, and export artifacts
 without CUDA, model weights, network access, or paid services.
+
+## Discovery Providers
+
+Phase 5 adds discovery providers that can feed this same pipeline:
+
+- `motion_foreground` and `external_masks` can produce candidates with
+  generated or imported mask directories, so they run through the existing
+  mask-tracking/vectorization/export path without GPU dependencies.
+- `text_detector`, `class_detector`, and `sam_auto_masks` are scaffolded behind
+  capability checks and expose mock modes for local UI/test runs.
+- `manual_prompt` generalizes point/box/mask references for one or more
+  user-created objects.
+
+See [Discovery providers](discovery_providers.md) for mode guidance and CLI
+examples.

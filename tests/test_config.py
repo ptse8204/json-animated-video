@@ -115,6 +115,28 @@ def test_multi_object_external_mask_config_preserves_order_labels_and_paths():
     assert [obj.z_index for obj in config.objects] == [10, 20]
 
 
+def test_discovery_config_round_trips_text_detector_settings(tmp_path):
+    args = parse_extract_args(
+        "input.mp4",
+        "--discovery-provider",
+        "text_detector",
+        "--discovery-text",
+        "red ball . hand",
+        "--discovery-config",
+        '{"mock":true}',
+        "--discovery-max-candidates",
+        "2",
+    )
+
+    config = build_extraction_run_config_from_args(args)
+    path = tmp_path / "run_config.json"
+    write_run_config(config, path)
+    reloaded = load_run_config(path)
+
+    assert reloaded.discovery.mode == "text_detector"
+    assert reloaded.discovery.config == {"mock": True, "text": "red ball . hand", "max_candidates": 2}
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
@@ -158,6 +180,22 @@ def test_multi_object_external_mask_config_preserves_order_labels_and_paths():
                 "provider": {"name": "sam2-local"},
             },
             "requires a point or box prompt",
+        ),
+        (
+            {
+                "input": {"path": "in.mp4"},
+                "output": {"directory": "out"},
+                "discovery": {"mode": "unknown_mode"},
+            },
+            "discovery.mode",
+        ),
+        (
+            {
+                "input": {"path": "in.mp4"},
+                "output": {"directory": "out"},
+                "discovery": {"mode": "motion_foreground", "config": []},
+            },
+            "discovery.config",
         ),
     ],
 )

@@ -60,13 +60,26 @@ Optional SAM2/hosted providers:
   `HOSTED_SEGMENTATION_API_KEY`, and extraction still requires explicit network
   opt-in.
 
-Reasoning and future discovery providers:
+Reasoning provider:
 
 - `openrouter`: optional LLM/VLM reasoning only. It is not a segmentation
   provider.
-- `text-detector`, `class-detector`, `video-tracker`, and `track-linker` are
-  reported as planned surfaces until the provider pipeline phases implement
-  them.
+
+Discovery providers:
+
+- `manual_prompt`: no-model user point/box/mask candidate input.
+- `motion_foreground`: no-model CPU frame-difference moving-region discovery.
+- `external_masks`: no-model import of mask directories or manifests.
+- `sam_auto_masks`: optional automatic-mask scaffold; unavailable until SAM2
+  automatic-mask dependencies and model paths are configured.
+- `text_detector`: optional open-vocabulary detector scaffold. Text prompts
+  become detector candidates first and are not routed directly to SAM2.
+- `class_detector`: optional known-class detector scaffold.
+
+Pipeline providers:
+
+- `video-tracker`: per-frame mask tracking adapter and mock tracks.
+- `track-linker`: identity linker with duplicate-ID guard.
 
 Export/vector providers:
 

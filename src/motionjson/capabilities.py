@@ -243,6 +243,10 @@ def provider_capabilities(
     hosted_endpoint = _env_config("HOSTED_SEGMENTATION_URL")
     hosted_auth = _env_config("HOSTED_SEGMENTATION_API_KEY")
     openrouter_key = _env_config("OPENROUTER_API_KEY")
+    text_detector_installed = _module_available("groundingdino")
+    text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
+    class_detector_installed = _module_available("ultralytics")
+    class_detector_model = _path_config_status("CLASS_DETECTOR_MODEL")
     ffmpeg = ffmpeg_status()
     sam2_local_reasons = [
         reason
@@ -265,6 +269,43 @@ def provider_capabilities(
         sam2_local_status = "available_cpu_only"
     else:
         sam2_local_status = "ready"
+    sam_auto_masks_status = sam2_local_status if sam2_local_status != "ready" else "not_configured"
+    text_detector_reasons = [
+        reason
+        for reason in (
+            None if text_detector_installed else "Open-vocabulary detector package 'groundingdino' is not importable.",
+            *_model_path_reasons(text_detector_model, "text detector model", "--discovery-config"),
+        )
+        if reason
+    ]
+    text_detector_ready = bool(text_detector_installed and text_detector_model["exists"])
+    if not text_detector_installed:
+        text_detector_status = "missing_dependency"
+    elif text_detector_model["configured"] and not text_detector_model["exists"]:
+        text_detector_status = "missing_model"
+    elif not text_detector_model["configured"]:
+        text_detector_status = "not_configured"
+    else:
+        text_detector_status = "ready"
+    text_detector_runtime_status = text_detector_status if text_detector_status != "ready" else "not_configured"
+    class_detector_reasons = [
+        reason
+        for reason in (
+            None if class_detector_installed else "Known-class detector package 'ultralytics' is not importable.",
+            *_model_path_reasons(class_detector_model, "class detector model", "--discovery-config"),
+        )
+        if reason
+    ]
+    class_detector_ready = bool(class_detector_installed and class_detector_model["exists"])
+    if not class_detector_installed:
+        class_detector_status = "missing_dependency"
+    elif class_detector_model["configured"] and not class_detector_model["exists"]:
+        class_detector_status = "missing_model"
+    elif not class_detector_model["configured"]:
+        class_detector_status = "not_configured"
+    else:
+        class_detector_status = "ready"
+    class_detector_runtime_status = class_detector_status if class_detector_status != "ready" else "not_configured"
 
     providers = [
         ProviderCapability(
@@ -406,54 +447,159 @@ def provider_capabilities(
             metadata={"apiKeyEnv": openrouter_key, "segmentationProvider": False},
         ),
         ProviderCapability(
-            name="text-detector",
-            kind="detector",
-            available=False,
-            configured=False,
-            status="not_implemented",
-            supports=["text_guided_boxes"],
-            reasons=["Text detector provider interface is planned but not implemented until a later phase."],
-            install_hint="Use mock/no-model workflows until text detector providers are added.",
-            no_model_safe=False,
+            name="manual_prompt",
+            kind="discovery_provider",
+            available=True,
+            configured=True,
+            status="ready",
+            supports=["point_candidates", "box_candidates", "mask_ref_candidates"],
+            reasons=[],
+            install_hint=None,
+            device="cpu",
+            no_model_safe=True,
             network_required=False,
             mock_available=True,
+            metadata={
+                "uiDescription": "User-created points, boxes, or mask references for one or more objects.",
+                "whenToUse": "Use when the user knows the object and can mark it directly.",
+            },
         ),
         ProviderCapability(
-            name="class-detector",
-            kind="detector",
+            name="motion_foreground",
+            kind="discovery_provider",
+            available=cv_ready,
+            configured=True,
+            status="ready" if cv_ready else "missing_dependency",
+            supports=["frame_difference", "moving_foreground", "generated_mask_sequences"],
+            reasons=[] if cv_ready else ["numpy and opencv-python are required for motion foreground discovery."],
+            install_hint=None if cv_ready else "Install opencv-python and numpy.",
+            device="cpu",
+            no_model_safe=True,
+            network_required=False,
+            mock_available=True,
+            metadata={
+                "uiDescription": "CPU moving-region proposals for videos with stable backgrounds.",
+                "whenToUse": "Use for simple footage where target objects move more than the background.",
+            },
+        ),
+        ProviderCapability(
+            name="external_masks",
+            kind="discovery_provider",
+            available=cv_ready and pil_ready,
+            configured=True,
+            status="ready" if cv_ready and pil_ready else "missing_dependency",
+            supports=["mask_directories", "manifest_import", "multi_object_candidates"],
+            reasons=[] if cv_ready and pil_ready else ["Pillow, numpy, and opencv-python are required for external mask discovery."],
+            install_hint=None if cv_ready and pil_ready else "Install base MotionJSON requirements.",
+            device="cpu",
+            no_model_safe=True,
+            network_required=False,
+            mock_available=True,
+            metadata={
+                "uiDescription": "Import masks or boxes created by another tool as object candidates.",
+                "whenToUse": "Use when masks already exist from SAM2, editing tools, or another pipeline.",
+            },
+        ),
+        ProviderCapability(
+            name="sam_auto_masks",
+            kind="discovery_provider",
             available=False,
-            configured=False,
-            status="not_implemented",
-            supports=["known_classes"],
-            reasons=["Known-class detector provider interface is planned but not implemented until a later phase."],
-            install_hint="Use threshold, motion, external, or mock providers for current no-model runs.",
+            configured=bool(checkpoint["configured"] and model_config["configured"]),
+            status=sam_auto_masks_status,
+            supports=["automatic_keyframe_masks", "area_filter", "stability_filter", "overlap_filter"],
+            reasons=[
+                *sam2_local_reasons,
+                "SAM automatic-mask discovery is scaffolded; configure a concrete automatic-mask backend or use mock mode.",
+            ],
+            install_hint="Install/configure SAM2 automatic masks, or use motion_foreground/external_masks for no-model discovery.",
+            device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
             mock_available=True,
+            optional_extra="sam2",
+            metadata={
+                "uiDescription": "Automatic visible-segment proposals from a configured SAM2-style backend.",
+                "whenToUse": "Use when the user wants broad visible-segment proposals and local SAM2 is configured.",
+            },
+        ),
+        ProviderCapability(
+            name="text_detector",
+            kind="discovery_provider",
+            available=False,
+            configured=bool(text_detector_model["configured"]),
+            status=text_detector_runtime_status,
+            supports=["text_guided_boxes", "open_vocabulary_candidates"],
+            reasons=[
+                *text_detector_reasons,
+                "Text detector discovery is scaffolded; configure a concrete detector backend or use mock mode.",
+            ],
+            install_hint="Install/configure an open-vocabulary detector, or use discovery mock mode for local smoke tests.",
+            no_model_safe=False,
+            network_required=False,
+            mock_available=True,
+            optional_extra="text-detector",
+            checks=[
+                _check("groundingdino_import", "ok" if text_detector_installed else "missing", None if text_detector_installed else "groundingdino package is not importable"),
+                _check("model", "ok" if text_detector_model["exists"] else "missing", text_detector_model["env"], text_detector_model["exists"]),
+            ],
+            metadata={
+                "model": text_detector_model,
+                "uiDescription": "Text prompts become detector candidates before segmentation/tracking.",
+                "whenToUse": "Use when the user can describe objects with words such as 'red ball' or 'hand'.",
+                "sam2DirectText": False,
+            },
+        ),
+        ProviderCapability(
+            name="class_detector",
+            kind="discovery_provider",
+            available=False,
+            configured=bool(class_detector_model["configured"]),
+            status=class_detector_runtime_status,
+            supports=["known_class_boxes", "fixed_label_candidates"],
+            reasons=[
+                *class_detector_reasons,
+                "Class detector discovery is scaffolded; configure a concrete detector backend or use mock mode.",
+            ],
+            install_hint="Install/configure a known-class detector, or use discovery mock mode for local smoke tests.",
+            no_model_safe=False,
+            network_required=False,
+            mock_available=True,
+            optional_extra="class-detector",
+            checks=[
+                _check("ultralytics_import", "ok" if class_detector_installed else "missing", None if class_detector_installed else "ultralytics package is not importable"),
+                _check("model", "ok" if class_detector_model["exists"] else "missing", class_detector_model["env"], class_detector_model["exists"]),
+            ],
+            metadata={
+                "model": class_detector_model,
+                "uiDescription": "Known classes become detector candidates before segmentation/tracking.",
+                "whenToUse": "Use when target labels are in a fixed detector class list.",
+            },
         ),
         ProviderCapability(
             name="video-tracker",
             kind="video_tracker",
-            available=False,
-            configured=False,
-            status="not_implemented",
-            supports=["track_linking", "mask_propagation"],
-            reasons=["Dedicated video tracker abstraction is planned for Phase 4."],
-            install_hint="Current extraction uses mask providers per sampled frame.",
-            no_model_safe=False,
+            available=cv_ready,
+            configured=True,
+            status="ready" if cv_ready else "missing_dependency",
+            supports=["per_frame_mask_tracking", "mock_tracks"],
+            reasons=[] if cv_ready else ["OpenCV/numpy are required for per-frame mask tracking."],
+            install_hint=None if cv_ready else "Install base MotionJSON requirements.",
+            device="cpu",
+            no_model_safe=True,
             network_required=False,
             mock_available=True,
         ),
         ProviderCapability(
             name="track-linker",
             kind="track_linker",
-            available=False,
-            configured=False,
-            status="not_implemented",
-            supports=["multi_keyframe_identity"],
-            reasons=["Dedicated track linker abstraction is planned for Phase 4."],
-            install_hint="Current multi-object support is deterministic external mask extraction.",
-            no_model_safe=False,
+            available=True,
+            configured=True,
+            status="ready",
+            supports=["identity_linking", "duplicate_id_guard"],
+            reasons=[],
+            install_hint=None,
+            device="cpu",
+            no_model_safe=True,
             network_required=False,
             mock_available=True,
         ),
@@ -561,7 +707,12 @@ def build_capability_report(
         "summary": {
             "providersReady": sum(1 for provider in providers if provider.available),
             "providersTotal": len(providers),
-            "missingOptional": [provider.name for provider in providers if not provider.available and provider.name in {"sam2-local", "sam2-hosted", "openrouter", "ffmpeg-video"}],
+            "missingOptional": [
+                provider.name
+                for provider in providers
+                if not provider.available
+                and provider.name in {"sam2-local", "sam2-hosted", "openrouter", "sam_auto_masks", "text_detector", "class_detector", "ffmpeg-video"}
+            ],
         },
     }
 

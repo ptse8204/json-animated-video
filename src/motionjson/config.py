@@ -16,6 +16,7 @@ SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"}
 FALLBACK_MASK_PROVIDERS = {"threshold", "motion"}
 PROMPT_KINDS = {"point", "positive_point", "negative_point", "box", "mask"}
+DISCOVERY_MODES = {"manual_prompt", "sam_auto_masks", "text_detector", "class_detector", "motion_foreground", "external_masks"}
 OUTPUT_MODES = {"authoring", "production", "both"}
 SPRITE_FORMATS = {"webp", "png"}
 
@@ -427,6 +428,28 @@ class ProviderConfig:
 
 
 @dataclass(frozen=True)
+class DiscoveryConfig:
+    mode: str | None = None
+    config: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _choice(self.mode, "discovery.mode", DISCOVERY_MODES)
+        if not isinstance(self.config, Mapping):
+            raise ConfigValidationError("discovery.config: expected object")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"mode": self.mode, "config": dict(self.config)}
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "DiscoveryConfig":
+        payload = _mapping(data or {}, "discovery")
+        return cls(
+            mode=_optional_str(payload.get("mode")),
+            config=dict(_mapping(payload.get("config", {}), "discovery.config")),
+        )
+
+
+@dataclass(frozen=True)
 class FilterConfig:
     min_area: float = 100.0
     simplify_ratio: float = 0.006
@@ -569,6 +592,7 @@ class ExtractionRunConfig:
     objects: list[ObjectTargetConfig] = field(default_factory=lambda: [ObjectTargetConfig()])
     sampling: SamplingConfig = field(default_factory=SamplingConfig)
     provider: ProviderConfig = field(default_factory=ProviderConfig)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     prompts: list[PromptSpec] = field(default_factory=list)
     filters: FilterConfig = field(default_factory=FilterConfig)
     export: ExportConfig = field(default_factory=ExportConfig)
@@ -605,6 +629,7 @@ class ExtractionRunConfig:
             "objects": [obj.to_dict() for obj in self.objects],
             "sampling": self.sampling.to_dict(),
             "provider": self.provider.to_dict(),
+            "discovery": self.discovery.to_dict(),
             "prompts": [prompt.to_dict() for prompt in self.prompts],
             "filters": self.filters.to_dict(),
             "export": self.export.to_dict(),
@@ -628,6 +653,7 @@ class ExtractionRunConfig:
             objects=[ObjectTargetConfig.from_dict(item) for item in objects_payload],
             sampling=SamplingConfig.from_dict(payload.get("sampling")),
             provider=ProviderConfig.from_dict(payload.get("provider")),
+            discovery=DiscoveryConfig.from_dict(payload.get("discovery")),
             prompts=[PromptSpec.from_dict(item) for item in prompts_payload],
             filters=FilterConfig.from_dict(payload.get("filters")),
             export=ExportConfig.from_dict(payload.get("export")),
@@ -757,6 +783,19 @@ def build_extraction_run_config_from_args(args: Any) -> ExtractionRunConfig:
         ),
         fallback_mask_provider=_optional_str(getattr(args, "fallback_mask_provider", None)),
     )
+    discovery_config = dict(getattr(args, "discovery_config", {}) or {})
+    discovery_text = _optional_str(getattr(args, "discovery_text", None))
+    if discovery_text is not None:
+        discovery_config["text"] = discovery_text
+    discovery_classes = list(getattr(args, "discovery_class", []) or [])
+    if discovery_classes:
+        discovery_config["classes"] = discovery_classes
+    discovery_max_candidates = getattr(args, "discovery_max_candidates", None)
+    if discovery_max_candidates is not None:
+        discovery_config["max_candidates"] = _int_value(discovery_max_candidates, "discovery.config.max_candidates")
+    discovery_min_area = getattr(args, "discovery_min_area", None)
+    if discovery_min_area is not None:
+        discovery_config["min_area"] = _float_value(discovery_min_area, "discovery.config.min_area")
 
     return ExtractionRunConfig(
         input_video=VideoInputConfig(path=str(getattr(args, "video"))),
@@ -767,6 +806,10 @@ def build_extraction_run_config_from_args(args: Any) -> ExtractionRunConfig:
             max_frames=_optional_int(getattr(args, "max_frames", None), "sampling.max_frames"),
         ),
         provider=provider,
+        discovery=DiscoveryConfig(
+            mode=_optional_str(getattr(args, "discovery_provider", None)),
+            config=discovery_config,
+        ),
         prompts=prompts,
         filters=FilterConfig(
             min_area=_float_value(getattr(args, "min_area", 100.0), "filters.min_area"),

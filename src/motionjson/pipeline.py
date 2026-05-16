@@ -5,7 +5,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Sequence
 
 from PIL import Image
 from tqdm import tqdm
@@ -25,10 +25,10 @@ from .providers.pipeline_adapters import (
     PerFrameMaskVideoTracker,
 )
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
-from .tracks import InitialMask, ObjectTrack, RunContext, VideoSource
+from .tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
 from .vectorize import build_quality_scores, recommended_output
 from .video import iter_sampled_frames
-from .providers.base import PhaseTiming
+from .providers.base import ObjectCandidateProvider, PhaseTiming
 
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -45,6 +45,14 @@ class ObjectExtractionSpec:
 def _validate_object_id(object_id: str) -> None:
     if not SAFE_OBJECT_ID_PATTERN.match(object_id):
         raise ValueError("Object IDs must be safe path segments using letters, numbers, underscores, or hyphens")
+
+
+def _validate_object_specs(object_specs: Sequence[ObjectExtractionSpec]) -> None:
+    object_ids = [spec.object_id for spec in object_specs]
+    for object_id in object_ids:
+        _validate_object_id(object_id)
+    if len(set(object_ids)) != len(object_ids):
+        raise ValueError("Object extraction specs must use unique object IDs")
 
 
 def _clear_generated_frames(*directories: Path) -> None:
@@ -433,7 +441,10 @@ def run_multi_object_pipeline(
     *,
     video_path: str | Path,
     out_dir: str | Path,
-    object_specs: list[ObjectExtractionSpec],
+    object_specs: list[ObjectExtractionSpec] | None,
+    candidate_provider: ObjectCandidateProvider | None = None,
+    candidate_config: dict[str, Any] | None = None,
+    candidate_to_specs: Callable[[Sequence[ObjectCandidate]], list[ObjectExtractionSpec]] | None = None,
     sample_fps: float | None = None,
     max_frames: int | None = None,
     min_area: float = 100.0,
@@ -450,13 +461,10 @@ def run_multi_object_pipeline(
         raise ValueError("sprite_format must be 'webp' or 'png'")
     if output_mode not in {"authoring", "production", "both"}:
         raise ValueError("output_mode must be 'authoring', 'production', or 'both'")
-    if not object_specs:
+    object_specs = list(object_specs or [])
+    if not object_specs and candidate_provider is None:
         raise ValueError("At least one object extraction spec is required")
-    object_ids = [spec.object_id for spec in object_specs]
-    for object_id in object_ids:
-        _validate_object_id(object_id)
-    if len(set(object_ids)) != len(object_ids):
-        raise ValueError("Object extraction specs must use unique object IDs")
+    _validate_object_specs(object_specs)
 
     video_path = Path(video_path)
     out_dir = Path(out_dir)
@@ -525,20 +533,43 @@ def run_multi_object_pipeline(
 
     candidate_start = time.perf_counter()
     _job_check_cancel(job_context, "candidate_discovery")
-    _job_emit(job_context, "candidate_discovery", "running", "discovering object candidates", progress={"overallRatio": 0.31}, metadata={"provider": "object-spec-candidates"})
-    candidate_provider = ObjectSpecCandidateProvider(object_specs)
-    candidates = list(candidate_provider.propose(video_source, {"frame_index": 0}, run_context))
+    active_candidate_provider = candidate_provider or ObjectSpecCandidateProvider(object_specs)
+    active_candidate_config = dict(candidate_config or {"frame_index": 0})
+    _job_emit(
+        job_context,
+        "candidate_discovery",
+        "running",
+        "discovering object candidates",
+        progress={"overallRatio": 0.31},
+        metadata={"provider": active_candidate_provider.name},
+    )
+    candidates = list(active_candidate_provider.propose(video_source, active_candidate_config, run_context))
+    if candidate_provider is not None and candidate_to_specs is not None:
+        object_specs = candidate_to_specs(candidates)
+        if not object_specs:
+            raise ValueError(f"Discovery provider {active_candidate_provider.name!r} produced no candidates usable for extraction")
+        _validate_object_specs(object_specs)
+    elif candidate_provider is not None and not object_specs:
+        raise ValueError("candidate_to_specs is required when discovery provides candidates without initial object_specs")
     write_json(
         out_dir / "candidates.json",
         {
             "format": "motionjson.candidates.v0.1",
-            "provider": candidate_provider.name,
+            "provider": active_candidate_provider.name,
+            "config": active_candidate_config,
             "video": video_source.to_summary(),
             "candidates": [candidate.to_dict() for candidate in candidates],
         },
     )
     phase_timings.append(PhaseTiming(phase="candidate_discovery", elapsed_ms=_elapsed_ms(candidate_start), count=len(candidates)).to_dict())
-    _job_emit(job_context, "candidate_discovery", "succeeded", "object candidates discovered", progress={"stageRatio": 1.0, "overallRatio": 0.32}, metadata={"candidates": len(candidates)})
+    _job_emit(
+        job_context,
+        "candidate_discovery",
+        "succeeded",
+        "object candidates discovered",
+        progress={"stageRatio": 1.0, "overallRatio": 0.32},
+        metadata={"provider": active_candidate_provider.name, "candidates": len(candidates), "objectSpecs": len(object_specs)},
+    )
 
     initial_masks_start = time.perf_counter()
     _job_check_cancel(job_context, "initial_masks")

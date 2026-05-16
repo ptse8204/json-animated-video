@@ -20,6 +20,16 @@ from .job_artifacts import JobCanceled, LocalJobRun
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
+from .providers.base import ProviderConfigError
+from .providers.discovery import (
+    ClassDetectorDiscoveryProvider,
+    ExternalMasksDiscoveryProvider,
+    ManualPromptDiscoveryProvider,
+    MotionForegroundDiscoveryProvider,
+    SamAutoMasksDiscoveryProvider,
+    TextDetectorDiscoveryProvider,
+    object_specs_from_candidates,
+)
 from .providers.mocks import MockSegmentationProvider
 from .providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
 from .providers.segmentation import FallbackSegmentationProvider, MaskProviderSegmentationAdapter, SegmentationMaskProvider
@@ -103,6 +113,12 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
     p.add_argument("--object-mask-dir", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=/path/to/masks for deterministic multi-object extraction")
     p.add_argument("--object-label", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=Label for multi-object extraction")
+    p.add_argument("--discovery-provider", choices=["manual_prompt", "sam_auto_masks", "text_detector", "class_detector", "motion_foreground", "external_masks"], default=None, help="Optional Phase 5 object-candidate discovery mode")
+    p.add_argument("--discovery-config", type=parse_json_object, default={}, help='Discovery provider JSON config, e.g. {"mock":true,"text":"red ball"}')
+    p.add_argument("--discovery-text", type=str, default=None, help="Text prompt for --discovery-provider text_detector")
+    p.add_argument("--discovery-class", action="append", default=[], help="Repeatable class label for --discovery-provider class_detector")
+    p.add_argument("--discovery-max-candidates", type=int, default=None, help="Maximum candidates for discovery providers that support it")
+    p.add_argument("--discovery-min-area", type=float, default=None, help="Minimum area for discovery providers that support it")
     p.add_argument("--lower-hsv", type=parse_hsv, default=(0, 80, 80), help="Lower HSV threshold, e.g. 0,80,80")
     p.add_argument("--upper-hsv", type=parse_hsv, default=(12, 255, 255), help="Upper HSV threshold, e.g. 12,255,255")
     p.add_argument("--prompt-point", type=parse_point, default=None, help="SAM2 point prompt, x,y")
@@ -282,6 +298,79 @@ def build_provider(args: argparse.Namespace):
     return fallback_wrap(args.mask_provider, segmentation_provider)
 
 
+def build_discovery_provider(args: argparse.Namespace):
+    mode = args.discovery_provider
+    if not mode:
+        return None, {}
+    config = dict(args.discovery_config or {})
+    if args.discovery_text:
+        config["text"] = args.discovery_text
+    if args.discovery_class:
+        config["classes"] = list(args.discovery_class)
+    if args.discovery_max_candidates is not None:
+        config["max_candidates"] = args.discovery_max_candidates
+    if args.discovery_min_area is not None:
+        config["min_area"] = args.discovery_min_area
+    if mode == "manual_prompt":
+        prompts = list(config.get("prompts", []) or [])
+        if args.prompt_point is not None:
+            prompts.append(
+                {
+                    "kind": "point",
+                    "frame_index": args.sam2_prompt_frame,
+                    "object_id": args.object_id,
+                    "label": args.label,
+                    "data": {"x": args.prompt_point[0], "y": args.prompt_point[1]},
+                }
+            )
+        if args.prompt_box is not None:
+            prompts.append(
+                {
+                    "kind": "box",
+                    "frame_index": args.sam2_prompt_frame,
+                    "object_id": args.object_id,
+                    "label": args.label,
+                    "data": {"x": args.prompt_box[0], "y": args.prompt_box[1], "w": args.prompt_box[2], "h": args.prompt_box[3]},
+                }
+            )
+        config["prompts"] = prompts
+        return ManualPromptDiscoveryProvider(), config
+    if mode == "external_masks":
+        if not any(key in config for key in ("objects", "mask_dirs", "maskDirs", "manifest")) and args.object_mask_dir:
+            labels = _assignment_map(args.object_label, field_name="--object-label")
+            config["objects"] = [
+                {"object_id": object_id, "label": labels.get(object_id, object_id), "mask_dir": mask_dir, "z_index": 10 + index * 10}
+                for index, (object_id, mask_dir) in enumerate(args.object_mask_dir)
+            ]
+        return ExternalMasksDiscoveryProvider(), config
+    if mode == "motion_foreground":
+        return MotionForegroundDiscoveryProvider(), config
+    if mode == "sam_auto_masks":
+        return SamAutoMasksDiscoveryProvider(), config
+    if mode == "text_detector":
+        return TextDetectorDiscoveryProvider(), config
+    if mode == "class_detector":
+        return ClassDetectorDiscoveryProvider(), config
+    raise SystemExit(f"Unsupported discovery provider: {mode}")
+
+
+def build_candidate_mask_provider(args: argparse.Namespace, candidate: Any):
+    """Build a legacy mask provider for one discovery candidate."""
+
+    if getattr(candidate, "mask_ref", None):
+        return ExternalMaskProvider(candidate.mask_ref)
+    candidate_args = argparse.Namespace(**vars(args))
+    candidate_args.object_id = candidate.id
+    candidate_args.label = candidate.label or candidate.id
+    candidate_args.prompt_point = None
+    candidate_args.prompt_box = None
+    if candidate.point is not None:
+        candidate_args.prompt_point = (candidate.point.x, candidate.point.y)
+    if candidate.box is not None:
+        candidate_args.prompt_box = (candidate.box.x, candidate.box.y, candidate.box.w, candidate.box.h)
+    return build_provider(candidate_args)
+
+
 def _assignment_map(values: list[tuple[str, str]], *, field_name: str) -> dict[str, str]:
     output: dict[str, str] = {}
     for object_id, value in values:
@@ -354,7 +443,32 @@ def run_extract(args: argparse.Namespace) -> dict:
     job_run.emit("validating_config", "succeeded", "extraction run config validated", progress={"overallRatio": 0.03}, metadata={"provider": run_config.provider.name})
     specs: list[ObjectExtractionSpec] = []
     try:
-        if args.object_mask_dir:
+        if args.discovery_provider:
+            discovery_provider, discovery_config = build_discovery_provider(args)
+            scene = run_multi_object_pipeline(
+                video_path=run_config.input_video.path,
+                out_dir=run_config.output.directory,
+                object_specs=[],
+                candidate_provider=discovery_provider,
+                candidate_config=discovery_config,
+                candidate_to_specs=lambda candidates: object_specs_from_candidates(
+                    candidates,
+                    base_dir=run_config.output.directory,
+                    mask_provider_factory=lambda candidate: build_candidate_mask_provider(args, candidate),
+                ),
+                sample_fps=run_config.sampling.sample_fps,
+                max_frames=run_config.sampling.max_frames,
+                min_area=run_config.filters.min_area,
+                simplify_ratio=run_config.filters.simplify_ratio,
+                feather=run_config.export.feather,
+                layer_padding=run_config.export.layer_padding,
+                sprite_format=run_config.export.sprite_format,
+                output_mode=run_config.export.output_mode,
+                production_avif=run_config.export.production_avif,
+                rights_context=build_rights_context_from_args(args),
+                job_context=job_run,
+            )
+        elif args.object_mask_dir:
             specs = build_multi_object_specs(args)
             scene = run_multi_object_pipeline(
                 video_path=run_config.input_video.path,
@@ -394,6 +508,9 @@ def run_extract(args: argparse.Namespace) -> dict:
             )
     except JobCanceled as exc:
         job_run.cancel(str(exc))
+        raise SystemExit(str(exc)) from exc
+    except ProviderConfigError as exc:
+        job_run.fail(exc, user_message=str(exc))
         raise SystemExit(str(exc)) from exc
     except RuntimeError as exc:
         job_run.fail(exc)

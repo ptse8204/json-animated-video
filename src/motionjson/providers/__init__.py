@@ -24,6 +24,18 @@ from .base import (
 )
 from .mask_cache import MaskCache, normalize_binary_mask
 from .local_storage import LocalStorageProvider
+from .discovery import (
+    DISCOVERY_MODES,
+    DISCOVERY_PROVIDER_SCHEMAS,
+    ClassDetectorDiscoveryProvider,
+    ExternalMasksDiscoveryProvider,
+    ManualPromptDiscoveryProvider,
+    MotionForegroundDiscoveryProvider,
+    SamAutoMasksDiscoveryProvider,
+    TextDetectorDiscoveryProvider,
+    discovery_provider_schemas,
+    object_specs_from_candidates,
+)
 from .mocks import (
     MockExportProvider,
     MockLLMProvider,
@@ -56,7 +68,11 @@ __all__ = [
     "BatchSegmentationRequest",
     "CompressionOutcome",
     "ContourVectorizer",
+    "DISCOVERY_MODES",
+    "DISCOVERY_PROVIDER_SCHEMAS",
+    "ClassDetectorDiscoveryProvider",
     "Exporter",
+    "ExternalMasksDiscoveryProvider",
     "FallbackSegmentationProvider",
     "HostedSAM2SegmentationProvider",
     "IdentityTrackLinker",
@@ -68,6 +84,8 @@ __all__ = [
     "MaskProviderSegmentationAdapter",
     "MattingProvider",
     "ManualPromptCandidateProvider",
+    "ManualPromptDiscoveryProvider",
+    "MotionForegroundDiscoveryProvider",
     "MotionJSONArtifactExporter",
     "MockExportProvider",
     "MockLLMProvider",
@@ -94,14 +112,18 @@ __all__ = [
     "RenderProvider",
     "SAM2HostedSegmentationProvider",
     "SAM2LocalSegmentationProvider",
+    "SamAutoMasksDiscoveryProvider",
     "SegmentationMaskProvider",
     "SegmentationProvider",
     "StorageProvider",
+    "TextDetectorDiscoveryProvider",
     "TrackLinker",
     "Vectorizer",
     "VideoTracker",
     "as_segmentation_provider",
+    "discovery_provider_schemas",
     "normalize_binary_mask",
+    "object_specs_from_candidates",
 ]
 
 

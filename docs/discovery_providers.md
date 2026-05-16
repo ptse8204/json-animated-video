@@ -1,0 +1,89 @@
+# Discovery Providers
+
+Phase 5 adds object-candidate discovery providers for workflows that need more
+than one manually selected object. Discovery providers output the shared
+`ObjectCandidate` shape first; segmentation/tracking still happens through the
+provider pipeline.
+
+SAM2 is promptable segmentation/tracking, not semantic discovery by itself.
+Text and class workflows must use detector candidates before a mask/tracker
+provider receives boxes or masks.
+
+## Modes
+
+- `manual_prompt`: use when a user marks one or more objects with points,
+  boxes, or mask references. No model is required.
+- `motion_foreground`: use for simple footage where moving objects separate
+  from a mostly stable background. This CPU mode writes generated mask
+  sequences under `discovery/motion_foreground/`.
+- `external_masks`: use when masks or boxes already exist from another local
+  tool. It imports one candidate per object mask directory or manifest entry.
+- `sam_auto_masks`: scaffold for automatic keyframe mask proposals. It is
+  capability-gated behind optional SAM2/torch/model configuration and has a
+  mock mode for tests.
+- `text_detector`: scaffold for open-vocabulary detection. Missing detector
+  packages or model paths are capability warnings; mock mode can produce local
+  boxes for UI smoke checks.
+- `class_detector`: scaffold for known-class detection. Missing optional
+  detector packages are reported in diagnostics; mock mode is local-only.
+
+## CLI Examples
+
+CPU moving-region discovery:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/motion_discovery \
+  --discovery-provider motion_foreground \
+  --discovery-min-area 20 \
+  --discovery-max-candidates 3 \
+  --max-frames 12
+```
+
+External mask discovery from a manifest:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/external_discovery \
+  --discovery-provider external_masks \
+  --discovery-config '{"objects":[{"object_id":"ball","label":"Red ball","mask_dir":"masks/ball"}]}'
+```
+
+Text detector mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/text_mock \
+  --discovery-provider text_detector \
+  --discovery-text "red ball . hand" \
+  --discovery-config '{"mock":true}' \
+  --max-frames 2
+```
+
+## Candidate Shape
+
+`candidates.json` records:
+
+- `id`, `label`, `source`, `frameIndex`, `zIndex`;
+- optional `point`, `box`, `maskRef`, and `score`;
+- provider metadata including UI descriptions, filter settings, and `maskDir`
+  when the candidate can feed the current mask-tracking pipeline directly.
+
+Candidates with `metadata.maskDir` are adapted into `ObjectExtractionSpec`
+values backed by `ExternalMaskProvider`, then processed by the shared
+tracking/vectorization/export path.
+
+## Capability Behavior
+
+Run diagnostics before presenting discovery choices:
+
+```bash
+python3 -m motionjson.cli backend diagnostics --json
+```
+
+`manual_prompt`, `motion_foreground`, and `external_masks` are no-model local
+providers when base dependencies are installed. `sam_auto_masks`,
+`text_detector`, and `class_detector` are scaffolded heavy-provider surfaces:
+they report `missing_dependency`, `missing_model`, or `not_configured` until a
+real backend adapter is wired and configured. Those warnings do not break the
+base CLI, and mock mode remains available for local smoke checks.

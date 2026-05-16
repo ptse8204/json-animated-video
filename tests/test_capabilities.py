@@ -182,3 +182,81 @@ def test_capability_secret_envs_are_presence_only(monkeypatch) -> None:
     assert "secret-openrouter-token" not in encoded
     assert _provider(report, "sam2-hosted")["available"] is True
     assert _provider(report, "openrouter")["available"] is True
+
+
+def test_capability_report_includes_phase5_discovery_provider_modes(monkeypatch) -> None:
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: module in {"cv2", "numpy", "PIL", "jsonschema", "tqdm"})
+
+    report = capabilities.build_capability_report()
+
+    assert _provider(report, "manual_prompt")["status"] == "ready"
+    assert _provider(report, "motion_foreground")["status"] == "ready"
+    assert _provider(report, "external_masks")["status"] == "ready"
+    assert _provider(report, "motion_foreground")["kind"] == "discovery_provider"
+    assert _provider(report, "external_masks")["noModelSafe"] is True
+    assert _provider(report, "text_detector")["metadata"]["sam2DirectText"] is False
+
+
+def test_discovery_heavy_providers_report_missing_optional_deps_without_cuda(monkeypatch) -> None:
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: module in {"cv2", "numpy", "PIL", "jsonschema", "tqdm"})
+    monkeypatch.setattr(
+        capabilities,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": False,
+            "available": False,
+            "device": "cpu",
+            "reasons": ["torch is not installed."],
+            "devices": [{"name": "cpu", "available": True}],
+        },
+    )
+
+    report = capabilities.build_capability_report()
+
+    assert _provider(report, "sam_auto_masks")["status"] == "missing_dependency"
+    assert _provider(report, "sam_auto_masks")["mockAvailable"] is True
+    assert _provider(report, "text_detector")["status"] == "missing_dependency"
+    assert _provider(report, "class_detector")["status"] == "missing_dependency"
+
+
+def test_scaffolded_heavy_discovery_modes_do_not_report_runnable_until_backend_wired(tmp_path, monkeypatch) -> None:
+    text_model = tmp_path / "text-detector.bin"
+    class_model = tmp_path / "class-detector.pt"
+    sam2_checkpoint = tmp_path / "sam2.pt"
+    sam2_config = tmp_path / "sam2.yaml"
+    for path in (text_model, class_model, sam2_checkpoint, sam2_config):
+        path.write_text("placeholder")
+    monkeypatch.setenv("TEXT_DETECTOR_MODEL", str(text_model))
+    monkeypatch.setenv("CLASS_DETECTOR_MODEL", str(class_model))
+    monkeypatch.setenv("SAM2_LOCAL_CHECKPOINT", str(sam2_checkpoint))
+    monkeypatch.setenv("SAM2_LOCAL_CONFIG", str(sam2_config))
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: True)
+    monkeypatch.setattr(
+        capabilities,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": True,
+            "available": True,
+            "device": "cuda",
+            "reasons": [],
+            "devices": [{"name": "cpu", "available": True}, {"name": "cuda", "available": True}],
+        },
+    )
+
+    report = capabilities.build_capability_report()
+
+    for name in ("sam_auto_masks", "text_detector", "class_detector"):
+        provider = _provider(report, name)
+        assert provider["available"] is False
+        assert provider["status"] == "not_configured"
+        assert "scaffolded" in " ".join(provider["reasons"])
+
+
+def test_no_model_discovery_modes_are_marked_available_or_mock_available() -> None:
+    report = capabilities.build_capability_report()
+
+    for name in ("manual_prompt", "motion_foreground", "external_masks"):
+        provider = _provider(report, name)
+        assert provider["mockAvailable"] is True
+        assert provider["networkRequired"] is False
+        assert provider["metadata"]["whenToUse"]

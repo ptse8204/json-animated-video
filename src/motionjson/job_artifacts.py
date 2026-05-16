@@ -56,7 +56,7 @@ GENERATED_EXTRACTION_FILES = {
     "benchmark_report.json",
 }
 
-GENERATED_EXTRACTION_DIRS = {"frames", "masks", "objects", "preview", "exports"}
+GENERATED_EXTRACTION_DIRS = {"frames", "masks", "objects", "preview", "exports", "discovery"}
 
 
 def _object_id_for_rel_path(rel_path: str) -> str | None:
@@ -104,6 +104,8 @@ def artifact_kind_for_rel_path(rel_path: str) -> str:
         return "web_manifest"
     if rel_path.startswith("frames/"):
         return "debug_frame"
+    if rel_path.startswith("discovery/"):
+        return "discovery_artifact"
     if rel_path.startswith("masks/"):
         return "mask"
     if "/cutouts/" in rel_path:

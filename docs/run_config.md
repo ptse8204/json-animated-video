@@ -31,6 +31,7 @@ The CLI still accepts the existing `motionjson extract` flags. Phase 1 builds an
     "cache": {"enabled": true, "directory": ".motionjson-cache/masks"},
     "fallback_mask_provider": null
   },
+  "discovery": {"mode": null, "config": {}},
   "prompts": [],
   "filters": {"min_area": 100.0, "simplify_ratio": 0.006},
   "export": {
@@ -74,6 +75,9 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 ## Validation Notes
 
 - Provider names are the current CLI providers: `external`, `threshold`, `motion`, `sam2`, `sam2-local`, and `sam2-hosted`.
+- Discovery modes are separate from mask providers: `manual_prompt`,
+  `sam_auto_masks`, `text_detector`, `class_detector`, `motion_foreground`, and
+  `external_masks`.
 - Prompt boxes use the existing CLI format `x,y,w,h`.
 - `sam2-local` and `sam2-hosted` require a point or box prompt in the config.
 - Hosted SAM2 config stores auth environment variable names, not token values.

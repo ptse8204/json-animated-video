@@ -27,6 +27,8 @@ The job layer adds these auxiliary files:
 - `candidates.json`: Phase 4 object-candidate discovery summary.
 - `tracks.json`: Phase 4 linked object-track summary with frame coverage,
   visibility, boxes, masks, assets, and vectorization metadata.
+- `discovery/`: Phase 5 generated candidate assets such as CPU motion
+  foreground mask sequences.
 
 These files are auxiliary; `motionjson validate out/demo` skips non-core job
 and config JSON while still validating MotionJSON scene/object/resource files.
