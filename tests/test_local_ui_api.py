@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 from motionjson.backend.assets import register_generated_asset
@@ -17,6 +18,19 @@ def demo_video() -> Path:
 
 def decode(body: bytes) -> dict:
     return json.loads(body.decode("utf-8"))
+
+
+def wait_for_job(app: LocalUIApp, job_id: str, *, timeout: float = 10.0) -> dict:
+    deadline = time.time() + timeout
+    last_job = {}
+    while time.time() < deadline:
+        status, _headers, body = app.handle("GET", f"/api/jobs/{job_id}")
+        assert status == 200
+        last_job = decode(body)["job"]
+        if last_job["status"] in {"succeeded", "failed", "canceled"}:
+            return last_job
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} did not finish; last status: {last_job}")
 
 
 def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
@@ -35,6 +49,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/artifacts" in health["routes"]
     assert "/api/videos/{videoId}/content" in health["routes"]
     assert "/api/run-config/validate" in health["routes"]
+    assert "/api/jobs/{jobId}/run" in health["routes"]
+    assert "/api/jobs/{jobId}/review" in health["routes"]
 
     status, _headers, body = app.handle("GET", "/api/capabilities")
     capabilities = decode(body)
@@ -303,6 +319,175 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
     assert decode(body)["artifacts"][0]["id"] == artifacts[0]["id"]
     assert "storage_key" not in body.decode("utf-8")
     assert "file://" not in body.decode("utf-8")
+
+
+def test_local_ui_api_runs_mock_job_from_run_config_and_exposes_review_metadata(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "UI Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": f"local-ui://assets/{video['id']}"},
+        "output": {"directory": str(tmp_path / "private-output")},
+        "objects": [{"object_id": "object_0", "label": "Ball"}],
+        "sampling": {"sample_fps": 12.0, "max_frames": 2},
+        "provider": {"name": "mock"},
+        "discovery": {"mode": "manual_prompt"},
+        "prompts": [],
+        "rights": {
+            "source_type": "user_upload",
+            "source_uri": str(demo_video()),
+            "source_asset_id": video["id"],
+        },
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    assert status == 200
+    payload = decode(body)
+    assert payload["worker"]["status"] == "started"
+    job = wait_for_job(app, payload["job"]["id"])
+    assert job["status"] == "succeeded"
+    assert job["progress"] == 100
+    assert job["payload"]["mask_provider"] == "mock"
+
+    status, _headers, body = app.handle("GET", f"/api/progress?projectId={project['id']}")
+    progress = decode(body)["progress"][0]
+    assert status == 200
+    assert progress["events"]
+    assert progress["percent"] == 100
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "storage_key" not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/artifacts")
+    artifact_payload = decode(body)
+    assert status == 200
+    kinds = {artifact["kind"] for artifact in artifact_payload["artifacts"]}
+    assert {"scene_graph", "track_summary", "fallback_diagnostics", "job_logs"}.issubset(kinds)
+    assert any(artifact.get("contentUrl", "").startswith("/api/artifacts/") for artifact in artifact_payload["artifacts"])
+    assert "contentUrl" not in next(artifact for artifact in artifact_payload["artifacts"] if artifact["kind"] == "job_logs")
+    visual_artifact = next(artifact for artifact in artifact_payload["artifacts"] if artifact.get("contentUrl"))
+    status, headers, visual_body = app.handle("GET", visual_artifact["contentUrl"])
+    assert status == 200
+    assert headers["content-type"].startswith(("image/", "video/"))
+    assert visual_body
+    review = artifact_payload["review"]
+    assert review["format"] == "motionjson.local_ui_review.v0.1"
+    assert review["artifactCountsByKind"]["track_summary"] == 1
+    assert review["tracks"][0]["objectId"] == "object_0"
+    assert review["tracks"][0]["visibleFrameCount"] == 2
+    assert review["objects"][0]["objectId"] == "object_0"
+    assert review["fallbackDiagnostics"] == []
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "storage_key" not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    assert status == 200
+    assert decode(body)["review"]["tracks"][0]["objectId"] == "object_0"
+
+
+def test_local_ui_api_run_endpoint_executes_current_simple_payload(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "UI Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    assert status == 200
+    assert job["status"] == "pending"
+    assert job["percent"] == 0
+
+    status, _headers, body = app.handle("POST", f"/api/jobs/{job['id']}/run")
+    assert status == 200
+    assert decode(body)["worker"]["status"] == "started"
+    finished = wait_for_job(app, job["id"])
+    assert finished["status"] == "succeeded"
+
+
+def test_local_ui_artifact_review_surfaces_fallback_without_private_storage(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "UI Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    fallback_payload = {
+        "format": "motionjson.raster_fallback_diagnostics.v0.1",
+        "diagnostics": [
+            {
+                "reasonCode": "masks_too_large_whole_frame",
+                "message": "storage_key=projects/private/source.mp4",
+                "metadata": {"sourcePath": str(tmp_path / "private-source.mp4")},
+                "suggestedFixes": ["Use a tighter point or box prompt."],
+            },
+            {
+                "reasonCode": "plain_private_artifact_text",
+                "message": "failed to read projects/private/source.mp4",
+                "suggestedFixes": ["Do not expose projects/private/source.mp4 in public review payloads."],
+            }
+        ],
+        "summary": {"fallbackReasonCounts": {"masks_too_large_whole_frame": 1}},
+    }
+    conn = app.connection()
+    try:
+        register_generated_asset(
+            conn,
+            storage=app.storage(),
+            project_id=project["id"],
+            source_job_id=job["id"],
+            kind="fallback_diagnostics",
+            data=json.dumps(fallback_payload).encode("utf-8"),
+            rel_path="fallback_diagnostics.json",
+            content_type="application/json",
+            metadata={"storage_key": "projects/private/fallback.json", "note": "safe"},
+        )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/artifacts")
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["review"]["rasterFallback"] is True
+    assert payload["review"]["rasterFallbackReason"] == "masks_too_large_whole_frame"
+    assert payload["review"]["vectorUnavailableReason"] == "masks_too_large_whole_frame"
+    assert payload["review"]["fallbackDiagnostics"][0]["message"] == "[REDACTED]"
+    assert payload["review"]["fallbackDiagnostics"][1]["message"] == "failed to read [STORAGE_KEY_REDACTED]"
+    assert "storage_key" not in body.decode("utf-8")
+    assert "projects/private" not in body.decode("utf-8")
+    assert str(tmp_path) not in body.decode("utf-8")
 
 
 def test_local_ui_api_returns_not_found_for_missing_api_route(tmp_path):

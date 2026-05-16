@@ -8,9 +8,17 @@ const MotionJSONUI = (() => {
     "/api/videos",
     "/api/videos/{videoId}/content",
     "/api/jobs",
+    "/api/jobs/{jobId}",
+    "/api/jobs/{jobId}/events",
+    "/api/jobs/{jobId}/artifacts",
+    "/api/progress",
+    "/api/artifacts",
   ];
 
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
+  const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
+  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "external"]);
+  const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
 
   const PRESETS = {
     trace_one_object: {
@@ -66,6 +74,16 @@ const MotionJSONUI = (() => {
     videos: [],
     selectedVideoId: "",
     jobs: [],
+    selectedJobId: "",
+    selectedJob: null,
+    jobReview: null,
+    jobEvents: [],
+    jobArtifacts: [],
+    reviewTracks: [],
+    trackVisibility: {},
+    runConfigsByJob: {},
+    lastRunConfig: null,
+    polling: false,
     errors: {},
     selectedPreset: "trace_one_object",
     activeTool: "point",
@@ -422,7 +440,37 @@ const MotionJSONUI = (() => {
     return /queued|pending|running|working|started/.test(status);
   }
 
+  function jobIdentifier(job) {
+    return String(job?.id || job?.jobId || "");
+  }
+
+  function eventMetadata(event) {
+    return event?.metadata || event?.metadata_json || {};
+  }
+
+  function eventProgress(event) {
+    const metadata = eventMetadata(event);
+    return metadata.progress || event?.progress || {};
+  }
+
+  function latestProgressEvent(job) {
+    const events = asArray(job?.events);
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      const progress = eventProgress(events[index]);
+      if (typeof progress.overallRatio === "number" || typeof progress.ratio === "number") {
+        return events[index];
+      }
+    }
+    return null;
+  }
+
   function normalizeProgress(job) {
+    const progressEvent = latestProgressEvent(job);
+    const eventRatio = eventProgress(progressEvent);
+    const eventDirect = eventRatio.overallRatio ?? eventRatio.ratio;
+    if (typeof eventDirect === "number" && Number.isFinite(eventDirect)) {
+      return Math.max(0, Math.min(100, eventDirect <= 1 ? Math.round(eventDirect * 100) : Math.round(eventDirect)));
+    }
     const direct = job.progress ?? job.percent ?? job.percentage;
     if (typeof direct === "number" && Number.isFinite(direct)) {
       return Math.max(0, Math.min(100, direct <= 1 ? Math.round(direct * 100) : Math.round(direct)));
@@ -436,6 +484,22 @@ const MotionJSONUI = (() => {
     if (/complete|succeeded/.test(status)) return 100;
     if (/running|working|started/.test(status)) return 25;
     return 0;
+  }
+
+  function latestStageLabel(job) {
+    const event = latestProgressEvent(job);
+    const metadata = eventMetadata(event);
+    return metadata.stage || event?.stage || event?.message || job.status || "queued";
+  }
+
+  function jobConfig(job) {
+    const id = jobIdentifier(job);
+    return state.runConfigsByJob[id] || state.lastRunConfig || null;
+  }
+
+  function selectedJob() {
+    const id = state.selectedJobId;
+    return state.selectedJob || state.jobs.find((job) => jobIdentifier(job) === id) || null;
   }
 
   async function api(path, options = {}) {
@@ -568,6 +632,236 @@ const MotionJSONUI = (() => {
     return warnings;
   }
 
+  function clampBox(box, width, height) {
+    const w = Math.max(1, roundPixel(box.w ?? box.width ?? 1));
+    const h = Math.max(1, roundPixel(box.h ?? box.height ?? 1));
+    const x = clamp(roundPixel(box.x ?? 0), 0, Math.max(0, width - 1));
+    const y = clamp(roundPixel(box.y ?? 0), 0, Math.max(0, height - 1));
+    return {
+      x,
+      y,
+      w: Math.min(w, Math.max(1, width - x)),
+      h: Math.min(h, Math.max(1, height - y)),
+    };
+  }
+
+  function boxFromPrompt(prompt, width, height, index = 0) {
+    if (prompt?.kind === "box") {
+      return clampBox(prompt.data || {}, width, height);
+    }
+
+    if (prompt?.kind === "mask") {
+      const points = asArray(prompt.data?.strokes).flatMap((stroke) => asArray(stroke.points));
+      if (points.length) {
+        const xs = points.map((point) => toNumber(point.x, width / 2));
+        const ys = points.map((point) => toNumber(point.y, height / 2));
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        return clampBox({ x: minX - 16, y: minY - 16, w: maxX - minX + 32, h: maxY - minY + 32 }, width, height);
+      }
+    }
+
+    if (prompt?.data && Number.isFinite(Number(prompt.data.x)) && Number.isFinite(Number(prompt.data.y))) {
+      const size = Math.max(36, Math.min(width, height) * 0.14);
+      return clampBox({ x: prompt.data.x - size / 2, y: prompt.data.y - size / 2, w: size, h: size }, width, height);
+    }
+
+    const size = Math.max(44, Math.min(width, height) * 0.18);
+    const offset = index * Math.max(20, size * 0.28);
+    return clampBox({ x: width / 2 - size / 2 + offset, y: height / 2 - size / 2 + offset * 0.4, w: size, h: size }, width, height);
+  }
+
+  function normalizeApiTrack(track, index = 0) {
+    const frames = asArray(track.frames);
+    const objectId = String(track.objectId || track.object_id || track.id || `object_${index}`);
+    return {
+      id: objectId,
+      objectId,
+      label: track.label || objectId,
+      source: track.source || track.providerName || track.provider_name || "api_result",
+      confidence: typeof track.confidence === "number" ? track.confidence : null,
+      frameCount: toInteger(track.frameCount ?? track.frame_count ?? frames.length, frames.length),
+      visibleFrameCount: toInteger(track.visibleFrameCount ?? track.visible_frame_count ?? frames.length, frames.length),
+      frameStart: toInteger(frames[0]?.frame ?? frames[0]?.frameIndex ?? 0, 0),
+      frameEnd: toInteger(frames[frames.length - 1]?.frame ?? frames[frames.length - 1]?.frameIndex ?? frames.length - 1, frames.length - 1),
+      warnings: asArray(track.warnings).map(String),
+      exportStatus: track.exportStatus || track.export_status || "accepted",
+      providerName: track.providerName || track.provider_name || null,
+      color: TRACK_COLORS[index % TRACK_COLORS.length],
+      frames: frames.map((frame) => ({
+        frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
+        bbox: frame.bbox ? clampBox({ x: frame.bbox[0], y: frame.bbox[1], w: frame.bbox[2], h: frame.bbox[3] }, state.video.width || 1920, state.video.height || 1080) : null,
+        polygon: frame.polygon || null,
+        visible: frame.visible !== false,
+      })),
+      reviewSource: "api-result",
+    };
+  }
+
+  function configReviewTracks(config, job, artifacts) {
+    if (!config) return [];
+    const width = state.video.width || 1920;
+    const height = state.video.height || 1080;
+    const maxFrames = Math.max(1, toInteger(config.sampling?.max_frames, 48));
+    const providerName = config.provider?.name || job?.payload?.mask_provider || "mock";
+    const discoveryMode = config.discovery?.mode || "manual_prompt";
+    const prompts = asArray(config.prompts);
+    const objects = asArray(config.objects).length ? asArray(config.objects) : [{ object_id: "object_0", label: "selected_object" }];
+    const trackArtifact = artifacts.some((artifact) => artifact.kind === "track_summary");
+
+    return objects.map((object, index) => {
+      const objectId = slugObjectId(object.object_id || object.objectId || `object_${index}`, `object_${index}`);
+      const prompt = prompts.find((item) => (item.object_id || item.objectId) === objectId) || prompts[index] || prompts[0] || null;
+      const baseBox = boxFromPrompt(prompt, width, height, index);
+      const frameCount = Math.max(1, Math.min(maxFrames, 48));
+      const frames = Array.from({ length: frameCount }, (_, frame) => {
+        const drift = providerName === "mock" ? frame * Math.max(1, Math.round(width * 0.002)) : 0;
+        return {
+          frame,
+          visible: true,
+          bbox: clampBox({ ...baseBox, x: baseBox.x + drift, y: baseBox.y + drift * 0.25 }, width, height),
+        };
+      });
+      const warnings = [];
+      if (!prompt && discoveryMode === "manual_prompt") warnings.push("no_prompt_review_estimate");
+      if (trackArtifact) warnings.push("track_summary_artifact_available");
+      if (providerName !== "mock" && !trackArtifact) warnings.push("awaiting_track_artifact");
+      return {
+        id: objectId,
+        objectId,
+        label: object.label || objectId,
+        source: `${providerName}/${discoveryMode}`,
+        confidence: providerName === "mock" ? 0.92 : 0.72,
+        frameCount,
+        visibleFrameCount: frameCount,
+        frameStart: 0,
+        frameEnd: frameCount - 1,
+        warnings,
+        exportStatus: warnings.includes("awaiting_track_artifact") ? "review_pending" : "included",
+        providerName,
+        color: TRACK_COLORS[index % TRACK_COLORS.length],
+        frames,
+        reviewSource: providerName === "mock" ? "mock-config" : "config-estimate",
+      };
+    });
+  }
+
+  function buildReviewTracks({ job, config, artifacts, review }) {
+    const reviewTracks = asArray(review?.tracks);
+    if (reviewTracks.length) {
+      return reviewTracks.map(normalizeApiTrack);
+    }
+
+    const result = job?.result || {};
+    const status = String(job?.status || "").toLowerCase();
+    const hasVectorUnavailableReview = Boolean(
+      review?.rasterFallback ||
+        review?.vectorUnavailableReason ||
+        review?.failure ||
+        asArray(review?.fallbackDiagnostics).length,
+    );
+    const canUseSyntheticTracks = !TERMINAL_JOB_STATUSES.has(status) && !hasVectorUnavailableReview;
+    const apiTracks =
+      asArray(result.tracks).length
+        ? asArray(result.tracks)
+        : asArray(result.trackSummary?.tracks).length
+          ? asArray(result.trackSummary.tracks)
+          : asArray(result.scene?.tracks);
+    if (apiTracks.length) {
+      return apiTracks.map(normalizeApiTrack);
+    }
+
+    const count = toInteger(result.scene?.objects ?? result.objects, 0);
+    if (canUseSyntheticTracks && !config && count > 0) {
+      return Array.from({ length: count }, (_, index) =>
+        normalizeApiTrack(
+          {
+            objectId: `object_${index}`,
+            label: `object_${index}`,
+            source: "job_result",
+            confidence: 0.7,
+            frameCount: toInteger(result.scene?.frames ?? result.frames, 1),
+            visibleFrameCount: toInteger(result.scene?.frames ?? result.frames, 1),
+            frames: [{ frame: 0, bbox: [80 + index * 24, 60 + index * 18, 120, 90], visible: true }],
+            warnings: ["result_has_counts_only"],
+            exportStatus: "review_pending",
+          },
+          index,
+        ),
+      );
+    }
+
+    return canUseSyntheticTracks ? configReviewTracks(config, job, artifacts) : [];
+  }
+
+  function trackFrameForDisplay(track, frameIndex) {
+    const frames = asArray(track.frames).filter((frame) => frame.visible !== false && frame.bbox);
+    if (!frames.length) return null;
+    return frames.find((frame) => frame.frame === frameIndex) || frames.reduce((nearest, frame) => {
+      if (!nearest) return frame;
+      return Math.abs(frame.frame - frameIndex) < Math.abs(nearest.frame - frameIndex) ? frame : nearest;
+    }, null);
+  }
+
+  function trackCoverageLabel(track) {
+    const count = Math.max(1, toInteger(track.frameCount, asArray(track.frames).length || 1));
+    const visible = clamp(toInteger(track.visibleFrameCount, count), 0, count);
+    return `${track.frameStart ?? 0}-${track.frameEnd ?? Math.max(0, count - 1)} (${Math.round((visible / count) * 100)}%)`;
+  }
+
+  function collectDiagnostics(job, events, artifacts, tracks, review) {
+    const diagnostics = [];
+    const push = (kind, message, severity = "warn") => {
+      if (!message) return;
+      const key = `${kind}:${message}`;
+      if (!diagnostics.some((item) => item.key === key)) diagnostics.push({ key, kind, message, severity });
+    };
+
+    const jobStatus = String(job?.status || "").toLowerCase();
+    const jobMessage = job?.error || job?.reason || (jobStatus === "failed" ? job?.message : "");
+    push("job", jobMessage, jobStatus === "failed" ? "bad" : "warn");
+    if (!jobMessage && /fallback|raster|unavailable|diagnostic/.test(String(job?.message || ""))) {
+      push("job", job.message, "warn");
+    }
+    for (const event of asArray(events)) {
+      const metadata = eventMetadata(event);
+      const eventKey = `${event.event_type || ""} ${event.status || ""} ${event.stage || ""} ${metadata.reasonCode || ""} ${event.message || ""}`;
+      if (/(^|\b)(failed|error|fallback|raster|unavailable|diagnostic|whole_frame|too_large)(\b|$)/.test(eventKey)) {
+        push(metadata.reasonCode || event.event_type || event.stage, metadata.message || event.message, /(^|\b)(failed|error|whole_frame|too_large)(\b|$)/.test(eventKey) ? "bad" : "warn");
+        push(metadata.reasonCode, asArray(metadata.suggestedFixes).join(" "), "warn");
+      }
+    }
+    for (const artifact of asArray(artifacts)) {
+      if (artifact.kind === "fallback_diagnostics") {
+        push("fallback_diagnostics", "Raster/vector fallback diagnostics were written for this run. Open fallback_diagnostics.json from the artifact list for reason codes and suggested fixes.", "warn");
+      }
+      if (artifact.kind === "failure_diagnostics") {
+        push("failure_diagnostics", "Failure diagnostics were written for this run. The log stream above includes the user-facing failure message.", "bad");
+      }
+      if (artifact.kind === "track_summary") {
+        push("track_summary", "Track summary artifact is available; the local UI API currently exposes its metadata for review.", "ready");
+      }
+    }
+    for (const track of asArray(tracks)) {
+      for (const warning of asArray(track.warnings)) {
+        if (/fallback|whole|raster|failed|too_large|unavailable|rejected/.test(warning)) {
+          push(track.objectId, `${track.label || track.objectId}: ${warning}`, /failed|rejected|whole|too_large/.test(warning) ? "bad" : "warn");
+        }
+      }
+    }
+    for (const item of asArray(review?.fallbackDiagnostics)) {
+      push(item.reasonCode || item.code || "fallback", item.message || item.reason || item.summary || "Vector/object tracks were unavailable for part of this run.", /failed|error/.test(String(item.severity || "")) ? "bad" : "warn");
+      push(item.reasonCode || item.code || "fallback_fix", asArray(item.suggestedFixes).join(" "), "warn");
+    }
+    push("vector_unavailable", review?.vectorUnavailableReason, "warn");
+    push("raster_fallback", review?.rasterFallbackReason, "warn");
+    push("failure", review?.failure?.message, "bad");
+    if (!diagnostics.length && job) push("status", "No fallback or failure diagnostics reported for the selected run.", "ready");
+    return diagnostics;
+  }
+
   function setFacts(element, facts) {
     element.innerHTML = Object.entries(facts)
       .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value ?? "not reported")}</dd>`)
@@ -582,6 +876,8 @@ const MotionJSONUI = (() => {
       video: $("#previewVideo"),
     };
     const ctx = elements.canvas.getContext("2d");
+    let pollTimer = null;
+    let pollInFlight = false;
 
     function renderApiStatus(kind, label) {
       const chip = $("#apiStatus");
@@ -749,8 +1045,10 @@ const MotionJSONUI = (() => {
       $("#jobList").innerHTML = state.jobs.length
         ? state.jobs
             .map((job) => {
+              const id = jobIdentifier(job);
               const progress = normalizeProgress(job);
               const status = job.status || "unknown";
+              const selected = id && id === state.selectedJobId;
               const diagnostics = [
                 job.error,
                 job.reason,
@@ -761,21 +1059,159 @@ const MotionJSONUI = (() => {
                 job.raster_only_reason,
               ].filter(Boolean);
               return `
-                <div class="artifact-row">
+                <button class="artifact-row job-choice ${selected ? "is-selected" : ""}" type="button" data-job-id="${escapeAttribute(id)}" aria-pressed="${selected}">
                   <strong>${escapeHtml(job.type || "job")}</strong>
                   ${statusChip(status, status, /complete|succeeded/.test(String(status).toLowerCase()))}
-                  <span class="row-meta">${escapeHtml(job.id || "no id reported")}</span>
+                  <span class="row-meta">${escapeHtml(id || "no id reported")} - ${escapeHtml(latestStageLabel(job))}</span>
                   <div class="job-progress" role="group" aria-label="${escapeAttribute(`${job.type || "job"} progress`)}">
                     <div class="job-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
                       <div class="job-progress-bar" style="--progress: ${progress}%"></div>
                     </div>
                     <span class="job-progress-text">${progress}% complete${diagnostics.length ? ` - ${escapeHtml(diagnostics.join(" "))}` : ""}</span>
                   </div>
-                </div>
+                </button>
               `;
             })
             .join("")
         : `<div class="empty-state">Jobs will appear here with status, progress, and export diagnostics.</div>`;
+    }
+
+    function renderSelectedJobFacts() {
+      const job = selectedJob();
+      const statusChipElement = $("#runStatus");
+      if (!job) {
+        statusChipElement.textContent = "No run";
+        statusChipElement.className = "status-chip is-muted";
+        setFacts($("#selectedJobFacts"), {
+          status: "select or start a run",
+          provider: "not reported",
+          progress: "0%",
+          updated: "not reported",
+        });
+        return;
+      }
+
+      const status = job.status || "unknown";
+      statusChipElement.textContent = status;
+      statusChipElement.className = `status-chip ${statusClass(status, /succeeded|complete/.test(String(status).toLowerCase()))}`;
+      const payload = job.payload || {};
+      const result = job.result || {};
+      setFacts($("#selectedJobFacts"), {
+        id: jobIdentifier(job),
+        type: job.type || "job",
+        provider: payload.mask_provider || jobConfig(job)?.provider?.name || "not reported",
+        progress: `${normalizeProgress({ ...job, events: state.jobEvents })}%`,
+        artifacts: state.jobArtifacts.length,
+        objects: result.scene?.objects ?? result.objects ?? state.reviewTracks.length,
+        updated: job.updated_at || job.updatedAt || "not reported",
+      });
+    }
+
+    function renderEventLog() {
+      $("#eventCount").textContent = `${state.jobEvents.length} event${state.jobEvents.length === 1 ? "" : "s"}`;
+      $("#jobEventLog").innerHTML = state.jobEvents.length
+        ? state.jobEvents
+            .slice()
+            .reverse()
+            .map((event) => {
+              const metadata = eventMetadata(event);
+              const progress = eventProgress(event);
+              const ratio = progress.overallRatio ?? progress.ratio;
+              const progressText = typeof ratio === "number" ? ` - ${Math.round((ratio <= 1 ? ratio : ratio / 100) * 100)}%` : "";
+              const label = event.event_type || event.type || event.stage || "event";
+              const message = event.message || metadata.message || event.stage || "job event";
+              return `
+                <div class="event-row">
+                  <strong>${escapeHtml(label)}</strong>
+                  <span class="event-time">${escapeHtml(event.created_at || event.createdAt || event.timestamp || "")}</span>
+                  <span class="row-meta">${escapeHtml(message + progressText)}</span>
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">No job events have been reported yet.</div>`;
+    }
+
+    function renderArtifactBrowser() {
+      $("#artifactCount").textContent = `${state.jobArtifacts.length} file${state.jobArtifacts.length === 1 ? "" : "s"}`;
+      $("#artifactBrowser").innerHTML = state.jobArtifacts.length
+        ? state.jobArtifacts
+            .map((artifact) => {
+              const relPath = artifact.metadata?.rel_path || artifact.path || artifact.filename || artifact.id;
+              const detail = [
+                artifact.content_type || artifact.contentType,
+                artifact.byte_size || artifact.byteSize ? `${artifact.byte_size || artifact.byteSize} bytes` : "",
+                artifact.object_id || artifact.objectId ? `object: ${artifact.object_id || artifact.objectId}` : "",
+              ]
+                .filter(Boolean)
+                .join(" - ");
+              return `
+                <div class="artifact-row">
+                  <strong>${escapeHtml(relPath || "artifact")}</strong>
+                  ${statusChip(artifact.kind || "artifact", artifact.kind || "artifact", true)}
+                  <span class="row-meta">${escapeHtml(detail || artifact.id || "metadata only")}</span>
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">Artifacts appear here after the worker registers output files.</div>`;
+    }
+
+    function renderTrackList() {
+      $("#trackCount").textContent = `${state.reviewTracks.length} track${state.reviewTracks.length === 1 ? "" : "s"}`;
+      $("#trackList").innerHTML = state.reviewTracks.length
+        ? state.reviewTracks
+            .map((track) => {
+              const visible = state.trackVisibility[track.id] !== false;
+              const confidence = typeof track.confidence === "number" ? `${Math.round(track.confidence * 100)}%` : "not reported";
+              const warnings = asArray(track.warnings);
+              return `
+                <div class="track-row ${visible ? "" : "is-muted"}" style="--track-color: ${escapeAttribute(track.color)}">
+                  <div class="track-topline">
+                    <span class="track-meta"><span class="track-swatch" aria-hidden="true"></span><strong>${escapeHtml(track.label || track.objectId)}</strong></span>
+                    ${statusChip(track.exportStatus || "review", track.exportStatus || "review", !/rejected|failed|pending/.test(String(track.exportStatus || "")))}
+                  </div>
+                  <div class="track-meta">
+                    <span>${escapeHtml(track.source || "unknown source")}</span>
+                    <span>confidence ${escapeHtml(confidence)}</span>
+                    <span>frames ${escapeHtml(trackCoverageLabel(track))}</span>
+                  </div>
+                  <div class="track-actions">
+                    <label class="track-toggle">
+                      <input type="checkbox" data-track-visibility="${escapeAttribute(track.id)}" ${visible ? "checked" : ""} />
+                      <span>overlay</span>
+                    </label>
+                    ${detailChip(track.reviewSource || "review")}
+                    ${warnings.map((warning) => detailChip(warning)).join("")}
+                  </div>
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">Start or select a run to review object tracks.</div>`;
+    }
+
+    function renderFallbackDiagnostics() {
+      const diagnostics = collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview);
+      $("#fallbackDiagnostics").innerHTML = diagnostics.length
+        ? diagnostics
+            .map((diagnostic) => `
+              <div class="diagnostic-row is-${escapeAttribute(diagnostic.severity || "warn")}">
+                <strong>${escapeHtml(diagnostic.kind || "diagnostic")}</strong>
+                <span class="row-meta">${escapeHtml(diagnostic.message)}</span>
+              </div>
+            `)
+            .join("")
+        : `<div class="empty-state">No selected run diagnostics.</div>`;
+    }
+
+    function renderJobReview() {
+      renderSelectedJobFacts();
+      renderEventLog();
+      renderArtifactBrowser();
+      renderTrackList();
+      renderFallbackDiagnostics();
+      drawOverlay();
     }
 
     function renderMaskProviderOptions() {
@@ -915,6 +1351,28 @@ const MotionJSONUI = (() => {
       ctx.fillText(label, start.x + 6, Math.max(14, start.y - 7));
     }
 
+    function drawTrackBox(track, frame, view) {
+      const box = frame?.bbox;
+      if (!box) return;
+      const start = videoPointToCanvas({ x: box.x, y: box.y }, view);
+      const end = videoPointToCanvas({ x: box.x + box.w, y: box.y + box.h }, view);
+      ctx.save();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = track.color || "#10a37f";
+      ctx.fillStyle = `${track.color || "#10a37f"}26`;
+      ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      ctx.fillStyle = "rgba(20, 28, 32, 0.86)";
+      const label = `${track.label || track.objectId} - ${track.reviewSource || "track"}`;
+      ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+      const textWidth = Math.min(ctx.measureText(label).width + 14, Math.max(60, view.width - start.x - 8));
+      const labelY = Math.max(view.y + 18, start.y - 24);
+      ctx.fillRect(start.x, labelY, textWidth, 20);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(label, start.x + 7, labelY + 14, textWidth - 12);
+      ctx.restore();
+    }
+
     function drawStroke(stroke, view) {
       if (!stroke.points.length) return;
       ctx.save();
@@ -959,6 +1417,11 @@ const MotionJSONUI = (() => {
       if (state.draftBox) {
         drawBox(state.draftBox.data, "#e5be5f", "box draft", view);
       }
+
+      state.reviewTracks.forEach((track) => {
+        if (state.trackVisibility[track.id] === false) return;
+        drawTrackBox(track, trackFrameForDisplay(track, state.video.currentFrame), view);
+      });
 
       if (state.pointer?.inside) {
         const canvasPoint = videoPointToCanvas(state.pointer, view);
@@ -1053,6 +1516,143 @@ const MotionJSONUI = (() => {
       } catch (error) {
         $("#configStatus").textContent = "Validation failed";
         $("#configStatus").className = "status-chip is-bad";
+        $("#providerWarning").textContent = error.message;
+        $("#providerWarning").className = "warning-box is-bad";
+      }
+    }
+
+    function configForLocalJob(forceMock = false) {
+      const config = buildRunConfig(collectFormState($));
+      if (forceMock) {
+        config.provider.name = "mock";
+        config.provider.fallback_mask_provider = null;
+      }
+      if (!LOCAL_JOB_PROVIDERS.has(config.provider.name)) {
+        throw new Error(`${config.provider.name} cannot run in the local UI worker yet. Use Start mock job for a no-model smoke run.`);
+      }
+      return config;
+    }
+
+    function rememberJobConfig(job, config) {
+      const id = jobIdentifier(job);
+      if (!id) return;
+      state.selectedJobId = id;
+      state.selectedJob = job;
+      state.lastRunConfig = config;
+      state.runConfigsByJob[id] = config;
+    }
+
+    async function loadJobReview(jobId) {
+      if (!jobId) {
+        state.selectedJob = null;
+        state.jobReview = null;
+        state.jobEvents = [];
+        state.jobArtifacts = [];
+        state.reviewTracks = [];
+        renderJobReview();
+        return;
+      }
+
+      const [jobBody, eventsBody, artifactsBody] = await Promise.all([
+        api(`/api/jobs/${encodeURIComponent(jobId)}`),
+        api(`/api/jobs/${encodeURIComponent(jobId)}/events`),
+        api(`/api/jobs/${encodeURIComponent(jobId)}/artifacts`),
+      ]);
+
+      state.selectedJob = jobBody.job || null;
+      state.jobEvents = asArray(eventsBody.events);
+      state.jobArtifacts = asArray(artifactsBody.artifacts);
+      state.jobReview = artifactsBody.review || null;
+      state.reviewTracks = buildReviewTracks({
+        job: state.selectedJob,
+        config: jobConfig(state.selectedJob),
+        artifacts: state.jobArtifacts,
+        review: state.jobReview,
+      });
+      for (const track of state.reviewTracks) {
+        if (!(track.id in state.trackVisibility)) {
+          state.trackVisibility[track.id] = true;
+        }
+      }
+      renderJobs();
+      renderJobReview();
+    }
+
+    function stopJobPolling() {
+      if (pollTimer) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      state.polling = false;
+    }
+
+    async function pollSelectedJob() {
+      if (!state.selectedProjectId || !state.selectedJobId || pollInFlight) return;
+      pollInFlight = true;
+      try {
+        const progressBody = await api(`/api/progress?projectId=${encodeURIComponent(state.selectedProjectId)}`);
+        state.jobs = asArray(progressBody.progress);
+        await loadJobReview(state.selectedJobId);
+        if (!isActiveJob(selectedJob())) {
+          stopJobPolling();
+        }
+      } catch (error) {
+        $("#providerWarning").textContent = error.message;
+        $("#providerWarning").className = "warning-box is-bad";
+      } finally {
+        pollInFlight = false;
+      }
+    }
+
+    function startJobPolling() {
+      stopJobPolling();
+      state.polling = true;
+      pollTimer = window.setInterval(pollSelectedJob, 2000);
+    }
+
+    async function startRunFromConfig({ forceMock = false } = {}) {
+      if (!state.selectedProjectId) {
+        $("#providerWarning").textContent = "Create or select a project before starting a run.";
+        $("#providerWarning").className = "warning-box is-bad";
+        return;
+      }
+      if (!state.selectedVideoId) {
+        $("#providerWarning").textContent = "Register or select a video before starting a run.";
+        $("#providerWarning").className = "warning-box is-bad";
+        return;
+      }
+
+      let config;
+      try {
+        config = configForLocalJob(forceMock);
+      } catch (error) {
+        $("#providerWarning").textContent = error.message;
+        $("#providerWarning").className = "warning-box is-bad";
+        return;
+      }
+
+      $("#runStatus").textContent = "Starting";
+      $("#runStatus").className = "status-chip is-neutral";
+      try {
+        const jobPayload = {
+          projectId: state.selectedProjectId,
+          videoId: state.selectedVideoId,
+          runConfig: config,
+          run: true,
+        };
+        const response = await api("/api/jobs", {
+          method: "POST",
+          body: JSON.stringify(jobPayload),
+        });
+        rememberJobConfig(response.job, config);
+        await refreshProjectData();
+        await loadJobReview(state.selectedJobId);
+        if (isActiveJob(selectedJob())) {
+          startJobPolling();
+        }
+      } catch (error) {
+        $("#runStatus").textContent = "Failed";
+        $("#runStatus").className = "status-chip is-bad";
         $("#providerWarning").textContent = error.message;
         $("#providerWarning").className = "warning-box is-bad";
       }
@@ -1301,17 +1901,97 @@ const MotionJSONUI = (() => {
       }
     }
 
-    async function refreshProjectData() {
+    function mergeProgressJobs(jobs, progress) {
+      const lookup = new Map(asArray(progress).map((job) => [jobIdentifier(job), job]));
+      return asArray(jobs).map((job) => ({ ...job, ...(lookup.get(jobIdentifier(job)) || {}) }));
+    }
+
+    function ensureSelectedJob() {
+      if (state.selectedJobId && state.jobs.some((job) => jobIdentifier(job) === state.selectedJobId)) return;
+      const active = state.jobs.find(isActiveJob);
+      state.selectedJobId = jobIdentifier(active || state.jobs[0] || {});
+      state.selectedJob = state.jobs.find((job) => jobIdentifier(job) === state.selectedJobId) || null;
+    }
+
+    async function refreshSelectedJobReview() {
+      if (!state.selectedJobId) {
+        state.selectedJob = null;
+        state.jobReview = null;
+        state.jobEvents = [];
+        state.jobArtifacts = [];
+        state.reviewTracks = [];
+        renderJobReview();
+        return;
+      }
+
+      const id = state.selectedJobId;
+      const [jobResult, eventsResult, artifactsResult, artifactsAliasResult] = await Promise.all(
+        [
+          ["job", `/api/jobs/${encodeURIComponent(id)}`],
+          ["events", `/api/jobs/${encodeURIComponent(id)}/events`],
+          ["artifacts", `/api/jobs/${encodeURIComponent(id)}/artifacts`],
+          ["artifactsAlias", `/api/artifacts?jobId=${encodeURIComponent(id)}`],
+        ].map(async ([key, route]) => {
+          try {
+            return [key, await api(route), null];
+          } catch (error) {
+            return [key, null, error.message];
+          }
+        }),
+      );
+
+      state.selectedJob = jobResult[1]?.job || state.jobs.find((job) => jobIdentifier(job) === id) || null;
+      state.jobEvents = eventsResult[1]?.events || [];
+      const artifacts = artifactsResult[1]?.artifacts || artifactsAliasResult[1]?.artifacts || [];
+      state.jobArtifacts = artifacts;
+      state.jobReview = artifactsResult[1]?.review || artifactsAliasResult[1]?.review || null;
+      state.errors.selectedJob = [jobResult[2], eventsResult[2], artifactsResult[2], artifactsAliasResult[2]].filter(Boolean).join(" ");
+      const config = jobConfig(state.selectedJob);
+      state.reviewTracks = buildReviewTracks({ job: state.selectedJob, config, artifacts: state.jobArtifacts, review: state.jobReview });
+      for (const track of state.reviewTracks) {
+        if (!(track.id in state.trackVisibility)) state.trackVisibility[track.id] = true;
+      }
+      renderJobReview();
+    }
+
+    function shouldPollJobs() {
+      return Boolean(state.selectedProjectId && (state.jobs.some(isActiveJob) || (selectedJob() && !TERMINAL_JOB_STATUSES.has(String(selectedJob().status || "").toLowerCase()))));
+    }
+
+    function stopPolling() {
+      if (pollTimer) window.clearInterval(pollTimer);
+      pollTimer = null;
+      state.polling = false;
+    }
+
+    function startPolling() {
+      if (pollTimer) return;
+      state.polling = true;
+      pollTimer = window.setInterval(async () => {
+        if (pollInFlight) return;
+        pollInFlight = true;
+        try {
+          await refreshProjectData({ quiet: true });
+        } finally {
+          pollInFlight = false;
+          if (!shouldPollJobs()) stopPolling();
+        }
+      }, 2200);
+    }
+
+    async function refreshProjectData(options = {}) {
       state.errors.videos = "";
       state.errors.jobs = "";
       if (!state.selectedProjectId) {
         state.videos = [];
         state.jobs = [];
+        state.selectedJobId = "";
       } else {
-        const [videos, jobs] = await Promise.all(
+        const [videos, jobs, progress] = await Promise.all(
           [
             ["videos", `/api/videos?projectId=${encodeURIComponent(state.selectedProjectId)}`],
             ["jobs", `/api/jobs?projectId=${encodeURIComponent(state.selectedProjectId)}`],
+            ["progress", `/api/progress?projectId=${encodeURIComponent(state.selectedProjectId)}`],
           ].map(async ([key, route]) => {
             try {
               return [key, await api(route), null];
@@ -1322,12 +2002,15 @@ const MotionJSONUI = (() => {
         );
 
         state.videos = videos[1]?.videos || [];
-        state.jobs = jobs[1]?.jobs || [];
+        state.jobs = mergeProgressJobs(jobs[1]?.jobs || [], progress[1]?.progress || []);
         if (videos[2]) state.errors.videos = videos[2];
         if (jobs[2]) state.errors.jobs = jobs[2];
       }
+      ensureSelectedJob();
       renderVideos();
       renderJobs();
+      await refreshSelectedJobReview();
+      if (!options.quiet && shouldPollJobs()) startPolling();
     }
 
     async function refreshAll() {
@@ -1344,7 +2027,108 @@ const MotionJSONUI = (() => {
       renderConfigPreview();
     }
 
+    async function startJobFromConfig({ forceMock = false } = {}) {
+      if (!state.selectedProjectId) {
+        $("#runStatus").textContent = "No project";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>project required</strong><span class="row-meta">Create or select a local project before starting a run.</span></div>`;
+        return;
+      }
+      if (!state.selectedVideoId) {
+        $("#runStatus").textContent = "No video";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>video required</strong><span class="row-meta">Register and select a local source video before starting a run.</span></div>`;
+        return;
+      }
+
+      let config;
+      try {
+        config = buildRunConfig(collectFormState($));
+      } catch (error) {
+        $("#runStatus").textContent = "Config invalid";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>config</strong><span class="row-meta">${escapeHtml(error.message)}</span></div>`;
+        return;
+      }
+
+      const requestedProvider = forceMock ? "mock" : config.provider.name;
+      const runtimeConfig = forceMock ? { ...config, provider: { ...config.provider, name: "mock" } } : config;
+      state.lastRunConfig = runtimeConfig;
+
+      if (!forceMock && !LOCAL_JOB_PROVIDERS.has(requestedProvider)) {
+        $("#runStatus").textContent = "Provider gated";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#fallbackDiagnostics").innerHTML = `
+          <div class="diagnostic-row is-bad">
+            <strong>${escapeHtml(requestedProvider)}</strong>
+            <span class="row-meta">Local job execution currently accepts deterministic providers only: mock, threshold, or external. Use the mock job control for a no-model smoke run, or switch providers before starting.</span>
+          </div>
+        `;
+        return;
+      }
+
+      $("#runStatus").textContent = forceMock ? "Starting mock" : "Starting";
+      $("#runStatus").className = "status-chip is-neutral";
+      try {
+        const payload = {
+          projectId: state.selectedProjectId,
+          videoId: state.selectedVideoId,
+          maskProvider: requestedProvider,
+          sampleFps: runtimeConfig.sampling?.sample_fps,
+          maxFrames: runtimeConfig.sampling?.max_frames,
+          rightsContext: runtimeConfig.rights || {},
+          runConfig: runtimeConfig,
+          run: true,
+        };
+        const created = await api("/api/jobs", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        const id = jobIdentifier(created.job);
+        state.runConfigsByJob[id] = runtimeConfig;
+        state.selectedJobId = id;
+        state.selectedJob = created.job;
+        state.jobs = [created.job, ...state.jobs.filter((job) => jobIdentifier(job) !== id)];
+        state.jobEvents = [];
+        state.jobArtifacts = [];
+        state.reviewTracks = buildReviewTracks({ job: created.job, config: runtimeConfig, artifacts: [] });
+        for (const track of state.reviewTracks) state.trackVisibility[track.id] = true;
+        renderJobs();
+        renderJobReview();
+        await refreshSelectedJobReview();
+        startPolling();
+      } catch (error) {
+        $("#runStatus").textContent = "Start failed";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#fallbackDiagnostics").innerHTML = `
+          <div class="diagnostic-row is-bad">
+            <strong>job start failed</strong>
+            <span class="row-meta">${escapeHtml(error.message)}</span>
+          </div>
+        `;
+      }
+    }
+
     $("#refreshButton").addEventListener("click", refreshAll);
+    $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
+    $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
+
+    $("#jobList").addEventListener("click", async (event) => {
+      const choice = event.target.closest("[data-job-id]");
+      if (!choice) return;
+      state.selectedJobId = choice.dataset.jobId;
+      renderJobs();
+      await refreshSelectedJobReview();
+      if (shouldPollJobs()) startPolling();
+    });
+
+    $("#trackList").addEventListener("change", (event) => {
+      const toggle = event.target.closest("[data-track-visibility]");
+      if (!toggle) return;
+      state.trackVisibility[toggle.dataset.trackVisibility] = toggle.checked;
+      renderTrackList();
+      drawOverlay();
+    });
 
     document.querySelectorAll(".goal").forEach((button) => {
       button.addEventListener("click", () => applyPreset(button.dataset.preset));
@@ -1376,6 +2160,11 @@ const MotionJSONUI = (() => {
     $("#projectSelect").addEventListener("change", async (event) => {
       state.selectedProjectId = event.target.value;
       state.selectedVideoId = "";
+      state.selectedJobId = "";
+      state.selectedJob = null;
+      state.jobEvents = [];
+      state.jobArtifacts = [];
+      state.reviewTracks = [];
       await refreshProjectData();
     });
 
@@ -1558,12 +2347,14 @@ const MotionJSONUI = (() => {
     PRESETS,
     RUN_CONFIG_SCHEMA,
     buildRunConfig,
+    buildReviewTracks,
     containedVideoRect,
     mapClientPointToVideo,
     normalizePrompt,
     parseCsv,
     parseKeyframes,
     slugObjectId,
+    trackFrameForDisplay,
   };
 
   globalThis.MotionJSONUI = publicApi;

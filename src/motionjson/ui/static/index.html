@@ -44,8 +44,8 @@
       <section class="workspace" aria-label="Video prompt workspace">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Phase 8</p>
-            <h1>Video prompts and extraction wizard</h1>
+            <p class="eyebrow">Phase 9</p>
+            <h1>Job runs and result review</h1>
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
@@ -245,6 +245,8 @@
             </div>
             <div class="config-actions">
               <button id="validateConfigButton" type="button">Validate config</button>
+              <button id="startRunButton" type="button" data-action="run-job">Start run</button>
+              <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job">Start mock job</button>
               <button id="saveConfigButton" type="button">Save config</button>
               <label class="load-config-button">
                 <span>Load config</span>
@@ -270,6 +272,38 @@
             <span id="jobSummary" class="subtle-chip">0 active</span>
           </div>
           <div id="jobList" class="artifact-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Selected Run</h2>
+            <span id="runStatus" class="status-chip is-muted">No run</span>
+          </div>
+          <dl id="selectedJobFacts" class="facts"></dl>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Logs</h2>
+            <span id="eventCount" class="subtle-chip">0 events</span>
+          </div>
+          <div id="jobEventLog" class="event-log" aria-live="polite"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Artifacts</h2>
+            <span id="artifactCount" class="subtle-chip">0 files</span>
+          </div>
+          <div id="artifactBrowser" class="artifact-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Tracks</h2>
+            <span id="trackCount" class="subtle-chip">0 tracks</span>
+          </div>
+          <div id="trackList" class="track-list"></div>
+        </section>
+        <section class="compact-panel">
+          <h2>Fallback Diagnostics</h2>
+          <div id="fallbackDiagnostics" class="diagnostic-list" role="status"></div>
         </section>
         <section class="compact-panel">
           <h2>Routes</h2>

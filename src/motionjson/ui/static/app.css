@@ -527,9 +527,19 @@ input[type="range"] {
   text-align: left;
 }
 
+.artifact-row.job-choice {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
 .artifact-row.video-choice.is-selected {
   border-color: #7ab9b1;
   background: var(--ready-soft);
+}
+
+.artifact-row.job-choice.is-selected {
+  border-color: #86a9bf;
+  background: var(--api-soft);
 }
 
 .capability-row,
@@ -644,6 +654,121 @@ input[type="range"] {
 .job-progress-text {
   font-size: 12px;
   color: var(--muted);
+}
+
+.event-log,
+.track-list,
+.diagnostic-list {
+  display: grid;
+  gap: 8px;
+}
+
+.event-log {
+  max-height: 300px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.event-row,
+.track-row,
+.diagnostic-row {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
+.event-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.event-row strong,
+.track-row strong,
+.diagnostic-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.event-time {
+  font-size: 11px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.track-row {
+  position: relative;
+}
+
+.track-row.is-muted {
+  opacity: 0.58;
+}
+
+.track-topline,
+.track-meta,
+.track-actions,
+.diagnostic-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.track-topline {
+  justify-content: space-between;
+}
+
+.track-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.track-swatch {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(23, 33, 36, 0.24);
+  border-radius: 3px;
+  background: var(--track-color, var(--ready));
+}
+
+.track-toggle {
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  color: var(--ink);
+}
+
+.track-toggle input {
+  width: 15px;
+  min-height: 15px;
+  accent-color: var(--ready);
+}
+
+.diagnostic-list {
+  margin-top: 10px;
+}
+
+.diagnostic-row.is-bad {
+  border-color: #f0a29b;
+  color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.diagnostic-row.is-warn {
+  border-color: #e5be5f;
+  color: #72470b;
+  background: var(--warn-soft);
+}
+
+.diagnostic-row.is-ready {
+  border-color: #7ab9b1;
+  color: #073f3b;
+  background: var(--ready-soft);
 }
 
 .config-preview {

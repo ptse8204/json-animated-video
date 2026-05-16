@@ -197,11 +197,31 @@ for (const [config, discoveryMode, providerName] of presetExpectations) {
   assert.equal(validation.status, 0, validation.stderr || validation.stdout);
 }
 
+const pendingPreviewTracks = ui.buildReviewTracks({
+  job: { status: "pending" },
+  config: textConfig,
+  artifacts: [],
+  review: {},
+});
+assert.ok(pendingPreviewTracks.length > 0, "pending jobs may show estimated review tracks");
+
+const fallbackTerminalTracks = ui.buildReviewTracks({
+  job: { status: "failed" },
+  config: textConfig,
+  artifacts: [],
+  review: {
+    rasterFallback: true,
+    vectorUnavailableReason: "masks_too_large_whole_frame",
+    fallbackDiagnostics: [{ reasonCode: "masks_too_large_whole_frame" }],
+  },
+});
+assert.deepEqual(fallbackTerminalTracks, [], "terminal fallback jobs must not synthesize fake overlay tracks");
+
 console.log(
   JSON.stringify(
     {
       status: "ok",
-      checked: ["coordinate-mapping", "run-config-builder", "python-config-validation"],
+      checked: ["coordinate-mapping", "run-config-builder", "review-track-gating", "python-config-validation"],
     },
     null,
     2,
