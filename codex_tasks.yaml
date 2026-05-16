@@ -1,0 +1,294 @@
+project: motionjson
+mission: local_first_video_object_tracing_ui
+phase_policy:
+  execute_in_order: true
+  commit_required_after_each_phase: true
+  phase_report_required: true
+  phase_report_path_template: docs/roadmap/phase-{phase_id}-report.md
+  reviewer_required_before_commit: true
+  preserve_cli_behavior: true
+  heavy_dependencies_optional: true
+  mock_mode_required: true
+subagents:
+  - name: repo_archaeologist
+    role: Map current repository structure, CLI, tests, dependencies, and execution paths.
+  - name: product_strategist
+    role: Keep user workflows, naming, acceptance criteria, and adoption goals coherent.
+  - name: backend_cv_architect
+    role: Design and implement provider abstractions, extraction pipeline, tracking, diagnostics, and exports.
+  - name: frontend_ui_engineer
+    role: Design and implement local UI, canvas workflow, job integration, and result review.
+  - name: qa_benchmark_engineer
+    role: Build test strategy, fixtures, mocks, benchmarks, and regression checks.
+  - name: docs_devrel_engineer
+    role: Write docs, tutorials, examples, and troubleshooting content.
+  - name: release_packaging_engineer
+    role: Package UI, dependency extras, launchers, setup checks, and release readiness.
+  - name: reviewer
+    role: Review diffs against acceptance criteria, correctness, risk, and tests.
+phases:
+  - id: 0
+    name: repository discovery and guardrails
+    commit_message: "phase 0: map repository and codex guardrails"
+    agents: [repo_archaeologist, product_strategist, qa_benchmark_engineer, reviewer]
+    goals:
+      - Map existing repository modules, CLI commands, extraction flow, examples, and tests.
+      - Identify SAM2 path and raster fallback behavior.
+      - Install or update repository-level Codex instructions.
+    deliverables:
+      - AGENTS.md
+      - docs/roadmap/phase-0-report.md
+      - Current architecture/test map.
+    acceptance:
+      - Existing smoke commands are documented.
+      - Risky areas and unknowns are listed.
+      - No unnecessary product code changes.
+    tests:
+      - "python -m motionjson.cli --help || document failure"
+      - "python -m motionjson.cli extract --help || document failure"
+  - id: 1
+    name: typed project and run config foundation
+    commit_message: "phase 1: add typed extraction run configuration"
+    agents: [backend_cv_architect, repo_archaeologist, qa_benchmark_engineer, reviewer]
+    goals:
+      - Create typed configs shared by CLI and UI.
+      - Validate prompts, providers, sampling, export options, and debug settings.
+    deliverables:
+      - Run config models.
+      - Config serialization/deserialization.
+      - Config validation tests.
+    acceptance:
+      - Existing CLI can build config internally.
+      - Invalid configs produce clear messages.
+      - Tests cover key prompt/sampling/provider cases.
+    tests:
+      - "python -m pytest tests -k config || document unavailable"
+  - id: 2
+    name: provider capability registry and diagnostics
+    commit_message: "phase 2: add provider capability diagnostics"
+    agents: [backend_cv_architect, qa_benchmark_engineer, docs_devrel_engineer, reviewer]
+    goals:
+      - Add capability registry for providers and environment checks.
+      - Report availability, missing dependencies, models, device, and install hints.
+    deliverables:
+      - Provider registry.
+      - CLI/backend diagnostics JSON output.
+      - Tests with mocked missing providers.
+    acceptance:
+      - Missing optional dependencies do not break base CLI.
+      - CUDA is reported, not assumed.
+      - Diagnostics are machine-readable.
+    tests:
+      - "python -m motionjson.cli backend --help || document failure"
+      - "python -m pytest tests -k capability || document unavailable"
+  - id: 3
+    name: job engine and artifact model
+    commit_message: "phase 3: add extraction job and artifact model"
+    agents: [backend_cv_architect, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add local job lifecycle and structured artifacts.
+      - Emit progress events for future UI.
+    deliverables:
+      - Job state model.
+      - Artifact directory structure.
+      - Events/logs/metrics output.
+    acceptance:
+      - Run produces structured artifact directory.
+      - Failure writes readable diagnostics.
+      - Existing CLI behavior remains usable.
+    tests:
+      - "python -m pytest tests -k job || document unavailable"
+  - id: 4
+    name: extraction provider abstraction refactor
+    commit_message: "phase 4: refactor extraction into provider pipeline"
+    agents: [backend_cv_architect, repo_archaeologist, qa_benchmark_engineer, reviewer]
+    goals:
+      - Split pipeline into discovery, masks, tracking, linking, vectorization, export.
+      - Move existing single-prompt flow into abstractions.
+      - Add mock providers.
+    deliverables:
+      - Provider interfaces.
+      - Mock providers.
+      - Pipeline tests.
+    acceptance:
+      - Existing single-prompt extraction still works.
+      - Mock pipeline produces deterministic object tracks.
+      - Pipeline stages are independently testable.
+    tests:
+      - "python -m pytest tests -k pipeline || document unavailable"
+  - id: 5
+    name: multi-object candidate discovery modes
+    commit_message: "phase 5: add multi-object discovery providers"
+    agents: [backend_cv_architect, qa_benchmark_engineer, docs_devrel_engineer, reviewer]
+    goals:
+      - Add/scaffold manual, auto masks, text detector, class detector, motion foreground, and external masks providers.
+      - Keep heavy providers optional.
+    deliverables:
+      - Provider schemas.
+      - At least two no-GPU usable non-manual modes via mock/simple implementations.
+      - Mode docs.
+    acceptance:
+      - Multi-object providers feed shared pipeline.
+      - Provider descriptions explain when to use each mode.
+      - Missing heavy deps are capability warnings, not crashes.
+    tests:
+      - "python -m pytest tests -k discovery || document unavailable"
+  - id: 6
+    name: tracks filtering dedupe and raster fallback diagnostics
+    commit_message: "phase 6: add object tracks and fallback diagnostics"
+    agents: [backend_cv_architect, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add stable ObjectTrack model and filtering.
+      - Explain raster fallback with reason codes and suggestions.
+    deliverables:
+      - ObjectTrack model.
+      - Filtering and dedupe utilities.
+      - Fallback reason model.
+      - Tests.
+    acceptance:
+      - Whole-frame masks can be flagged/rejected.
+      - Raster fallback includes reason and suggested fixes.
+      - Multi-object outputs have stable IDs and labels.
+    tests:
+      - "python -m pytest tests -k 'track or fallback or filter' || document unavailable"
+  - id: 7
+    name: local api server and ui shell
+    commit_message: "phase 7: add local ui shell and api server"
+    agents: [frontend_ui_engineer, backend_cv_architect, release_packaging_engineer, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add local API server and frontend shell.
+      - Add launch command.
+      - Display capabilities.
+    deliverables:
+      - API app and health/capabilities routes.
+      - Frontend shell.
+      - motionjson ui command.
+    acceptance:
+      - Local UI opens from documented command.
+      - Health/capabilities visible.
+      - Frontend build or smoke test passes.
+    tests:
+      - "python -m pytest tests -k api || document unavailable"
+      - "npm run build || document if frontend not npm-based"
+  - id: 8
+    name: video prompt tools and extraction wizard
+    commit_message: "phase 8: add video prompt tools and extraction wizard"
+    agents: [frontend_ui_engineer, product_strategist, backend_cv_architect, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add video canvas and prompt tools.
+      - Add goal-first extraction wizard.
+    deliverables:
+      - Video viewer.
+      - Point/box/mask/label/keyframe tools.
+      - Wizard presets.
+      - Config preview/save.
+    acceptance:
+      - UI builds valid backend configs.
+      - Pixel coordinates are native video coordinates.
+      - Provider unavailability is warned before run.
+    tests:
+      - "frontend tests for config builder and coordinate mapping || document unavailable"
+  - id: 9
+    name: ui job execution and result review
+    commit_message: "phase 9: add ui job execution and result review"
+    agents: [frontend_ui_engineer, backend_cv_architect, qa_benchmark_engineer, reviewer]
+    goals:
+      - Run jobs from UI and show progress/logs/artifacts.
+      - Display tracks and fallback diagnostics.
+    deliverables:
+      - Job start/progress UI.
+      - Track list and overlay viewer.
+      - Artifact browser.
+    acceptance:
+      - Mock extraction runs end-to-end from UI.
+      - At least one track renders over video/frame viewer.
+      - Failed/raster fallback runs show useful messages.
+    tests:
+      - "frontend/API mock job E2E smoke || document unavailable"
+  - id: 10
+    name: correction tools and partial reruns
+    commit_message: "phase 10: add track correction workflows"
+    agents: [frontend_ui_engineer, backend_cv_architect, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add relabel, hide, delete, merge, split, add object, and repair workflows.
+      - Persist correction history.
+    deliverables:
+      - Track edit API.
+      - Correction UI.
+      - Project state persistence for edits.
+    acceptance:
+      - Corrections survive reload.
+      - Export inclusion reflects edits.
+      - Track edit operations have tests.
+    tests:
+      - "python -m pytest tests -k track_edit || document unavailable"
+  - id: 11
+    name: export validation and interoperability
+    commit_message: "phase 11: add validated export workflows"
+    agents: [backend_cv_architect, frontend_ui_engineer, qa_benchmark_engineer, docs_devrel_engineer, reviewer]
+    goals:
+      - Export edited project state to validated MotionJSON.
+      - Generate optional masks/contours/preview artifacts.
+    deliverables:
+      - Export API/UI.
+      - Validation flow.
+      - Preview artifact generation.
+    acceptance:
+      - UI exports valid MotionJSON.
+      - Export includes provenance/config metadata.
+      - CLI export behavior is preserved or documented.
+    tests:
+      - "python -m pytest tests -k export || document unavailable"
+  - id: 12
+    name: evaluation fixtures and benchmarks
+    commit_message: "phase 12: add evaluation fixtures and benchmarks"
+    agents: [qa_benchmark_engineer, backend_cv_architect, docs_devrel_engineer, reviewer]
+    goals:
+      - Add synthetic fixtures and benchmark command.
+      - Measure extraction quality and regressions.
+    deliverables:
+      - Fixture generator.
+      - Benchmark runner.
+      - Summary report outputs.
+    acceptance:
+      - Benchmarks run without GPU.
+      - Whole-frame regression case exists.
+      - Demo videos have documented expected behavior.
+    tests:
+      - "python -m motionjson.cli benchmark --help || document unavailable"
+      - "python -m pytest tests -k benchmark || document unavailable"
+  - id: 13
+    name: packaging and onboarding docs
+    commit_message: "phase 13: add packaging and onboarding docs"
+    agents: [release_packaging_engineer, docs_devrel_engineer, frontend_ui_engineer, qa_benchmark_engineer, reviewer]
+    goals:
+      - Add extras/launchers/setup wizard/docs/examples.
+      - Make install and first run easier.
+    deliverables:
+      - Dependency extras.
+      - First-run diagnostics/setup docs.
+      - Tutorials and PowerShell-safe examples.
+    acceptance:
+      - User can run documented install and launch commands.
+      - Missing dependencies/models are explained.
+      - Red-ball and multi-object demos are documented.
+    tests:
+      - "packaging metadata validation || document unavailable"
+  - id: 14
+    name: polish accessibility performance release candidate
+    commit_message: "phase 14: prepare ui multi-object tracing release candidate"
+    agents: [frontend_ui_engineer, backend_cv_architect, qa_benchmark_engineer, docs_devrel_engineer, release_packaging_engineer, reviewer]
+    goals:
+      - Polish UI, accessibility, performance, privacy, and release notes.
+      - Run final smoke tests.
+    deliverables:
+      - Release notes.
+      - Migration/known limitations.
+      - Final QA report.
+    acceptance:
+      - CLI and UI smoke pass.
+      - At least one end-to-end UI workflow completes.
+      - Known limitations are documented.
+    tests:
+      - "full available test suite"
+      - "manual QA checklist in docs/codex_motionjson_quality_benchmarks.md"
