@@ -10,8 +10,8 @@ The catalog lives in `motionjson.backend.billing` and is exposed through:
 
 - `GET /v1/billing/plans`
 - `GET /v1/billing/status`
-- `python -m motionjson.cli backend list-plans`
-- `python -m motionjson.cli backend billing-status`
+- `python3 -m motionjson.cli backend list-plans`
+- `python3 -m motionjson.cli backend billing-status`
 - `MotionJSONClient.listBillingPlans()`
 - `MotionJSONClient.billingStatus()`
 

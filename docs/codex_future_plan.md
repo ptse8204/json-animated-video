@@ -81,10 +81,10 @@ Do not skip commits. Do not stop after a frontend-only pass. Continue until all 
 - Run or attempt:
 
 ```bash
-python -m motionjson.cli --help
-python -m motionjson.cli backend --help
-python -m motionjson.cli ui --help
-python -m pytest -q
+python3 -m motionjson.cli --help
+python3 -m motionjson.cli backend --help
+python3 -m motionjson.cli ui --help
+python3 -m pytest -q
 npm run build
 npm test
 npm run lint

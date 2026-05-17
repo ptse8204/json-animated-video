@@ -45,7 +45,7 @@ Provider diagnostics are available without initializing the backend database or
 storage root:
 
 ```bash
-python -m motionjson.cli backend diagnostics --json
+python3 -m motionjson.cli backend diagnostics --json
 ```
 
 Use `--video` and `--output-dir` to probe a planned source video and output
@@ -64,7 +64,7 @@ Backend extraction jobs persist:
 - a `cost_dashboard` job event that reports local zero-cost providers or
   explicit unknown hosted/custom provider costs
 
-`python -m motionjson.cli backend usage` returns `costDashboard` alongside raw
+`python3 -m motionjson.cli backend usage` returns `costDashboard` alongside raw
 events and totals. The dashboard is advisory accounting over recorded
 usage/provider/cache/latency data. It does not make paid API calls and does not
 store secrets.
@@ -72,34 +72,34 @@ store secrets.
 ## CLI
 
 ```bash
-python -m motionjson.cli backend init --db .motionjson/backend.sqlite --storage-root .motionjson/storage
-python -m motionjson.cli backend diagnostics --json
-python -m motionjson.cli backend create-user --email user@example.com --password-stdin
-python -m motionjson.cli backend login --email user@example.com --password-stdin
-python -m motionjson.cli backend create-project --session-token-env MOTIONJSON_SESSION_TOKEN --name "Demo"
-python -m motionjson.cli backend upload-asset --project-id PROJECT_ID --path examples/demo_red_ball.mp4 --kind source_video
-python -m motionjson.cli backend enqueue-extract --project-id PROJECT_ID --asset-id ASSET_ID --mask-provider threshold --max-frames 12
-python -m motionjson.cli backend enqueue-export --project-id PROJECT_ID --source-job-id JOB_ID --format website-zip
-python -m motionjson.cli backend worker --once
-python -m motionjson.cli backend create-api-key --session-token-env MOTIONJSON_SESSION_TOKEN --name "local sdk"
-python -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
-python -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend cancel-job JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend save-library-asset --project-id PROJECT_ID --asset-id ASSET_ID --type motion_sticker --title "Launch sticker" --tag hero --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend list-library-assets --tag hero --creator-approved true --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend create-brand-collection --project-id PROJECT_ID --title "Spring launch" --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend add-collection-asset --collection-id COLLECTION_ID --library-asset-id LIBRARY_ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend create-creator-pack --collection-id COLLECTION_ID --title "Approved launch pack" --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend bootstrap-beta-admin --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend create-beta-invite --email beta-user@example.com --role member --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend accept-beta-invite --invite-token mjb_... --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend feedback --project-id PROJECT_ID --subject "Beta issue" --message "Layer jumps" --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend error-report --project-id PROJECT_ID --message "Render failed" --stack-trace "$STACK_TRACE" --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend admin-dashboard --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend list-plans
-python -m motionjson.cli backend billing-status --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend init --db .motionjson/backend.sqlite --storage-root .motionjson/storage
+python3 -m motionjson.cli backend diagnostics --json
+python3 -m motionjson.cli backend create-user --email user@example.com --password-stdin
+python3 -m motionjson.cli backend login --email user@example.com --password-stdin
+python3 -m motionjson.cli backend create-project --session-token-env MOTIONJSON_SESSION_TOKEN --name "Demo"
+python3 -m motionjson.cli backend upload-asset --project-id PROJECT_ID --path examples/demo_red_ball.mp4 --kind source_video
+python3 -m motionjson.cli backend enqueue-extract --project-id PROJECT_ID --asset-id ASSET_ID --mask-provider threshold --max-frames 12
+python3 -m motionjson.cli backend enqueue-export --project-id PROJECT_ID --source-job-id JOB_ID --format website-zip
+python3 -m motionjson.cli backend worker --once
+python3 -m motionjson.cli backend create-api-key --session-token-env MOTIONJSON_SESSION_TOKEN --name "local sdk"
+python3 -m motionjson.cli backend serve-api --host 127.0.0.1 --port 8765
+python3 -m motionjson.cli backend job-status JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend cancel-job JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend usage --project-id PROJECT_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend asset-rights ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend save-library-asset --project-id PROJECT_ID --asset-id ASSET_ID --type motion_sticker --title "Launch sticker" --tag hero --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend list-library-assets --tag hero --creator-approved true --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend create-brand-collection --project-id PROJECT_ID --title "Spring launch" --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend add-collection-asset --collection-id COLLECTION_ID --library-asset-id LIBRARY_ASSET_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend create-creator-pack --collection-id COLLECTION_ID --title "Approved launch pack" --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend bootstrap-beta-admin --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend create-beta-invite --email beta-user@example.com --role member --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend accept-beta-invite --invite-token mjb_... --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend feedback --project-id PROJECT_ID --subject "Beta issue" --message "Layer jumps" --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend error-report --project-id PROJECT_ID --message "Render failed" --stack-trace "$STACK_TRACE" --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend admin-dashboard --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend list-plans
+python3 -m motionjson.cli backend billing-status --session-token-env MOTIONJSON_SESSION_TOKEN
 motionjson ui
 python3 -m motionjson.cli ui --no-open --mock
 ```

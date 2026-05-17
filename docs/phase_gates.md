@@ -66,8 +66,8 @@ npm run lint
 If extraction/rendering code changes:
 
 ```bash
-python examples/make_demo_video.py --out examples/demo_red_ball.mp4
-python -m motionjson.cli extract examples/demo_red_ball.mp4 \
+python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --out out/demo \
   --mask-provider threshold \
   --lower-hsv 0,80,80 \

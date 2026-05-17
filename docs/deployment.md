@@ -6,8 +6,8 @@ uses SQLite, `LocalStorageProvider`, and the Python stdlib HTTP server.
 ## Local API
 
 ```bash
-python -m motionjson.cli backend init
-python -m motionjson.cli backend serve-api \
+python3 -m motionjson.cli backend init
+python3 -m motionjson.cli backend serve-api \
   --db .motionjson/backend.sqlite \
   --storage-root .motionjson/storage \
   --host 127.0.0.1 \

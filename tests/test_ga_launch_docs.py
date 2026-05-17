@@ -95,6 +95,6 @@ def test_docs_reference_phase19_validation_commands():
     security = read(ROOT / "docs" / "security_checklist.md")
 
     assert "pytest -q tests/test_backend_billing.py tests/test_ga_launch_docs.py" in launch
-    assert "python -m motionjson.cli extract examples/demo_red_ball.mp4" in launch
+    assert "python3 -m motionjson.cli extract examples/demo_red_ball.mp4" in launch
     assert "pytest -q tests/test_backend_billing.py" in billing
     assert "pytest -q tests/test_ga_launch_docs.py tests/test_backend_billing.py" in security

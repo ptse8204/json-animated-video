@@ -1,12 +1,11 @@
 # Local UI
 
-Phase 7 introduced a dependency-light local UI shell for inspecting MotionJSON
-provider readiness, creating local projects, registering source videos, and
-viewing local job/progress state. Phase 8 adds a video prompt workspace and
-goal-first extraction wizard that can build backend-validated run configs
-before export. It runs against the existing SQLite backend and filesystem
-storage. It does not require GPU, SAM2, hosted services, or network access for
-the mock/no-model smoke path.
+The dependency-light local UI lets you inspect MotionJSON provider readiness,
+create local projects, register source videos, draw prompts, start jobs, review
+tracks, correct extraction results, export validated MotionJSON, and save
+reusable motion layers. It runs against the existing SQLite backend and
+filesystem storage. It does not require GPU, SAM2, hosted services, or network
+access for the mock/no-model smoke path.
 
 ## Launch
 
@@ -166,7 +165,7 @@ After each track edit, the backend also writes
 manifest records the correction history, current included/excluded track IDs,
 track review summaries, raster fallback state, and `aiUsage: "none"` so a
 review/export decision has a durable local audit trail.
-`add_object` and `repair` are no-model partial-rerun hooks in this phase: the
+`add_object` and `repair` are current no-model partial-rerun hooks: the
 request is persisted with `aiUsage: "none"` and `partialRerun.available:
 false` instead of silently pretending that SAM2, detectors, or other ML
 providers ran. The correction UI surfaces these repair and partial-rerun
@@ -262,7 +261,7 @@ use `external_masks` plus the `external` mask provider.
 
 The frontend shell is static HTML/CSS/JavaScript packaged with the Python
 distribution. It intentionally avoids remote resources and frontend runtime
-dependencies in this phase.
+dependencies.
 
 ```bash
 npm run build

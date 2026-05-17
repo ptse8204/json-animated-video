@@ -105,7 +105,10 @@ def test_cli_benchmark_help_and_command_write_reports(tmp_path, capsys):
     with pytest.raises(SystemExit) as help_exit:
         cli.main(["benchmark", "--help"])
     assert help_exit.value.code == 0
-    assert "CPU-only synthetic fixture benchmarks" in capsys.readouterr().out
+    help_output = capsys.readouterr().out
+    assert "CPU-only synthetic fixture benchmarks" in help_output
+    assert "auto/sam_auto_masks_mock" in help_output
+    assert "class/class_detector_mock" in help_output
 
     cli.main(
         [

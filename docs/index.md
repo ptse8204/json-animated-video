@@ -16,7 +16,8 @@ SAM2, CUDA, detector weights, hosted services, or provider credentials.
 4. [Troubleshooting](troubleshooting.md) explains common setup, provider, bad
    mask, and raster-only failures.
 
-Useful first commands:
+After running the install steps in [First run setup](first_run.md), useful
+first commands are:
 
 ```bash
 python3 -m motionjson.cli backend diagnostics --json
@@ -105,8 +106,9 @@ Use this path when continuing the phase-based roadmap:
 - [Phase commit checklist](phase_commit_checklist.md) summarizes phase hygiene.
 - [Release checklist](release_checklist.md), [Release notes](release_notes.md),
   [Migration and known limitations](migration_and_known_limitations.md),
-  and [Final QA and release report](roadmap/final-qa-release-report.md) describe
-  the current release-candidate boundary.
+  [Final QA and release report](roadmap/final-qa-release-report.md), and
+  [Final audit](roadmap/final-audit.md) describe the current
+  release-candidate boundary.
 - [Contributing](../CONTRIBUTING.md), [Security policy](../SECURITY.md), and
   [Changelog](../CHANGELOG.md) are the root contributor-facing files.
 - [Roadmap](roadmap.md) and [Product requirements](product_requirements.md)
@@ -127,6 +129,7 @@ files, tests, screenshots or demos, known limitations, and follow-up tasks.
 - [Release checklist](release_checklist.md)
 - [Release notes](release_notes.md)
 - [Migration and known limitations](migration_and_known_limitations.md)
+- [Final audit](roadmap/final-audit.md)
 - [Benchmark fixtures](benchmark_fixtures.md)
 - [Final export](final_export.md)
 

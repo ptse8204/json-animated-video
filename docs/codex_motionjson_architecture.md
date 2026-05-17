@@ -304,9 +304,9 @@ The CLI should remain an expert/headless interface that uses the same config and
 Examples:
 
 ```bash
-python -m motionjson.cli extract input.mp4 --config run_config.json
-python -m motionjson.cli backend diagnostics --json
-python -m motionjson.cli ui
+python3 -m motionjson.cli extract input.mp4 --config run_config.json
+python3 -m motionjson.cli backend diagnostics --json
+python3 -m motionjson.cli ui
 ```
 
 Do not let UI logic become a separate implementation of extraction. UI should call API/backend services that share CLI code.

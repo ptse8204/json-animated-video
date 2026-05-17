@@ -18,7 +18,7 @@ MotionJSON is for reusable motion layers:
 
 - Run the local extraction demo and confirm `out/demo/web_asset_manifest.json`
   and `out/demo/scene_graph.json` are generated.
-- Start the API with `python -m motionjson.cli backend serve-api`.
+- Start the API with `python3 -m motionjson.cli backend serve-api`.
 - Create a local user, session, project, and hashed API key.
 - Confirm `GET /v1/billing/plans` and `GET /v1/billing/status` return local
   catalog metadata only.
@@ -34,6 +34,6 @@ pytest -q tests/test_backend_billing.py tests/test_ga_launch_docs.py
 pytest -q
 npm test
 npm run lint
-python -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12
 git diff --check
 ```

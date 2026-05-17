@@ -294,10 +294,10 @@ python3 -m motionjson.cli backend diagnostics --json
 
 Diagnostics now separate `installed`, `configured`, and `runnable`. A provider
 can be configured but not runnable, for example hosted segmentation with
-credentials present but no explicit network opt-in. The local UI worker
-currently starts `mock`, `threshold`, and `external` jobs; some CPU CLI paths
-such as `motion` are shown in the wizard but still need CLI execution or a
-later worker integration.
+credentials present but no explicit network opt-in. The local UI worker starts
+`mock`, `threshold`, `motion`, and `external` jobs, plus mock `text_detector`,
+`class_detector`, and `sam_auto_masks` discovery jobs that feed generated mask
+handoffs through the shared review/export path.
 
 ## Troubleshooting
 
@@ -341,13 +341,18 @@ More docs:
 
 The current public-onboarding roadmap is in `docs/codex_future_plan.md`.
 Completed implementation history from the earlier roadmap is recorded under
-`docs/roadmap/`. Near-term public polish work focuses on:
+`docs/roadmap/`. The latest launch-readiness summary is
+[`docs/roadmap/final-audit.md`](docs/roadmap/final-audit.md).
 
-- real README screenshots and demo capture;
-- first-run scripts for local and free-instance paths;
-- a clearer docs information architecture;
-- generated output policy and CI checks;
-- provider docs that explain local/free, GPU, model, and failure-mode tradeoffs.
+Current release-candidate boundaries:
+
+- the no-model local UI, red-ball CLI demo, benchmark fixtures, docs links,
+  JavaScript runtime checks, and local API tests are covered by repeatable
+  commands;
+- SAM2, detector, hosted segmentation, OpenRouter, FFmpeg video rendering, and
+  public hosted demos remain optional or environment-dependent;
+- no license file is present in this repository snapshot, so reuse,
+  redistribution, and commercial rights are not granted yet.
 
 ## Contributing with Codex
 

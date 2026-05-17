@@ -24,7 +24,7 @@ run during preview or transform edits.
 Create API keys with the backend CLI after logging in with a local session:
 
 ```bash
-python -m motionjson.cli backend create-api-key \
+python3 -m motionjson.cli backend create-api-key \
   --session-token-env MOTIONJSON_SESSION_TOKEN \
   --name "local sdk"
 ```
@@ -33,8 +33,8 @@ The response includes `apiKey` once. The database stores only a SHA-256 hash,
 prefix, timestamps, and scopes. Listing keys never returns raw key material:
 
 ```bash
-python -m motionjson.cli backend list-api-keys --session-token-env MOTIONJSON_SESSION_TOKEN
-python -m motionjson.cli backend revoke-api-key KEY_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend list-api-keys --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend revoke-api-key KEY_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 ```
 
 Use the raw key as a bearer token:
@@ -46,7 +46,7 @@ Authorization: Bearer mj_local_...
 ## Running The API
 
 ```bash
-python -m motionjson.cli backend serve-api \
+python3 -m motionjson.cli backend serve-api \
   --db .motionjson/backend.sqlite \
   --storage-root .motionjson/storage \
   --host 127.0.0.1 \

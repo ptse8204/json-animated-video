@@ -2,10 +2,9 @@
 
 ## Release candidate scope
 
-This release candidate completes the local-first object tracing workflow across
-CLI, local UI, provider diagnostics, review, correction, and validated export.
-It is intended for CPU/no-model smoke testing by default, with heavyweight ML
-providers remaining optional and capability-gated.
+This release candidate covers the CPU/no-model local workflow and validated
+handoff path across CLI, local UI, provider diagnostics, review, correction,
+and export. Heavyweight ML providers remain optional and capability-gated.
 
 ## Highlights
 
@@ -21,6 +20,14 @@ providers remaining optional and capability-gated.
   delete, add-object hooks, and no-model repair hooks.
 - Validated MotionJSON export presets with manifest, validation report, preview
   overlay, contours, masks when requested, and a self-contained ZIP bundle.
+- Mock/no-model discovery workflows for text-guided candidates, automatic
+  object proposals, motion-only discovery, and detector class presets. Real
+  text/class/automatic-mask providers require optional packages, models, and
+  configuration.
+- Export quality routing, source rights and lineage warnings, and the local
+  Asset Library for reusable motion layers, brand collections, and rights-gated
+  creator-approved pack metadata. This is not a hosted marketplace or commerce
+  launch.
 - Synthetic benchmark fixtures for red-ball, multi-object, occlusion,
   small-object, camera-motion, and whole-frame regression checks.
 
@@ -32,6 +39,9 @@ providers remaining optional and capability-gated.
   public payloads.
 - Raster-only output is surfaced through review diagnostics instead of being
   silently treated as successful vector/object extraction.
+- Asset Library and creator-pack workflows use existing local assets and rights
+  metadata. They do not create a public marketplace, billing flow, or hosted
+  commerce surface in this release candidate.
 
 ## Release gate
 

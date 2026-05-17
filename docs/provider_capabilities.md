@@ -7,19 +7,19 @@ environment before a user starts extraction or export.
 ## CLI
 
 ```bash
-python -m motionjson.cli backend diagnostics --json
+python3 -m motionjson.cli backend diagnostics --json
 ```
 
 For a shorter first-run summary:
 
 ```bash
-python -m motionjson.cli backend diagnostics --text
+python3 -m motionjson.cli backend diagnostics --text
 ```
 
 Add a video probe and output-directory writability check when preparing a run:
 
 ```bash
-python -m motionjson.cli backend diagnostics --json \
+python3 -m motionjson.cli backend diagnostics --json \
   --video examples/demo_red_ball.mp4 \
   --output-dir out/demo \
   --sam2-checkpoint checkpoints/sam2.pt \

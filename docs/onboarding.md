@@ -10,8 +10,8 @@ commands, first-run diagnostics, and multi-object tutorial commands, start with
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e ".[ui]"
+python3 -m pip install -r requirements.txt
+python3 -m pip install -e ".[ui]"
 ```
 
 ## 2. Generate Demo Assets
@@ -30,7 +30,7 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
 ## 3. Preview
 
 ```bash
-python -m http.server 8080
+python3 -m http.server 8080
 ```
 
 Open:

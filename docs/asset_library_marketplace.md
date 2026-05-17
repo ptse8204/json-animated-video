@@ -21,7 +21,7 @@ vector-like silhouettes, labels, annotations, icons, and flat graphics.
 Users can save an existing backend asset as a reusable library asset:
 
 ```bash
-python -m motionjson.cli backend save-library-asset \
+python3 -m motionjson.cli backend save-library-asset \
   --project-id PROJECT_ID \
   --asset-id ASSET_ID \
   --type motion_sticker \
@@ -56,7 +56,7 @@ required.
 List and search library assets locally:
 
 ```bash
-python -m motionjson.cli backend list-library-assets \
+python3 -m motionjson.cli backend list-library-assets \
   --q launch \
   --tag hero \
   --license-scope commercial \
@@ -85,12 +85,12 @@ license, and tags. It does not use external search services.
 Brand collections group saved library assets:
 
 ```bash
-python -m motionjson.cli backend create-brand-collection \
+python3 -m motionjson.cli backend create-brand-collection \
   --project-id PROJECT_ID \
   --title "Spring launch" \
   --session-token-env MOTIONJSON_SESSION_TOKEN
 
-python -m motionjson.cli backend add-collection-asset \
+python3 -m motionjson.cli backend add-collection-asset \
   --collection-id COLLECTION_ID \
   --library-asset-id LIBRARY_ASSET_ID \
   --session-token-env MOTIONJSON_SESSION_TOKEN
@@ -104,7 +104,7 @@ the authenticated user before a collection is created.
 Creator packs are assembled from assets already attached to a brand collection:
 
 ```bash
-python -m motionjson.cli backend create-creator-pack \
+python3 -m motionjson.cli backend create-creator-pack \
   --collection-id COLLECTION_ID \
   --title "Approved launch pack" \
   --session-token-env MOTIONJSON_SESSION_TOKEN

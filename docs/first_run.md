@@ -6,8 +6,9 @@ services, or network access at runtime.
 
 ## Install Profiles
 
-Base install for CLI extraction, benchmarks, validation, and the dependency-free
-local UI:
+Base install for CLI extraction, benchmarks, validation, and the
+dependency-light local UI. The UI has no frontend build/runtime dependency for
+normal use:
 
 ```bash
 python3 -m venv .venv

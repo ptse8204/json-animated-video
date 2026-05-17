@@ -37,7 +37,7 @@ hosted endpoint settings, FFmpeg, video IO, and local output permissions are
 available:
 
 ```bash
-python -m motionjson.cli backend diagnostics --json \
+python3 -m motionjson.cli backend diagnostics --json \
   --video examples/demo_red_ball.mp4 \
   --output-dir out/sam2-local \
   --sam2-checkpoint /path/to/sam2_checkpoint.pt \
@@ -56,7 +56,7 @@ The local provider lives at `motionjson.providers.sam2.LocalSAM2SegmentationProv
 Install SAM2 in your own environment, then run:
 
 ```bash
-python -m motionjson.cli extract input.mp4 \
+python3 -m motionjson.cli extract input.mp4 \
   --out out/sam2-local \
   --mask-provider sam2-local \
   --sam2-checkpoint /path/to/sam2_checkpoint.pt \
@@ -84,7 +84,7 @@ For a real hosted deployment:
 HOSTED_SEGMENTATION_URL=https://your-segmentation-service.example/sam2
 HOSTED_SEGMENTATION_API_KEY=...
 
-python -m motionjson.cli extract input.mp4 \
+python3 -m motionjson.cli extract input.mp4 \
   --out out/sam2-hosted \
   --mask-provider sam2-hosted \
   --sam2-hosted-allow-network \
@@ -147,7 +147,7 @@ libraries default dependencies.
 The CLI can route a SAM2 provider through a deterministic segmentation fallback:
 
 ```bash
-python -m motionjson.cli extract input.mp4 \
+python3 -m motionjson.cli extract input.mp4 \
   --out out/sam2-with-fallback \
   --mask-provider sam2-local \
   --fallback-mask-provider threshold \

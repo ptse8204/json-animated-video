@@ -89,7 +89,7 @@ frames, but long provider calls may not interrupt until the provider returns.
 Backend CLI:
 
 ```bash
-python -m motionjson.cli backend cancel-job JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
+python3 -m motionjson.cli backend cancel-job JOB_ID --session-token-env MOTIONJSON_SESSION_TOKEN
 ```
 
 API:

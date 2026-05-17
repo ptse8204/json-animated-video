@@ -233,7 +233,7 @@ SAM2 provider tests inject fake predictors or fake hosted clients. They do not i
 without instantiating extraction providers. The backend CLI exposes it through:
 
 ```bash
-python -m motionjson.cli backend diagnostics --json
+python3 -m motionjson.cli backend diagnostics --json
 ```
 
 Diagnostics include dependency availability, CUDA status, FFmpeg status, video

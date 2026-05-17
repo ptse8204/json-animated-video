@@ -87,7 +87,7 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 - Hosted SAM2 config stores auth environment variable names, not token values.
 - `sample_fps <= 0` remains accepted for CLI compatibility and keeps the current source-FPS sampling behavior.
 - Provider capability checks and CUDA/model diagnostics are available through
-  `python -m motionjson.cli backend diagnostics --json`; see
+  `python3 -m motionjson.cli backend diagnostics --json`; see
   [Provider capabilities and diagnostics](provider_capabilities.md).
 - Extraction writes `run_config.json` into each output directory as part of the
   local job artifact set; see [Job artifacts and progress](job_artifacts.md).

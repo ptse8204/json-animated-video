@@ -219,7 +219,15 @@ def add_export_args(p: argparse.ArgumentParser) -> None:
 
 def add_benchmark_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--fixtures", type=str, default="synthetic", help="Comma-separated fixtures, or synthetic/all for the built-in CPU fixture suite")
-    p.add_argument("--modes", type=str, default="external", help="Comma-separated modes: external, motion, mock, or threshold alias for external")
+    p.add_argument(
+        "--modes",
+        type=str,
+        default="external",
+        help=(
+            "Comma-separated modes: external/threshold, motion, mock/text, "
+            "auto/sam_auto_masks_mock, or class/class_detector_mock"
+        ),
+    )
     p.add_argument("--out", type=str, default="out/benchmarks", help="Benchmark output directory")
     p.add_argument("--width", type=int, default=96, help="Synthetic fixture video width")
     p.add_argument("--height", type=int, default=64, help="Synthetic fixture video height")

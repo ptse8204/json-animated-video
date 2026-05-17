@@ -2,11 +2,12 @@
 
 ## Migration notes
 
-- Keep existing CLI scripts on `python -m motionjson.cli ...`; Phase 14 does
-  not remove or rename existing commands.
-- Use `python -m motionjson.cli ui --mock` for first-run local UI smoke
-  checks on CPU-only machines.
-- Use `python -m motionjson.cli backend diagnostics --json` before installing
+- Keep existing CLI scripts on `python3 -m motionjson.cli ...` on macOS/Linux,
+  or `python -m motionjson.cli ...` after activating a Windows virtual
+  environment. Phase 14 does not remove or rename existing commands.
+- Use `python3 -m motionjson.cli ui --mock` for first-run local UI smoke checks
+  on CPU-only macOS/Linux machines.
+- Use `python3 -m motionjson.cli backend diagnostics --json` before installing
   optional ML extras. Missing SAM2, CUDA, detectors, FFmpeg, or model weights
   should be treated as capability status, not as base-install failures.
 - For repeatable release checks, use the synthetic benchmark command documented
@@ -14,6 +15,9 @@
 - Existing MotionJSON output can be imported into the local UI for review; local
   import rejects symlinked paths and keeps private storage paths out of API
   responses.
+- Reusable motion layers can be saved through the local Asset Library only from
+  explicit generated/export artifact kinds. Creator-approved packs require
+  approved creator and commercial-use rights metadata on every included layer.
 
 ## Known limitations
 
@@ -35,6 +39,8 @@
   reasons, but users should review tracks before export.
 - Final video rendering still depends on FFmpeg availability. Validated
   MotionJSON export and website/runtime artifacts work without FFmpeg.
+- The Asset Library is local metadata and local stored assets. It is not a
+  public marketplace, payment system, or hosted creator distribution flow.
 
 ## Upgrade checklist
 
