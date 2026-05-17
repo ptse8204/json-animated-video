@@ -89,11 +89,13 @@ def test_benchmark_name_normalizers_support_documented_aliases():
     assert "whole_frame_regression" in normalize_fixture_names("synthetic")
     assert normalize_fixture_names("red_ball,small_object") == ["red_ball", "small_object"]
     assert normalize_benchmark_modes(None) == ["external_masks"]
-    assert normalize_benchmark_modes("threshold,motion,mock") == [
+    assert normalize_benchmark_modes("threshold,motion,mock,auto") == [
         "external_masks",
         "motion_foreground",
         "text_detector_mock",
+        "sam_auto_mock",
     ]
+    assert normalize_benchmark_modes("sam_auto_masks_mock") == ["sam_auto_mock"]
     with pytest.raises(ValueError, match="unknown benchmark fixture"):
         normalize_fixture_names("missing_fixture")
 
@@ -126,6 +128,29 @@ def test_cli_benchmark_help_and_command_write_reports(tmp_path, capsys):
     payload = json.loads((tmp_path / "cli-benchmarks" / "summary.json").read_text(encoding="utf-8"))
     assert payload["summary"]["passedRuns"] == 1
     assert payload["summary"]["fallbackReasonCounts"] == {"masks_too_large_whole_frame": 1}
+
+
+def test_benchmark_sam_auto_mock_mode_writes_candidate_review_fixture(tmp_path):
+    summary = run_evaluation_benchmark(
+        out_dir=tmp_path / "benchmarks",
+        fixtures="multi_object",
+        modes="sam_auto_mock",
+        width=64,
+        height=48,
+        frames=4,
+        min_area=1,
+    )
+
+    assert summary["summary"]["totalRuns"] == 1
+    assert validate_document(summary) == []
+    run = summary["runs"][0]
+    assert run["mode"] == "sam_auto_mock"
+    assert run["quality"]["acceptedTracks"] >= 1
+    run_dir = tmp_path / "benchmarks" / "runs" / "multi_object_sam_auto_mock"
+    candidates = json.loads((run_dir / "candidates.json").read_text(encoding="utf-8"))
+    assert candidates["provider"] == "sam_auto_masks"
+    assert [candidate["label"] for candidate in candidates["candidates"]] == ["Visible segment 1", "Visible segment 2"]
+    assert validate_file(tmp_path / "benchmarks" / "summary.json").ok
 
 
 def test_benchmark_validation_checks_every_scene_object(tmp_path):

@@ -47,7 +47,7 @@ provider receives boxes or masks.
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as a mock/scaffolded preset so users can preview the config without claiming real detection. |
-| `sam_auto_masks` | Mock mode is runnable; real automatic masks need a SAM2-style backend. | Shown as a mock/scaffolded preset until a runnable backend is available. |
+| `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks need a SAM2-style backend. | Runnable in mock mode through the local worker; review shows candidate proposals, track filtering, fallback diagnostics, and merge suggestions. |
 
 ## CLI Examples
 
@@ -92,6 +92,23 @@ Local UI text-discovery smoke path:
 4. Review the Candidates and Tracks panels before export. If real detector
    dependencies or weights are missing, diagnostics still report that status;
    mock mode does not imply that open-vocabulary detection is installed.
+
+Automatic mask proposal mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/auto_masks_mock \
+  --discovery-provider sam_auto_masks \
+  --discovery-config '{"mock":true,"keyframes":[0],"max_candidates":3}' \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
+In the local UI, `Propose all visible segments` uses the same mock path when
+started from `--mock`: keyframe settings and proposal filters are recorded in
+`candidates.json`, generated masks feed the shared tracker, and
+`tracks.json` carries filter/dedupe summaries for review.
 
 ## Candidate Shape
 

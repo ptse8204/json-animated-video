@@ -125,6 +125,7 @@ const autoMasksConfig = ui.buildRunConfig({
 
 assert.equal(autoMasksConfig.discovery.mode, "sam_auto_masks");
 assert.equal(autoMasksConfig.discovery.config.max_candidates, 9);
+assert.equal(autoMasksConfig.discovery.config.mock, true);
 assert.equal(autoMasksConfig.discovery.config.reject_background, true);
 assert.equal(autoMasksConfig.provider.name, "mock");
 

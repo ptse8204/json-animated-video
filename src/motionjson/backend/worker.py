@@ -26,7 +26,7 @@ from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for
 from motionjson.masks import ExternalMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
 from motionjson.providers.base import StorageProvider
-from motionjson.providers.discovery import TextDetectorDiscoveryProvider, object_specs_from_candidates
+from motionjson.providers.discovery import SamAutoMasksDiscoveryProvider, TextDetectorDiscoveryProvider, object_specs_from_candidates
 from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
@@ -240,6 +240,14 @@ def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payl
     }
 
 
+def _mock_discovery_provider(mode: str) -> tuple[Any, str] | None:
+    if mode == "text_detector":
+        return TextDetectorDiscoveryProvider(), "text detector mock discovery configured"
+    if mode == "sam_auto_masks":
+        return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured"
+    return None
+
+
 def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
     payload = _json(job, "payload_json")
     run_config = _stored_run_config(payload)
@@ -288,16 +296,18 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
 
         try:
             discovery_mode = run_config.discovery.mode if run_config is not None else None
-            if discovery_mode == "text_detector":
+            discovery_provider = _mock_discovery_provider(discovery_mode or "")
+            if discovery_provider is not None:
+                provider, message = discovery_provider
                 discovery_config = dict(run_config.discovery.config)
                 if not discovery_config.get("mock"):
                     raise RuntimeError(
-                        "local UI text_detector jobs require discovery.config.mock=true; real detector adapters remain capability-gated"
+                        f"local UI {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
                     )
                 job_run.emit(
                     "provider_preflight",
                     "succeeded",
-                    "text detector mock discovery configured",
+                    message,
                     progress={"overallRatio": 0.06},
                     metadata={"provider": provider_name, "discoveryMode": discovery_mode},
                 )
@@ -305,7 +315,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     video_path=video_path,
                     out_dir=out_dir,
                     object_specs=[],
-                    candidate_provider=TextDetectorDiscoveryProvider(),
+                    candidate_provider=provider,
                     candidate_config=discovery_config,
                     candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out_dir),
                     sample_fps=run_config.sampling.sample_fps,

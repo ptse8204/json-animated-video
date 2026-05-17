@@ -432,7 +432,9 @@ class SamAutoMasksDiscoveryProvider:
             result = self.backend.propose(video, config, ctx)
             return list(result)
         if config.get("mock"):
-            return _mock_box_candidates(video, config, ctx, self.name, "Mock automatic mask proposal")
+            max_candidates = max(1, _int_config(config, "max_candidates", 3))
+            labels = [f"Visible segment {index + 1}" for index in range(max_candidates)]
+            return _mock_box_candidates(video, {**dict(config), "labels": labels}, ctx, self.name, "Mock automatic mask proposal")
         raise ProviderConfigError(
             "sam_auto_masks discovery requires a configured automatic-mask backend. "
             "Install/configure SAM2 automatic masks or set discovery mock mode for tests."

@@ -212,10 +212,13 @@ text detector mock path end to end: labels become candidate boxes, generated
 mask sequences, object tracks, and a Candidates review panel sourced from
 `candidates.json`. Real detector packages and weights remain optional and
 capability-gated; missing detector diagnostics are still shown before a run.
-Automatic segment proposals map to `sam_auto_masks` and should be filtered
-before export. Moving-object discovery maps to the CPU/no-model
-`motion_foreground` workflow. External mask imports use `external_masks` plus
-the `external` mask provider.
+Automatic segment proposals map to `sam_auto_masks`. In local UI mock mode,
+`Propose all visible segments` creates multiple generated proposal masks from
+the selected keyframes, feeds them through track filtering/dedupe, and shows
+the resulting candidate summary, tracks, fallback diagnostics, and merge
+suggestions for review before export. Moving-object discovery maps to the
+CPU/no-model `motion_foreground` workflow. External mask imports use
+`external_masks` plus the `external` mask provider.
 
 ## Build And Smoke
 

@@ -163,6 +163,7 @@ export function buildRunConfig(input) {
     discoveryConfig.max_candidates = maxCandidates;
   }
   if (preset.id === "sam_auto_masks") {
+    discoveryConfig.mock = true;
     discoveryConfig.min_area = Number(advanced.minArea);
     discoveryConfig.max_area_ratio = Number(advanced.maxAreaRatio);
     discoveryConfig.stability_threshold = Number(advanced.stabilityThreshold);

@@ -1803,7 +1803,7 @@ const MotionJSONUI = (() => {
             .join("")
         : summary
           ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
-          : `<div class="empty-state">Candidate proposals appear here after text discovery writes candidates.json.</div>`;
+          : `<div class="empty-state">Candidate proposals appear here after discovery writes candidates.json.</div>`;
     }
 
     function renderTrackList() {
