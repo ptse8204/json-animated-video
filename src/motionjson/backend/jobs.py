@@ -137,6 +137,7 @@ def enqueue_extract_job(
     upper_hsv: tuple[int, int, int] = (12, 255, 255),
     mask_dir: str | None = None,
     rights_context: dict[str, Any] | None = None,
+    run_config: dict[str, Any] | None = None,
     priority: int = 0,
 ) -> dict:
     get_project(conn, user_id=user_id, project_id=project_id)
@@ -154,6 +155,8 @@ def enqueue_extract_job(
         "mask_dir": mask_dir,
         "rights_context": rights_context or {},
     }
+    if run_config is not None:
+        payload["run_config"] = run_config
     return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="extract", payload=payload, priority=priority)
 
 

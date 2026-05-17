@@ -139,14 +139,17 @@ export function buildRunConfig(input) {
   );
   const discoveryConfig = {};
   const maxCandidates = Number(input.discoveryMaxCandidates || advanced.maxObjects || 12);
-  if (preset.id === "text_detector" && input.discoveryText) {
-    discoveryConfig.text = input.discoveryText;
-    discoveryConfig.labels = String(input.discoveryText)
-      .split(/[,.]/)
-      .map((part) => part.trim())
-      .filter(Boolean);
-    discoveryConfig.box_threshold = Number(advanced.boxThreshold);
-    discoveryConfig.text_threshold = Number(advanced.textThreshold);
+  if (preset.id === "text_detector") {
+    discoveryConfig.mock = true;
+    if (input.discoveryText) {
+      discoveryConfig.text = input.discoveryText;
+      discoveryConfig.labels = String(input.discoveryText)
+        .split(/[,.]/)
+        .map((part) => part.trim())
+        .filter(Boolean);
+      discoveryConfig.box_threshold = Number(advanced.boxThreshold);
+      discoveryConfig.text_threshold = Number(advanced.textThreshold);
+    }
   }
   if (input.discoveryClasses) {
     discoveryConfig.classes = Array.isArray(input.discoveryClasses)

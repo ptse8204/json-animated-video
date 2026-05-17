@@ -99,6 +99,7 @@ const textConfig = ui.buildRunConfig({
 
 assert.deepEqual(textConfig.discovery.config.labels, ["red ball", "hand", "cup"]);
 assert.equal(textConfig.discovery.config.max_candidates, 5);
+assert.equal(textConfig.discovery.config.mock, true);
 assert.equal(textConfig.provider.name, "mock");
 
 const autoMasksConfig = ui.buildRunConfig({

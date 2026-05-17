@@ -24,8 +24,9 @@ from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
 from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
 from motionjson.masks import ExternalMaskProvider, ThresholdMaskProvider
-from motionjson.pipeline import run_pipeline
+from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
 from motionjson.providers.base import StorageProvider
+from motionjson.providers.discovery import TextDetectorDiscoveryProvider, object_specs_from_candidates
 from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
@@ -195,14 +196,61 @@ def _run_config_from_backend_payload(
     )
 
 
+def _runtime_run_config_payload(config: ExtractionRunConfig, *, video_path: Path, out_dir: Path) -> dict[str, Any]:
+    payload = config.to_dict()
+    payload["input"] = {**dict(payload.get("input") or {}), "path": str(video_path)}
+    payload["output"] = {**dict(payload.get("output") or {}), "directory": str(out_dir)}
+    return payload
+
+
+def _stored_run_config(payload: dict[str, Any]) -> ExtractionRunConfig | None:
+    run_config_payload = payload.get("run_config")
+    if not isinstance(run_config_payload, dict):
+        return None
+    return ExtractionRunConfig.from_dict(run_config_payload)
+
+
+def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payload: dict[str, Any]) -> dict[str, Any]:
+    if run_config is None:
+        return {
+            "object_id": "object_0",
+            "object_label": "selected_object",
+            "sample_fps": float(payload.get("sample_fps") or 12.0),
+            "max_frames": payload.get("max_frames"),
+            "min_area": 100.0,
+            "simplify_ratio": 0.006,
+            "feather": 0,
+            "layer_padding": 4,
+            "sprite_format": "webp",
+            "output_mode": "authoring",
+            "production_avif": False,
+        }
+    return {
+        "object_id": run_config.object_id,
+        "object_label": run_config.label,
+        "sample_fps": run_config.sampling.sample_fps,
+        "max_frames": run_config.sampling.max_frames,
+        "min_area": run_config.filters.min_area,
+        "simplify_ratio": run_config.filters.simplify_ratio,
+        "feather": run_config.export.feather,
+        "layer_padding": run_config.export.layer_padding,
+        "sprite_format": run_config.export.sprite_format,
+        "output_mode": run_config.export.output_mode,
+        "production_avif": run_config.export.production_avif,
+    }
+
+
 def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
     payload = _json(job, "payload_json")
-    provider_name = validate_extract_provider_policy(str(payload.get("mask_provider") or "threshold"))
+    run_config = _stored_run_config(payload)
+    requested_provider = run_config.provider.name if run_config is not None else payload.get("mask_provider") or "threshold"
+    provider_name = validate_extract_provider_policy(str(requested_provider))
     source_asset = _asset_row(conn, str(payload["asset_id"]))
     source_bytes = storage.load_bytes(source_asset["storage_key"])
     source_metadata = json.loads(source_asset["metadata_json"] or "{}")
     source_rights_context = source_metadata.get("rights_context") if isinstance(source_metadata.get("rights_context"), dict) else {}
-    rights_context = {**source_rights_context, **dict(payload.get("rights_context") or {})}
+    config_rights_context = run_config.rights.to_dict() if run_config is not None else {}
+    rights_context = {**source_rights_context, **config_rights_context, **dict(payload.get("rights_context") or {})}
     if not rights_context.get("source_asset_id"):
         rights_context["source_asset_id"] = source_asset["id"]
     if not rights_context.get("source_uri"):
@@ -215,7 +263,10 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         video_path.write_bytes(source_bytes)
         out_dir = tmp_dir / "out"
         try:
-            run_config_payload = _run_config_from_backend_payload(video_path=video_path, out_dir=out_dir, provider_name=provider_name, payload=payload).to_dict()
+            if run_config is not None:
+                run_config_payload = _runtime_run_config_payload(run_config, video_path=video_path, out_dir=out_dir)
+            else:
+                run_config_payload = _run_config_from_backend_payload(video_path=video_path, out_dir=out_dir, provider_name=provider_name, payload=payload).to_dict()
         except Exception:
             run_config_payload = {
                 "schema": "motionjson.extraction_run_config.v0.1",
@@ -236,28 +287,76 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         job_run.emit("validating_config", "succeeded", "backend extraction payload validated", progress={"overallRatio": 0.03}, metadata={"provider": provider_name})
 
         try:
-            if provider_name == "external":
+            discovery_mode = run_config.discovery.mode if run_config is not None else None
+            if discovery_mode == "text_detector":
+                discovery_config = dict(run_config.discovery.config)
+                if not discovery_config.get("mock"):
+                    raise RuntimeError(
+                        "local UI text_detector jobs require discovery.config.mock=true; real detector adapters remain capability-gated"
+                    )
+                job_run.emit(
+                    "provider_preflight",
+                    "succeeded",
+                    "text detector mock discovery configured",
+                    progress={"overallRatio": 0.06},
+                    metadata={"provider": provider_name, "discoveryMode": discovery_mode},
+                )
+                scene = run_multi_object_pipeline(
+                    video_path=video_path,
+                    out_dir=out_dir,
+                    object_specs=[],
+                    candidate_provider=TextDetectorDiscoveryProvider(),
+                    candidate_config=discovery_config,
+                    candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out_dir),
+                    sample_fps=run_config.sampling.sample_fps,
+                    max_frames=run_config.sampling.max_frames,
+                    min_area=run_config.filters.min_area,
+                    simplify_ratio=run_config.filters.simplify_ratio,
+                    feather=run_config.export.feather,
+                    layer_padding=run_config.export.layer_padding,
+                    sprite_format=run_config.export.sprite_format,
+                    output_mode=run_config.export.output_mode,
+                    production_avif=run_config.export.production_avif,
+                    rights_context=rights_context,
+                    job_context=job_run,
+                )
+            elif discovery_mode not in {None, "manual_prompt"}:
+                raise RuntimeError(
+                    f"local UI worker does not support discovery mode {discovery_mode!r} yet; use the CLI or a mock text-detector run"
+                )
+            elif provider_name == "external":
                 mask_dir = payload.get("mask_dir")
                 if not mask_dir:
                     raise ValueError("mask_dir is required for external mask provider")
                 mask_provider = ExternalMaskProvider(mask_dir)
-            elif provider_name == "mock":
-                mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
+                job_run.emit("provider_preflight", "succeeded", "mask provider constructed", progress={"overallRatio": 0.06}, metadata={"provider": provider_name})
+                scene = run_pipeline(
+                    video_path=video_path,
+                    out_dir=out_dir,
+                    mask_provider=mask_provider,
+                    **_single_object_pipeline_options(run_config, payload),
+                    rights_context=rights_context,
+                    job_context=job_run,
+                )
             else:
-                lower = tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80]))
-                upper = tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255]))
-                mask_provider = ThresholdMaskProvider(lower, upper)
-            job_run.emit("provider_preflight", "succeeded", "mask provider constructed", progress={"overallRatio": 0.06}, metadata={"provider": provider_name})
-
-            scene = run_pipeline(
-                video_path=video_path,
-                out_dir=out_dir,
-                mask_provider=mask_provider,
-                sample_fps=float(payload.get("sample_fps") or 12.0),
-                max_frames=payload.get("max_frames"),
-                rights_context=rights_context,
-                job_context=job_run,
-            )
+                if provider_name == "mock":
+                    mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
+                else:
+                    lower = tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80]))
+                    upper = tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255]))
+                    if run_config is not None:
+                        lower = run_config.provider.threshold.lower_hsv
+                        upper = run_config.provider.threshold.upper_hsv
+                    mask_provider = ThresholdMaskProvider(lower, upper)
+                job_run.emit("provider_preflight", "succeeded", "mask provider constructed", progress={"overallRatio": 0.06}, metadata={"provider": provider_name})
+                scene = run_pipeline(
+                    video_path=video_path,
+                    out_dir=out_dir,
+                    mask_provider=mask_provider,
+                    **_single_object_pipeline_options(run_config, payload),
+                    rights_context=rights_context,
+                    job_context=job_run,
+                )
         except JobCanceled as exc:
             job_run.cancel(str(exc))
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])

@@ -45,7 +45,8 @@ provider receives boxes or masks.
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path. | Visible in the wizard, but the current local UI worker does not start `motion` jobs yet. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
-| `text_detector` and `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as mock/scaffolded presets so users can preview the flow without claiming real detection. |
+| `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
+| `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as a mock/scaffolded preset so users can preview the config without claiming real detection. |
 | `sam_auto_masks` | Mock mode is runnable; real automatic masks need a SAM2-style backend. | Shown as a mock/scaffolded preset until a runnable backend is available. |
 
 ## CLI Examples
@@ -80,6 +81,17 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --discovery-config '{"mock":true}' \
   --max-frames 2
 ```
+
+Local UI text-discovery smoke path:
+
+1. Launch `python3 -m motionjson.cli ui --no-open --mock`.
+2. Register a source video and choose `Find objects from text`.
+3. Start a mock job. The worker runs `text_detector` mock discovery, writes
+   `candidates.json`, adapts candidate mask sequences into object specs, and
+   writes `tracks.json`.
+4. Review the Candidates and Tracks panels before export. If real detector
+   dependencies or weights are missing, diagnostics still report that status;
+   mock mode does not imply that open-vocabulary detection is installed.
 
 ## Candidate Shape
 

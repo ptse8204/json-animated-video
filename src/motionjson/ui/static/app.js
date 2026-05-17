@@ -1764,6 +1764,48 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Artifacts appear here after the worker registers output files.</div>`;
     }
 
+    function renderCandidateSummary() {
+      const summary = state.jobReview?.candidateSummary || null;
+      const candidates = asArray(summary?.candidates);
+      const provider = summary?.provider || "none";
+      $("#candidateSummaryStatus").textContent = candidates.length ? `${candidates.length} proposed` : summary ? "No candidates" : "Not loaded";
+      $("#candidateSummaryStatus").className = `status-chip ${candidates.length ? "is-ready" : summary ? "is-warn" : "is-muted"}`;
+      $("#candidateSummaryList").innerHTML = candidates.length
+        ? candidates
+            .map((candidate) => {
+              const metadata = candidate.metadata || {};
+              const box = candidate.box
+                ? `box x:${candidate.box.x}, y:${candidate.box.y}, ${candidate.box.w}x${candidate.box.h}`
+                : candidate.point
+                  ? `point x:${candidate.point.x}, y:${candidate.point.y}`
+                  : candidate.maskRef
+                    ? "mask reference"
+                    : "no geometry";
+              const score = typeof candidate.score === "number" ? `score ${Math.round(candidate.score * 100)}%` : "score unavailable";
+              const maskStatus = metadata.maskDir || metadata.mask_dir ? "mask sequence ready" : "mask handoff unavailable";
+              const detail = [
+                candidate.id || "candidate",
+                candidate.source || provider,
+                box,
+                score,
+                maskStatus,
+              ]
+                .filter(Boolean)
+                .join(" - ");
+              return `
+                <div class="artifact-row candidate-row">
+                  <strong>${escapeHtml(candidate.label || candidate.id || "candidate")}</strong>
+                  ${statusChip(candidate.source || provider || "candidate", candidate.source || provider || "candidate", Boolean(metadata.maskDir || metadata.mask_dir || candidate.maskRef))}
+                  <span class="row-meta">${escapeHtml(detail)}</span>
+                </div>
+              `;
+            })
+            .join("")
+        : summary
+          ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
+          : `<div class="empty-state">Candidate proposals appear here after text discovery writes candidates.json.</div>`;
+    }
+
     function renderTrackList() {
       $("#trackCount").textContent = `${state.reviewTracks.length} track${state.reviewTracks.length === 1 ? "" : "s"}`;
       $("#trackList").innerHTML = state.reviewTracks.length
@@ -2064,6 +2106,7 @@ const MotionJSONUI = (() => {
       renderSelectedJobFacts();
       renderEventLog();
       renderArtifactBrowser();
+      renderCandidateSummary();
       renderCorrectionPanel();
       renderTrackList();
       renderSelectedTrackDetail();

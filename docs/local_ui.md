@@ -60,9 +60,10 @@ detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
 claiming those providers are available in mock mode.
 
 The wizard may show CLI-capable no-model workflows such as `motion_foreground`
-so users can inspect and save a valid run config. The current local UI worker
-starts only `mock`, `threshold`, and `external` extraction jobs; use the CLI for
-`motion` until that worker path is wired.
+so users can inspect and save a valid run config. The local UI worker starts
+`mock`, `threshold`, and `external` extraction jobs, plus mock
+`text_detector` discovery jobs that use `mock` as the mask handoff provider.
+Use the CLI for `motion` until that worker path is wired.
 
 ## Routes
 
@@ -206,10 +207,15 @@ storage root and records rights source metadata for the upload. Missing paths
 return a visible API error.
 
 Text prompts map to the `text_detector` discovery provider and do not route
-directly to raw SAM2. Automatic segment proposals map to `sam_auto_masks` and
-should be filtered before export. Moving-object discovery maps to the
-CPU/no-model `motion_foreground` workflow. External mask imports use
-`external_masks` plus the `external` mask provider.
+directly to raw SAM2. In local UI mock mode, `Find objects from text` runs the
+text detector mock path end to end: labels become candidate boxes, generated
+mask sequences, object tracks, and a Candidates review panel sourced from
+`candidates.json`. Real detector packages and weights remain optional and
+capability-gated; missing detector diagnostics are still shown before a run.
+Automatic segment proposals map to `sam_auto_masks` and should be filtered
+before export. Moving-object discovery maps to the CPU/no-model
+`motion_foreground` workflow. External mask imports use `external_masks` plus
+the `external` mask provider.
 
 ## Build And Smoke
 

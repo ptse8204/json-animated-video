@@ -863,6 +863,7 @@ class LocalUIApp:
                 upper_hsv=config.provider.threshold.upper_hsv,
                 mask_dir=mask_dir,
                 rights_context=rights_context,
+                run_config=config.to_dict(),
             )
 
         project_id = str(payload.get("projectId") or payload.get("project_id") or "")
