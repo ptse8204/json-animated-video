@@ -1,7 +1,9 @@
 # Onboarding Guide
 
 This guide gets a new local operator from a demo clip to a reusable motion
-layer, API key, and website preview.
+layer, API key, and website preview. For install profiles, Windows PowerShell
+commands, first-run diagnostics, and multi-object tutorial commands, start with
+[First run setup](first_run.md).
 
 ## 1. Install
 
@@ -9,14 +11,14 @@ layer, API key, and website preview.
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-pip install -e .
+pip install -e ".[ui]"
 ```
 
 ## 2. Generate Demo Assets
 
 ```bash
-python examples/make_demo_video.py --out examples/demo_red_ball.mp4
-python -m motionjson.cli extract examples/demo_red_ball.mp4 \
+python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --out out/demo \
   --mask-provider threshold \
   --lower-hsv 0,80,80 \
@@ -41,15 +43,15 @@ Open:
 ## 4. Local API
 
 ```bash
-python -m motionjson.cli backend init
-printf '%s' "$MOTIONJSON_PASSWORD" | python -m motionjson.cli backend create-user --email user@example.com --password-stdin
+python3 -m motionjson.cli backend init
+printf '%s' "$MOTIONJSON_PASSWORD" | python3 -m motionjson.cli backend create-user --email user@example.com --password-stdin
 export MOTIONJSON_SESSION_TOKEN="$(
-  printf '%s' "$MOTIONJSON_PASSWORD" | python -m motionjson.cli backend login --email user@example.com --password-stdin | python -c 'import json,sys; print(json.load(sys.stdin)["sessionToken"])'
+  printf '%s' "$MOTIONJSON_PASSWORD" | python3 -m motionjson.cli backend login --email user@example.com --password-stdin | python3 -c 'import json,sys; print(json.load(sys.stdin)["sessionToken"])'
 )"
-python -m motionjson.cli backend create-api-key --name "local sdk"
-python -m motionjson.cli backend list-plans
-python -m motionjson.cli backend billing-status
-python -m motionjson.cli backend serve-api
+python3 -m motionjson.cli backend create-api-key --name "local sdk"
+python3 -m motionjson.cli backend list-plans
+python3 -m motionjson.cli backend billing-status
+python3 -m motionjson.cli backend serve-api
 ```
 
 ## 5. Validate

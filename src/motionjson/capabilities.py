@@ -537,7 +537,7 @@ def provider_capabilities(
             no_model_safe=False,
             network_required=False,
             mock_available=True,
-            optional_extra="text-detector",
+            optional_extra="detectors",
             checks=[
                 _check("groundingdino_import", "ok" if text_detector_installed else "missing", None if text_detector_installed else "groundingdino package is not importable"),
                 _check("model", "ok" if text_detector_model["exists"] else "missing", text_detector_model["env"], text_detector_model["exists"]),
@@ -564,7 +564,7 @@ def provider_capabilities(
             no_model_safe=False,
             network_required=False,
             mock_available=True,
-            optional_extra="class-detector",
+            optional_extra="yolo",
             checks=[
                 _check("ultralytics_import", "ok" if class_detector_installed else "missing", None if class_detector_installed else "ultralytics package is not importable"),
                 _check("model", "ok" if class_detector_model["exists"] else "missing", class_detector_model["env"], class_detector_model["exists"]),

@@ -318,6 +318,7 @@ h2 {
 .wizard-fields,
 .prompt-summary,
 .capability-list,
+.first-run-list,
 .artifact-list,
 .route-list,
 .export-panel,
@@ -513,6 +514,7 @@ input[type="range"] {
 
 .prompt-row,
 .capability-row,
+.first-run-row,
 .artifact-row,
 .route-row,
 .warning-box {
@@ -545,18 +547,21 @@ input[type="range"] {
 }
 
 .capability-row,
+.first-run-row,
 .prompt-row {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
 }
 
 .capability-row .status-chip,
+.first-run-row .status-chip,
 .prompt-row .status-chip,
 .artifact-row .status-chip {
   justify-self: end;
 }
 
 .capability-row strong,
+.first-run-row strong,
 .prompt-row strong,
 .artifact-row strong,
 .route-row strong {

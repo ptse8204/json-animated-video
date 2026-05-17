@@ -45,6 +45,17 @@ The `--mock` flag keeps default run suggestions in no-model mode. It does not
 pretend SAM2, CUDA, detectors, FFmpeg, or model weights are available; those
 statuses still come from provider diagnostics.
 
+On Windows PowerShell, use the module entry point after activating the virtual
+environment:
+
+```powershell
+python -m motionjson.cli ui --no-open --mock
+```
+
+The sidebar First Run checklist summarizes base dependency readiness, no-model
+provider availability, optional model extras, and FFmpeg status from
+`/api/capabilities`.
+
 ## Routes
 
 The UI serves static files under `/ui/` and local JSON routes under `/api/`:

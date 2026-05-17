@@ -48,6 +48,7 @@ STORAGE_KEY_PATH_RE = re.compile(r"\bprojects/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
 LOCAL_FILE_URI_RE = re.compile(r"(?i)\bfile://[^\r\n]+")
 LOCAL_UI_ASSET_URI_RE = re.compile(r"^(?:local-ui|motionjson)://assets/([^/?#]+)$")
 LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+")
+WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
 LOCAL_PATH_FIELD_NAMES = {"sourceuri", "sourcepath", "localpath"}
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
 PUBLIC_ARTIFACT_CONTENT_TYPES = ("image/", "video/")
@@ -100,13 +101,16 @@ def _is_local_path_field(key: Any) -> bool:
 
 
 def _redact_public_text(value: str) -> str:
-    return LOCAL_ABSOLUTE_PATH_RE.sub(
+    return WINDOWS_ABSOLUTE_PATH_RE.sub(
         "[LOCAL_PATH_REDACTED]",
-        LOCAL_FILE_URI_RE.sub(
-            "[LOCAL_FILE_URI_REDACTED]",
-            STORAGE_KEY_PATH_RE.sub(
-                "[STORAGE_KEY_REDACTED]",
-                STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value),
+        LOCAL_ABSOLUTE_PATH_RE.sub(
+            "[LOCAL_PATH_REDACTED]",
+            LOCAL_FILE_URI_RE.sub(
+                "[LOCAL_FILE_URI_REDACTED]",
+                STORAGE_KEY_PATH_RE.sub(
+                    "[STORAGE_KEY_REDACTED]",
+                    STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value),
+                ),
             ),
         ),
     )
@@ -114,7 +118,7 @@ def _redact_public_text(value: str) -> str:
 
 def _public_value(value: Any, *, key: Any | None = None) -> Any:
     if _is_local_path_field(key) and isinstance(value, str) and (
-        value.startswith("/") or value.lower().startswith("file://")
+        value.startswith("/") or value.lower().startswith("file://") or WINDOWS_ABSOLUTE_PATH_RE.match(value)
     ):
         return "[LOCAL_PATH_REDACTED]"
     if isinstance(value, dict):
@@ -420,7 +424,12 @@ class LocalUIApp:
                 ],
             }
         if path == "/api/capabilities" and method == "GET":
-            return build_capability_report()
+            return _public_value(
+                build_capability_report(
+                    video_path=self._query_one(query, "video") or self._query_one(query, "videoPath"),
+                    output_dir=self._query_one(query, "outputDir") or self._query_one(query, "output"),
+                )
+            )
         if path == "/api/run-config/defaults" and method == "GET":
             return {
                 "format": "motionjson.local_ui_run_config_defaults.v0.1",

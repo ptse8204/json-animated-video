@@ -4,6 +4,7 @@ import json
 import sqlite3
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from motionjson.backend.assets import list_assets_for_job, register_generated_asset
 from motionjson.backend.jobs import record_job_event
@@ -92,6 +93,19 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert capabilities["schema"] == "motionjson.provider_diagnostics.v0.1"
     assert any(provider["name"] == "mock" and provider["noModelSafe"] for provider in capabilities["providers"])
 
+    status, _headers, body = app.handle(
+        "GET",
+        f"/api/capabilities?video={quote(str(demo_video()))}&outputDir={quote(str(tmp_path / 'exports'))}",
+    )
+    probed = decode(body)
+    assert status == 200
+    assert probed["environment"]["videoIO"]["checkedVideo"] is True
+    assert probed["environment"]["output"]["checked"] is True
+    if probed["environment"]["videoIO"]["opencvAvailable"]:
+        assert probed["environment"]["videoIO"]["readable"] is True
+    assert probed["environment"]["output"]["writable"] is True
+    assert str(tmp_path) not in json.dumps(probed)
+
     status, _headers, body = app.handle("GET", "/api/run-config/defaults")
     defaults = decode(body)
     assert status == 200
@@ -105,6 +119,23 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert {entry["id"] for entry in exports["exports"]} >= {"motionjson", "mp4", "website-zip", "remotion-plan"}
     assert {entry["id"] for entry in exports["presets"]} >= {"compact", "debug", "vector-heavy", "raster-fallback"}
+
+
+def test_local_ui_capabilities_redacts_windows_probe_paths(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    for route, leaked in [
+        ("/api/capabilities?video=C%3A%5CUsers%5CAlice%5Csecret.mp4&outputDir=%5C%5Cserver%5Cshare%5Cmotionjson", ["C:\\Users\\Alice", "\\\\server\\share"]),
+        ("/api/capabilities?video=C%3A%2FUsers%2FAlice%2Fsecret.mp4&outputDir=C%3A%2FUsers%2FAlice%2Fout", ["C:/Users/Alice"]),
+    ]:
+        status, _headers, body = app.handle("GET", route)
+        payload = decode(body)
+        encoded = json.dumps(payload)
+
+        assert status == 200
+        assert "[LOCAL_PATH_REDACTED]" in encoded
+        for value in leaked:
+            assert value not in encoded
 
 
 def test_local_ui_serves_static_shell(tmp_path):

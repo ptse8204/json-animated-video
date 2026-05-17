@@ -27,6 +27,17 @@ provider receives boxes or masks.
 - `class_detector`: scaffold for known-class detection. Missing optional
   detector packages are reported in diagnostics; mock mode is local-only.
 
+## When To Use And Failure Modes
+
+| Mode | Use When | Common Failure Mode | Safer Fallback |
+| --- | --- | --- | --- |
+| `manual_prompt` | One known object needs a point, box, or mask prompt. | Prompt is too loose and returns background or whole-frame masks. | Add a tighter box or use external masks. |
+| `motion_foreground` | The camera is mostly still and objects move. | Camera motion or shadows become candidates. | Use `external_masks` or review/delete extra tracks. |
+| `external_masks` | Masks or boxes already exist from another local tool. | Mask sequence is missing frames or points at the wrong object. | Validate each object ID and inspect `fallback_diagnostics.json`. |
+| `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, mock mode, or a detector-first workflow. |
+| `text_detector` | Users describe objects with text labels. | Detector package/model is missing or boxes are semantically wrong. | Use mock smoke tests, class detector, or manual/external masks. |
+| `class_detector` | Known classes are enough for the video domain. | YOLO/known-class model is unavailable or returns too many classes. | Limit classes, lower max candidates, or use manual review. |
+
 ## CLI Examples
 
 CPU moving-region discovery:

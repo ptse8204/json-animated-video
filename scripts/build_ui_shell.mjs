@@ -28,6 +28,7 @@ for (const reference of ["/ui/app.css", "/ui/app.js"]) {
 
 for (const id of [
   "healthStatus",
+  "firstRunChecklist",
   "apiStatus",
   "providerWarning",
   "capabilityList",
@@ -170,6 +171,9 @@ for (const affordance of [
   "selectedVideoId",
   "video-choice",
   "validateConfigWithBackend",
+  "renderFirstRunChecklist",
+  "No-model smoke",
+  "Optional models",
 ]) {
   if (!combined.includes(affordance)) {
     throw new Error(`UI shell is missing ${affordance}`);

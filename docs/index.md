@@ -9,6 +9,7 @@ flat graphics.
 ## Start Here
 
 - [GA launch guide](ga_launch.md)
+- [First run setup](first_run.md)
 - [Deployment guide](deployment.md)
 - [Billing and pricing](billing_pricing.md)
 - [Onboarding guide](onboarding.md)

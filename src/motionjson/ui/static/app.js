@@ -1405,6 +1405,78 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">The local API returned no provider records.</div>`;
     }
 
+    function renderFirstRunChecklist() {
+      const list = $("#firstRunChecklist");
+      if (!state.capabilities) {
+        list.innerHTML = `<div class="error-state">${escapeHtml(state.errors.capabilities || "Run diagnostics to load setup status.")}</div>`;
+        return;
+      }
+
+      const dependencies = asArray(state.capabilities.environment?.dependencies);
+      const requiredDeps = new Set(["numpy", "opencv-python", "Pillow", "tqdm", "jsonschema"]);
+      const dependencyByName = new Map(dependencies.map((item) => [item.name, item]));
+      const baseReady = [...requiredDeps].every((name) => dependencyByName.get(name)?.available === true);
+      const readyNoModelProviders = ["mock", "threshold", "motion", "external"]
+        .map((name) => providerByName(name, "mask_provider"))
+        .filter(Boolean)
+        .filter((provider) => provider.available === true);
+      const optionalMissing = asArray(state.capabilities.providers)
+        .filter((provider) => provider.optionalExtra && !provider.available)
+        .map((provider) => {
+          const reasons = asArray(provider.reasons).join(" ");
+          return `${provider.optionalExtra} (${provider.name}${reasons ? `: ${reasons}` : ""})`;
+        })
+        .filter((detail, index, values) => values.indexOf(detail) === index)
+        .slice(0, 4);
+      const ffmpeg = state.capabilities.environment?.ffmpeg || {};
+      const steps = [
+        {
+          label: "Base install",
+          status: baseReady ? "ready" : "missing",
+          available: baseReady,
+          detail: baseReady ? "Core Python dependencies imported." : "Install base package dependencies, then refresh diagnostics.",
+        },
+        {
+          label: "Local UI",
+          status: state.health && !state.errors.health ? "ready" : "check",
+          available: Boolean(state.health && !state.errors.health),
+          detail: state.health?.mockMode ? "Mock mode is on for no-model checks." : "Use motionjson ui or module launch.",
+        },
+        {
+          label: "No-model smoke",
+          status: readyNoModelProviders.length >= 3 ? "ready" : "limited",
+          available: readyNoModelProviders.length >= 3,
+          detail: "Use examples/demo_red_ball.mp4 with mock, threshold, motion, or external masks.",
+        },
+        {
+          label: "Optional models",
+          status: optionalMissing.length ? "optional" : "ready",
+          available: !optionalMissing.length,
+          detail: optionalMissing.length
+            ? `Optional provider setup: ${optionalMissing.join("; ")}. Install extras only when needed.`
+            : "Configured optional providers reported ready.",
+        },
+        {
+          label: "Exports",
+          status: ffmpeg.available ? "ready" : "optional",
+          available: Boolean(ffmpeg.available),
+          detail: ffmpeg.available ? "FFmpeg is available for video exports." : "MotionJSON export works; MP4/WebM encoding needs FFmpeg.",
+        },
+      ];
+
+      list.innerHTML = steps
+        .map(
+          (step) => `
+            <div class="first-run-row">
+              <strong>${escapeHtml(step.label)}</strong>
+              ${statusChip(step.status, step.status, step.available)}
+              <span class="row-meta">${escapeHtml(step.detail)}</span>
+            </div>
+          `,
+        )
+        .join("");
+    }
+
     function renderRunDefaults() {
       if (!state.runDefaults) {
         setFacts($("#runDefaults"), {
@@ -2534,10 +2606,15 @@ const MotionJSONUI = (() => {
     }
 
     async function loadRootData() {
+      const capabilityParams = new URLSearchParams();
+      const videoPath = $("#videoPath")?.value?.trim();
+      if (videoPath) capabilityParams.set("video", videoPath);
+      capabilityParams.set("outputDir", "out");
+      const capabilityRoute = capabilityParams.toString() ? `/api/capabilities?${capabilityParams}` : "/api/capabilities";
       const entries = await Promise.all(
         [
           ["health", "/api/health"],
-          ["capabilities", "/api/capabilities"],
+          ["capabilities", capabilityRoute],
           ["runDefaults", "/api/run-config/defaults"],
           ["exportFormats", "/api/exports/formats"],
           ["projects", "/api/projects"],
@@ -2692,6 +2769,7 @@ const MotionJSONUI = (() => {
       await loadRootData();
       renderHealth();
       renderCapabilities();
+      renderFirstRunChecklist();
       renderRunDefaults();
       renderProjects();
       renderExportPresetOptions();
