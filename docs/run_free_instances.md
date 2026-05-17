@@ -33,6 +33,9 @@ forwarded and opened from the browser.
 Colab is suitable for short CLI demos and inspecting generated files. It is not
 the right place to host a public long-running MotionJSON web service.
 
+Use the checked-in notebook when you want a ready Colab surface:
+[Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb).
+
 Notebook cells can use:
 
 ```bash
@@ -62,6 +65,9 @@ UI to interact primarily through a web UI among restricted activities.
 ## Hugging Face Space plan
 
 A safe first Space should be a CPU Basic demo, not a paid GPU requirement.
+The concrete proof-of-concept handoff plan is
+[spaces/huggingface/README.md](../spaces/huggingface/README.md).
+
 Recommended scope:
 
 - start the local UI or a minimal wrapper in `--mock` mode;

@@ -2,6 +2,8 @@
 
 Turn selected video objects into reusable motion layers for editors and websites.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ptse8204/json-animated-video)
+
 MotionJSON helps you cut a moving object out of a video once, review the result,
 and reuse it as a JSON-controlled layer. The practical output is cached
 raster/alpha media plus compact JSON for timing, transforms, identity, review
@@ -150,20 +152,22 @@ python3 -m motionjson.cli ui --no-open --mock --host 0.0.0.0
 
 This repository includes `.devcontainer/devcontainer.json` for Codespaces. It
 installs Python and Node dependencies after the container starts; then use the
-forwarded UI port from the Codespaces Ports panel.
+forwarded UI port from the Codespaces Ports panel. The full low-install guide
+is [docs/run_free_instances.md](docs/run_free_instances.md).
 
 ### Google Colab CLI demo
 
 Colab is useful for short CLI demos, not for hosting a long-running public web
 service. The intended path is clone, install CPU dependencies, run the red-ball
-demo, and inspect generated files. A notebook is planned for the hosted-demo
-phase.
+demo, and inspect generated files. Use the checked-in
+[Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb).
 
 ### Hugging Face Space demo plan
 
 A future Space should start with CPU Basic/mock mode, a tiny deterministic demo
 video, no client-side secrets, and no paid GPU requirement. Real SAM2 or
-detector demos should stay optional and clearly labeled.
+detector demos should stay optional and clearly labeled. The concrete Space
+handoff plan lives in [spaces/huggingface/README.md](spaces/huggingface/README.md).
 
 ## Screenshots and demos
 

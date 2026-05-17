@@ -43,6 +43,15 @@ settings and no secrets.
   configures a provider and reviews data handling.
 - Do not use provider keys in client-side examples or static pages.
 
+## Free Hosted Demo Constraints
+
+Use [Run MotionJSON on free or low-install instances](run_free_instances.md) for
+Codespaces, Colab, and Hugging Face Space guidance. Free hosted demos should
+start with CPU/mock/no-model flows, no paid GPU requirement, no hidden secrets,
+and no client-side provider credentials. Treat disks as ephemeral unless the
+hosted platform has configured persistent storage, and keep model downloads or
+hosted provider credentials explicitly opt-in.
+
 ## Validation
 
 ```bash
