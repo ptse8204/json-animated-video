@@ -51,6 +51,17 @@
       "type": "object",
       "additionalProperties": true
     },
+    "qualityRouting": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "format": { "const": "motionjson.export_quality_routing.v0.1" },
+        "aiUsage": { "const": "none" },
+        "source": { "type": "string" },
+        "objects": { "type": "array" },
+        "preview": { "type": "object" }
+      }
+    },
     "validation": {
       "type": "object",
       "additionalProperties": true,

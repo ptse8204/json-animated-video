@@ -696,6 +696,7 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert status == 200
     assert validation_payload["validation"]["ok"] is True
     assert validation_payload["includedObjectIds"] == ["object_0"]
+    assert validation_payload["qualityRouting"]["preview"]["mp4Preview"]["status"] in {"plan_ready", "unavailable"}
     assert str(tmp_path) not in body.decode("utf-8")
     assert "projects/" not in body.decode("utf-8")
 
@@ -717,6 +718,22 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert validation_payload["config"]["includeMasks"] is True
     assert validation_payload["config"]["includeContours"] is True
     assert validation_payload["config"]["includePreview"] is False
+    assert validation_payload["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert validation_payload["qualityRouting"]["includePreview"] is False
+    assert validation_payload["qualityRouting"]["aiUsage"] == "none"
+    assert validation_payload["qualityRouting"]["objects"][0]["objectId"] == "object_0"
+    assert validation_payload["qualityRouting"]["objects"][0]["selectedOutput"] in {
+        "raster_alpha_sequence",
+        "hybrid_vector_silhouette_plus_raster",
+    }
+    assert validation_payload["qualityRouting"]["objects"][0]["selectedDelivery"]["route"] in {
+        "raster_alpha_sequence",
+        "sprite_atlas",
+        "sprite_atlas_webp",
+        "sprite_atlas_avif",
+        "transparent_webm",
+    }
+    assert validation_payload["qualityRouting"]["preview"]["mp4Preview"]["status"] == "skipped"
 
     status, _headers, body = app.handle(
         "POST",
@@ -730,8 +747,24 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert exported["provenance"]["sourceJobId"] == job["id"]
     assert exported["provenance"]["correctionEventCount"] == 1
     assert exported["config"]["preset"] == "debug"
+    assert exported["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert exported["qualityRouting"]["aiUsage"] == "none"
+    assert exported["qualityRouting"]["objects"][0]["objectId"] == "object_0"
+    assert exported["qualityRouting"]["objects"][0]["rasterAlpha"]["status"] == "ready"
+    assert exported["qualityRouting"]["objects"][0]["vectorSilhouette"]["status"] in {"ready", "skipped"}
+    assert exported["qualityRouting"]["preview"]["mp4Preview"]["status"] in {"ready", "unavailable", "error", "skipped"}
     kinds = {asset["kind"] for asset in exported["assets"]}
-    assert {"validated_motionjson_scene", "final_export_manifest", "export_validation_report", "preview_overlay", "contours_boxes", "motionjson_export_zip"}.issubset(kinds)
+    assert {
+        "validated_motionjson_scene",
+        "final_export_manifest",
+        "export_validation_report",
+        "export_quality_routing",
+        "preview_overlay",
+        "contours_boxes",
+        "motionjson_export_zip",
+    }.issubset(kinds)
+    if exported["qualityRouting"]["preview"]["mp4Preview"]["status"] == "ready":
+        assert "mp4_preview" in kinds
 
     zip_asset = next(asset for asset in exported["assets"] if asset["kind"] == "motionjson_export_zip")
     status, headers, zip_body = app.handle("GET", zip_asset["contentUrl"])
@@ -739,7 +772,9 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(zip_body)) as archive:
         names = archive.namelist()
-    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json"}.issubset(set(names))
+    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json", "quality_routing.json"}.issubset(set(names))
+    if exported["qualityRouting"]["preview"]["mp4Preview"]["status"] == "ready":
+        assert "preview/preview.mp4" in names
     assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
 
     scene_asset = next(asset for asset in exported["assets"] if asset["kind"] == "validated_motionjson_scene")
@@ -762,6 +797,22 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert manifest["source"]["directory"] == "."
     assert manifest["validation"]["ok"] is True
     assert manifest["provenance"]["aiUsage"] == "none"
+    assert manifest["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert manifest["qualityRouting"]["objects"][0]["selectedOutput"] in {
+        "raster_alpha_sequence",
+        "hybrid_vector_silhouette_plus_raster",
+    }
+    assert manifest["qualityRouting"]["preview"]["mp4Preview"]["status"] in {"ready", "unavailable", "error", "skipped"}
+
+    routing_asset = next(asset for asset in exported["assets"] if asset["kind"] == "export_quality_routing")
+    assert routing_asset["metadata"]["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    status, _headers, routing_body = app.handle("GET", routing_asset["contentUrl"])
+    routing = decode(routing_body)
+    assert status == 200
+    assert routing["format"] == "motionjson.export_quality_routing.v0.1"
+    assert routing["objects"][0]["label"] == "Export Ball"
+    assert str(tmp_path) not in routing_body.decode("utf-8")
+    assert "projects/" not in routing_body.decode("utf-8")
 
     imported_scene = tmp_path / "imported_scene_graph.json"
     imported_scene.write_bytes(scene_body)
@@ -882,6 +933,43 @@ def test_local_ui_export_preview_svg_escapes_corrected_labels(tmp_path):
     svg = svg_body.decode("utf-8")
     assert "<script" not in svg
     assert "&lt;/text&gt;&lt;script&gt;alert(1)&lt;/script&gt;" in svg
+
+
+def test_local_ui_export_raw_json_redacts_windows_paths(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Windows Path Export Project")
+    asset = scene_asset_for_job(app, job)
+    storage = app.storage()
+    scene = json.loads(storage.load_bytes(asset["storage_key"]).decode("utf-8"))
+    obj = scene["objects"][0]
+    obj["asset"] = r"C:\Users\Alice\secret\cutout.png"
+    obj["assets"]["cutoutPattern"] = r"C:\Users\Alice\secret\cutouts\frame_%06d.png"
+    obj["assets"]["production"] = {
+        "assets": {
+            "webpSpriteAtlas": {"status": "ready", "path": r"\\server\share\atlas.webp", "bytes": 100},
+            "transparentWebm": {"status": "ready", "path": r"C:\Users\Alice\secret\object.webm", "bytes": 40},
+        }
+    }
+    storage.save_bytes(asset["storage_key"], json.dumps(scene).encode("utf-8"), content_type="application/json")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "debug", "includeContours": True, "includePreview": False}).encode("utf-8"),
+    )
+    assert status == 200
+    exported = decode(body)["export"]
+
+    for kind in {"validated_motionjson_scene", "final_export_manifest", "export_quality_routing"}:
+        artifact = next(asset for asset in exported["assets"] if asset["kind"] == kind)
+        status, _headers, artifact_body = app.handle("GET", artifact["contentUrl"])
+        text = artifact_body.decode("utf-8")
+        assert status == 200
+        assert "[LOCAL_PATH_REDACTED]" in text
+        assert "C:" not in text
+        assert "Alice" not in text
+        assert "server" not in text
+        assert "projects/" not in text
 
 
 def test_local_ui_export_excludes_pending_add_object_until_assets_are_materialized(tmp_path):

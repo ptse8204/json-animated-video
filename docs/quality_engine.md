@@ -59,3 +59,16 @@ The default route is always `raster_alpha_sequence`.
 `hybrid_vector_silhouette_plus_raster` is allowed only when the layer has high vector suitability, high production readiness, high missing-frame coverage, low occlusion risk, high mask drift consistency, and strong edge quality. This route still keeps the photoreal object as cached raster/alpha assets; the vector portion is for simple silhouette assistance.
 
 MotionJSON never recommends pure SVG or pure Lottie for extracted photoreal objects.
+
+## Export Routing
+
+Validated local UI exports turn the quality scores into an explicit
+`quality_routing.json` report. The report chooses raster alpha by default,
+enables vector silhouette assistance only when `recommendedOutput` and the
+export preset both allow contours, and selects a ready sprite atlas, AVIF atlas,
+or transparent WebM delivery when cached production assets are available.
+
+MP4 preview routing is reported separately. A missing FFmpeg binary or encoder
+failure is surfaced as `unavailable` or `error` instead of hiding the issue or
+blocking the JSON handoff. Export routing is deterministic and uses only cached
+artifacts, resource profile data, and JSON transforms.

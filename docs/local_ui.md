@@ -156,10 +156,14 @@ diagnostics in the saved edit message and correction history.
 `POST /api/jobs/JOB_ID/validate` validates the corrected export state without
 writing new artifacts. It accepts the same `preset`, `includeMasks`,
 `includeContours`, and `includePreview` fields as the export route so the
-preflight reflects the exact handoff settings. `POST /api/jobs/JOB_ID/exports`
-writes a validated MotionJSON handoff from the corrected review state,
-registers the generated artifacts on the selected job, and returns public
-content links for export files. The local UI supports these presets:
+preflight reflects the exact handoff settings. The response includes
+`qualityRouting`, which explains the cached raster/vector/delivery/preview
+route that export will use. MP4 preview validation is a dry run: it reports
+`plan_ready` when FFmpeg is available and encodes only during final export.
+`POST /api/jobs/JOB_ID/exports` writes a validated MotionJSON handoff from the
+corrected review state, registers the generated artifacts on the selected job,
+and returns public content links for export files. The local UI supports these
+presets:
 
 - `compact`: corrected `scene_graph.json`, final export manifest, validation
   report, and SVG overlay preview.
@@ -169,12 +173,12 @@ content links for export files. The local UI supports these presets:
 - `raster-fallback`: corrected MotionJSON plus mask and fallback-oriented
   diagnostics for runs where vector/object tracks need extra review.
 
-Generated export JSON, ZIP assets, and generated overlay previews are safe to
-open through `/api/artifacts/ARTIFACT_ID/content`; raw extraction JSON and
-imported SVG files remain metadata-only unless they are part of this explicit
-export workflow. Export manifests include
-source job id, source asset id when known, preset, correction event count,
-included/excluded object ids, sanitized run config/correction state, validation
+Generated export JSON, ZIP assets, generated overlay previews, and ready MP4
+previews are safe to open through `/api/artifacts/ARTIFACT_ID/content`; raw
+extraction JSON and imported SVG files remain metadata-only unless they are
+part of this explicit export workflow. Export manifests include source job id,
+source asset id when known, preset, correction event count, included/excluded
+object ids, sanitized run config/correction state, quality routing, validation
 status, and `aiUsage: "none"`. Local absolute paths and storage keys are
 redacted from public export payloads.
 

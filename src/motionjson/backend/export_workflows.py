@@ -6,6 +6,7 @@ import mimetypes
 import re
 import shutil
 import sqlite3
+import subprocess
 import uuid
 import zipfile
 from pathlib import Path
@@ -20,9 +21,12 @@ from motionjson.backend.assets import list_assets_for_job, register_generated_as
 from motionjson.backend.corrections import build_track_correction_state, list_track_corrections
 from motionjson.backend.jobs import create_completed_job, get_job, record_job_event
 from motionjson.backend.rights import record_audit_event
-from motionjson.exporters.final_render import build_final_export_manifest, final_export_entry
+from motionjson.exporters.final_render import build_final_export_manifest, final_export_entry, render_frames
 from motionjson.providers.base import StorageProvider
 from motionjson.validation import validate_document, validate_file, validate_output_dir
+
+
+QUALITY_ROUTING_FORMAT = "motionjson.export_quality_routing.v0.1"
 
 
 EXPORT_PRESETS: dict[str, dict[str, Any]] = {
@@ -57,6 +61,7 @@ EXPORT_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 LOCAL_PATH_RE = re.compile(r"(?i)\bfile://[^\r\n]+|(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+")
+WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
 STORAGE_KEY_RE = re.compile(r"\bprojects/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
 SCENE_CORRECTION_ONLY_KEYS = {
     "corrections",
@@ -116,7 +121,9 @@ def materialize_job_assets(
 
 
 def _sanitize_text(value: str) -> str:
-    return STORAGE_KEY_RE.sub("[STORAGE_KEY_REDACTED]", LOCAL_PATH_RE.sub("[LOCAL_PATH_REDACTED]", value))
+    redacted = WINDOWS_ABSOLUTE_PATH_RE.sub("[LOCAL_PATH_REDACTED]", value)
+    redacted = LOCAL_PATH_RE.sub("[LOCAL_PATH_REDACTED]", redacted)
+    return STORAGE_KEY_RE.sub("[STORAGE_KEY_REDACTED]", redacted)
 
 
 def _sanitize_value(value: Any) -> Any:
@@ -260,6 +267,264 @@ def _canvas(scene: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _ready_status(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("status") == "ready" and bool(value.get("path"))
+
+
+def _candidate_delivery_from_optimizer(selected: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not _ready_status(selected):
+        return None
+    name = str(selected.get("name") or "")
+    route_by_name = {
+        "webpSpriteAtlas": "sprite_atlas_webp",
+        "transparentWebm": "transparent_webm",
+        "avifSpriteAtlas": "sprite_atlas_avif",
+    }
+    if name not in route_by_name:
+        return None
+    return {
+        "route": route_by_name[name],
+        "status": "ready",
+        "path": selected.get("path"),
+        "bytes": int(selected.get("bytes") or 0),
+        "source": "compression_optimizer",
+        "reason": selected.get("reason"),
+    }
+
+
+def _candidate_delivery_from_assets(production: dict[str, Any]) -> dict[str, Any] | None:
+    assets = production.get("assets") if isinstance(production.get("assets"), dict) else {}
+    candidates: list[dict[str, Any]] = []
+    for key, route in (
+        ("webpSpriteAtlas", "sprite_atlas_webp"),
+        ("transparentWebm", "transparent_webm"),
+        ("avifSpriteAtlas", "sprite_atlas_avif"),
+    ):
+        asset = assets.get(key)
+        if _ready_status(asset):
+            candidates.append(
+                {
+                    "route": route,
+                    "status": "ready",
+                    "path": asset.get("path"),
+                    "bytes": int(asset.get("bytes") or 0),
+                    "source": "ready_production_asset",
+                    "reason": asset.get("reason"),
+                }
+            )
+    if not candidates:
+        return None
+    return min(candidates, key=lambda candidate: int(candidate.get("bytes") or 0))
+
+
+def _object_delivery_route(obj: dict[str, Any]) -> dict[str, Any]:
+    assets = obj.get("assets") if isinstance(obj.get("assets"), dict) else {}
+    production = assets.get("production")
+    if isinstance(production, dict):
+        optimizer = production.get("compressionOptimizer") if isinstance(production.get("compressionOptimizer"), dict) else {}
+        selected = optimizer.get("selected") if isinstance(optimizer.get("selected"), dict) else None
+        delivery = _candidate_delivery_from_optimizer(selected) or _candidate_delivery_from_assets(production)
+        if delivery is not None:
+            return delivery
+
+    spritesheet = assets.get("spritesheet")
+    if isinstance(spritesheet, dict) and spritesheet.get("path"):
+        return {
+            "route": "sprite_atlas_webp" if str(spritesheet.get("path", "")).endswith(".webp") else "sprite_atlas",
+            "status": "ready",
+            "path": spritesheet.get("path"),
+            "bytes": int(spritesheet.get("bytes") or 0),
+            "source": "authoring_spritesheet",
+            "reason": None,
+        }
+
+    return {
+        "route": "raster_alpha_sequence",
+        "status": "ready",
+        "path": obj.get("asset") or assets.get("cutoutPattern", ""),
+        "bytes": 0,
+        "source": "cached_rgba_cutout_sequence",
+        "reason": "no ready sprite atlas or transparent WebM production asset",
+    }
+
+
+def _object_quality_route(obj: dict[str, Any], *, include_contours: bool) -> dict[str, Any]:
+    quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
+    recommended = str(obj.get("recommendedOutput") or "raster_alpha_sequence")
+    routing_reasons = [str(item) for item in quality.get("routingReasons", []) if str(item)]
+    vector_ready = recommended == "hybrid_vector_silhouette_plus_raster" and include_contours
+    if recommended == "hybrid_vector_silhouette_plus_raster" and not include_contours:
+        routing_reasons = [*routing_reasons, "export_preset_excludes_contours"]
+    selected = "hybrid_vector_silhouette_plus_raster" if vector_ready else "raster_alpha_sequence"
+    return {
+        "selectedOutput": selected,
+        "recommendedOutput": recommended,
+        "productionReadiness": quality.get("productionReadiness", "review"),
+        "productionReadinessScore": quality.get("productionReadinessScore"),
+        "vectorSuitability": quality.get("vectorSuitability"),
+        "routingReasons": routing_reasons,
+        "rasterAlpha": {
+            "status": "ready",
+            "path": obj.get("asset") or (obj.get("assets") if isinstance(obj.get("assets"), dict) else {}).get("cutoutPattern", ""),
+            "source": "cached_rgba_cutout_sequence",
+        },
+        "vectorSilhouette": {
+            "status": "ready" if vector_ready else "skipped",
+            "path": "objects/contours_boxes.json" if include_contours else None,
+            "reason": None if vector_ready else "quality route or export preset did not enable vector silhouette",
+            "source": "cached_contours_and_boxes",
+        },
+    }
+
+
+def _build_quality_routing(
+    *,
+    scene: dict[str, Any],
+    preset: str,
+    include_masks: bool,
+    include_contours: bool,
+    include_preview: bool,
+    preview: dict[str, Any] | None,
+    mp4_preview: dict[str, Any],
+) -> dict[str, Any]:
+    resource_profile = scene.get("resource_profile") if isinstance(scene.get("resource_profile"), dict) else {}
+    comparison = resource_profile.get("resourceComparison") if isinstance(resource_profile.get("resourceComparison"), dict) else {}
+    objects: list[dict[str, Any]] = []
+    for obj in scene.get("objects", []):
+        if not isinstance(obj, dict):
+            continue
+        quality_route = _object_quality_route(obj, include_contours=include_contours)
+        delivery_route = _object_delivery_route(obj)
+        objects.append(
+            {
+                "objectId": obj.get("id") or obj.get("objectId"),
+                "label": obj.get("label"),
+                **quality_route,
+                "selectedDelivery": delivery_route,
+                "resourceSignals": {
+                    "productionPackageToSourceRatio": comparison.get("productionPackageToSourceRatio"),
+                    "webpSpriteAtlasToCutoutRatio": comparison.get("webpSpriteAtlasToCutoutRatio"),
+                    "transparentWebmToCutoutRatio": comparison.get("transparentWebmToCutoutRatio"),
+                    "avifSpriteAtlasToCutoutRatio": comparison.get("avifSpriteAtlasToCutoutRatio"),
+                },
+            }
+        )
+    return {
+        "format": QUALITY_ROUTING_FORMAT,
+        "preset": preset,
+        "aiUsage": "none",
+        "source": "cached_quality_scores_and_resource_profile",
+        "includeMasks": include_masks,
+        "includeContours": include_contours,
+        "includePreview": include_preview,
+        "objects": objects,
+        "preview": {
+            "overlayPreview": {
+                "status": "ready" if preview else "skipped",
+                "path": preview.get("path") if isinstance(preview, dict) else None,
+                "source": "cached_scene_boxes",
+            },
+            "mp4Preview": mp4_preview,
+        },
+        "notes": [
+            "Raster alpha remains the default photoreal object representation.",
+            "Vector silhouette routing is only selected when quality and export preset both allow contours.",
+            "Sprite atlas and transparent WebM delivery are selected from local production assets when available.",
+            "MP4 preview is optional and depends on local FFmpeg availability.",
+        ],
+    }
+
+
+def _remove_partial_file(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _write_mp4_preview(
+    *,
+    source_dir: Path,
+    export_dir: Path,
+    scene: dict[str, Any],
+    include_preview: bool,
+    render: bool = True,
+) -> dict[str, Any]:
+    rel_path = "preview/preview.mp4"
+    output_path = export_dir / rel_path
+    canvas = _canvas(scene)
+    base = {
+        "type": "mp4_preview",
+        "format": "mp4",
+        "status": "skipped",
+        "mimeType": "video/mp4",
+        "path": rel_path,
+        "bytes": 0,
+        "aiUsage": "none",
+        "source": "cached_assets_and_json_transforms",
+        "width": canvas["width"],
+        "height": canvas["height"],
+        "fps": canvas["fps"],
+        "frameCount": canvas["frameCount"],
+    }
+    if not include_preview:
+        return {**base, "reason": "preview export disabled"}
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return {**base, "status": "unavailable", "reason": "ffmpeg executable was not found"}
+    if not render:
+        return {**base, "status": "plan_ready", "reason": "preview MP4 will be encoded during export"}
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="motionjson_export_preview_") as tmp:
+        frame_dir = Path(tmp)
+        try:
+            render_frames(out_dir=source_dir, scene=scene, frame_dir=frame_dir)
+            command = [
+                ffmpeg,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-framerate",
+                str(canvas["fps"]),
+                "-i",
+                str(frame_dir / "frame_%06d.png"),
+                "-vf",
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-movflags",
+                "+faststart",
+                "-an",
+                str(output_path),
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except Exception as exc:
+            _remove_partial_file(output_path)
+            return {**base, "status": "error", "reason": _sanitize_text(str(exc))}
+    if result.returncode != 0:
+        _remove_partial_file(output_path)
+        return {**base, "status": "error", "reason": _sanitize_text((result.stderr or result.stdout or "ffmpeg failed").strip())}
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        _remove_partial_file(output_path)
+        return {**base, "status": "error", "reason": "ffmpeg completed but produced no output bytes"}
+    return final_export_entry(
+        export_type="mp4_preview",
+        format_name="mp4",
+        output_path=output_path,
+        out_dir=export_dir,
+        status="ready",
+        mime_type="video/mp4",
+        width=canvas["width"],
+        height=canvas["height"],
+        fps=canvas["fps"],
+        frame_count=canvas["frameCount"],
+        extra={"preset": "preview", "cachedSources": ["scene_graph.json", "objects/*/cutouts/*.png"]},
+    )
+
+
 def _first_visible_frame(obj: dict[str, Any]) -> dict[str, Any] | None:
     for frame in obj.get("frames", []):
         if isinstance(frame, dict) and frame.get("visible"):
@@ -379,6 +644,7 @@ def _build_export_tree(
     include_masks: bool | None = None,
     include_contours: bool | None = None,
     include_preview: bool | None = None,
+    render_mp4_preview: bool = True,
 ) -> dict[str, Any]:
     if preset not in EXPORT_PRESETS:
         raise ValueError(f"export preset must be one of: {', '.join(EXPORT_PRESETS)}")
@@ -470,6 +736,37 @@ def _build_export_tree(
                 extra={"preset": preset, "objectCount": preview["objectCount"]},
             )
         )
+    mp4_preview = _write_mp4_preview(
+        source_dir=source_dir,
+        export_dir=export_dir,
+        scene=exported_scene,
+        include_preview=include_preview,
+        render=render_mp4_preview,
+    )
+    exports.append(mp4_preview)
+
+    quality_routing = _build_quality_routing(
+        scene=exported_scene,
+        preset=preset,
+        include_masks=include_masks,
+        include_contours=include_contours,
+        include_preview=include_preview,
+        preview=preview,
+        mp4_preview=mp4_preview,
+    )
+    routing_path = export_dir / "quality_routing.json"
+    routing_path.write_bytes(_json_bytes(quality_routing))
+    exports.append(
+        final_export_entry(
+            export_type="export_quality_routing",
+            format_name="json",
+            output_path=routing_path,
+            out_dir=export_dir,
+            status="ready",
+            mime_type="application/json",
+            extra={"preset": preset, "objectCount": len(quality_routing["objects"])},
+        )
+    )
 
     payload = json.loads(job.get("payload_json") or "{}")
     export_id = export_dir.name
@@ -501,6 +798,7 @@ def _build_export_tree(
         exports=exports,
         provenance=provenance,
         config=config,
+        quality_routing=quality_routing,
         validation={key: value for key, value in validation.items() if key != "issues"},
     )
     validation = _validate_export_documents([("scene_graph.json", exported_scene), ("final_export_manifest.json", manifest)])
@@ -516,6 +814,7 @@ def _build_export_tree(
         "includedObjectIds": included_ids,
         "excludedObjectIds": excluded_ids,
         "diagnostics": diagnostics,
+        "qualityRouting": quality_routing,
         "aiUsage": "none",
     }
     validation_path = export_dir / "validation_report.json"
@@ -542,6 +841,7 @@ def _build_export_tree(
         "validationReport": validation_report,
         "preview": preview,
         "contours": contour_document,
+        "qualityRouting": quality_routing,
         "maskPaths": mask_paths,
         "includedObjectIds": included_ids,
         "excludedObjectIds": excluded_ids,
@@ -573,6 +873,7 @@ def validate_motionjson_export_job(
             include_masks=include_masks,
             include_contours=include_contours,
             include_preview=include_preview,
+            render_mp4_preview=False,
         )
         return {
             "format": "motionjson.local_ui_export_validation.v0.1",
@@ -582,6 +883,7 @@ def validate_motionjson_export_job(
             "includedObjectIds": result["includedObjectIds"],
             "excludedObjectIds": result["excludedObjectIds"],
             "diagnostics": result["diagnostics"],
+            "qualityRouting": result["qualityRouting"],
             "provenance": result["provenance"],
             "config": result["config"],
         }
@@ -618,6 +920,14 @@ def export_motionjson_job(
         assets = []
         for rel_path, kind, content_type in _export_asset_specs(result["exportDir"]):
             path = result["exportDir"] / rel_path
+            metadata: dict[str, Any] = {
+                "aiUsage": "none",
+                "exportId": export_id,
+                "preset": preset,
+                "validation": {key: value for key, value in result["validation"].items() if key != "issues"},
+            }
+            if kind in {"export_quality_routing", "export_validation_report"}:
+                metadata["qualityRouting"] = result["qualityRouting"]
             asset = register_generated_asset(
                 conn,
                 storage=storage,
@@ -627,12 +937,7 @@ def export_motionjson_job(
                 path=path,
                 rel_path=f"exports/{export_id}/{rel_path.as_posix()}",
                 content_type=content_type,
-                metadata={
-                    "aiUsage": "none",
-                    "exportId": export_id,
-                    "preset": preset,
-                    "validation": {key: value for key, value in result["validation"].items() if key != "issues"},
-                },
+                metadata=metadata,
             )
             assets.append(asset)
     record_job_event(
@@ -673,8 +978,12 @@ def _export_asset_specs(export_dir: Path) -> list[tuple[Path, str, str]]:
             kind = "final_export_manifest"
         elif name == "validation_report.json":
             kind = "export_validation_report"
+        elif name == "quality_routing.json":
+            kind = "export_quality_routing"
         elif name == "preview/overlay_preview.svg":
             kind = "preview_overlay"
+        elif name == "preview/preview.mp4":
+            kind = "mp4_preview"
         elif name == "objects/contours_boxes.json":
             kind = "contours_boxes"
         elif name == "motionjson_export.zip":

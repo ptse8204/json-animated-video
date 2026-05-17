@@ -2,11 +2,13 @@ import json
 import shutil
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
 import pytest
 
+from motionjson.backend import export_workflows
 from motionjson.cli import main
 from motionjson.exporters.final_render import export_mp4, write_final_export_manifest
 from motionjson.exporters.remotion import write_remotion_plan
@@ -66,9 +68,58 @@ def test_mp4_final_render_reports_cached_no_ai_manifest(tmp_path):
         scene=scene,
         exports=[entry],
         object_id="object_0",
+        quality_routing={
+            "format": "motionjson.export_quality_routing.v0.1",
+            "aiUsage": "none",
+            "source": "cached_quality_scores_and_resource_profile",
+            "objects": [{"objectId": "object_0", "selectedOutput": "raster_alpha_sequence"}],
+            "preview": {"mp4Preview": {"status": "skipped", "path": "preview/preview.mp4"}},
+        },
     )
     assert validate_document(manifest) == []
     assert manifest["source"]["directory"] == "."
+    assert manifest["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+
+
+def test_phase11e_delivery_fallback_chooses_smallest_ready_production_asset():
+    delivery = export_workflows._candidate_delivery_from_assets(
+        {
+            "assets": {
+                "webpSpriteAtlas": {"status": "ready", "path": "objects/object_0/spritesheet.webp", "bytes": 200},
+                "transparentWebm": {"status": "ready", "path": "objects/object_0/object.webm", "bytes": 80},
+                "avifSpriteAtlas": {"status": "unsupported", "path": "objects/object_0/spritesheet.avif", "bytes": 40},
+            }
+        }
+    )
+
+    assert delivery is not None
+    assert delivery["route"] == "transparent_webm"
+    assert delivery["bytes"] == 80
+
+
+def test_phase11e_mp4_preview_dry_run_and_error_cleanup(tmp_path, monkeypatch):
+    scene = {"source": {"width": 4, "height": 4, "sampleFps": 12, "sampledFrameCount": 1}, "objects": []}
+    export_dir = tmp_path / "export"
+    monkeypatch.setattr(export_workflows.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+
+    planned = export_workflows._write_mp4_preview(source_dir=tmp_path, export_dir=export_dir, scene=scene, include_preview=True, render=False)
+    assert planned["status"] == "plan_ready"
+    assert not (export_dir / "preview" / "preview.mp4").exists()
+
+    monkeypatch.setattr(export_workflows, "render_frames", lambda **_kwargs: 1)
+
+    def fake_run(command, **_kwargs):
+        Path(command[-1]).write_bytes(b"partial")
+        return SimpleNamespace(returncode=1, stderr=r"C:\Users\Alice\secret\ffmpeg.log failed", stdout="")
+
+    monkeypatch.setattr(export_workflows.subprocess, "run", fake_run)
+
+    failed = export_workflows._write_mp4_preview(source_dir=tmp_path, export_dir=export_dir, scene=scene, include_preview=True)
+
+    assert failed["status"] == "error"
+    assert "[LOCAL_PATH_REDACTED]" in failed["reason"]
+    assert "Alice" not in failed["reason"]
+    assert not (export_dir / "preview" / "preview.mp4").exists()
 
 
 def test_mp4_export_handles_odd_canvas_dimensions(tmp_path):

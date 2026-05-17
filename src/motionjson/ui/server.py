@@ -56,8 +56,10 @@ TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
 PUBLIC_ARTIFACT_CONTENT_TYPES = ("image/", "video/")
 PUBLIC_DOWNLOAD_ARTIFACT_KINDS = {
     "contours_boxes",
+    "export_quality_routing",
     "export_validation_report",
     "final_export_manifest",
+    "mp4_preview",
     "motionjson_export_zip",
     "preview_overlay",
     "review_state_manifest",

@@ -2019,6 +2019,8 @@ const MotionJSONUI = (() => {
       $("#exportIncludeMasks").checked = defaults.includeMasks === true;
       $("#exportIncludeContours").checked = defaults.includeContours === true;
       $("#exportIncludePreview").checked = defaults.includePreview !== false;
+      state.exportValidation = null;
+      state.exportResult = null;
       renderExportPanel();
     }
 
@@ -2045,12 +2047,74 @@ const MotionJSONUI = (() => {
         .join("");
     }
 
+    function exportRouteLabel(value) {
+      return String(value || "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "not selected";
+    }
+
+    function qualityRoutingRows(qualityRouting) {
+      if (!qualityRouting) return "";
+      const objects = asArray(qualityRouting.objects);
+      const firstObject = objects[0] || {};
+      const delivery = firstObject.selectedDelivery || {};
+      const mp4Preview = qualityRouting.preview?.mp4Preview || {};
+      const mp4Status = String(mp4Preview.status || "not requested");
+      const mp4Class = mp4Status === "ready" ? "ready" : mp4Status === "error" ? "bad" : "warn";
+      const routeSummary = objects.length
+        ? `${objects.length} object route${objects.length === 1 ? "" : "s"} from cached quality scores`
+        : "no object routes available";
+      return `
+        <div class="diagnostic-row is-${objects.length ? "ready" : "warn"}">
+          <strong>quality routing</strong>
+          <span class="row-meta">${escapeHtml(routeSummary)}</span>
+        </div>
+        ${
+          objects.length
+            ? `<div class="diagnostic-row is-ready"><strong>${escapeHtml(exportRouteLabel(firstObject.selectedOutput))}</strong><span class="row-meta">${escapeHtml(`delivery: ${exportRouteLabel(delivery.route || "raster_alpha_sequence")}`)}</span></div>`
+            : ""
+        }
+        <div class="diagnostic-row is-${mp4Class}">
+          <strong>MP4 preview ${escapeHtml(mp4Status)}</strong>
+          <span class="row-meta">${escapeHtml(mp4Preview.reason || "local FFmpeg preview route checked")}</span>
+        </div>
+      `;
+    }
+
+    function qualityRoutingMatchesControls(qualityRouting) {
+      if (!qualityRouting) return false;
+      const controls = exportPayloadFromControls();
+      return (
+        String(qualityRouting.preset || "") === String(controls.preset || "") &&
+        qualityRouting.includeMasks === controls.includeMasks &&
+        qualityRouting.includeContours === controls.includeContours &&
+        qualityRouting.includePreview === controls.includePreview
+      );
+    }
+
+    function clearExportPreflightState() {
+      state.exportValidation = null;
+      state.exportResult = null;
+      renderExportPanel();
+    }
+
     function renderExportPanel() {
       const job = selectedJob();
       const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
       const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
+      const exportArtifactKinds = [
+        "validated_motionjson_scene",
+        "final_export_manifest",
+        "export_validation_report",
+        "export_quality_routing",
+        "preview_overlay",
+        "mp4_preview",
+        "contours_boxes",
+        "motionjson_export_zip",
+      ];
       const storedExportArtifacts = state.jobArtifacts.filter((artifact) =>
-        ["validated_motionjson_scene", "final_export_manifest", "export_validation_report", "preview_overlay", "contours_boxes", "motionjson_export_zip"].includes(artifact.kind),
+        exportArtifactKinds.includes(artifact.kind),
       );
       const storedValidationArtifact = storedExportArtifacts
         .slice()
@@ -2082,6 +2146,12 @@ const MotionJSONUI = (() => {
         .filter(Boolean)
         .join("");
       const issueRows = exportIssueRows(status?.issues);
+      const candidateRouting = exportState.qualityRouting || storedValidationArtifact?.metadata?.qualityRouting;
+      const routingRows = qualityRoutingMatchesControls(candidateRouting)
+        ? qualityRoutingRows(candidateRouting)
+        : candidateRouting
+          ? `<div class="diagnostic-row is-warn"><strong>quality routing changed</strong><span class="row-meta">Validate again to refresh routes for the current export settings.</span></div>`
+          : "";
       $("#exportSummary").innerHTML = job
         ? `
             <div class="diagnostic-row is-${ok ? "ready" : status ? "warn" : "warn"}">
@@ -2099,6 +2169,7 @@ const MotionJSONUI = (() => {
                 : ""
             }
             ${issueRows}
+            ${routingRows}
             ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta">${artifactLinks}</span></div>` : ""}
           `
         : `<div class="empty-state">Select a completed run before validating or exporting MotionJSON.</div>`;
@@ -3497,6 +3568,9 @@ const MotionJSONUI = (() => {
     $("#validateExportButton").addEventListener("click", validateSelectedExport);
     $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
+    ["exportIncludeMasks", "exportIncludeContours", "exportIncludePreview"].forEach((id) => {
+      $(`#${id}`).addEventListener("change", clearExportPreflightState);
+    });
 
     $("#jobList").addEventListener("click", async (event) => {
       const choice = event.target.closest("[data-job-id]");

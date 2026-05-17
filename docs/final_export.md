@@ -68,6 +68,34 @@ Phase 11 adds optional manifest blocks for validated local UI exports:
   toggles used for the export.
 - `validation`: checked document count, issue count, and overall validation
   status.
+- `qualityRouting`: cached export routing decisions for each included object,
+  plus preview route status. It records whether the handoff selected raster
+  alpha, optional vector silhouettes, sprite atlas/WebM delivery, and MP4
+  preview availability without rerunning providers.
+
+## Export Quality Routing
+
+Validated local UI exports also write `quality_routing.json` with format
+`motionjson.export_quality_routing.v0.1`. The file is generated from existing
+object quality scores, `recommendedOutput`, cached production assets, and the
+resource profile. It does not invoke SAM2, detectors, matting, LLMs, hosted AI,
+or network services.
+
+For each included object, routing reports:
+
+- `selectedOutput`: `raster_alpha_sequence` by default, or
+  `hybrid_vector_silhouette_plus_raster` when object quality and the selected
+  export preset both allow contours.
+- `selectedDelivery`: the smallest ready production route when known
+  (`sprite_atlas_webp`, `sprite_atlas_avif`, or `transparent_webm`), falling
+  back to cached raster alpha cutouts.
+- `routingReasons`: quality and preset reasons explaining why vector assistance
+  was or was not selected.
+
+The preview section reports the SVG overlay and optional `preview/preview.mp4`.
+If FFmpeg is unavailable or encoding fails, the MP4 route is marked
+`unavailable` or `error` with a reason while the rest of the MotionJSON export
+continues.
 
 ## Local UI Validated MotionJSON Export
 
@@ -96,8 +124,11 @@ Example payload:
 ```
 
 The response includes a validated corrected `scene_graph.json`,
-`final_export_manifest.json`, `validation_report.json`, an SVG overlay preview,
-and a ZIP bundle. The `debug` preset also copies cached mask PNGs and writes
-contour/box JSON. Export does not run SAM2, detectors, matting, LLMs, hosted
-providers, or network calls; it packages cached artifacts and saved correction
-state only.
+`final_export_manifest.json`, `validation_report.json`, `quality_routing.json`,
+an SVG overlay preview, optional MP4 preview, and a ZIP bundle. The `debug`
+preset also copies cached mask PNGs and writes contour/box JSON. Export does not
+run SAM2, detectors, matting, LLMs, hosted providers, or network calls; it
+packages cached artifacts and saved correction state only.
+
+Preflight validation reports the MP4 preview route as `plan_ready` when FFmpeg
+is available, but it does not encode the MP4 until the final export request.
