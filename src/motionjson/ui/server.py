@@ -34,6 +34,7 @@ from motionjson.backend.export_workflows import (
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
+from motionjson.backend.queue import request_cancel_job
 from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
@@ -82,7 +83,11 @@ def _json_loads(data: bytes) -> dict[str, Any]:
 
 
 def _json_response(payload: Any, status: HTTPStatus = HTTPStatus.OK) -> tuple[int, dict[str, str], bytes]:
-    return int(status), {"content-type": "application/json; charset=utf-8"}, json.dumps(payload, sort_keys=True).encode("utf-8")
+    return (
+        int(status),
+        {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"},
+        json.dumps(payload, sort_keys=True).encode("utf-8"),
+    )
 
 
 def _parse_json_field(row: dict[str, Any], field: str) -> None:
@@ -413,6 +418,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/review",
                     "/api/jobs/{jobId}/corrections",
                     "/api/jobs/{jobId}/track-edits",
+                    "/api/jobs/{jobId}/cancel",
                     "/api/jobs/{jobId}/validate",
                     "/api/jobs/{jobId}/exports",
                     "/api/jobs/{jobId}/run",
@@ -560,6 +566,10 @@ class LocalUIApp:
                 return {"progress": progress}
             if path.startswith("/api/jobs/") and method == "POST":
                 parts = [part for part in path.split("/") if part]
+                if len(parts) == 4 and parts[3] == "cancel":
+                    get_job(conn, user_id=user_id, job_id=parts[2])
+                    canceled = request_cancel_job(conn, job_id=parts[2], reason=str(payload.get("reason") or "user_canceled"))
+                    return {"job": _public_job_snapshot(canceled, events=list_job_events(conn, job_id=parts[2]), include_events=True)}
                 if len(parts) == 4 and parts[3] == "run":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     if job["status"] in TERMINAL_JOB_STATUSES:
@@ -1195,7 +1205,7 @@ class LocalUIApp:
         content_type = mimetypes.guess_type(str(safe_path))[0] or "application/octet-stream"
         if safe_path.name.endswith(".js"):
             content_type = "text/javascript"
-        return HTTPStatus.OK, {"content-type": f"{content_type}; charset=utf-8"}, data
+        return HTTPStatus.OK, {"content-type": f"{content_type}; charset=utf-8", "cache-control": "no-store"}, data
 
     def _error(self, status: HTTPStatus, message: str) -> tuple[int, dict[str, str], bytes]:
         return _json_response({"error": _redact_public_text(message)}, status=status)

@@ -14,6 +14,7 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}/review",
     "/api/jobs/{jobId}/corrections",
     "/api/jobs/{jobId}/track-edits",
+    "/api/jobs/{jobId}/cancel",
     "/api/jobs/{jobId}/validate",
     "/api/jobs/{jobId}/exports",
     "/api/progress",
@@ -26,6 +27,7 @@ const MotionJSONUI = (() => {
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "external"]);
+  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
   const EXPORT_PRESET_DEFAULTS = {
     compact: { includeMasks: false, includeContours: false, includePreview: true },
@@ -172,6 +174,11 @@ const MotionJSONUI = (() => {
     );
 
   const escapeAttribute = escapeHtml;
+
+  function safeLocalContentUrl(value) {
+    const url = String(value || "").trim();
+    return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? url : "";
+  }
 
   function slugObjectId(value, fallback = "object_0") {
     const slug = String(value || "")
@@ -1329,6 +1336,7 @@ const MotionJSONUI = (() => {
     const ctx = elements.canvas.getContext("2d");
     let pollTimer = null;
     let pollInFlight = false;
+    let overlayFrame = 0;
 
     function renderApiStatus(kind, label) {
       const chip = $("#apiStatus");
@@ -1602,9 +1610,12 @@ const MotionJSONUI = (() => {
     function renderSelectedJobFacts() {
       const job = selectedJob();
       const statusChipElement = $("#runStatus");
+      const cancelButton = $("#cancelJobButton");
       if (!job) {
         statusChipElement.textContent = "No run";
         statusChipElement.className = "status-chip is-muted";
+        cancelButton.disabled = true;
+        cancelButton.textContent = "Cancel run";
         setFacts($("#selectedJobFacts"), {
           status: "select or start a run",
           provider: "not reported",
@@ -1617,6 +1628,10 @@ const MotionJSONUI = (() => {
       const status = job.status || "unknown";
       statusChipElement.textContent = status;
       statusChipElement.className = `status-chip ${statusClass(status, /succeeded|complete/.test(String(status).toLowerCase()))}`;
+      const normalizedStatus = String(status).toLowerCase();
+      const terminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
+      cancelButton.disabled = terminal || normalizedStatus === "cancel_requested";
+      cancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       const payload = job.payload || {};
       const result = job.result || {};
       setFacts($("#selectedJobFacts"), {
@@ -1668,8 +1683,11 @@ const MotionJSONUI = (() => {
               ]
                 .filter(Boolean)
                 .join(" - ");
-              const contentLink = artifact.contentUrl
-                ? `<a class="artifact-link" href="${escapeAttribute(artifact.contentUrl)}" target="_blank" rel="noreferrer">Open</a>`
+              const contentUrl = safeLocalContentUrl(artifact.contentUrl);
+              const contentLink = contentUrl
+                ? `<a class="artifact-link" href="${escapeAttribute(contentUrl)}" target="_blank" rel="noopener noreferrer">Open</a>`
+                : artifact.contentUrl
+                  ? `<span class="artifact-link" aria-disabled="true">Blocked remote link</span>`
                 : "";
               return `
                 <div class="artifact-row">
@@ -1877,11 +1895,13 @@ const MotionJSONUI = (() => {
 
       const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : storedExportArtifacts;
       const artifactLinks = exportArtifacts
-        .filter((asset) => asset.contentUrl)
         .map((asset) => {
           const relPath = asset.metadata?.rel_path || asset.path || asset.kind || asset.id;
-          return `<a class="artifact-link" href="${escapeAttribute(asset.contentUrl)}" target="_blank" rel="noreferrer">${escapeHtml(relPath)}</a>`;
+          const contentUrl = safeLocalContentUrl(asset.contentUrl);
+          if (!contentUrl) return "";
+          return `<a class="artifact-link" href="${escapeAttribute(contentUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(relPath)}</a>`;
         })
+        .filter(Boolean)
         .join("");
       const issueRows = exportIssueRows(status?.issues);
       $("#exportSummary").innerHTML = job
@@ -1929,7 +1949,7 @@ const MotionJSONUI = (() => {
       renderCorrectionPanel();
       renderCorrectionHistory();
       renderFallbackDiagnostics();
-      drawOverlay();
+      scheduleDrawOverlay();
     }
 
     function renderMaskProviderOptions() {
@@ -2017,7 +2037,12 @@ const MotionJSONUI = (() => {
 
     function loadSelectedVideoPreview() {
       const video = selectedVideo();
-      const contentUrl = video?.contentUrl || video?.content_url;
+      const rawContentUrl = video?.contentUrl || video?.content_url;
+      const contentUrl = safeLocalContentUrl(rawContentUrl);
+      if (rawContentUrl && !contentUrl) {
+        $("#providerWarning").textContent = "Preview blocked a non-local video content URL.";
+        $("#providerWarning").className = "warning-box is-bad";
+      }
       if (!contentUrl || elements.video.getAttribute("src") === contentUrl) return;
       if (state.previewObjectUrl) {
         URL.revokeObjectURL(state.previewObjectUrl);
@@ -2156,6 +2181,14 @@ const MotionJSONUI = (() => {
       }
     }
 
+    function scheduleDrawOverlay() {
+      if (overlayFrame) return;
+      overlayFrame = window.requestAnimationFrame(() => {
+        overlayFrame = 0;
+        drawOverlay();
+      });
+    }
+
     function renderConfigPreview() {
       let config;
       try {
@@ -2187,7 +2220,7 @@ const MotionJSONUI = (() => {
       $("#configPreview").textContent = JSON.stringify(config, null, 2);
       renderPromptList();
       renderCorrectionPanel();
-      drawOverlay();
+      scheduleDrawOverlay();
     }
 
     function renderBackendValidation(validation) {
@@ -2391,7 +2424,11 @@ const MotionJSONUI = (() => {
     function applyPreset(presetName, options = {}) {
       state.selectedPreset = PRESETS[presetName] ? presetName : "trace_one_object";
       document.querySelectorAll(".goal").forEach((button) => {
-        button.classList.toggle("is-active", button.dataset.preset === state.selectedPreset);
+        const active = button.dataset.preset === state.selectedPreset;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", String(active));
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
       });
       if (!options.keepProvider) {
         $("#maskProviderSelect").dataset.userSelected = "false";
@@ -2541,7 +2578,7 @@ const MotionJSONUI = (() => {
           state.activeStroke.points.push({ x: point.x, y: point.y });
         }
       }
-      drawOverlay();
+      scheduleDrawOverlay();
     }
 
     function onCanvasPointerUp(event) {
@@ -2561,7 +2598,7 @@ const MotionJSONUI = (() => {
       } catch {
         // Pointer capture may already be released by the browser.
       }
-      drawOverlay();
+      scheduleDrawOverlay();
     }
 
     function seekToFrame(frame) {
@@ -2573,6 +2610,44 @@ const MotionJSONUI = (() => {
       state.video.currentFrame = nextFrame;
       renderVideoMetrics();
       renderConfigPreview();
+    }
+
+    async function togglePreviewPlayback() {
+      if (!elements.video.src) return;
+      if (elements.video.paused) await elements.video.play();
+      else elements.video.pause();
+    }
+
+    function isShortcutTypingTarget(target) {
+      return Boolean(target?.closest?.("input, textarea, select, button, a, summary, [contenteditable='true']"));
+    }
+
+    function handleKeyboardShortcut(event) {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || isShortcutTypingTarget(event.target)) return;
+      const key = String(event.key || "").toLowerCase();
+      const maxFrame = toInteger($("#frameSlider").max, state.video.currentFrame);
+      if (key === "arrowleft" || key === "arrowright") {
+        event.preventDefault();
+        const step = event.shiftKey ? 10 : 1;
+        const delta = key === "arrowleft" ? -step : step;
+        seekToFrame(clamp(state.video.currentFrame + delta, 0, maxFrame));
+        return;
+      }
+      if (key === " " || key === "spacebar") {
+        event.preventDefault();
+        togglePreviewPlayback();
+        return;
+      }
+      if (key === "m") {
+        event.preventDefault();
+        markKeyframe();
+        return;
+      }
+      const toolByKey = { b: "box", e: "eraser", p: "point" };
+      if (toolByKey[key]) {
+        event.preventDefault();
+        updateTool(toolByKey[key]);
+      }
     }
 
     function applyLoadedConfig(config) {
@@ -2860,6 +2935,30 @@ const MotionJSONUI = (() => {
             <span class="row-meta">${escapeHtml(error.message)}</span>
           </div>
         `;
+      }
+    }
+
+    async function cancelSelectedJob() {
+      const job = selectedJob();
+      const id = jobIdentifier(job);
+      if (!id || $("#cancelJobButton").disabled) return;
+      $("#cancelJobButton").disabled = true;
+      $("#cancelJobButton").textContent = "Cancel requested";
+      try {
+        const response = await api(`/api/jobs/${encodeURIComponent(id)}/cancel`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "user_canceled" }),
+        });
+        state.selectedJob = response.job || state.selectedJob;
+        state.jobs = state.jobs.map((item) => (jobIdentifier(item) === id ? state.selectedJob : item));
+        await refreshProjectData({ quiet: true });
+        await refreshSelectedJobReview();
+      } catch (error) {
+        $("#runStatus").textContent = "Cancel failed";
+        $("#runStatus").className = "status-chip is-bad";
+        $("#providerWarning").textContent = error.message;
+        $("#providerWarning").className = "warning-box is-bad";
+        renderSelectedJobFacts();
       }
     }
 
@@ -3152,6 +3251,7 @@ const MotionJSONUI = (() => {
     $("#refreshButton").addEventListener("click", refreshAll);
     $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
+    $("#cancelJobButton").addEventListener("click", cancelSelectedJob);
     $("#validateExportButton").addEventListener("click", validateSelectedExport);
     $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
@@ -3331,7 +3431,7 @@ const MotionJSONUI = (() => {
 
     elements.video.addEventListener("timeupdate", () => {
       renderVideoMetrics();
-      drawOverlay();
+      scheduleDrawOverlay();
     });
 
     elements.video.addEventListener("play", () => {
@@ -3342,11 +3442,7 @@ const MotionJSONUI = (() => {
       $("#playPauseButton").textContent = "Play";
     });
 
-    $("#playPauseButton").addEventListener("click", async () => {
-      if (!elements.video.src) return;
-      if (elements.video.paused) await elements.video.play();
-      else elements.video.pause();
-    });
+    $("#playPauseButton").addEventListener("click", togglePreviewPlayback);
 
     $("#frameSlider").addEventListener("input", (event) => {
       seekToFrame(event.target.value);
@@ -3354,16 +3450,7 @@ const MotionJSONUI = (() => {
 
     $("#markKeyframeButton").addEventListener("click", () => markKeyframe());
 
-    elements.stage.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        seekToFrame(state.video.currentFrame - 1);
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        seekToFrame(state.video.currentFrame + 1);
-      }
-    });
+    document.addEventListener("keydown", handleKeyboardShortcut);
 
     elements.canvas.addEventListener("pointerdown", onCanvasPointerDown);
     elements.canvas.addEventListener("pointermove", onCanvasPointerMove);
@@ -3372,7 +3459,7 @@ const MotionJSONUI = (() => {
     elements.canvas.addEventListener("pointerleave", () => {
       state.pointer = null;
       $("#coordinateReadout").textContent = "x: -, y: -";
-      drawOverlay();
+      scheduleDrawOverlay();
     });
 
     $("#promptList").addEventListener("click", (event) => {
@@ -3444,7 +3531,7 @@ const MotionJSONUI = (() => {
       }
     });
 
-    window.addEventListener("resize", drawOverlay);
+    window.addEventListener("resize", scheduleDrawOverlay);
 
     updatePointKind("positive_point");
     updateTool("point");
@@ -3473,6 +3560,7 @@ const MotionJSONUI = (() => {
     normalizePrompt,
     parseCsv,
     parseKeyframes,
+    safeLocalContentUrl,
     slugObjectId,
     trackFrameForDisplay,
   };

@@ -237,18 +237,26 @@ benchmark uses CPU/no-model providers and records `aiUsage: none`.
 
 ## 8. Manual QA checklist
 
-Before release candidate:
+Before release candidate, record expected result, actual result, evidence path
+or command output, and pass/fail for each row:
 
-- Fresh clone install base package.
-- Launch CLI help.
-- Launch UI.
-- Run mock extraction.
-- Run red-ball demo manually.
-- Test missing CUDA/provider diagnostics.
-- Test export validation.
-- Test track relabel/hide/delete.
-- Open artifacts folder.
-- Read docs from a new-user perspective.
+| Check | Expected result | Evidence |
+| --- | --- | --- |
+| Fresh base install | CPU/no-model install imports `motionjson` without SAM2, CUDA, detectors, or FFmpeg. | Command transcript. |
+| CLI help | `cli`, `extract`, `backend`, and `ui` help commands exit 0 and list current flags. | Command transcript. |
+| Provider diagnostics | Missing optional providers show unavailable status, reason, and install hint. | `backend diagnostics --json` output. |
+| Local UI launch | UI starts in mock mode, local health is ok, and first-run checklist is visible. | Browser screenshot or terminal URL. |
+| Accessibility smoke | Skip link reaches workspace, focus ring is visible, active goal/tool state uses ARIA, and keyboard frame stepping works. | Browser notes with viewport. |
+| Responsive panels | 390px, 920px, 1280px, and wide desktop avoid horizontal overflow and keep controls readable. | Screenshots or viewport notes. |
+| Mock extraction | Red-ball sample runs with mock provider, shows progress/events/artifacts, and exposes at least one review track. | UI notes plus artifact IDs. |
+| Review corrections | User can relabel, hide/show, delete, split/merge when available, and export inclusion is distinct from visibility. | UI notes or API transcript. |
+| Cancellation | Pending local UI job cancels immediately; running jobs report cooperative cancellation request. | API transcript or job event log. |
+| Export validation | Compact/debug export validates, writes scene, manifest, validation report, preview, and ZIP with relative paths. | Export artifact list. |
+| Raster fallback | Whole-frame/raster-only result explains vector/object unavailability in UI and logs. | Fallback diagnostics artifact. |
+| Privacy | API payloads do not expose storage keys, `file://` URIs, or absolute local paths. | API transcript. |
+| Network | Static UI does not load remote resources; dynamic content links are restricted to local API content routes. | `npm run build` output. |
+| Performance | Pointer/mask overlay redraw is coalesced, polling stops after terminal status, and large local responses use no-store headers. | Code/test notes. |
+| Docs | Release notes, migration/known limitations, first-run setup, benchmark fixtures, and final export docs are linked from the docs index. | Docs review. |
 
 ## 9. Reviewer checklist
 

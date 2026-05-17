@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import sqlite3
 import time
+import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
@@ -69,9 +71,10 @@ def scene_asset_for_job(app: LocalUIApp, job: dict) -> dict:
 def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
-    status, _headers, body = app.handle("GET", "/api/health")
+    status, headers, body = app.handle("GET", "/api/health")
     health = decode(body)
     assert status == 200
+    assert headers["cache-control"] == "no-store"
     assert health["format"] == "motionjson.local_ui.v0.1"
     assert health["status"] == "ok"
     assert health["localFirst"] is True
@@ -85,6 +88,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/run" in health["routes"]
     assert "/api/jobs/{jobId}/review" in health["routes"]
     assert "/api/jobs/{jobId}/exports" in health["routes"]
+    assert "/api/jobs/{jobId}/cancel" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
 
     status, _headers, body = app.handle("GET", "/api/capabilities")
@@ -145,6 +149,8 @@ def test_local_ui_serves_static_shell(tmp_path):
 
     assert status == 200
     assert headers["content-type"].startswith("text/html")
+    assert headers["cache-control"] == "no-store"
+    assert b"skip-link" in body
     assert b"MotionJSON" in body
     assert b"/ui/app.js" in body
 
@@ -387,6 +393,42 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
     assert "file://" not in body.decode("utf-8")
 
 
+def test_local_ui_cancel_pending_job_records_public_status_and_event(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Cancel Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 2}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    assert status == 200
+    assert job["status"] == "pending"
+
+    status, headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/cancel",
+        body=json.dumps({"reason": "user_canceled"}).encode("utf-8"),
+    )
+    canceled = decode(body)["job"]
+
+    assert status == 200
+    assert headers["cache-control"] == "no-store"
+    assert canceled["status"] == "canceled"
+    assert canceled["error"] == "user_canceled"
+    assert any(event["event_type"] == "canceled" for event in canceled["events"])
+    assert "storage_key" not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
+
 def test_local_ui_api_runs_mock_job_from_run_config_and_exposes_review_metadata(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
@@ -482,6 +524,17 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     )
     job = wait_for_job(app, decode(body)["job"]["id"])
 
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    review_payload = decode(body)["review"]
+    assert status == 200
+    assert review_payload["tracks"][0]["objectId"] == "object_0"
+    assert review_payload["tracks"][0]["visibleFrameCount"] == 2
+    assert review_payload["objects"][0]["objectId"] == "object_0"
+    assert review_payload["fallbackDiagnostics"] == []
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "storage_key" not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
     status, _headers, body = app.handle(
         "POST",
         f"/api/jobs/{job['id']}/track-edits",
@@ -534,6 +587,15 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert exported["config"]["preset"] == "debug"
     kinds = {asset["kind"] for asset in exported["assets"]}
     assert {"validated_motionjson_scene", "final_export_manifest", "export_validation_report", "preview_overlay", "contours_boxes", "motionjson_export_zip"}.issubset(kinds)
+
+    zip_asset = next(asset for asset in exported["assets"] if asset["kind"] == "motionjson_export_zip")
+    status, headers, zip_body = app.handle("GET", zip_asset["contentUrl"])
+    assert status == 200
+    assert headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(zip_body)) as archive:
+        names = archive.namelist()
+    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json"}.issubset(set(names))
+    assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
 
     scene_asset = next(asset for asset in exported["assets"] if asset["kind"] == "validated_motionjson_scene")
     assert scene_asset["contentUrl"].startswith("/api/artifacts/")

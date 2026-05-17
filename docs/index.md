@@ -10,6 +10,8 @@ flat graphics.
 
 - [GA launch guide](ga_launch.md)
 - [First run setup](first_run.md)
+- [Release notes](release_notes.md)
+- [Migration and known limitations](migration_and_known_limitations.md)
 - [Deployment guide](deployment.md)
 - [Billing and pricing](billing_pricing.md)
 - [Onboarding guide](onboarding.md)
@@ -24,6 +26,14 @@ flat graphics.
 - [Provider capabilities and diagnostics](provider_capabilities.md)
 - [Runtime guide](runtime.md)
 - [Privacy and data handling](privacy.md)
+
+## Release Candidate
+
+- [Release notes](release_notes.md)
+- [Migration and known limitations](migration_and_known_limitations.md)
+- [Quality, testing, and benchmark plan](codex_motionjson_quality_benchmarks.md)
+- [Benchmark fixtures](benchmark_fixtures.md)
+- [Final export](final_export.md)
 
 ## Product Boundary
 

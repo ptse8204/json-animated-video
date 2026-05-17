@@ -79,6 +79,7 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `GET /api/jobs/JOB_ID/review`
 - `GET /api/jobs/JOB_ID/corrections`
 - `POST /api/jobs/JOB_ID/track-edits`
+- `POST /api/jobs/JOB_ID/cancel`
 - `POST /api/jobs/JOB_ID/validate`
 - `POST /api/jobs/JOB_ID/exports`
 - `GET /api/artifacts?jobId=JOB_ID`
@@ -89,6 +90,9 @@ uses that user for project, video, and job queries. API responses omit internal
 storage keys, local `file://` storage URIs, and token material. Registered
 videos are previewed through `/api/videos/VIDEO_ID/content`, which serves bytes
 from local storage without exposing the storage path.
+JSON, static shell, video, and artifact responses use local no-store headers.
+The frontend only opens generated content links that point back to local
+`/api/videos/.../content` or `/api/artifacts/.../content` routes.
 
 `POST /api/run-config/validate` accepts either a run config object directly or
 `{"runConfig": {...}}`. It returns `valid`, `errors`, `warnings`, and the
@@ -109,6 +113,17 @@ inclusion state for the job. Supported operations are `relabel`, `hide`,
 ```json
 {"operation": "merge", "keepObjectId": "object_0", "mergeObjectId": "object_1"}
 ```
+
+`POST /api/jobs/JOB_ID/cancel` requests cooperative cancellation. Pending local
+jobs move directly to `canceled`; running jobs move through
+`cancel_requested` until the worker reaches a cancellation check. The selected
+run panel exposes the same action through `Cancel run`.
+
+Keyboard affordances are available in the prompt workspace: left/right arrows
+step frames, shift plus left/right steps farther, Space plays or pauses the
+preview, `M` marks a keyframe, `P` selects point prompts, `B` selects boxes, and
+`E` selects the eraser. Text fields, selects, links, and buttons keep their
+native keyboard behavior.
 
 ```json
 {"operation": "split", "objectId": "object_0", "newObjectId": "object_0_tail", "frameRange": [24, 48]}

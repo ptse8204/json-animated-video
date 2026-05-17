@@ -9,6 +9,11 @@ const ui = globalThis.MotionJSONUI;
 assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+assert.equal(ui.safeLocalContentUrl("/api/videos/asset_123/content"), "/api/videos/asset_123/content");
+assert.equal(ui.safeLocalContentUrl("/api/artifacts/export_123/content?download=1"), "/api/artifacts/export_123/content?download=1");
+assert.equal(ui.safeLocalContentUrl("https://example.test/video.mp4"), "");
+assert.equal(ui.safeLocalContentUrl("file:///Users/alice/private.mp4"), "");
+
 const center = ui.mapClientPointToVideo(
   400,
   300,
