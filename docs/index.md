@@ -103,9 +103,12 @@ Use this path when continuing the phase-based roadmap:
 - [Repository status](repo_status.md) records what is implemented, partial, or
   planned.
 - [Phase commit checklist](phase_commit_checklist.md) summarizes phase hygiene.
-- [Release notes](release_notes.md), [Migration and known limitations](migration_and_known_limitations.md),
+- [Release checklist](release_checklist.md), [Release notes](release_notes.md),
+  [Migration and known limitations](migration_and_known_limitations.md),
   and [Final QA and release report](roadmap/final-qa-release-report.md) describe
   the current release-candidate boundary.
+- [Contributing](../CONTRIBUTING.md), [Security policy](../SECURITY.md), and
+  [Changelog](../CHANGELOG.md) are the root contributor-facing files.
 - [Roadmap](roadmap.md) and [Product requirements](product_requirements.md)
   preserve the broader product direction.
 
@@ -121,6 +124,7 @@ files, tests, screenshots or demos, known limitations, and follow-up tasks.
 - [Security checklist](security_checklist.md)
 - [Developer API](developer_api.md)
 - [Support operations](support.md)
+- [Release checklist](release_checklist.md)
 - [Release notes](release_notes.md)
 - [Migration and known limitations](migration_and_known_limitations.md)
 - [Benchmark fixtures](benchmark_fixtures.md)

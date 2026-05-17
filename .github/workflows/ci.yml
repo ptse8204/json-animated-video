@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python:
+    name: Python tests and docs
+    runs-on: ubuntu-latest
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Full Python tests
+        run: python -m pytest -p no:cacheprovider -q
+      - name: Docs link checks
+        run: python -m pytest -p no:cacheprovider tests/test_docs_links.py tests/test_phase09_release_readiness.py -q
+      - name: CLI smoke
+        run: |
+          python -m motionjson.cli --help
+          python -m motionjson.cli extract --help
+          python -m motionjson.cli backend --help
+          python -m motionjson.cli ui --help
+      - name: Python package build
+        run: python -m build --sdist --wheel
+
+  javascript:
+    name: JavaScript runtime and SDK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Node tests
+        run: npm test
+      - name: Offline runtime lint
+        run: npm run lint
+      - name: Static UI build smoke
+        run: npm run build
+      - name: Workspace package dry runs
+        run: |
+          npm --workspace @motionjson/runtime run test
+          npm --workspace @motionjson/sdk run test
+          npm pack --dry-run --workspace @motionjson/runtime
+          npm pack --dry-run --workspace @motionjson/sdk
+
+  docker:
+    name: Docker build smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -t motionjson-ci .
+      - name: Container diagnostics smoke
+        run: docker run --rm motionjson-ci python -m motionjson.cli backend diagnostics --json
+      - name: Compose config
+        run: docker compose config

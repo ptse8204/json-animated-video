@@ -328,6 +328,7 @@ More docs:
 - [Discovery providers](docs/discovery_providers.md)
 - [Track filtering](docs/track_filtering.md)
 - [Runtime guide](docs/runtime.md)
+- [Release checklist](docs/release_checklist.md)
 - [Migration and known limitations](docs/migration_and_known_limitations.md)
 - [Deployment guide](docs/deployment.md)
 - [Repository status](docs/repo_status.md)
@@ -349,6 +350,13 @@ Completed implementation history from the earlier roadmap is recorded under
 Read `AGENTS.md`, `CODEX_MASTER_PROMPT.md`, `codex_tasks.yaml`, and
 `docs/codex_future_plan.md` before making roadmap changes. Work phase by phase,
 run the relevant smoke commands, write a phase report, and commit each phase.
+
+Contributor, release, and security docs:
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Release checklist](docs/release_checklist.md)
 
 The old root README planning packet was preserved at
 `docs/codex/planning_packet.md` so Codex instructions are not lost.

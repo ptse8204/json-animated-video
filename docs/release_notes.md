@@ -38,10 +38,18 @@ providers remaining optional and capability-gated.
 Before tagging this candidate, run:
 
 ```bash
+python3 -m pip install -e ".[dev]"
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q
 npm test
 npm run lint
 npm run build
+python3 scripts/capture_docs_assets.py --check
+python3 -m build --sdist --wheel
+npm pack --dry-run --workspace @motionjson/runtime
+npm pack --dry-run --workspace @motionjson/sdk
+docker build -t motionjson-ga .
+docker run --rm motionjson-ga python -m motionjson.cli backend diagnostics --json
+docker compose config
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli --help
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli extract --help
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli backend --help

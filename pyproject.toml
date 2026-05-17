@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "motionjson"
 version = "0.1.0"
 description = "AI object-layer editing for video and web graphics with reusable JSON-controlled motion layers"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["numpy", "opencv-python", "Pillow", "tqdm", "jsonschema>=4.22", "attrs>=23.1"]
 
@@ -20,6 +21,12 @@ dev = ["pytest>=8", "build>=1.2", "wheel>=0.43", "tomli>=2; python_version<'3.11
 
 [project.scripts]
 motionjson = "motionjson.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ptse8204/json-animated-video"
+Repository = "https://github.com/ptse8204/json-animated-video"
+Issues = "https://github.com/ptse8204/json-animated-video/issues"
+Documentation = "https://github.com/ptse8204/json-animated-video/tree/main/docs"
 
 [tool.setuptools.packages.find]
 where = ["src"]

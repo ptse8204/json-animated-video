@@ -4,6 +4,18 @@
   "description": "Dependency-light MotionJSON developer API client for reusable motion layer workflows.",
   "type": "module",
   "sideEffects": false,
+  "homepage": "https://github.com/ptse8204/json-animated-video#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ptse8204/json-animated-video.git",
+    "directory": "packages/motionjson-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/ptse8204/json-animated-video/issues"
+  },
+  "files": [
+    "src"
+  ],
   "scripts": {
     "test": "node --test test/*.test.mjs"
   },

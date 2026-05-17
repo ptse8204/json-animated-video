@@ -29,7 +29,7 @@ roadmap in `docs/codex_future_plan.md`.
 | --- | --- | --- |
 | Public README | Phase 01 replaced the root Codex planning packet with a user-facing README and preserved the packet under `docs/codex/planning_packet.md`; Phase 03 embedded real UI screenshots and a red-ball demo. | Remaining README work is follow-up copy edits from later phases as docs and workflows deepen. |
 | Screenshot and demo assets | Phase 03 generated real local mock-UI screenshots plus `canvas-preview-red-ball.png` and `red-ball-demo.gif` under `docs/assets/`. | Future phases should keep screenshots current as UI workflows change. |
-| Generated output policy | `out/demo/**` is tracked, and `out/demo_red_ball/` is untracked. `.gitignore` ignores `out/external/` and `out/audit*/`, but not all generated demo output. | Phase 00/09 follow-up should decide which tiny demo outputs remain tracked and which generated artifacts are ignored. |
+| Generated output policy | `out/demo/**` is intentionally tracked as the small runtime/web demo; `.gitignore` ignores new generated `out/*` runs, `.motionjson/`, `output/`, local databases, and env files while allowing the tracked demo exception. | New generated assets should be committed only when they are deterministic, documented, small, and required by tests or public docs. |
 | Free hosted run paths | Phase 02 added `.devcontainer/devcontainer.json`, local scripts, and `docs/run_free_instances.md` for Codespaces, Colab CLI demos, and Hugging Face Spaces planning. | Phase 10 still needs the Colab notebook and any Hugging Face Space proof-of-concept. |
 | Docs information architecture | Phase 04 rewrote `docs/index.md` by user intent and added examples, troubleshooting, glossary, and docs-link tests. | Future phases should keep new provider/runtime/release docs linked from the intent-based index. |
 | Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available. | CI should keep a lightweight script smoke path; full screenshot refresh remains a local/docs maintenance command. |
@@ -52,4 +52,4 @@ roadmap in `docs/codex_future_plan.md`.
 | GitHub About description | `Local-first tool for turning selected video objects into reusable JSON-controlled motion layers.` |
 | Website | Link to hosted docs or the README once Phase 01/04 are complete. |
 | Topics | `motionjson`, `video-editing`, `computer-vision`, `segmentation`, `sam2`, `local-first`, `motion-graphics`, `web-animation`, `python`, `javascript`. |
-| Release status | Mark as prototype or release candidate until README screenshots, first-run scripts, and generated artifact policy are complete. |
+| Release status | Mark as prototype or release candidate until CI is green and the [release checklist](release_checklist.md) is complete for a tag. |
