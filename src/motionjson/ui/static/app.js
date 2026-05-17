@@ -243,6 +243,36 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function normalizePolygonPoints(polygon) {
+    const points = asArray(polygon)
+      .map((point) => {
+        if (Array.isArray(point)) {
+          return { x: toNumber(point[0], Number.NaN), y: toNumber(point[1], Number.NaN) };
+        }
+        if (point && typeof point === "object") {
+          return { x: toNumber(point.x ?? point[0], Number.NaN), y: toNumber(point.y ?? point[1], Number.NaN) };
+        }
+        return null;
+      })
+      .filter((point) => point && Number.isFinite(point.x) && Number.isFinite(point.y));
+    return points.length >= 3 ? points : null;
+  }
+
+  function polygonBounds(points, width, height) {
+    const xs = points.map((point) => point.x);
+    const ys = points.map((point) => point.y);
+    return clampBox(
+      {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+      },
+      width,
+      height,
+    );
+  }
+
   function normalizePrompt(prompt, fallbackObjectId, fallbackLabel) {
     const kind = String(prompt.kind || "point");
     const data = prompt.data || {};
@@ -737,12 +767,17 @@ const MotionJSONUI = (() => {
       exportStatus: track.exportStatus || track.export_status || "accepted",
       providerName: track.providerName || track.provider_name || null,
       color: TRACK_COLORS[index % TRACK_COLORS.length],
-      frames: frames.map((frame) => ({
-        frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
-        bbox: frame.bbox ? clampBox({ x: frame.bbox[0], y: frame.bbox[1], w: frame.bbox[2], h: frame.bbox[3] }, state.video.width || 1920, state.video.height || 1080) : null,
-        polygon: frame.polygon || null,
-        visible: frame.visible !== false,
-      })),
+      frames: frames.map((frame) => {
+        const polygon = normalizePolygonPoints(frame.polygon || frame.contour || frame.points);
+        const width = state.video.width || 1920;
+        const height = state.video.height || 1080;
+        return {
+          frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
+          bbox: frame.bbox ? clampBox({ x: frame.bbox[0], y: frame.bbox[1], w: frame.bbox[2], h: frame.bbox[3] }, width, height) : polygon ? polygonBounds(polygon, width, height) : null,
+          polygon,
+          visible: frame.visible !== false,
+        };
+      }),
       reviewSource: "api-result",
     };
   }
@@ -844,7 +879,7 @@ const MotionJSONUI = (() => {
   }
 
   function trackFrameForDisplay(track, frameIndex) {
-    const frames = asArray(track.frames).filter((frame) => frame.visible !== false && frame.bbox);
+    const frames = asArray(track.frames).filter((frame) => frame.visible !== false && (frame.bbox || asArray(frame.polygon).length >= 3));
     if (!frames.length) return null;
     return frames.find((frame) => frame.frame === frameIndex) || frames.reduce((nearest, frame) => {
       if (!nearest) return frame;
@@ -1302,6 +1337,9 @@ const MotionJSONUI = (() => {
       if (artifact.kind === "track_summary") {
         push("track_summary", "Track summary artifact is available; the local UI API currently exposes its metadata for review.", "ready");
       }
+      if (artifact.kind === "review_state_manifest") {
+        push("review_state_manifest", "Saved correction and export decisions are recorded in review_state_manifest.json.", "ready");
+      }
     }
     for (const track of asArray(tracks)) {
       for (const warning of asArray(track.warnings)) {
@@ -1734,10 +1772,11 @@ const MotionJSONUI = (() => {
               const visible = isTrackVisibleInReview(track);
               const exportIncluded = isTrackExportIncluded(track);
               const selectedForMerge = state.mergeSelection.has(track.id);
+              const selected = state.selectedCorrectionTrackId === track.id;
               const confidence = typeof track.confidence === "number" ? `${Math.round(track.confidence * 100)}%` : "not reported";
               const warnings = asArray(track.warnings);
               return `
-                <div class="track-row ${visible ? "" : "is-muted"} ${track.deleted ? "is-deleted" : ""}" style="--track-color: ${escapeAttribute(track.color)}">
+                <div class="track-row ${visible ? "" : "is-muted"} ${track.deleted ? "is-deleted" : ""} ${selected ? "is-selected" : ""}" data-track-row="${escapeAttribute(track.id)}" style="--track-color: ${escapeAttribute(track.color)}">
                   <div class="track-topline">
                     <span class="track-meta"><span class="track-swatch" aria-hidden="true"></span><strong>${escapeHtml(track.label || track.objectId)}</strong></span>
                     ${statusChip(track.exportStatus || "review", track.exportStatus || "review", !/rejected|failed|pending/.test(String(track.exportStatus || "")))}
@@ -1770,6 +1809,63 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Start or select a run to review object tracks.</div>`;
+    }
+
+    function relatedArtifactsForTrack(track) {
+      const objectId = trackObjectId(track);
+      return state.jobArtifacts.filter((artifact) => {
+        const relPath = String(artifact.metadata?.rel_path || artifact.path || "");
+        const artifactObject = String(artifact.object_id || artifact.objectId || artifact.metadata?.objectId || artifact.metadata?.object_id || "");
+        return artifactObject === objectId || relPath.includes(`objects/${objectId}/`) || relPath.includes(`masks/${objectId}/`);
+      });
+    }
+
+    function renderSelectedTrackDetail() {
+      const track = state.reviewTracks.find((item) => item.id === state.selectedCorrectionTrackId) || state.reviewTracks[0] || null;
+      if (track && !state.selectedCorrectionTrackId) state.selectedCorrectionTrackId = track.id;
+      const status = track ? track.exportStatus || "review" : "No track";
+      $("#selectedTrackStatus").textContent = status;
+      $("#selectedTrackStatus").className = `status-chip ${track ? statusClass(status, isTrackExportIncluded(track)) : "is-muted"}`;
+      if (!track) {
+        $("#selectedTrackDetail").innerHTML = `<div class="empty-state">Select a completed run and choose a track to inspect correction and export state.</div>`;
+        return;
+      }
+      const frames = asArray(track.frames);
+      const polygonFrames = frames.filter((frame) => asArray(frame.polygon).length >= 3).length;
+      const warningChips = asArray(track.warnings).map((warning) => detailChip(warning)).join("");
+      const relatedArtifacts = relatedArtifactsForTrack(track);
+      const artifactLinks = relatedArtifacts
+        .slice(0, 4)
+        .map((artifact) => {
+          const relPath = artifact.metadata?.rel_path || artifact.kind || artifact.id;
+          const contentUrl = safeLocalContentUrl(artifact.contentUrl);
+          return contentUrl
+            ? `<a class="artifact-link" href="${escapeAttribute(contentUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(relPath)}</a>`
+            : `<span>${escapeHtml(relPath)}</span>`;
+        })
+        .join("");
+      $("#selectedTrackDetail").innerHTML = `
+        <dl class="track-detail-grid">
+          <dt>Object ID</dt><dd>${escapeHtml(track.objectId || track.id)}</dd>
+          <dt>Source</dt><dd>${escapeHtml(track.source || track.providerName || "not reported")}</dd>
+          <dt>Coverage</dt><dd>${escapeHtml(trackCoverageLabel(track))}</dd>
+          <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} polygon frame${polygonFrames === 1 ? "" : "s"}` : "box overlay")}</dd>
+          <dt>Preview</dt><dd>${escapeHtml(isTrackVisibleInReview(track) ? "visible" : "hidden")}</dd>
+          <dt>Export</dt><dd>${escapeHtml(isTrackExportIncluded(track) ? "included" : "excluded")}</dd>
+        </dl>
+        <div class="track-actions">
+          ${detailChip(track.reviewSource || "review")}
+          ${track.repairRequested ? detailChip("repair requested") : ""}
+          ${track.deleted ? detailChip("deleted") : ""}
+          ${track.mergedInto ? detailChip(`merged into ${track.mergedInto}`) : ""}
+          ${warningChips}
+        </div>
+        ${
+          artifactLinks
+            ? `<div class="artifact-row"><strong>Related artifacts</strong><span class="row-meta">${artifactLinks}</span></div>`
+            : `<div class="empty-state">No object-specific artifacts are linked to this track yet.</div>`
+        }
+      `;
     }
 
     function renderCorrectionPanel() {
@@ -1968,9 +2064,10 @@ const MotionJSONUI = (() => {
       renderSelectedJobFacts();
       renderEventLog();
       renderArtifactBrowser();
-      renderTrackList();
-      renderExportPanel();
       renderCorrectionPanel();
+      renderTrackList();
+      renderSelectedTrackDetail();
+      renderExportPanel();
       renderCorrectionHistory();
       renderFallbackDiagnostics();
       scheduleDrawOverlay();
@@ -2120,15 +2217,29 @@ const MotionJSONUI = (() => {
 
     function drawTrackBox(track, frame, view) {
       const box = frame?.bbox;
-      if (!box) return;
-      const start = videoPointToCanvas({ x: box.x, y: box.y }, view);
-      const end = videoPointToCanvas({ x: box.x + box.w, y: box.y + box.h }, view);
+      const polygon = normalizePolygonPoints(frame?.polygon);
+      if (!box && !polygon) return;
+      const bounds = box || polygonBounds(polygon, state.video.width || 1920, state.video.height || 1080);
+      const start = videoPointToCanvas({ x: bounds.x, y: bounds.y }, view);
+      const end = videoPointToCanvas({ x: bounds.x + bounds.w, y: bounds.y + bounds.h }, view);
       ctx.save();
       ctx.lineWidth = 3;
       ctx.strokeStyle = track.color || "#10a37f";
       ctx.fillStyle = `${track.color || "#10a37f"}26`;
-      ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
-      ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      if (polygon) {
+        polygon.forEach((point, index) => {
+          const canvasPoint = videoPointToCanvas(point, view);
+          if (index === 0) ctx.beginPath();
+          if (index === 0) ctx.moveTo(canvasPoint.x, canvasPoint.y);
+          else ctx.lineTo(canvasPoint.x, canvasPoint.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+        ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+      }
       ctx.fillStyle = "rgba(20, 28, 32, 0.86)";
       const label = `${track.label || track.objectId} - ${track.reviewSource || "track"}`;
       ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
@@ -3359,6 +3470,7 @@ const MotionJSONUI = (() => {
         if (mergeToggle.checked) state.mergeSelection.add(mergeToggle.dataset.trackMerge);
         else state.mergeSelection.delete(mergeToggle.dataset.trackMerge);
         renderTrackList();
+        renderSelectedTrackDetail();
         renderCorrectionPanel();
       }
     });
@@ -3367,6 +3479,8 @@ const MotionJSONUI = (() => {
       const editButton = event.target.closest("[data-track-edit]");
       if (editButton) {
         state.selectedCorrectionTrackId = editButton.dataset.trackEdit;
+        renderTrackList();
+        renderSelectedTrackDetail();
         renderCorrectionPanel();
         return;
       }
@@ -3374,11 +3488,22 @@ const MotionJSONUI = (() => {
       const deleteButton = event.target.closest("[data-track-delete]");
       if (deleteButton) {
         submitCorrectionAction({ type: "delete_track", trackId: deleteButton.dataset.trackDelete });
+        return;
+      }
+
+      const row = event.target.closest("[data-track-row]");
+      if (row) {
+        state.selectedCorrectionTrackId = row.dataset.trackRow;
+        renderTrackList();
+        renderSelectedTrackDetail();
+        renderCorrectionPanel();
       }
     });
 
     $("#correctionTrackSelect").addEventListener("change", (event) => {
       state.selectedCorrectionTrackId = event.target.value;
+      renderTrackList();
+      renderSelectedTrackDetail();
       renderCorrectionPanel();
     });
 
@@ -3404,6 +3529,7 @@ const MotionJSONUI = (() => {
           .filter(Boolean),
       );
       renderTrackList();
+      renderSelectedTrackDetail();
       renderCorrectionPanel();
     });
 

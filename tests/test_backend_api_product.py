@@ -163,6 +163,7 @@ def test_rest_api_track_edits_persist_corrections_and_update_artifacts(tmp_path)
     edited = json.loads(body)
     assert edited["correction"]["operation"] == "relabel"
     assert edited["updatedAssets"][0]["kind"] == "track_summary"
+    assert edited["reviewStateManifest"]["kind"] == "review_state_manifest"
 
     status, _headers, body = api.handle(
         "POST",
@@ -183,6 +184,11 @@ def test_rest_api_track_edits_persist_corrections_and_update_artifacts(tmp_path)
     assert corrections[0]["operation"] == "relabel"
     assert corrections[0]["result"]["label"] == "API ball"
     assert corrections[1]["operation"] == "set_export_inclusion"
+
+    status, _headers, body = api.handle("GET", f"/v1/jobs/{job['id']}/artifacts", headers, b"")
+    assert status == 200
+    artifacts = json.loads(body)["artifacts"]
+    assert any(artifact["kind"] == "review_state_manifest" for artifact in artifacts)
 
 
 def test_worker_render_job_registers_remotion_plan_and_manifest_with_no_ai_usage(tmp_path):

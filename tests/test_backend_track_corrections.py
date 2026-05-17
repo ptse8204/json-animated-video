@@ -70,6 +70,68 @@ def test_local_track_edit_export_inclusion_does_not_hide_track(tmp_path):
     assert track["exportIncluded"] is False
     assert track["exportStatus"] == "excluded"
     assert excluded["correctionState"]["history"][-1]["type"] == "set_export_inclusion"
+    assert excluded["reviewStateManifest"]["kind"] == "review_state_manifest"
+
+    artifacts = api(app, "GET", f"/api/jobs/{job['id']}/artifacts")["artifacts"]
+    manifest = next(artifact for artifact in artifacts if artifact["kind"] == "review_state_manifest")
+    assert manifest["contentUrl"].startswith("/api/artifacts/")
+    status, _headers, body = app.handle("GET", manifest["contentUrl"])
+    assert status == 200
+    document = decode(body)
+    assert document["format"] == "motionjson.local_ui_review_state_manifest.v0.1"
+    assert document["correctionEventCount"] == 1
+    assert document["review"]["export"]["includedObjectIds"] == []
+    assert document["review"]["export"]["excludedObjectIds"] == ["object_0"]
+    assert document["review"]["tracks"][0]["exportIncluded"] is False
+
+
+def test_review_state_manifest_content_redacts_local_paths_and_storage_keys(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    job = run_mock_job(app)
+
+    response = api(
+        app,
+        "POST",
+        f"/api/jobs/{job['id']}/track-edits",
+        {
+            "action": {
+                "type": "repair_track",
+                "trackId": "object_0",
+                "frameRange": [1, 2],
+                "repairProvider": "local-repair-worker",
+                "prompts": [
+                    {
+                        "kind": "box",
+                        "frame_index": 0,
+                        "data": {
+                            "x": 10,
+                            "y": 10,
+                            "w": 20,
+                            "h": 20,
+                            "sourcePath": f"file://{tmp_path}/secret-mask.png",
+                            "storageKey": "projects/private-job/secret-mask.png",
+                        },
+                    }
+                ],
+                "correctionRequest": {
+                    "note": f"repair /Users/local/private.mov from projects/private-job/source.json and C:\\Users\\Local\\secret.png",
+                    "storageNote": "projects/private-job/sidecar.json",
+                },
+            }
+        },
+    )
+    manifest = response["reviewStateManifest"]
+
+    status, _headers, body = app.handle("GET", manifest["contentUrl"])
+    assert status == 200
+    encoded = body.decode("utf-8")
+    assert "[LOCAL_PATH_REDACTED]" in encoded
+    assert "[STORAGE_KEY_REDACTED]" in encoded
+    assert str(tmp_path) not in encoded
+    assert "secret-mask" not in encoded
+    assert "private-job" not in encoded
+    assert "C:\\Users" not in encoded
+    assert "storageKey" not in encoded
 
 
 def test_local_track_edit_api_persists_relabel_hide_show_split_merge_and_delete(tmp_path):

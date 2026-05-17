@@ -23,6 +23,7 @@ from motionjson.backend.corrections import (
     build_track_correction_state,
     list_track_corrections,
     record_track_edit_action,
+    write_review_state_manifest,
 )
 from motionjson.backend.db import connect, initialize_database
 from motionjson.backend.export_workflows import (
@@ -59,6 +60,7 @@ PUBLIC_DOWNLOAD_ARTIFACT_KINDS = {
     "final_export_manifest",
     "motionjson_export_zip",
     "preview_overlay",
+    "review_state_manifest",
     "validated_motionjson_scene",
 }
 REVIEW_JSON_ARTIFACT_KINDS = {
@@ -68,6 +70,7 @@ REVIEW_JSON_ARTIFACT_KINDS = {
     "job_metrics",
     "job_state",
     "provider_diagnostics",
+    "review_state_manifest",
     "scene_graph",
     "track_summary",
 }
@@ -618,12 +621,23 @@ class LocalUIApp:
                     history = correction_state.get("history") if isinstance(correction_state.get("history"), list) else []
                     if history and correction:
                         correction = {**correction, "operation": history[-1].get("type") or correction.get("operation")}
+                    review = self._review_metadata(assets, corrections=corrections, job_id=parts[2])
+                    review_manifest = write_review_state_manifest(
+                        conn,
+                        storage=self.storage(),
+                        user_id=user_id,
+                        job_id=parts[2],
+                        review=review,
+                    )
+                    assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
+                    review = self._review_metadata(assets, corrections=corrections, job_id=parts[2])
                     response: dict[str, Any] = {
                         **_public_review_value(edit_result),
                         "correction": _public_review_value(correction),
                         "correctionState": _public_review_value(correction_state),
                         "corrections": _public_review_value(correction_state),
-                        "review": self._review_metadata(assets, corrections=corrections, job_id=parts[2]),
+                        "reviewStateManifest": _public_value(self._public_artifact(review_manifest["asset"])),
+                        "review": review,
                     }
                     result = correction.get("result") if isinstance(correction.get("result"), dict) else {}
                     if isinstance(result.get("repairDiagnostics"), dict):
@@ -1038,6 +1052,16 @@ class LocalUIApp:
                 review["metrics"] = _public_review_value(document)
             elif kind == "candidate_summary":
                 review["candidateSummary"] = _public_review_value(document)
+            elif kind == "review_state_manifest":
+                manifest_review = document.get("review") if isinstance(document.get("review"), dict) else {}
+                review["reviewStateManifest"] = _public_review_value(
+                    {
+                        "format": document.get("format"),
+                        "generatedAt": document.get("generatedAt"),
+                        "correctionEventCount": document.get("correctionEventCount"),
+                        "export": manifest_review.get("export") if isinstance(manifest_review.get("export"), dict) else {},
+                    }
+                )
 
         review["rasterFallback"] = bool(review["fallbackDiagnostics"])
         if review["fallbackDiagnostics"]:

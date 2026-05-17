@@ -150,10 +150,12 @@ def test_phase9_frontend_static_smoke_covers_run_and_review_surfaces():
                 "tracks",
                 "visibility",
                 "include in export",
+                "Track Detail",
             )
         ),
         "raster fallback diagnostics": any(marker in combined for marker in ("fallback_diagnostics", "raster fallback", "rasteronlyreason", "raster-only")),
-        "review overlay or preview": any(marker in draw_overlay for marker in ("state.reviewTracks", "trackFrameForDisplay", "drawTrackBox")),
+        "review overlay or preview": any(marker in draw_overlay for marker in ("state.reviewTracks", "trackFrameForDisplay", "drawTrackBox"))
+        and "normalizePolygonPoints" in script,
     }
 
     missing = [name for name, present in checks.items() if not present]

@@ -9,7 +9,7 @@ from typing import Any
 
 from motionjson.providers.base import StorageProvider
 
-from .assets import list_assets_for_job
+from .assets import list_assets_for_job, register_generated_asset
 from .jobs import get_job, record_job_event
 from .models import NotFoundError
 from .rights import record_audit_event
@@ -19,6 +19,8 @@ from .usage import utc_now
 TRACK_EDIT_OPERATIONS = {"relabel", "hide", "show", "set_export_inclusion", "delete", "merge", "split", "add_object", "repair"}
 HOOK_OPERATIONS = {"add_object", "repair"}
 UI_CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1"
+UI_REVIEW_STATE_MANIFEST_FORMAT = "motionjson.local_ui_review_state_manifest.v0.1"
+UI_REVIEW_STATE_MANIFEST_KIND = "review_state_manifest"
 UI_TRACK_ACTIONS = {
     "relabel_track",
     "set_track_visibility",
@@ -46,6 +48,33 @@ UI_TRACK_ACTION_ALIASES = {
     "exclude_track": "set_export_inclusion",
 }
 SAFE_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
+LOCAL_PATH_RE = re.compile(r"(?i)\bfile://[^\r\n]+|(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+")
+WINDOWS_LOCAL_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
+STORAGE_KEY_RE = re.compile(r"\bprojects/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
+
+
+def _sanitize_public_text(value: str) -> str:
+    return STORAGE_KEY_RE.sub(
+        "[STORAGE_KEY_REDACTED]",
+        WINDOWS_LOCAL_PATH_RE.sub(
+            "[LOCAL_PATH_REDACTED]",
+            LOCAL_PATH_RE.sub("[LOCAL_PATH_REDACTED]", value),
+        ),
+    )
+
+
+def _sanitize_public_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _sanitize_public_value(item)
+            for key, item in value.items()
+            if re.sub(r"[^a-z0-9]", "", str(key).lower()) != "storagekey"
+        }
+    if isinstance(value, list):
+        return [_sanitize_public_value(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_public_text(value)
+    return value
 
 
 def _json_bytes(document: dict[str, Any]) -> bytes:
@@ -979,9 +1008,30 @@ def apply_track_edit(
         event_type="track_correction",
         metadata={"correctionId": event["id"], "operation": operation, "status": status, "result": result},
     )
+    review_manifest = write_review_state_manifest(
+        conn,
+        storage=storage,
+        user_id=user_id,
+        job_id=job_id,
+    )
+    manifest_asset = review_manifest["asset"]
+    if manifest_asset["id"] not in seen_asset_ids:
+        updated_assets.append(
+            {
+                "id": manifest_asset["id"],
+                "kind": manifest_asset["kind"],
+                "byteSize": manifest_asset["byte_size"],
+            }
+        )
     response = {
         "correction": public_correction_event(event),
         "updatedAssets": updated_assets,
+        "reviewStateManifest": {
+            "assetId": manifest_asset["id"],
+            "kind": manifest_asset["kind"],
+            "format": review_manifest["document"]["format"],
+            "correctionEventCount": review_manifest["document"]["correctionEventCount"],
+        },
         "status": status,
         "result": result,
         "partialRerun": partial_rerun,
@@ -1298,6 +1348,107 @@ def build_track_correction_state(events: list[dict[str, Any]], *, job_id: str) -
         state["history"].append(entry)
         _apply_history_to_state(state, entry)
     return state
+
+
+def _compact_review_track(track: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "objectId": _track_id(track),
+        "label": track.get("label"),
+        "source": track.get("source"),
+        "providerName": track.get("providerName"),
+        "confidence": track.get("confidence"),
+        "frameCount": track.get("frameCount"),
+        "visibleFrameCount": track.get("visibleFrameCount"),
+        "visible": track.get("visible", True),
+        "exportIncluded": _export_included(track),
+        "exportStatus": track.get("exportStatus"),
+        "deleted": bool(track.get("deleted")),
+        "mergedInto": track.get("mergedInto") or track.get("mergedIntoObjectId"),
+        "repairRequested": bool(track.get("repairRequested")),
+        "warnings": list(track.get("warnings") if isinstance(track.get("warnings"), list) else []),
+        "reviewSource": track.get("reviewSource"),
+    }
+
+
+def _review_export_summary(review: dict[str, Any] | None, tracks: list[dict[str, Any]]) -> dict[str, Any]:
+    export = review.get("export") if isinstance(review, dict) and isinstance(review.get("export"), dict) else {}
+    included = export.get("includedObjectIds") if isinstance(export.get("includedObjectIds"), list) else None
+    excluded = export.get("excludedObjectIds") if isinstance(export.get("excludedObjectIds"), list) else None
+    if included is None:
+        included = [_track_id(track) for track in tracks if _export_included(track)]
+    if excluded is None:
+        excluded = [_track_id(track) for track in tracks if not _export_included(track)]
+    return {
+        "source": export.get("source") or ("edited_project_state" if tracks else "review_artifacts"),
+        "includedObjectIds": [item for item in included if item],
+        "excludedObjectIds": [item for item in excluded if item],
+        "includedCount": len([item for item in included if item]),
+        "excludedCount": len([item for item in excluded if item]),
+    }
+
+
+def build_review_state_manifest(
+    corrections: list[dict[str, Any]],
+    *,
+    job_id: str,
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    correction_state = build_track_correction_state(corrections, job_id=job_id)
+    review_tracks = [
+        _compact_review_track(track)
+        for track in (review.get("tracks") if isinstance(review, dict) and isinstance(review.get("tracks"), list) else [])
+        if isinstance(track, dict)
+    ]
+    manifest: dict[str, Any] = {
+        "format": UI_REVIEW_STATE_MANIFEST_FORMAT,
+        "jobId": job_id,
+        "generatedAt": utc_now(),
+        "aiUsage": "none",
+        "correctionEventCount": len(corrections),
+        "correctionState": correction_state,
+    }
+    if isinstance(review, dict):
+        manifest["review"] = {
+            "format": review.get("format"),
+            "trackCount": len(review_tracks),
+            "tracks": review_tracks,
+            "export": _review_export_summary(review, review_tracks),
+            "rasterFallback": bool(review.get("rasterFallback")),
+            "rasterFallbackReason": review.get("rasterFallbackReason"),
+            "vectorUnavailableReason": review.get("vectorUnavailableReason"),
+            "fallbackDiagnostics": copy.deepcopy(review.get("fallbackDiagnostics") if isinstance(review.get("fallbackDiagnostics"), list) else []),
+        }
+    return _sanitize_public_value(manifest)
+
+
+def write_review_state_manifest(
+    conn: sqlite3.Connection,
+    *,
+    storage: StorageProvider,
+    user_id: str,
+    job_id: str,
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    job = get_job(conn, user_id=user_id, job_id=job_id)
+    corrections = list_track_corrections(conn, user_id=user_id, job_id=job_id)
+    document = build_review_state_manifest(corrections, job_id=job_id, review=review)
+    assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job_id)
+    existing = _latest_asset_by_kind(assets, UI_REVIEW_STATE_MANIFEST_KIND)
+    if existing:
+        asset = _write_json_asset(conn, storage=storage, asset=existing, document=document)
+    else:
+        asset = register_generated_asset(
+            conn,
+            storage=storage,
+            project_id=job["project_id"],
+            source_job_id=job_id,
+            kind=UI_REVIEW_STATE_MANIFEST_KIND,
+            data=_json_bytes(document),
+            rel_path="review/review_state_manifest.json",
+            content_type="application/json",
+            metadata={"aiUsage": "none", "format": UI_REVIEW_STATE_MANIFEST_FORMAT},
+        )
+    return {"asset": asset, "document": document}
 
 
 def _track_id(track: dict[str, Any]) -> str:

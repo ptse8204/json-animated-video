@@ -12,7 +12,7 @@ keep it listed here as pending.
 | `docs/assets/local-ui-new-project.png` | Generated | `python3 scripts/capture_docs_assets.py` seeds a demo project/video and captures the project setup panel. |
 | `docs/assets/local-ui-extraction-wizard.png` | Generated | `python3 scripts/capture_docs_assets.py` captures the goal-first extraction wizard with the text-detector preset selected. |
 | `docs/assets/local-ui-provider-diagnostics.png` | Generated | `python3 scripts/capture_docs_assets.py` captures capability diagnostics from `/api/capabilities`. |
-| `docs/assets/local-ui-job-review.png` | Generated | `python3 scripts/capture_docs_assets.py` runs a mock job and captures the job review/track panel. |
+| `docs/assets/local-ui-job-review.png` | Generated | `python3 scripts/capture_docs_assets.py` runs a mock job and captures the job review surface. Regenerate after UI layout changes when docs need the latest Track Detail and correction panels. |
 | `docs/assets/canvas-preview-red-ball.png` | Generated | `python3 scripts/capture_docs_assets.py` runs the threshold red-ball extraction and overlays the real mask on a sampled frame. |
 | `docs/assets/red-ball-demo.gif` | Generated | `python3 scripts/capture_docs_assets.py` creates a small GIF from generated red-ball frames and masks. |
 | `docs/assets/red-ball-demo.mp4` | Not generated | The GIF is the current lightweight README demo; generate MP4 only if later docs need lower file size or better playback quality. |

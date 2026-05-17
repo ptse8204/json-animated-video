@@ -141,6 +141,11 @@ Corrections are stored in the local SQLite database and are returned from
 `GET /api/jobs/JOB_ID/corrections` and the `correctionHistory` field on review
 responses. Relabel, hide/show, delete, merge, and split update the editable
 project review state used by local review and export-inclusion metadata.
+After each track edit, the backend also writes
+`review/review_state_manifest.json` as a `review_state_manifest` artifact. That
+manifest records the correction history, current included/excluded track IDs,
+track review summaries, raster fallback state, and `aiUsage: "none"` so a
+review/export decision has a durable local audit trail.
 `add_object` and `repair` are no-model partial-rerun hooks in this phase: the
 request is persisted with `aiUsage: "none"` and `partialRerun.available:
 false` instead of silently pretending that SAM2, detectors, or other ML

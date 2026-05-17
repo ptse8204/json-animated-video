@@ -770,6 +770,11 @@ input[type="range"] {
   position: relative;
 }
 
+.track-row.is-selected {
+  border-color: #7ab9b1;
+  background: var(--ready-soft);
+}
+
 .track-row.is-muted {
   opacity: 0.58;
 }
@@ -821,6 +826,33 @@ input[type="range"] {
   width: 15px;
   min-height: 15px;
   accent-color: var(--ready);
+}
+
+.track-detail {
+  display: grid;
+  gap: 8px;
+}
+
+.track-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+  font-size: 12px;
+}
+
+.track-detail-grid dt,
+.track-detail-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.track-detail-grid dt {
+  color: var(--muted);
+}
+
+.track-detail-grid dd {
+  color: var(--ink);
 }
 
 .mini-action {
