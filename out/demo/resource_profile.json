@@ -12,23 +12,666 @@
     "cutoutCount": 48
   },
   "sizes": {
-    "extractedPackageBytes": 2201704,
-    "extractedPackageToSourceRatio": 18.3036,
-    "websitePackageBytes": 67366,
-    "websitePackageToSourceRatio": 0.56,
-    "authoringPackageBytes": 700703,
+    "extractedPackageBytes": 2471811,
+    "extractedPackageToSourceRatio": 20.5491,
+    "websitePackageBytes": 77912,
+    "websitePackageToSourceRatio": 0.6477,
+    "authoringPackageBytes": 743889,
+    "productionPackageBytes": 110056,
+    "productionPackageToSourceRatio": 0.9149,
     "payloads": {
-      "scene_graph_json_bytes": 186514,
-      "object_motion_json_bytes": 28110,
-      "object_manifest_json_bytes": 36833,
-      "web_asset_manifest_json_bytes": 29902,
+      "scene_graph_json_bytes": 220002,
+      "object_motion_json_bytes": 28464,
+      "object_manifest_json_bytes": 46489,
+      "web_asset_manifest_json_bytes": 40420,
       "silhouette_lottie_json_bytes": 483769,
-      "sampled_frame_debug_png_bytes": 898211,
-      "mask_sequence_bytes": 33869,
-      "cutout_sequence_png_bytes": 443487,
-      "spritesheet_bytes": 37464,
-      "preview_html_bytes": 22589,
-      "benchmark_report_json_bytes": 956
+      "sampled_frame_debug_png_bytes": 898175,
+      "mask_sequence_bytes": 33888,
+      "cutout_sequence_png_bytes": 443510,
+      "spritesheet_bytes": 37492,
+      "production_webp_sprite_atlas_bytes": 37492,
+      "production_avif_sprite_atlas_bytes": 0,
+      "production_transparent_webm_bytes": 32144,
+      "production_asset_bytes": 69636,
+      "preview_html_bytes": 169009,
+      "benchmark_report_json_bytes": 957
+    }
+  },
+  "productionAssets": {
+    "mode": "production",
+    "status": "ready",
+    "source": "cached_cutout_pngs_and_motion_json",
+    "aiUsage": "none",
+    "assets": {
+      "webpSpriteAtlas": {
+        "type": "webp_sprite_atlas",
+        "status": "ready",
+        "format": "webp",
+        "mimeType": "image/webp",
+        "path": "objects/object_0/production/sprite_atlas.webp",
+        "bytes": 37492,
+        "width": 721,
+        "height": 721,
+        "columns": 7,
+        "rows": 7,
+        "cellWidth": 103,
+        "cellHeight": 103,
+        "frames": [
+          {
+            "x": 0,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 0,
+            "w": 100,
+            "h": 102
+          },
+          {
+            "x": 412,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 0,
+            "w": 102,
+            "h": 102
+          },
+          {
+            "x": 618,
+            "y": 0,
+            "w": 102,
+            "h": 100
+          },
+          {
+            "x": 0,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 206,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 309,
+            "w": 103,
+            "h": 101
+          },
+          {
+            "x": 0,
+            "y": 412,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 103,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 412,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 412,
+            "w": 103,
+            "h": 101
+          },
+          {
+            "x": 515,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 515,
+            "w": 101,
+            "h": 101
+          },
+          {
+            "x": 309,
+            "y": 515,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 412,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 618,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 206,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 618,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 618,
+            "w": 103,
+            "h": 101
+          }
+        ],
+        "source": "cached_rgba_cutout_png_sequence"
+      },
+      "transparentWebm": {
+        "type": "transparent_webm_vp9_alpha",
+        "format": "webm",
+        "mimeType": "video/webm; codecs=vp9",
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "bytes": 32144,
+        "width": 640,
+        "height": 360,
+        "fps": 12.0,
+        "frameCount": 48,
+        "encoder": "ffmpeg",
+        "source": "cached_rgba_cutout_png_sequence_and_json_transforms",
+        "cachedSource": "cached_rgba_cutout_png_sequence",
+        "aiUsage": "none",
+        "status": "ready"
+      },
+      "avifSpriteAtlas": {
+        "type": "avif_sprite_atlas",
+        "format": "avif",
+        "mimeType": "image/avif",
+        "path": null,
+        "bytes": 0,
+        "status": "skipped",
+        "reason": "not requested"
+      }
+    },
+    "compressionOptimizer": {
+      "schema": "motionjson.compression_optimizer.v0.1",
+      "source": "cached_rgba_cutout_png_sequence",
+      "aiUsage": "none",
+      "sourceBytes": 443510,
+      "candidates": [
+        {
+          "name": "webpSpriteAtlas",
+          "status": "ready",
+          "bytes": 37492,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/sprite_atlas.webp",
+          "reason": null,
+          "bytesSaved": 406018,
+          "ratioToSource": 0.0845,
+          "aiUsage": "none"
+        },
+        {
+          "name": "transparentWebm",
+          "status": "ready",
+          "bytes": 32144,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/transparent_layer.webm",
+          "reason": null,
+          "bytesSaved": 411366,
+          "ratioToSource": 0.0725,
+          "aiUsage": "none"
+        },
+        {
+          "name": "avifSpriteAtlas",
+          "status": "skipped",
+          "bytes": 0,
+          "source_bytes": 443510,
+          "path": null,
+          "reason": "not requested",
+          "bytesSaved": 0,
+          "ratioToSource": null,
+          "aiUsage": "none"
+        }
+      ],
+      "selected": {
+        "name": "transparentWebm",
+        "status": "ready",
+        "bytes": 32144,
+        "source_bytes": 443510,
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "reason": null,
+        "bytesSaved": 411366,
+        "ratioToSource": 0.0725,
+        "aiUsage": "none"
+      }
+    }
+  },
+  "compressionOptimizer": {
+    "schema": "motionjson.compression_optimizer.v0.1",
+    "source": "cached_rgba_cutout_png_sequence",
+    "aiUsage": "none",
+    "sourceBytes": 443510,
+    "candidates": [
+      {
+        "name": "webpSpriteAtlas",
+        "status": "ready",
+        "bytes": 37492,
+        "source_bytes": 443510,
+        "path": "objects/object_0/production/sprite_atlas.webp",
+        "reason": null,
+        "bytesSaved": 406018,
+        "ratioToSource": 0.0845,
+        "aiUsage": "none"
+      },
+      {
+        "name": "transparentWebm",
+        "status": "ready",
+        "bytes": 32144,
+        "source_bytes": 443510,
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "reason": null,
+        "bytesSaved": 411366,
+        "ratioToSource": 0.0725,
+        "aiUsage": "none"
+      },
+      {
+        "name": "avifSpriteAtlas",
+        "status": "skipped",
+        "bytes": 0,
+        "source_bytes": 443510,
+        "path": null,
+        "reason": "not requested",
+        "bytesSaved": 0,
+        "ratioToSource": null,
+        "aiUsage": "none"
+      }
+    ],
+    "selected": {
+      "name": "transparentWebm",
+      "status": "ready",
+      "bytes": 32144,
+      "source_bytes": 443510,
+      "path": "objects/object_0/production/transparent_layer.webm",
+      "reason": null,
+      "bytesSaved": 411366,
+      "ratioToSource": 0.0725,
+      "aiUsage": "none"
+    }
+  },
+  "resourceComparison": {
+    "sourceVideoBytes": 120288,
+    "authoringPackageBytes": 743889,
+    "productionPackageBytes": 110056,
+    "productionPackageToSourceRatio": 0.9149,
+    "cutoutSequencePngBytes": 443510,
+    "webpSpriteAtlasBytes": 37492,
+    "transparentWebmBytes": 32144,
+    "avifSpriteAtlasBytes": 0,
+    "webpSpriteAtlasToCutoutRatio": 0.0845,
+    "transparentWebmToCutoutRatio": 0.0725,
+    "avifSpriteAtlasToCutoutRatio": null
+  },
+  "providerPerformance": {
+    "schema": "motionjson.provider_performance.v0.1",
+    "objects": [
+      {
+        "objectId": "object_0",
+        "providerName": "SegmentationMaskProvider",
+        "frames": 48,
+        "maskCalls": 48,
+        "maskTotalMs": 0.008,
+        "maskAvgMs": 0.0,
+        "batching": {
+          "supported": true,
+          "used": true,
+          "requestCount": 48,
+          "elapsedMs": 24.371
+        },
+        "providerSummary": {
+          "providerName": "threshold",
+          "batching": {
+            "supported": true,
+            "used": true,
+            "fallback": null
+          },
+          "attempts": [
+            {
+              "provider": "threshold",
+              "operation": "segment_batch",
+              "status": "success",
+              "elapsed_ms": 24.316,
+              "frame_index": null,
+              "error": null,
+              "estimated_cost_units": 0.0
+            }
+          ],
+          "nested": {
+            "providerName": "threshold",
+            "attempts": []
+          },
+          "cache": null
+        },
+        "attempts": [
+          {
+            "provider": "threshold",
+            "operation": "segment_batch",
+            "status": "success",
+            "elapsed_ms": 24.316,
+            "frame_index": null,
+            "error": null,
+            "estimated_cost_units": 0.0
+          }
+        ],
+        "cache": null
+      }
+    ]
+  },
+  "latencyMetrics": {
+    "schema": "motionjson.latency_metrics.v0.1",
+    "phaseTimings": [
+      {
+        "phase": "sample_frames",
+        "elapsed_ms": 34.596,
+        "count": 48
+      },
+      {
+        "phase": "write_debug_frames",
+        "elapsed_ms": 82.63,
+        "count": 48
+      },
+      {
+        "phase": "extract_objects",
+        "elapsed_ms": 2196.522,
+        "count": 1
+      }
+    ],
+    "totalElapsedMs": 2324.616,
+    "sampledFrames": 48,
+    "objects": 1
+  },
+  "costDashboard": {
+    "schema": "motionjson.cost_dashboard.v0.1",
+    "aiUsage": "none_for_preview_edits",
+    "policy": "Segmentation providers are separate from LLM routing; OpenRouter is never used as a pixel segmentation engine.",
+    "providers": [
+      {
+        "provider": "threshold",
+        "attempts": 1,
+        "successes": 1,
+        "failures": 0,
+        "estimatedCostUnits": 0.0,
+        "unitCostUsd": 0.0,
+        "costStatus": "zero_local_provider_cost"
+      }
+    ],
+    "totals": {
+      "providerAttempts": 1,
+      "estimatedCostUnits": 0.0,
+      "unknownProviderCostCount": 0
+    },
+    "cache": {
+      "hits": 0,
+      "misses": 0,
+      "readBytes": 0,
+      "writtenBytes": 0,
+      "storedBytes": 0,
+      "hitRate": null
+    },
+    "latency": {
+      "schema": "motionjson.latency_metrics.v0.1",
+      "phaseTimings": [
+        {
+          "phase": "sample_frames",
+          "elapsed_ms": 34.596,
+          "count": 48
+        },
+        {
+          "phase": "write_debug_frames",
+          "elapsed_ms": 82.63,
+          "count": 48
+        },
+        {
+          "phase": "extract_objects",
+          "elapsed_ms": 2196.522,
+          "count": 1
+        }
+      ],
+      "totalElapsedMs": 2324.616,
+      "sampledFrames": 48,
+      "objects": 1
+    },
+    "compression": {
+      "schema": "motionjson.compression_optimizer.v0.1",
+      "source": "cached_rgba_cutout_png_sequence",
+      "aiUsage": "none",
+      "sourceBytes": 443510,
+      "candidates": [
+        {
+          "name": "webpSpriteAtlas",
+          "status": "ready",
+          "bytes": 37492,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/sprite_atlas.webp",
+          "reason": null,
+          "bytesSaved": 406018,
+          "ratioToSource": 0.0845,
+          "aiUsage": "none"
+        },
+        {
+          "name": "transparentWebm",
+          "status": "ready",
+          "bytes": 32144,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/transparent_layer.webm",
+          "reason": null,
+          "bytesSaved": 411366,
+          "ratioToSource": 0.0725,
+          "aiUsage": "none"
+        },
+        {
+          "name": "avifSpriteAtlas",
+          "status": "skipped",
+          "bytes": 0,
+          "source_bytes": 443510,
+          "path": null,
+          "reason": "not requested",
+          "bytesSaved": 0,
+          "ratioToSource": null,
+          "aiUsage": "none"
+        }
+      ],
+      "selected": {
+        "name": "transparentWebm",
+        "status": "ready",
+        "bytes": 32144,
+        "source_bytes": 443510,
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "reason": null,
+        "bytesSaved": 411366,
+        "ratioToSource": 0.0725,
+        "aiUsage": "none"
+      }
     }
   },
   "previewStrategy": {
@@ -55,7 +698,7 @@
     "Measure browser preview FPS separately before claiming production performance."
   ],
   "benchmarkSummary": {
-    "hot_preview_speedup_vs_naive_decode": 10.86,
+    "hot_preview_speedup_vs_naive_decode": 6.075,
     "layer_pixel_ratio_vs_full_frame": 0.0457,
     "layer_pixel_reduction_vs_full_frame": 0.9543
   }

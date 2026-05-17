@@ -1,0 +1,87 @@
+{
+  "schema": "motionjson.rights_manifest.v0.1",
+  "version": "0.1.0",
+  "source": {
+    "video": "examples/demo_red_ball.mp4",
+    "sourceAttribution": {
+      "required": true,
+      "sourceType": "user_upload",
+      "sourceAssetId": null,
+      "sourceUri": "examples/demo_red_ball.mp4",
+      "displayText": "User uploaded source video"
+    }
+  },
+  "objects": {
+    "object_0": {
+      "sourceAttribution": {
+        "required": true,
+        "sourceType": "user_upload",
+        "sourceAssetId": null,
+        "sourceUri": "examples/demo_red_ball.mp4",
+        "displayText": "User uploaded source video"
+      },
+      "license": "user_uploaded_unverified",
+      "licenseDetails": {
+        "name": "User uploaded - rights unverified",
+        "url": null,
+        "scope": "unknown"
+      },
+      "creatorApproval": {
+        "approved": false,
+        "status": "unverified",
+        "evidence": []
+      },
+      "commercialUse": false,
+      "commercialUseStatus": "review_required",
+      "assetLineage": {
+        "origin": "source_video",
+        "operations": [
+          {
+            "operation": "extract_object_layer",
+            "objectId": "object_0",
+            "inputs": [
+              "source_video"
+            ],
+            "outputs": [
+              "cached_raster_alpha_cutouts",
+              "mask_sequence",
+              "json_motion"
+            ]
+          }
+        ]
+      },
+      "auditLog": []
+    }
+  },
+  "summary": {
+    "objectCount": 1,
+    "commercialUseApproved": false,
+    "commercialUseReviewRequired": [
+      "object_0"
+    ],
+    "attributionRequired": [
+      "object_0"
+    ],
+    "licenses": [
+      "user_uploaded_unverified"
+    ]
+  },
+  "assetLineage": {
+    "origin": "source_video",
+    "operations": [
+      {
+        "operation": "extract_object_layer",
+        "objectId": "object_0",
+        "inputs": [
+          "source_video"
+        ],
+        "outputs": [
+          "cached_raster_alpha_cutouts",
+          "mask_sequence",
+          "json_motion"
+        ]
+      }
+    ]
+  },
+  "auditLog": []
+}

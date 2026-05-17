@@ -1797,10 +1797,452 @@
     }
   ],
   "quality": {
-    "maskStability": 0.9877,
+    "maskStability": 0.9895,
     "edgeComplexity": 0.5916,
     "bboxStability": 0.9935,
-    "vectorSuitability": 0.7568
+    "maskDriftScore": 0.9893,
+    "edgeQualityScore": 0.6089,
+    "missingFrameScore": 1.0,
+    "occlusionRiskScore": 0.0069,
+    "vectorSuitability": 0.862,
+    "productionReadinessScore": 0.9168,
+    "visibleFrameRatio": 1.0,
+    "missingFrameRatio": 0.0,
+    "longestMissingFrameRun": 0,
+    "productionReadiness": "ready",
+    "routingReasons": [
+      "edge_quality_below_vector_threshold"
+    ]
   },
-  "recommendedOutput": "hybrid_vector_silhouette_plus_raster"
+  "recommendedOutput": "raster_alpha_sequence",
+  "rights": {
+    "sourceAttribution": {
+      "required": true,
+      "sourceType": "user_upload",
+      "sourceAssetId": null,
+      "sourceUri": "examples/demo_red_ball.mp4",
+      "displayText": "User uploaded source video"
+    },
+    "license": "user_uploaded_unverified",
+    "licenseDetails": {
+      "name": "User uploaded - rights unverified",
+      "url": null,
+      "scope": "unknown"
+    },
+    "creatorApproval": {
+      "approved": false,
+      "status": "unverified",
+      "evidence": []
+    },
+    "commercialUse": false,
+    "commercialUseStatus": "review_required",
+    "assetLineage": {
+      "origin": "source_video",
+      "operations": [
+        {
+          "operation": "extract_object_layer",
+          "objectId": "object_0",
+          "inputs": [
+            "source_video"
+          ],
+          "outputs": [
+            "cached_raster_alpha_cutouts",
+            "mask_sequence",
+            "json_motion"
+          ]
+        }
+      ]
+    },
+    "auditLog": []
+  },
+  "production": {
+    "mode": "production",
+    "status": "ready",
+    "source": "cached_cutout_pngs_and_motion_json",
+    "aiUsage": "none",
+    "assets": {
+      "webpSpriteAtlas": {
+        "type": "webp_sprite_atlas",
+        "status": "ready",
+        "format": "webp",
+        "mimeType": "image/webp",
+        "path": "objects/object_0/production/sprite_atlas.webp",
+        "bytes": 37492,
+        "width": 721,
+        "height": 721,
+        "columns": 7,
+        "rows": 7,
+        "cellWidth": 103,
+        "cellHeight": 103,
+        "frames": [
+          {
+            "x": 0,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 0,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 0,
+            "w": 100,
+            "h": 102
+          },
+          {
+            "x": 412,
+            "y": 0,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 0,
+            "w": 102,
+            "h": 102
+          },
+          {
+            "x": 618,
+            "y": 0,
+            "w": 102,
+            "h": 100
+          },
+          {
+            "x": 0,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 103,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 103,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 206,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 206,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 309,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 309,
+            "w": 103,
+            "h": 101
+          },
+          {
+            "x": 0,
+            "y": 412,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 103,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 412,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 412,
+            "w": 103,
+            "h": 101
+          },
+          {
+            "x": 515,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 412,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 206,
+            "y": 515,
+            "w": 101,
+            "h": 101
+          },
+          {
+            "x": 309,
+            "y": 515,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 412,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 618,
+            "y": 515,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 0,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 103,
+            "y": 618,
+            "w": 103,
+            "h": 102
+          },
+          {
+            "x": 206,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 309,
+            "y": 618,
+            "w": 103,
+            "h": 103
+          },
+          {
+            "x": 412,
+            "y": 618,
+            "w": 102,
+            "h": 103
+          },
+          {
+            "x": 515,
+            "y": 618,
+            "w": 103,
+            "h": 101
+          }
+        ],
+        "source": "cached_rgba_cutout_png_sequence"
+      },
+      "transparentWebm": {
+        "type": "transparent_webm_vp9_alpha",
+        "format": "webm",
+        "mimeType": "video/webm; codecs=vp9",
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "bytes": 32144,
+        "width": 640,
+        "height": 360,
+        "fps": 12.0,
+        "frameCount": 48,
+        "encoder": "ffmpeg",
+        "source": "cached_rgba_cutout_png_sequence_and_json_transforms",
+        "cachedSource": "cached_rgba_cutout_png_sequence",
+        "aiUsage": "none",
+        "status": "ready"
+      },
+      "avifSpriteAtlas": {
+        "type": "avif_sprite_atlas",
+        "format": "avif",
+        "mimeType": "image/avif",
+        "path": null,
+        "bytes": 0,
+        "status": "skipped",
+        "reason": "not requested"
+      }
+    },
+    "compressionOptimizer": {
+      "schema": "motionjson.compression_optimizer.v0.1",
+      "source": "cached_rgba_cutout_png_sequence",
+      "aiUsage": "none",
+      "sourceBytes": 443510,
+      "candidates": [
+        {
+          "name": "webpSpriteAtlas",
+          "status": "ready",
+          "bytes": 37492,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/sprite_atlas.webp",
+          "reason": null,
+          "bytesSaved": 406018,
+          "ratioToSource": 0.0845,
+          "aiUsage": "none"
+        },
+        {
+          "name": "transparentWebm",
+          "status": "ready",
+          "bytes": 32144,
+          "source_bytes": 443510,
+          "path": "objects/object_0/production/transparent_layer.webm",
+          "reason": null,
+          "bytesSaved": 411366,
+          "ratioToSource": 0.0725,
+          "aiUsage": "none"
+        },
+        {
+          "name": "avifSpriteAtlas",
+          "status": "skipped",
+          "bytes": 0,
+          "source_bytes": 443510,
+          "path": null,
+          "reason": "not requested",
+          "bytesSaved": 0,
+          "ratioToSource": null,
+          "aiUsage": "none"
+        }
+      ],
+      "selected": {
+        "name": "transparentWebm",
+        "status": "ready",
+        "bytes": 32144,
+        "source_bytes": 443510,
+        "path": "objects/object_0/production/transparent_layer.webm",
+        "reason": null,
+        "bytesSaved": 411366,
+        "ratioToSource": 0.0725,
+        "aiUsage": "none"
+      }
+    }
+  }
 }

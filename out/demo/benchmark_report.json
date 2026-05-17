@@ -5,18 +5,18 @@
   "sampled_frames": 48,
   "layer_frames": 48,
   "naive_video_decode": {
-    "total_ms": 53.971,
-    "ms_per_frame": 0.375,
+    "total_ms": 29.453,
+    "ms_per_frame": 0.205,
     "decoded_pixels": 33177600
   },
   "cached_layer_preview": {
-    "asset_load_ms": 7.631,
-    "hot_composite_ms": 4.97,
-    "hot_composite_ms_per_frame": 0.035,
+    "asset_load_ms": 7.575,
+    "hot_composite_ms": 4.848,
+    "hot_composite_ms_per_frame": 0.034,
     "composited_layer_pixels": 1517841
   },
   "comparison": {
-    "hot_preview_speedup_vs_naive_decode": 10.86,
+    "hot_preview_speedup_vs_naive_decode": 6.075,
     "layer_pixel_ratio_vs_full_frame": 0.0457,
     "layer_pixel_reduction_vs_full_frame": 0.9543
   },

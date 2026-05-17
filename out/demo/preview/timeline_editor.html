@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:," />
+  <title>MotionJSON Timeline Editor</title>
+  <style>
+    :root {
+      --bg: #121419;
+      --bar: #181b21;
+      --panel: #20242b;
+      --panel-2: #282d35;
+      --field: #111319;
+      --text: #f3f0e8;
+      --muted: #aeb4bf;
+      --faint: #747b87;
+      --line: #3a414c;
+      --strong-line: #505966;
+      --accent: #6dc9b8;
+      --accent-2: #e2be64;
+      --danger: #e17564;
+      --canvas: #f7f4ed;
+      --shadow: rgba(0, 0, 0, .34);
+    }
+    * { box-sizing: border-box; }
+    html,
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      overflow: hidden;
+    }
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+      border-radius: 6px;
+      min-height: 32px;
+      padding: 0 10px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    button:hover,
+    button.active {
+      border-color: var(--accent);
+      color: #ddfff8;
+    }
+    button.ghost {
+      background: transparent;
+    }
+    input,
+    select {
+      min-width: 0;
+      color: var(--text);
+      background: var(--field);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      min-height: 32px;
+      padding: 5px 8px;
+    }
+    input[type="range"] {
+      padding: 0;
+      accent-color: var(--accent);
+    }
+    input[type="color"] {
+      padding: 2px;
+      width: 42px;
+    }
+    .app {
+      display: grid;
+      grid-template-rows: 48px minmax(0, 1fr) 156px;
+      height: 100vh;
+      min-width: 980px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bar);
+    }
+    h1 {
+      margin: 0;
+      font-size: .95rem;
+      letter-spacing: 0;
+    }
+    .header-copy {
+      color: var(--muted);
+      font-size: .82rem;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: 260px minmax(460px, 1fr) 300px;
+      min-height: 0;
+      background: var(--line);
+      gap: 1px;
+    }
+    .panel,
+    .stage-shell,
+    .timeline {
+      min-height: 0;
+      background: var(--panel);
+    }
+    .panel {
+      overflow: auto;
+    }
+    .panel-head,
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    .panel-head strong,
+    .section-head strong {
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .small {
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .layer-list {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+    }
+    .layer-row {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+      cursor: pointer;
+    }
+    .layer-row.selected {
+      border-color: var(--accent);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+    .layer-row.hidden {
+      opacity: .56;
+    }
+    .eye {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+    }
+    .layer-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+      font-size: .9rem;
+    }
+    .layer-title span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .layer-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: .76rem;
+    }
+    .stage-shell {
+      display: grid;
+      grid-template-rows: 42px minmax(0, 1fr);
+    }
+    .stage-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bar);
+    }
+    .stage-wrap {
+      display: grid;
+      place-items: center;
+      min-height: 0;
+      padding: 18px;
+      background: #14171d;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      max-width: 980px;
+      max-height: 680px;
+      border: 1px solid var(--strong-line);
+      box-shadow: 0 18px 54px var(--shadow);
+      touch-action: none;
+      background: var(--canvas);
+    }
+    .inspector {
+      overflow: auto;
+    }
+    .section {
+      border-bottom: 1px solid var(--line);
+    }
+    .section-body {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+    .field-row {
+      display: grid;
+      grid-template-columns: 1fr 86px;
+      gap: 8px;
+      align-items: center;
+    }
+    .field-row.wide {
+      grid-template-columns: 1fr 1fr;
+    }
+    .label-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .swatches {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+    .swatch {
+      min-height: 28px;
+      border-radius: 6px;
+      border: 1px solid var(--strong-line);
+    }
+    .json-box {
+      min-height: 118px;
+      max-height: 220px;
+      overflow: auto;
+      margin: 0;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--field);
+      color: #d7f3ec;
+      font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .timeline {
+      display: grid;
+      grid-template-rows: 44px minmax(0, 1fr);
+      border-top: 1px solid var(--line);
+    }
+    .transport {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr) 160px;
+      gap: 12px;
+      align-items: center;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--bar);
+    }
+    .timeline-body {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr) 300px;
+      min-height: 0;
+      background: var(--line);
+      gap: 1px;
+    }
+    .track-labels,
+    .track-area,
+    .timeline-side {
+      background: var(--panel);
+      overflow: auto;
+    }
+    .track-row {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: .82rem;
+      white-space: nowrap;
+    }
+    .track-area {
+      position: relative;
+    }
+    .track {
+      position: relative;
+      height: 34px;
+      border-bottom: 1px solid var(--line);
+      background-image: linear-gradient(to right, rgba(255, 255, 255, .055) 1px, transparent 1px);
+      background-size: var(--frame-width, 18px) 100%;
+    }
+    .clip {
+      position: absolute;
+      top: 6px;
+      bottom: 6px;
+      border: 1px solid rgba(109, 201, 184, .74);
+      border-radius: 6px;
+      background: rgba(109, 201, 184, .2);
+    }
+    .playhead {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent-2);
+      pointer-events: none;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, .24);
+    }
+    .empty {
+      color: var(--faint);
+      font-size: .84rem;
+      padding: 12px;
+    }
+    @media (max-width: 1100px) {
+      .app {
+        min-width: 0;
+        overflow: auto;
+      }
+      body {
+        overflow: auto;
+      }
+      .workspace,
+      .timeline-body {
+        grid-template-columns: 220px minmax(420px, 1fr) 260px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>MotionJSON Timeline Editor</h1>
+      <div class="header-copy">AI object-layer editing for video and web graphics. Preview edits use cached assets plus JSON transforms.</div>
+    </header>
+    <main class="workspace">
+      <aside class="panel" aria-label="Layer panel">
+        <div class="panel-head">
+          <strong>Layers</strong>
+          <button id="duplicateLayer" title="Duplicate selected layer">Reuse</button>
+        </div>
+        <div class="layer-list" id="layerList"></div>
+      </aside>
+      <section class="stage-shell">
+        <div class="stage-bar">
+          <span class="small" id="status">Loading MotionJSON...</span>
+          <span class="small" id="stageReadout">Frame 1</span>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="stage" aria-label="Editable compositing stage"></canvas>
+        </div>
+      </section>
+      <aside class="panel inspector" aria-label="Inspector">
+        <section class="section">
+          <div class="section-head"><strong>Transform</strong><span class="small" id="selectedName">No layer</span></div>
+          <div class="section-body">
+            <div class="field">
+              <div class="label-line"><span>X</span><span id="xOut">0 px</span></div>
+              <div class="field-row"><input id="xRange" type="range" min="-360" max="360" value="0" /><input id="xNumber" type="number" value="0" /></div>
+            </div>
+            <div class="field">
+              <div class="label-line"><span>Y</span><span id="yOut">0 px</span></div>
+              <div class="field-row"><input id="yRange" type="range" min="-240" max="240" value="0" /><input id="yNumber" type="number" value="0" /></div>
+            </div>
+            <div class="field">
+              <div class="label-line"><span>Scale</span><span id="scaleOut">1.00</span></div>
+              <div class="field-row"><input id="scaleRange" type="range" min="20" max="240" value="100" /><input id="scaleNumber" type="number" min=".2" max="2.4" step=".01" value="1" /></div>
+            </div>
+            <div class="field">
+              <div class="label-line"><span>Rotation</span><span id="rotationOut">0 deg</span></div>
+              <div class="field-row"><input id="rotationRange" type="range" min="-180" max="180" value="0" /><input id="rotationNumber" type="number" min="-180" max="180" step="1" value="0" /></div>
+            </div>
+            <div class="field">
+              <div class="label-line"><span>Opacity</span><span id="opacityOut">100%</span></div>
+              <div class="field-row"><input id="opacityRange" type="range" min="0" max="100" value="100" /><input id="opacityNumber" type="number" min="0" max="100" value="100" /></div>
+            </div>
+            <div class="field-row wide">
+              <label class="field"><span class="label-line"><span>Z index</span></span><input id="zIndex" type="number" value="10" /></label>
+              <label class="field"><span class="label-line"><span>Visible</span></span><select id="visibility"><option value="true">Visible</option><option value="false">Hidden</option></select></label>
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="section-head"><strong>Background</strong><span class="small">Behind alpha layers</span></div>
+          <div class="section-body">
+            <div class="buttons">
+              <button id="checkerboard">Checker</button>
+              <button id="solidBackground">Solid</button>
+            </div>
+            <div class="swatches" id="swatches"></div>
+            <div class="field-row">
+              <input id="customColor" type="color" value="#f7f4ed" />
+              <input id="imageUpload" type="file" accept="image/*" />
+            </div>
+          </div>
+        </section>
+        <section class="section">
+          <div class="section-head"><strong>Edit JSON</strong><span class="small">Reusable layer state</span></div>
+          <div class="section-body">
+            <pre class="json-box" id="editJson"></pre>
+          </div>
+        </section>
+      </aside>
+    </main>
+    <section class="timeline" aria-label="Timeline">
+      <div class="transport">
+        <button id="playPause">Play</button>
+        <input id="scrubber" type="range" min="1" max="1" value="1" />
+        <div class="small" id="timeReadout">0.00s / 0.00s</div>
+      </div>
+      <div class="timeline-body">
+        <div class="track-labels" id="trackLabels"></div>
+        <div class="track-area" id="trackArea"></div>
+        <div class="timeline-side">
+          <div class="track-row">Clip start/end are JSON layer metadata.</div>
+          <div class="track-row">Duplicate layers reuse the same cached object asset.</div>
+          <div class="track-row">Background replacement composites behind alpha only.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script type="module" src="./timeline_editor.js"></script>
+</body>
+</html>

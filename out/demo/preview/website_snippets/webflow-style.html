@@ -1,0 +1,30 @@
+<!-- Webflow-style custom code snippet. This is not an official Webflow integration. -->
+<div
+  class="motionjson-webflow-style"
+  data-motionjson-src="../web_asset_manifest.json"
+  data-motionjson-template="hero"
+  data-motionjson-background="#fbfaf6"
+></div>
+
+<script type="module">
+  import { autoMountMotionJSON } from "../runtime/index.js";
+
+  await autoMountMotionJSON(document, {
+    onClick: ({ action }) => {
+      window.dispatchEvent(new CustomEvent("motionjson:action", { detail: { action } }));
+    }
+  });
+</script>
+
+<style>
+  .motionjson-webflow-style {
+    width: 100%;
+    min-height: 420px;
+    aspect-ratio: 16 / 10;
+  }
+  .motionjson-webflow-style canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>
