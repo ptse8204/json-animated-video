@@ -19,6 +19,7 @@ def test_phase14_release_candidate_docs_are_linked_and_actionable() -> None:
     for link in [
         "release_notes.md",
         "migration_and_known_limitations.md",
+        "roadmap/final-qa-release-report.md",
         "codex_motionjson_quality_benchmarks.md",
         "benchmark_fixtures.md",
         "final_export.md",
@@ -37,6 +38,44 @@ def test_phase14_release_candidate_docs_are_linked_and_actionable() -> None:
     assert "Accessibility smoke" in quality
     assert "Privacy" in quality
     assert "Network" in quality
+
+
+def test_final_qa_release_report_lists_phase_commits_checks_and_manual_qa() -> None:
+    report = read_text("docs/roadmap/final-qa-release-report.md")
+
+    for phase, commit in [
+        (0, "2d4c126"),
+        (1, "0dc8c72"),
+        (2, "7f46106"),
+        (3, "a9c8fc6"),
+        (4, "e8e9203"),
+        (5, "7991798"),
+        (6, "42faae2"),
+        (7, "1baed49"),
+        (8, "79a113a"),
+        (9, "79297f0"),
+        (10, "7e77319"),
+        (11, "404b45d"),
+        (12, "a46bbba"),
+        (13, "629f7c8"),
+        (14, "3fc7451"),
+    ]:
+        assert f"| {phase} | `{commit}" in report
+        assert f"docs/roadmap/phase-{phase}-report.md" in report
+
+    for section in [
+        "## Final Checks",
+        "## Manual Verification",
+        "## Known Limitations",
+        "## Release Decision",
+    ]:
+        assert section in report
+
+    assert "227 tests" in report
+    assert "npm test" in report
+    assert "backend diagnostics --json" in report
+    assert "mock extraction run" in report
+    assert "local `/api/artifacts/.../content` routes" in report
 
 
 def test_phase14_static_ui_release_candidate_affordances_are_present() -> None:

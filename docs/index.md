@@ -31,6 +31,7 @@ flat graphics.
 
 - [Release notes](release_notes.md)
 - [Migration and known limitations](migration_and_known_limitations.md)
+- [Final QA and release report](roadmap/final-qa-release-report.md)
 - [Quality, testing, and benchmark plan](codex_motionjson_quality_benchmarks.md)
 - [Benchmark fixtures](benchmark_fixtures.md)
 - [Final export](final_export.md)
