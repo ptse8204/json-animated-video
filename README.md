@@ -241,6 +241,9 @@ python3 -m motionjson.cli backend diagnostics --json
 
 ## Troubleshooting
 
+The full troubleshooting guide is [docs/troubleshooting.md](docs/troubleshooting.md).
+Common first checks:
+
 - `python: command not found`: use `python3` on macOS/Linux or `py -3` on
   Windows.
 - SAM2 is missing: use `mock`, `threshold`, `motion`, or `external`, or install
@@ -261,6 +264,9 @@ More docs:
 - [First run setup](docs/first_run.md)
 - [Run locally](docs/run_local.md)
 - [Run on free instances](docs/run_free_instances.md)
+- [Examples](docs/examples.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Glossary](docs/glossary.md)
 - [Local UI](docs/local_ui.md)
 - [Provider capabilities](docs/provider_capabilities.md)
 - [Discovery providers](docs/discovery_providers.md)

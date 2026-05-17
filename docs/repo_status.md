@@ -31,7 +31,7 @@ roadmap in `docs/codex_future_plan.md`.
 | Screenshot and demo assets | Phase 03 generated real local mock-UI screenshots plus `canvas-preview-red-ball.png` and `red-ball-demo.gif` under `docs/assets/`. | Future phases should keep screenshots current as UI workflows change. |
 | Generated output policy | `out/demo/**` is tracked, and `out/demo_red_ball/` is untracked. `.gitignore` ignores `out/external/` and `out/audit*/`, but not all generated demo output. | Phase 00/09 follow-up should decide which tiny demo outputs remain tracked and which generated artifacts are ignored. |
 | Free hosted run paths | Phase 02 added `.devcontainer/devcontainer.json`, local scripts, and `docs/run_free_instances.md` for Codespaces, Colab CLI demos, and Hugging Face Spaces planning. | Phase 10 still needs the Colab notebook and any Hugging Face Space proof-of-concept. |
-| Docs information architecture | `docs/index.md` exists but reads like a release documentation list. | Phase 04 should make docs navigable by user intent and add glossary/troubleshooting/examples as needed. |
+| Docs information architecture | Phase 04 rewrote `docs/index.md` by user intent and added examples, troubleshooting, glossary, and docs-link tests. | Future phases should keep new provider/runtime/release docs linked from the intent-based index. |
 | Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available. | CI should keep a lightweight script smoke path; full screenshot refresh remains a local/docs maintenance command. |
 
 ## Planned Or Not Bundled By Default
