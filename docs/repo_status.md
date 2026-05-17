@@ -27,7 +27,7 @@ roadmap in `docs/codex_future_plan.md`.
 
 | Area | Current state | Gap |
 | --- | --- | --- |
-| Public README | `README.md` is still a Codex planning packet. `README_old.md` is more user-facing and useful as source material. | Phase 01 must rewrite the root README for first-time users and move planning text into Codex docs. |
+| Public README | Phase 01 replaced the root Codex planning packet with a user-facing README and preserved the packet under `docs/codex/planning_packet.md`. | Remaining README work is real screenshot/demo capture and any follow-up copy edits from later phases. |
 | Screenshot and demo assets | No files were found under `docs/assets/`. | Phase 01/03 must define and generate real README screenshots or explicitly marked placeholders in `docs/assets/README_ASSETS.md`. |
 | Generated output policy | `out/demo/**` is tracked, and `out/demo_red_ball/` is untracked. `.gitignore` ignores `out/external/` and `out/audit*/`, but not all generated demo output. | Phase 00/09 follow-up should decide which tiny demo outputs remain tracked and which generated artifacts are ignored. |
 | Free hosted run paths | Devcontainer, Codespaces, Colab, and Hugging Face Space paths are referenced in the future plan. | Phase 02/10 must verify or add the actual files and docs. |
