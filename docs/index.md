@@ -10,6 +10,8 @@ flat graphics.
 
 - [GA launch guide](ga_launch.md)
 - [First run setup](first_run.md)
+- [Run locally](run_local.md)
+- [Run on free or low-install instances](run_free_instances.md)
 - [Release notes](release_notes.md)
 - [Migration and known limitations](migration_and_known_limitations.md)
 - [Deployment guide](deployment.md)

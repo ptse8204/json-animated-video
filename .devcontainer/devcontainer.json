@@ -1,0 +1,33 @@
+{
+  "name": "MotionJSON CPU/mock",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
+  },
+  "containerEnv": {
+    "SAM2_LOCAL_DEVICE": "cpu",
+    "MOTIONJSON_BACKEND_DB": ".motionjson/backend.sqlite",
+    "MOTIONJSON_STORAGE_ROOT": ".motionjson/storage",
+    "MOTIONJSON_UI_HOST": "0.0.0.0"
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libgl1 libglib2.0-0 && python3 -m pip install -U pip && python3 -m pip install -e \".[ui,dev]\" && npm install && npm run build && python3 -m motionjson.cli backend diagnostics --json",
+  "forwardPorts": [8765, 8766],
+  "portsAttributes": {
+    "8765": {
+      "label": "MotionJSON API"
+    },
+    "8766": {
+      "label": "MotionJSON UI"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance"
+      ]
+    }
+  }
+}

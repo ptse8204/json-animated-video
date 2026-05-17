@@ -49,6 +49,14 @@ detector or open-vocabulary candidate provider before segmentation/tracking.
 
 ## 30-second quick start: local UI, no GPU, no cloud
 
+After cloning and entering the repository, the one-script path is:
+
+```bash
+scripts/first_run_local.sh
+```
+
+Manual path:
+
 ```bash
 git clone https://github.com/ptse8204/json-animated-video.git
 cd json-animated-video
@@ -232,6 +240,8 @@ More docs:
 
 - [Docs index](docs/index.md)
 - [First run setup](docs/first_run.md)
+- [Run locally](docs/run_local.md)
+- [Run on free instances](docs/run_free_instances.md)
 - [Local UI](docs/local_ui.md)
 - [Provider capabilities](docs/provider_capabilities.md)
 - [Discovery providers](docs/discovery_providers.md)
