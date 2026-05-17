@@ -139,7 +139,9 @@ object, and no duplicate-overlap rejection.
 3. Create a local project.
 4. Register `examples/demo_red_ball.mp4` or the generated multi-object fixture.
 5. Use `Trace one object`, `Find moving objects`, `Import external masks`, or
-   `Review existing result` for the CPU/no-model path.
+   `Review existing result` for the CPU/no-model path. Use mock `Find objects
+   from text`, `Find known classes`, or `Propose all visible segments` to smoke
+   test detector-style review flows without installing model weights.
 6. Validate the config before starting the run, then review tracks before
    export.
 
@@ -151,7 +153,8 @@ object, and no duplicate-overlap rejection.
   checkpoint/model paths, or use `mock`, `threshold`, `motion`, or `external`
   for no-model work.
 - Text or class detectors report `missing_dependency`: install the detector or
-  YOLO extras only when you need those provider modes.
+  YOLO extras only when you need those real provider modes; mock class presets
+  remain available for local UI and benchmark smoke checks.
 - FFmpeg is missing: MotionJSON JSON export still works; install FFmpeg for
   MP4/WebM encoding.
 - Whole-frame output: inspect `fallback_diagnostics.json` and track warnings for

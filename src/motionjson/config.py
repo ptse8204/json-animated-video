@@ -790,6 +790,9 @@ def build_extraction_run_config_from_args(args: Any) -> ExtractionRunConfig:
     discovery_classes = list(getattr(args, "discovery_class", []) or [])
     if discovery_classes:
         discovery_config["classes"] = discovery_classes
+    discovery_class_preset = _optional_str(getattr(args, "discovery_class_preset", None))
+    if discovery_class_preset is not None:
+        discovery_config["class_preset"] = discovery_class_preset
     discovery_max_candidates = getattr(args, "discovery_max_candidates", None)
     if discovery_max_candidates is not None:
         discovery_config["max_candidates"] = _int_value(discovery_max_candidates, "discovery.config.max_candidates")

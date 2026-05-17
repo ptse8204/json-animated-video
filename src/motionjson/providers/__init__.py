@@ -33,6 +33,7 @@ from .discovery import (
     MotionForegroundDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
+    class_detector_presets,
     discovery_provider_schemas,
     object_specs_from_candidates,
 )
@@ -121,6 +122,7 @@ __all__ = [
     "Vectorizer",
     "VideoTracker",
     "as_segmentation_provider",
+    "class_detector_presets",
     "discovery_provider_schemas",
     "normalize_binary_mask",
     "object_specs_from_candidates",

@@ -16,6 +16,13 @@ export const WIZARD_PRESETS = [
     requiredTools: ["label"],
   },
   {
+    id: "class_detector",
+    label: "Find known classes",
+    discoveryMode: "class_detector",
+    defaultMaskProvider: "mock",
+    requiredTools: ["label"],
+  },
+  {
     id: "motion_foreground",
     label: "Find moving objects",
     discoveryMode: "motion_foreground",
@@ -49,6 +56,7 @@ export const DEFAULT_ADVANCED = {
   textThreshold: 0.25,
   motionSensitivity: 32,
   maxObjects: 12,
+  classPreset: "common_objects",
   simplify: 0.006,
   lowerHsv: [0, 80, 80],
   upperHsv: [12, 255, 255],
@@ -159,7 +167,12 @@ export function buildRunConfig(input) {
           .map((part) => part.trim())
           .filter(Boolean);
   }
-  if (["text_detector", "sam_auto_masks", "motion_foreground"].includes(preset.id)) {
+  if (preset.id === "class_detector") {
+    discoveryConfig.mock = true;
+    discoveryConfig.class_preset = input.classPreset || advanced.classPreset || "common_objects";
+    discoveryConfig.confidence_threshold = Number(advanced.boxThreshold);
+  }
+  if (["text_detector", "class_detector", "sam_auto_masks", "motion_foreground"].includes(preset.id)) {
     discoveryConfig.max_candidates = maxCandidates;
   }
   if (preset.id === "sam_auto_masks") {

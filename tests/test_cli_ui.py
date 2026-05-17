@@ -35,6 +35,7 @@ def test_extract_help_documents_discovery_modes_and_flags(capsys):
         "external_masks",
         "--discovery-text",
         "--discovery-class",
+        "--discovery-class-preset",
         "--discovery-config",
     ]:
         assert expected in output

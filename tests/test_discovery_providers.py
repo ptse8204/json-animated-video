@@ -75,6 +75,7 @@ def test_discovery_provider_schemas_cover_phase5_modes():
         "external_masks",
     }
     assert DISCOVERY_PROVIDER_SCHEMAS["text_detector"]["configSchema"]["text"]
+    assert DISCOVERY_PROVIDER_SCHEMAS["class_detector"]["presets"]["vehicles"]
     assert DISCOVERY_PROVIDER_SCHEMAS["motion_foreground"]["noModelSafe"] is True
 
 
@@ -159,6 +160,64 @@ def test_mock_class_detector_discovery_filters_requested_classes_without_network
     assert len(candidates) == 1
     assert candidates[0].label == "person"
     assert candidates[0].metadata["maskDir"].startswith("discovery/class_detector/")
+
+
+def test_class_detector_presets_expand_and_merge_custom_classes_without_network(tmp_path):
+    candidates = ClassDetectorDiscoveryProvider().propose(
+        video_source(),
+        {
+            "mock": True,
+            "class_preset": "vehicles",
+            "classes": ["forklift", "car"],
+            "max_candidates": 6,
+            "confidence_threshold": 0.45,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert [candidate.label for candidate in candidates] == ["car", "truck", "bus", "motorcycle", "bicycle", "forklift"]
+    assert len({candidate.id for candidate in candidates}) == len(candidates)
+    assert candidates[0].metadata["classPreset"] == "vehicles"
+    assert candidates[0].metadata["filters"]["requestedClasses"][-1] == "forklift"
+    assert candidates[0].metadata["filters"]["confidenceThreshold"] == 0.45
+    assert candidates[0].metadata["maskDir"].startswith("discovery/class_detector/")
+    assert specs[0].object_id == "class_detector_car"
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ({"mock": True, "class_preset": "unknown"}, "unknown class preset"),
+        ({"mock": True, "confidence_threshold": 1.2}, "between 0 and 1"),
+        ({"mock": True, "classes": {"person": True}}, "classes must be"),
+    ],
+)
+def test_class_detector_preset_config_errors_are_clear(config, message):
+    with pytest.raises(ProviderConfigError, match=message):
+        ClassDetectorDiscoveryProvider().propose(video_source(), config, RunContext())
+
+
+def test_class_detector_injected_detector_receives_normalized_preset_config():
+    class Detector:
+        def __init__(self) -> None:
+            self.config = None
+
+        def detect(self, _video, config):
+            self.config = dict(config)
+            return [{"id": "detected_car", "label": "car", "box": {"x": 1, "y": 2, "w": 3, "h": 4}, "score": 0.8}]
+
+    detector = Detector()
+    candidates = ClassDetectorDiscoveryProvider(detector=detector).propose(
+        video_source(),
+        {"class_preset": "vehicles", "classes": ["forklift"], "confidence_threshold": 0.55},
+        RunContext(),
+    )
+
+    assert detector.config["classes"] == ["car", "truck", "bus", "motorcycle", "bicycle", "forklift"]
+    assert detector.config["class_preset"] == "vehicles"
+    assert candidates[0].id == "detected_car"
+    assert candidates[0].score == 0.8
 
 
 def test_sam_auto_masks_discovery_missing_deps_returns_capability_warning_not_crash():

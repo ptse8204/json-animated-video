@@ -21,6 +21,7 @@
         <nav class="goal-list" aria-label="Extraction wizard presets">
           <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Trace one object</button>
           <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
+          <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
           <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
           <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
           <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
@@ -167,9 +168,20 @@
                 <span>Text prompt</span>
                 <input id="textPrompt" type="text" value="red ball . hand . cup" />
               </label>
+              <label id="classPresetField">
+                <span>Class preset</span>
+                <select id="classPreset">
+                  <option value="common_objects">Common objects</option>
+                  <option value="people">People</option>
+                  <option value="vehicles">Vehicles</option>
+                  <option value="animals">Animals</option>
+                  <option value="sports">Sports</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
               <label id="classListField">
                 <span>Classes</span>
-                <input id="classList" type="text" value="person, ball" />
+                <input id="classList" type="text" value="" />
               </label>
               <label id="externalMaskField">
                 <span>Mask directory</span>

@@ -99,7 +99,9 @@ Discovery providers:
   automatic-mask dependencies and model paths are configured.
 - `text_detector`: optional open-vocabulary detector scaffold. Text prompts
   become detector candidates first and are not routed directly to SAM2.
-- `class_detector`: optional known-class detector scaffold.
+- `class_detector`: optional known-class detector scaffold. Mock mode supports
+  known-class presets for UI and benchmark smoke checks; real YOLO-style
+  execution remains unavailable until dependencies and an adapter are wired.
 
 Pipeline providers:
 

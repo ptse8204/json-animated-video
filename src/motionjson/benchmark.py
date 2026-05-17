@@ -204,10 +204,15 @@ def normalize_benchmark_modes(value: str | list[str] | tuple[str, ...] | None) -
         "sam-auto": "sam_auto_mock",
         "sam-auto-mock": "sam_auto_mock",
         "sam_auto_masks_mock": "sam_auto_mock",
+        "class": "class_detector_mock",
+        "classes": "class_detector_mock",
+        "class-mock": "class_detector_mock",
+        "class-detector-mock": "class_detector_mock",
+        "yolo-mock": "class_detector_mock",
         "text-mock": "text_detector_mock",
         "threshold": "external_masks",
     }
-    allowed = {"external_masks", "motion_foreground", "text_detector_mock", "sam_auto_mock"}
+    allowed = {"external_masks", "motion_foreground", "text_detector_mock", "sam_auto_mock", "class_detector_mock"}
     raw = DEFAULT_BENCHMARK_MODES if value is None or (isinstance(value, str) and not value.strip()) else value if isinstance(value, (list, tuple)) else str(value).split(",")
     modes = [aliases.get(str(item).strip(), str(item).strip()) for item in raw if str(item).strip()]
     unknown = sorted(set(modes) - allowed)
@@ -395,6 +400,7 @@ def _mode_label(mode: str) -> str:
         "external_masks": "External masks",
         "motion_foreground": "Motion foreground",
         "sam_auto_mock": "Mock automatic masks",
+        "class_detector_mock": "Mock class detector",
         "text_detector_mock": "Mock text detector",
     }[mode]
 
@@ -418,7 +424,13 @@ def _run_pipeline_for_mode(
 ) -> dict[str, Any]:
     from .masks import ExternalMaskProvider
     from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline
-    from .providers.discovery import MotionForegroundDiscoveryProvider, SamAutoMasksDiscoveryProvider, TextDetectorDiscoveryProvider, object_specs_from_candidates
+    from .providers.discovery import (
+        ClassDetectorDiscoveryProvider,
+        MotionForegroundDiscoveryProvider,
+        SamAutoMasksDiscoveryProvider,
+        TextDetectorDiscoveryProvider,
+        object_specs_from_candidates,
+    )
 
     video_path = fixture_dir / fixture_manifest["video"]
     if mode == "external_masks":
@@ -472,6 +484,25 @@ def _run_pipeline_for_mode(
             object_specs=[],
             candidate_provider=SamAutoMasksDiscoveryProvider(),
             candidate_config={"mock": True, "max_candidates": count, "write_box_masks": True},
+            candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=run_dir),
+            sample_fps=sample_fps,
+            max_frames=max_frames,
+            min_area=min_area,
+        )
+    if mode == "class_detector_mock":
+        labels = [item["label"] for item in fixture_manifest["objects"]] or ["object"]
+        return run_multi_object_pipeline(
+            video_path=video_path,
+            out_dir=run_dir,
+            object_specs=[],
+            candidate_provider=ClassDetectorDiscoveryProvider(),
+            candidate_config={
+                "mock": True,
+                "class_preset": "custom",
+                "classes": labels,
+                "max_candidates": len(labels),
+                "write_box_masks": True,
+            },
             candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=run_dir),
             sample_fps=sample_fps,
             max_frames=max_frames,

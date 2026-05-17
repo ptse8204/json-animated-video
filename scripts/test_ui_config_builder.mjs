@@ -102,6 +102,37 @@ assert.equal(textConfig.discovery.config.max_candidates, 5);
 assert.equal(textConfig.discovery.config.mock, true);
 assert.equal(textConfig.provider.name, "mock");
 
+const classConfig = ui.buildRunConfig({
+  preset: "class_detector",
+  discoveryMode: "class_detector",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "known_class",
+  objectLabel: "known class",
+  keyframes: new Set([0]),
+  maskProvider: "mock",
+  sampleFps: 8,
+  maxFrames: 24,
+  minArea: 90,
+  maxAreaRatio: 0.6,
+  stabilityThreshold: 0.8,
+  overlapThreshold: 0.7,
+  boxThreshold: 0.42,
+  textThreshold: 0.3,
+  motionSensitivity: 30,
+  maxObjects: 5,
+  classPreset: "vehicles",
+  classList: "forklift, cart",
+  outputMode: "authoring",
+});
+
+assert.equal(classConfig.discovery.mode, "class_detector");
+assert.equal(classConfig.discovery.config.class_preset, "vehicles");
+assert.deepEqual(classConfig.discovery.config.classes, ["forklift", "cart"]);
+assert.equal(classConfig.discovery.config.confidence_threshold, 0.42);
+assert.equal(classConfig.discovery.config.max_candidates, 5);
+assert.equal(classConfig.discovery.config.mock, true);
+assert.equal(classConfig.provider.name, "mock");
+
 const autoMasksConfig = ui.buildRunConfig({
   preset: "sam_auto_masks",
   discoveryMode: "sam_auto_masks",
@@ -176,6 +207,7 @@ assert.equal(externalConfig.objects[0].mask_dir, "masks/object_0");
 const presetExpectations = [
   [manualConfig, "manual_prompt", "sam2-local"],
   [textConfig, "text_detector", "mock"],
+  [classConfig, "class_detector", "mock"],
   [autoMasksConfig, "sam_auto_masks", "mock"],
   [motionConfig, "motion_foreground", "motion"],
   [externalConfig, "external_masks", "external"],

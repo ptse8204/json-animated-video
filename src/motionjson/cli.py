@@ -117,6 +117,12 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--discovery-config", type=parse_json_object, default={}, help='Discovery provider JSON config, e.g. {"mock":true,"text":"red ball"}')
     p.add_argument("--discovery-text", type=str, default=None, help="Text prompt for --discovery-provider text_detector")
     p.add_argument("--discovery-class", action="append", default=[], help="Repeatable class label for --discovery-provider class_detector")
+    p.add_argument(
+        "--discovery-class-preset",
+        choices=["common_objects", "people", "vehicles", "animals", "sports", "custom"],
+        default=None,
+        help="Known-class preset for --discovery-provider class_detector",
+    )
     p.add_argument("--discovery-max-candidates", type=int, default=None, help="Maximum candidates for discovery providers that support it")
     p.add_argument("--discovery-min-area", type=float, default=None, help="Minimum area for discovery providers that support it")
     p.add_argument("--lower-hsv", type=parse_hsv, default=(0, 80, 80), help="Lower HSV threshold, e.g. 0,80,80")
@@ -329,6 +335,8 @@ def build_discovery_provider(args: argparse.Namespace):
         config["text"] = args.discovery_text
     if args.discovery_class:
         config["classes"] = list(args.discovery_class)
+    if getattr(args, "discovery_class_preset", None):
+        config["class_preset"] = args.discovery_class_preset
     if args.discovery_max_candidates is not None:
         config["max_candidates"] = args.discovery_max_candidates
     if args.discovery_min_area is not None:

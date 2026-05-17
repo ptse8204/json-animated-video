@@ -25,6 +25,16 @@ DISCOVERY_MODES = {
 }
 
 
+CLASS_DETECTOR_PRESETS: dict[str, tuple[str, ...]] = {
+    "common_objects": ("person", "sports ball", "car", "dog", "cat"),
+    "people": ("person",),
+    "vehicles": ("car", "truck", "bus", "motorcycle", "bicycle"),
+    "animals": ("dog", "cat", "bird", "horse"),
+    "sports": ("sports ball", "frisbee", "skateboard"),
+    "custom": (),
+}
+
+
 DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
     "manual_prompt": {
         "mode": "manual_prompt",
@@ -75,12 +85,15 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "Class detector",
         "description": "Known-class detector scaffold that turns requested classes into candidates.",
         "whenToUse": "Choose when target classes come from a fixed detector label set.",
-        "inputs": ["classes", "optional detector backend", "optional mock"],
+        "inputs": ["class preset", "classes", "optional detector backend", "optional mock"],
         "configSchema": {
+            "class_preset": "one of common_objects, people, vehicles, animals, sports, custom",
             "classes": "array of class names",
+            "confidence_threshold": "number 0..1",
             "mock": "boolean",
             "max_candidates": "integer",
         },
+        "presets": {name: list(labels) for name, labels in CLASS_DETECTOR_PRESETS.items()},
         "noModelSafe": False,
         "mockAvailable": True,
     },
@@ -123,6 +136,10 @@ def discovery_provider_schemas() -> list[dict[str, Any]]:
     return [dict(DISCOVERY_PROVIDER_SCHEMAS[mode]) for mode in sorted(DISCOVERY_PROVIDER_SCHEMAS)]
 
 
+def class_detector_presets() -> dict[str, list[str]]:
+    return {name: list(labels) for name, labels in CLASS_DETECTOR_PRESETS.items()}
+
+
 def _int_config(config: Mapping[str, Any], name: str, default: int) -> int:
     value = config.get(name, default)
     if isinstance(value, bool):
@@ -141,6 +158,13 @@ def _float_config(config: Mapping[str, Any], name: str, default: float) -> float
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ProviderConfigError(f"discovery.{name}: expected number") from exc
+
+
+def _ratio_config(config: Mapping[str, Any], name: str, default: float) -> float:
+    value = _float_config(config, name, default)
+    if value < 0.0 or value > 1.0:
+        raise ProviderConfigError(f"discovery.{name}: expected number between 0 and 1")
+    return value
 
 
 def _mask_files(mask_dir: Path) -> list[Path]:
@@ -463,19 +487,57 @@ class ClassDetectorDiscoveryProvider:
     name: str = "class_detector"
 
     def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        labels, preset = _class_detector_labels(config)
+        confidence_threshold = _ratio_config(config, "confidence_threshold", 0.35)
+        config_with_classes = {**dict(config), "classes": labels, "class_preset": preset}
         if self.detector is not None:
-            return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config))]
+            return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config_with_classes))]
         if config.get("mock"):
-            labels = config.get("classes") or config.get("labels") or ["object"]
-            if isinstance(labels, str):
-                labels = _split_labels(labels)
-            return _mock_box_candidates(video, {**dict(config), "labels": list(labels)}, ctx, self.name, "Mock class detector box")
+            return _mock_box_candidates(
+                video,
+                {
+                    **config_with_classes,
+                    "labels": labels,
+                    "filters": {
+                        "classPreset": preset,
+                        "requestedClasses": labels,
+                        "confidenceThreshold": confidence_threshold,
+                    },
+                    "metadata": {
+                        "classPreset": preset,
+                        "requestedClasses": labels,
+                    },
+                },
+                ctx,
+                self.name,
+                "Mock class detector box",
+            )
         raise ProviderConfigError("class_detector discovery requires a configured detector or mock mode.")
 
 
 def _split_labels(text: str) -> list[str]:
     labels = [part.strip() for part in re.split(r"[,.]", text) if part.strip()]
     return labels or ["object"]
+
+
+def _label_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return _split_labels(value)
+    if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    raise ProviderConfigError("class_detector classes must be a string or array")
+
+
+def _class_detector_labels(config: Mapping[str, Any]) -> tuple[list[str], str]:
+    preset = str(config.get("class_preset") or config.get("preset") or "custom").strip() or "custom"
+    if preset not in CLASS_DETECTOR_PRESETS:
+        allowed = ", ".join(sorted(CLASS_DETECTOR_PRESETS))
+        raise ProviderConfigError(f"class_detector unknown class preset {preset!r}; expected one of: {allowed}")
+    labels = [*CLASS_DETECTOR_PRESETS[preset], *_label_list(config.get("classes") or config.get("labels"))]
+    unique = list(dict.fromkeys(label for label in labels if label))
+    return (unique or ["object"], preset)
 
 
 def _candidate_from_detection(item: Mapping[str, Any], index: int, source: str) -> ObjectCandidate:
@@ -517,7 +579,13 @@ def _mock_box_candidates(
         label = str(label_value)
         object_id = _safe_id(f"{source}_{label}", f"{source}_{index}")
         box = _mock_box(index, width, height)
-        metadata = _candidate_metadata(source, description, {"filters": {"maxCandidates": max_candidates}, "mock": True})
+        extra_filters = config.get("filters") if isinstance(config.get("filters"), Mapping) else {}
+        extra_metadata = config.get("metadata") if isinstance(config.get("metadata"), Mapping) else {}
+        metadata = _candidate_metadata(
+            source,
+            description,
+            {**dict(extra_metadata), "filters": {"maxCandidates": max_candidates, **dict(extra_filters)}, "mock": True},
+        )
         candidate = ObjectCandidate(
             id=object_id,
             label=label,

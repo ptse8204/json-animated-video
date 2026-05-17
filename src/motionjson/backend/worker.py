@@ -26,7 +26,13 @@ from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for
 from motionjson.masks import ExternalMaskProvider, MotionMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
 from motionjson.providers.base import StorageProvider
-from motionjson.providers.discovery import MotionForegroundDiscoveryProvider, SamAutoMasksDiscoveryProvider, TextDetectorDiscoveryProvider, object_specs_from_candidates
+from motionjson.providers.discovery import (
+    ClassDetectorDiscoveryProvider,
+    MotionForegroundDiscoveryProvider,
+    SamAutoMasksDiscoveryProvider,
+    TextDetectorDiscoveryProvider,
+    object_specs_from_candidates,
+)
 from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
@@ -245,6 +251,8 @@ def _ui_discovery_provider(mode: str) -> tuple[Any, str, bool] | None:
         return TextDetectorDiscoveryProvider(), "text detector mock discovery configured", True
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
+    if mode == "class_detector":
+        return ClassDetectorDiscoveryProvider(), "class detector mock discovery configured", True
     if mode == "motion_foreground":
         return MotionForegroundDiscoveryProvider(), "motion foreground CPU discovery configured", False
     return None

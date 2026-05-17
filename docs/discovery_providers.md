@@ -25,7 +25,8 @@ provider receives boxes or masks.
   packages or model paths are capability warnings; mock mode can produce local
   boxes for UI smoke checks.
 - `class_detector`: scaffold for known-class detection. Missing optional
-  detector packages are reported in diagnostics; mock mode is local-only.
+  detector packages are reported in diagnostics; mock mode is local-only and
+  supports class presets such as `vehicles`, `people`, and `common_objects`.
 
 ## When To Use And Failure Modes
 
@@ -46,7 +47,7 @@ provider receives boxes or masks.
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
-| `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as a mock/scaffolded preset so users can preview the config without claiming real detection. |
+| `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks need a SAM2-style backend. | Runnable in mock mode through the local worker; review shows candidate proposals, track filtering, fallback diagnostics, and merge suggestions. |
 
 ## CLI Examples
@@ -98,6 +99,28 @@ Local UI text-discovery smoke path:
 4. Review the Candidates and Tracks panels before export. If real detector
    dependencies or weights are missing, diagnostics still report that status;
    mock mode does not imply that open-vocabulary detection is installed.
+
+Known-class preset mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/class_mock \
+  --discovery-provider class_detector \
+  --discovery-class-preset vehicles \
+  --discovery-class forklift \
+  --discovery-config '{"mock":true,"confidence_threshold":0.4}' \
+  --discovery-max-candidates 3 \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
+The local UI `Find known classes` preset uses the same mock path in no-model
+mode. The selected preset is recorded as `discovery.config.class_preset`,
+custom labels are recorded as `discovery.config.classes`, and
+`confidence_threshold` is kept in `candidates.json` metadata so users can see
+the detector settings that would apply once a real known-class backend is
+configured.
 
 Automatic mask proposal mock smoke check:
 

@@ -92,6 +92,8 @@ itself.
 
 Text prompts and class presets need detector candidates before segmentation.
 Missing detector packages or model weights should be shown as diagnostics.
+Use `discovery.config.mock=true` or the local UI mock presets when you only
+need to test candidate review/export behavior.
 
 Optional installs:
 

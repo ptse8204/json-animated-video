@@ -77,6 +77,20 @@ const cases = [
     expected: {{ provider: "mock", discovery: "text_detector", prompts: 0 }},
   }},
   {{
+    goal: "find_known_classes",
+    input: {{
+      presetId: "class_detector",
+      video: {{ id: "video_classes" }},
+      label: "Known class",
+      objectId: "known_class",
+      discoveryClasses: "forklift, cart",
+      discoveryMaxCandidates: 5,
+      classPreset: "vehicles",
+      advanced: {{ ...commonAdvanced, boxThreshold: 0.42 }},
+    }},
+    expected: {{ provider: "mock", discovery: "class_detector", prompts: 0 }},
+  }},
+  {{
     goal: "propose_all_visible_segments",
     input: {{
       presetId: "sam_auto_masks",
@@ -232,6 +246,18 @@ def test_phase8_frontend_config_preserves_native_video_pixel_prompts(frontend_co
         },
     ]
     assert config.provider.sam2.prompt_frame == 12
+
+
+def test_phase8_frontend_config_builds_class_detector_preset(frontend_contract: dict[str, Any]):
+    class_config = next(item["config"] for item in frontend_contract["configs"] if item["goal"] == "find_known_classes")
+
+    assert class_config["provider"]["name"] == "mock"
+    assert class_config["discovery"]["mode"] == "class_detector"
+    assert class_config["discovery"]["config"]["mock"] is True
+    assert class_config["discovery"]["config"]["class_preset"] == "vehicles"
+    assert class_config["discovery"]["config"]["classes"] == ["forklift", "cart"]
+    assert class_config["discovery"]["config"]["confidence_threshold"] == 0.42
+    assert class_config["discovery"]["config"]["max_candidates"] == 5
 
 
 def test_phase8_coordinate_mapper_returns_native_pixels_and_letterbox_status(frontend_contract: dict[str, Any]):

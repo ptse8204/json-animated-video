@@ -60,9 +60,10 @@ detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
 claiming those providers are available in mock mode.
 
 The local UI worker starts `mock`, `threshold`, `motion`, and `external`
-extraction jobs, plus mock `text_detector` and `sam_auto_masks` discovery jobs
-that use generated mask handoffs. `motion_foreground` is CPU/no-model and runs
-from the `Find moving objects` preset.
+extraction jobs, plus mock `text_detector`, `class_detector`, and
+`sam_auto_masks` discovery jobs that use generated mask handoffs.
+`motion_foreground` is CPU/no-model and runs from the `Find moving objects`
+preset.
 
 ## Routes
 
@@ -189,10 +190,10 @@ storage, and exposes the imported scene through the normal job review routes.
 3. Create a project from the project panel.
 4. Add a source video by entering an existing local file path.
 5. Select the video from the video picker or video list.
-6. Choose a wizard preset: `Trace one object`, `Find objects from text`,
-   `Propose all visible segments`, `Find moving objects`, or `Import external
-   masks`. Use `Review existing result` to import a previous MotionJSON file
-   or output directory for inspection.
+6. Choose a wizard preset: `Trace one object`, `Find objects from text`, `Find
+   known classes`, `Propose all visible segments`, `Find moving objects`, or
+   `Import external masks`. Use `Review existing result` to import a previous
+   MotionJSON file or output directory for inspection.
 7. Draw point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay. Prompt coordinates are native video pixels, not CSS canvas pixels.
 8. Review the generated config and use `Validate config` to run backend
@@ -211,6 +212,11 @@ text detector mock path end to end: labels become candidate boxes, generated
 mask sequences, object tracks, and a Candidates review panel sourced from
 `candidates.json`. Real detector packages and weights remain optional and
 capability-gated; missing detector diagnostics are still shown before a run.
+Known-class presets map to `class_detector`. In local UI mock mode, `Find
+known classes` records `class_preset`, custom classes, and confidence threshold
+settings, creates generated candidate masks for the selected preset labels,
+and sends those candidates through the same review/export path. Real YOLO or
+known-class detector backends remain optional and capability-gated.
 Automatic segment proposals map to `sam_auto_masks`. In local UI mock mode,
 `Propose all visible segments` creates multiple generated proposal masks from
 the selected keyframes, feeds them through track filtering/dedupe, and shows

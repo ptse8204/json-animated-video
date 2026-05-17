@@ -26,7 +26,7 @@ const MotionJSONUI = (() => {
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
-  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "external"]);
+  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external"]);
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
   const EXPORT_PRESET_DEFAULTS = {
@@ -46,6 +46,12 @@ const MotionJSONUI = (() => {
     text_detector: {
       label: "Find objects from text (mock)",
       discoveryMode: "text_detector",
+      maskProvider: "mock",
+      outputMode: "authoring",
+    },
+    class_detector: {
+      label: "Find known classes (mock)",
+      discoveryMode: "class_detector",
       maskProvider: "mock",
       outputMode: "authoring",
     },
@@ -381,6 +387,7 @@ const MotionJSONUI = (() => {
     }
     if (input.discoveryMode === "class_detector") {
       return {
+        class_preset: input.classPreset || "common_objects",
         classes: parseCsv(input.classList),
         confidence_threshold: toNumber(input.boxThreshold, 0.35),
         max_candidates: toInteger(input.maxObjects, 12),
@@ -658,6 +665,7 @@ const MotionJSONUI = (() => {
       modelName: $("#modelName").value.trim(),
       outputMode: $("#outputMode").value,
       textPrompt: $("#textPrompt").value.trim(),
+      classPreset: $("#classPreset").value,
       classList: $("#classList").value.trim(),
       externalMaskDir: $("#externalMaskDir").value.trim(),
     };
@@ -700,6 +708,14 @@ const MotionJSONUI = (() => {
 
     if (state.selectedPreset === "text_detector" && !String(config.discovery.config.text || "").trim()) {
       warnings.push("text_detector needs at least one text label.");
+    }
+
+    if (
+      state.selectedPreset === "class_detector" &&
+      config.discovery.config.class_preset === "custom" &&
+      !asArray(config.discovery.config.classes).length
+    ) {
+      warnings.push("class_detector custom mode needs at least one class label.");
     }
 
     if (config.provider.name === "external" && !config.provider.external.mask_dir) {
@@ -1433,7 +1449,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "text_detector", "sam_auto_masks", "motion_foreground"]);
+      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
       const providers = asArray(state.capabilities.providers)
         .filter((provider) => priority.has(provider.name))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -2139,6 +2155,7 @@ const MotionJSONUI = (() => {
       $("#presetSummary").textContent = preset.label;
       $("#presetSummary").className = "status-chip is-neutral";
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
+      $("#classPresetField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#classListField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#externalMaskField").classList.toggle("is-hidden", state.selectedPreset !== "external_masks");
       $("#outputMode").value = preset.outputMode || "authoring";
@@ -2840,6 +2857,7 @@ const MotionJSONUI = (() => {
       $("#maskProviderSelect").value = config.provider?.name || $("#maskProviderSelect").value;
       $("#externalMaskDir").value = config.provider?.external?.mask_dir || config.objects?.[0]?.mask_dir || "masks/object_0";
       $("#textPrompt").value = config.discovery?.config?.text || $("#textPrompt").value;
+      $("#classPreset").value = config.discovery?.config?.class_preset || "common_objects";
       $("#classList").value = asArray(config.discovery?.config?.classes).join(", ") || $("#classList").value;
       $("#deviceSelect").value = config.provider?.sam2?.device || "auto";
       $("#modelName").value = config.provider?.sam2?.hosted_config?.model || "auto";
@@ -3113,7 +3131,7 @@ const MotionJSONUI = (() => {
         $("#fallbackDiagnostics").innerHTML = `
           <div class="diagnostic-row is-bad">
             <strong>${escapeHtml(requestedProvider)}</strong>
-            <span class="row-meta">Local UI job execution currently accepts deterministic legacy providers only: mock, threshold, or external. Some CLI no-model providers, including motion, are shown for configuration clarity but are not started by this worker yet.</span>
+            <span class="row-meta">Local UI job execution currently accepts deterministic providers only: mock, threshold, motion, or external. Other model-backed providers stay capability-gated.</span>
           </div>
         `;
         return;

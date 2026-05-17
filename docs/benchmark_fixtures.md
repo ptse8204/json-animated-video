@@ -20,10 +20,11 @@ python3 -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression -
 `--fixtures synthetic` means all built-in fixtures. `--modes threshold` is kept
 as an alias for the deterministic `external_masks` reference path, while
 `--modes motion` runs the CPU motion-foreground provider, `--modes mock` runs
-mock text-detector boxes, and `--modes auto` runs mock automatic mask proposals
-for comparison. Comparison modes can report regressed or failed runs for
-fixtures they are not expected to solve; use `--fail-on-regression` when CI
-should fail on any such run.
+mock text-detector boxes, `--modes auto` runs mock automatic mask proposals,
+and `--modes class` runs mock known-class detector presets for comparison.
+Comparison modes can report regressed or failed runs for fixtures they are not
+expected to solve; use `--fail-on-regression` when CI should fail on any such
+run.
 
 ## Outputs
 

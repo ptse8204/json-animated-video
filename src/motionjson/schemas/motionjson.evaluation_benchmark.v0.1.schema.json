@@ -19,7 +19,7 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["external_masks", "motion_foreground", "sam_auto_mock", "text_detector_mock"]
+        "enum": ["external_masks", "motion_foreground", "sam_auto_mock", "text_detector_mock", "class_detector_mock"]
       }
     },
     "runs": {
@@ -68,7 +68,7 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["external_masks", "motion_foreground", "sam_auto_mock", "text_detector_mock"]
+          "enum": ["external_masks", "motion_foreground", "sam_auto_mock", "text_detector_mock", "class_detector_mock"]
         },
         "modeLabel": { "type": "string", "minLength": 1 },
         "status": { "type": "string", "enum": ["passed", "regressed", "failed"] },

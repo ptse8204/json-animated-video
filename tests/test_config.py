@@ -137,6 +137,36 @@ def test_discovery_config_round_trips_text_detector_settings(tmp_path):
     assert reloaded.discovery.config == {"mock": True, "text": "red ball . hand", "max_candidates": 2}
 
 
+def test_discovery_config_round_trips_class_detector_preset_and_classes(tmp_path):
+    args = parse_extract_args(
+        "input.mp4",
+        "--discovery-provider",
+        "class_detector",
+        "--discovery-class-preset",
+        "vehicles",
+        "--discovery-class",
+        "forklift",
+        "--discovery-config",
+        '{"mock":true,"confidence_threshold":0.4}',
+        "--discovery-max-candidates",
+        "3",
+    )
+
+    config = build_extraction_run_config_from_args(args)
+    path = tmp_path / "run_config.json"
+    write_run_config(config, path)
+    reloaded = load_run_config(path)
+
+    assert reloaded.discovery.mode == "class_detector"
+    assert reloaded.discovery.config == {
+        "mock": True,
+        "confidence_threshold": 0.4,
+        "classes": ["forklift"],
+        "class_preset": "vehicles",
+        "max_candidates": 3,
+    }
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [

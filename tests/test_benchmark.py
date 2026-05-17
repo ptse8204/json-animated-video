@@ -96,6 +96,7 @@ def test_benchmark_name_normalizers_support_documented_aliases():
         "sam_auto_mock",
     ]
     assert normalize_benchmark_modes("sam_auto_masks_mock") == ["sam_auto_mock"]
+    assert normalize_benchmark_modes("class,yolo-mock") == ["class_detector_mock", "class_detector_mock"]
     with pytest.raises(ValueError, match="unknown benchmark fixture"):
         normalize_fixture_names("missing_fixture")
 
@@ -150,6 +151,34 @@ def test_benchmark_sam_auto_mock_mode_writes_candidate_review_fixture(tmp_path):
     candidates = json.loads((run_dir / "candidates.json").read_text(encoding="utf-8"))
     assert candidates["provider"] == "sam_auto_masks"
     assert [candidate["label"] for candidate in candidates["candidates"]] == ["Visible segment 1", "Visible segment 2"]
+    assert validate_file(tmp_path / "benchmarks" / "summary.json").ok
+
+
+def test_benchmark_class_detector_mock_mode_writes_preset_candidate_review_fixture(tmp_path):
+    summary = run_evaluation_benchmark(
+        out_dir=tmp_path / "benchmarks",
+        fixtures="multi_object",
+        modes="class",
+        width=64,
+        height=48,
+        frames=4,
+        min_area=1,
+    )
+
+    assert summary["summary"]["totalRuns"] == 1
+    assert validate_document(summary) == []
+    run = summary["runs"][0]
+    assert run["mode"] == "class_detector_mock"
+    assert run["quality"]["acceptedTracks"] >= 1
+    run_dir = tmp_path / "benchmarks" / "runs" / "multi_object_class_detector_mock"
+    candidates = json.loads((run_dir / "candidates.json").read_text(encoding="utf-8"))
+    tracks = json.loads((run_dir / "tracks.json").read_text(encoding="utf-8"))
+
+    assert candidates["provider"] == "class_detector"
+    assert candidates["config"]["class_preset"] == "custom"
+    assert [candidate["label"] for candidate in candidates["candidates"]] == ["Red ball", "Blue block"]
+    assert all(candidate["metadata"]["filters"]["confidenceThreshold"] == 0.35 for candidate in candidates["candidates"])
+    assert {track["objectId"] for track in tracks["tracks"]} == {"class_detector_Red_ball", "class_detector_Blue_block"}
     assert validate_file(tmp_path / "benchmarks" / "summary.json").ok
 
 
