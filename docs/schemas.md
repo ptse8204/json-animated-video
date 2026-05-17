@@ -14,6 +14,10 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 - `motionjson.rights_manifest.v0.1`: structured rights metadata, source attribution, license details, creator approval, commercial-use review status, asset lineage, and audit records.
 - `motionjson.correction_request.v0.1`: local mask correction request with add/remove points, box corrections, brush strokes, same-coordinate or centroid-delta propagation, and temporal smoothing settings.
 - `motionjson.correction_manifest.v0.1`: correction result metadata, changed frames, regenerated artifacts, quality, routing, and `aiUsage: none`.
+- `motionjson.evaluation_benchmark.v0.1`: Phase 12 CPU benchmark summary
+  written by `motionjson benchmark`, with relative run paths, validation
+  status, track counts, fallback reason counts, continuity, coverage, and
+  runtime metrics.
 
 Schema files are packaged under `src/motionjson/schemas/`.
 

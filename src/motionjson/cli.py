@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .benchmark import benchmark_scene
+from .benchmark import benchmark_scene, run_evaluation_benchmark
 from .config import ConfigValidationError, build_extraction_run_config_from_args
 from .corrections import build_correction_request, correct_output_dir
 from .exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
@@ -174,6 +174,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_correct_args(correct)
     export = sub.add_parser("export", help="Export final video, object alpha video, website package, or adapter plan")
     add_export_args(export)
+    benchmark = sub.add_parser("benchmark", help="Run CPU-only synthetic fixture benchmarks", description="Run CPU-only synthetic fixture benchmarks")
+    add_benchmark_args(benchmark)
     backend = sub.add_parser("backend", help="Run local backend commands")
     from .backend.cli import add_backend_parser
 
@@ -207,6 +209,19 @@ def add_export_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--all-objects", action="store_true", help="Export separate object-specific outputs for every object layer")
     p.add_argument("--background-color", type=str, default="#fbfaf6", help="Final render background color")
     p.add_argument("--editor-state", type=str, default=None, help="Optional Phase 7 timeline editor-state JSON")
+
+
+def add_benchmark_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--fixtures", type=str, default="synthetic", help="Comma-separated fixtures, or synthetic/all for the built-in CPU fixture suite")
+    p.add_argument("--modes", type=str, default="external", help="Comma-separated modes: external, motion, mock, or threshold alias for external")
+    p.add_argument("--out", type=str, default="out/benchmarks", help="Benchmark output directory")
+    p.add_argument("--width", type=int, default=96, help="Synthetic fixture video width")
+    p.add_argument("--height", type=int, default=64, help="Synthetic fixture video height")
+    p.add_argument("--frames", type=int, default=6, help="Synthetic fixture frame count")
+    p.add_argument("--sample-fps", type=float, default=12.0, help="Sampling FPS for benchmark extraction runs")
+    p.add_argument("--max-frames", type=int, default=None, help="Optional max sampled frames per benchmark run")
+    p.add_argument("--min-area", type=float, default=1.0, help="Minimum object area for benchmark track filtering")
+    p.add_argument("--fail-on-regression", action="store_true", help="Exit non-zero when any benchmark run regresses or fails")
 
 
 def add_correct_args(p: argparse.ArgumentParser) -> None:
@@ -859,6 +874,36 @@ def run_export(args: argparse.Namespace) -> list[dict[str, Any]]:
     return exports
 
 
+def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
+    try:
+        summary = run_evaluation_benchmark(
+            out_dir=args.out,
+            fixtures=args.fixtures,
+            modes=args.modes,
+            width=args.width,
+            height=args.height,
+            frames=args.frames,
+            sample_fps=args.sample_fps,
+            max_frames=args.max_frames,
+            min_area=args.min_area,
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
+    out = Path(args.out)
+    print(f"Wrote {out / 'summary.json'}")
+    print(f"Wrote {out / 'summary.md'}")
+    print(
+        "Benchmark runs: "
+        f"{summary['summary']['totalRuns']}; "
+        f"passed: {summary['summary']['passedRuns']}; "
+        f"regressed: {summary['summary']['regressedRuns']}; "
+        f"failed: {summary['summary']['failedRuns']}"
+    )
+    if args.fail_on_regression and (summary["summary"]["regressedRuns"] or summary["summary"]["failedRuns"]):
+        raise SystemExit(1)
+    return summary
+
+
 def run_ui(args: argparse.Namespace) -> None:
     from .ui.server import serve_ui
 
@@ -879,7 +924,7 @@ def run_ui(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate", "correct", "export", "backend", "ui"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "correct", "export", "benchmark", "backend", "ui"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -897,6 +942,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "export":
         run_export(args)
+        return
+    if args.command == "benchmark":
+        run_benchmark(args)
         return
     if args.command == "backend":
         from .backend.cli import run_backend_command

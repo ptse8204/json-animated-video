@@ -15,6 +15,7 @@ SCHEMA_IDS = {
     "motionjson.rights_manifest.v0.1": "motionjson.rights_manifest.v0.1.schema.json",
     "motionjson.correction_request.v0.1": "motionjson.correction_request.v0.1.schema.json",
     "motionjson.correction_manifest.v0.1": "motionjson.correction_manifest.v0.1.schema.json",
+    "motionjson.evaluation_benchmark.v0.1": "motionjson.evaluation_benchmark.v0.1.schema.json",
 }
 
 

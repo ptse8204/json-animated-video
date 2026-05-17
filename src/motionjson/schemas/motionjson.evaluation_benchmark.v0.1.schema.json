@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "motionjson.evaluation_benchmark.v0.1",
+  "title": "MotionJSON Evaluation Benchmark Summary v0.1",
+  "type": "object",
+  "required": ["schema", "format", "fixtures", "modes", "runs", "summary", "outputs", "notes", "aiUsage"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "motionjson.evaluation_benchmark.v0.1" },
+    "format": { "const": "motionjson.evaluation_benchmark.v0.1" },
+    "fixtures": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["red_ball", "multi_object", "occlusion", "small_object", "camera_motion", "whole_frame_regression"]
+      }
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["external_masks", "motion_foreground", "text_detector_mock"]
+      }
+    },
+    "runs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/run" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["totalRuns", "passedRuns", "regressedRuns", "failedRuns", "fallbackReasonCounts", "outputDirectory"],
+      "additionalProperties": false,
+      "properties": {
+        "totalRuns": { "type": "integer", "minimum": 0 },
+        "passedRuns": { "type": "integer", "minimum": 0 },
+        "regressedRuns": { "type": "integer", "minimum": 0 },
+        "failedRuns": { "type": "integer", "minimum": 0 },
+        "fallbackReasonCounts": { "$ref": "#/$defs/countMap" },
+        "outputDirectory": { "type": "string" }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "required": ["summaryJson", "summaryMarkdown", "fixturesDir", "runsDir"],
+      "additionalProperties": false,
+      "properties": {
+        "summaryJson": { "type": "string", "minLength": 1 },
+        "summaryMarkdown": { "type": "string", "minLength": 1 },
+        "fixturesDir": { "type": "string", "minLength": 1 },
+        "runsDir": { "type": "string", "minLength": 1 }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "aiUsage": { "const": "none" }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "required": ["fixture", "mode", "modeLabel", "status", "runDir", "quality", "error", "aiUsage"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": {
+          "type": "string",
+          "enum": ["red_ball", "multi_object", "occlusion", "small_object", "camera_motion", "whole_frame_regression"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["external_masks", "motion_foreground", "text_detector_mock"]
+        },
+        "modeLabel": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["passed", "regressed", "failed"] },
+        "runDir": { "type": "string", "minLength": 1 },
+        "quality": { "$ref": "#/$defs/quality" },
+        "error": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string" },
+            "message": { "type": "string" }
+          }
+        },
+        "aiUsage": { "const": "none" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "passed",
+        "validation",
+        "acceptedTracks",
+        "rejectedTracks",
+        "fallbackReasonCounts",
+        "expectedFallbackReasonCounts",
+        "fallbackExpectationsMet",
+        "duplicateOverlap",
+        "meanTrackContinuity",
+        "maxFrameCoverageRatio",
+        "runtimeMs"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "passed": { "type": "boolean" },
+        "validation": { "$ref": "#/$defs/validation" },
+        "expectedObjectCount": { "type": "integer", "minimum": 0 },
+        "expectedObjectIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sceneObjectCount": { "type": "integer", "minimum": 0 },
+        "sceneObjectIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "objectCountMatches": { "type": "boolean" },
+        "objectIdsMatch": { "type": "boolean" },
+        "acceptedTracks": { "type": "integer", "minimum": 0 },
+        "rejectedTracks": { "type": "integer", "minimum": 0 },
+        "fallbackReasonCounts": { "$ref": "#/$defs/countMap" },
+        "expectedFallbackReasonCounts": { "$ref": "#/$defs/countMap" },
+        "fallbackExpectationsMet": { "type": "boolean" },
+        "duplicateOverlap": { "$ref": "#/$defs/duplicateOverlap" },
+        "meanTrackContinuity": { "type": "number", "minimum": 0 },
+        "maxFrameCoverageRatio": { "type": "number", "minimum": 0 },
+        "runtimeMs": { "type": "number", "minimum": 0 },
+        "sampledFrames": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["ok", "checked", "skipped", "issueCount", "issues"],
+      "additionalProperties": true,
+      "properties": {
+        "ok": { "type": "boolean" },
+        "objectIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "checked": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "issueCount": { "type": "integer", "minimum": 0 },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "objectId": { "type": "string" },
+              "path": { "type": "string" },
+              "message": { "type": "string" },
+              "jsonPath": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "duplicateOverlap": {
+      "type": "object",
+      "required": ["pairCount", "maxMeanIou", "meanPairIou", "mergeSuggestionCount", "suggestedMaxMeanIou", "pairs", "suggestions"],
+      "additionalProperties": false,
+      "properties": {
+        "pairCount": { "type": "integer", "minimum": 0 },
+        "maxMeanIou": { "type": "number", "minimum": 0 },
+        "meanPairIou": { "type": "number", "minimum": 0 },
+        "mergeSuggestionCount": { "type": "integer", "minimum": 0 },
+        "suggestedMaxMeanIou": { "type": "number", "minimum": 0 },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["leftObjectId", "rightObjectId", "meanIou"],
+            "additionalProperties": false,
+            "properties": {
+              "leftObjectId": { "type": "string" },
+              "rightObjectId": { "type": "string" },
+              "meanIou": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "suggestions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["keepObjectId", "mergeObjectId", "meanIou", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "keepObjectId": { "type": "string" },
+              "mergeObjectId": { "type": "string" },
+              "meanIou": { "type": "number", "minimum": 0 },
+              "reason": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "countMap": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

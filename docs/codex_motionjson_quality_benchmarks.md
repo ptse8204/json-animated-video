@@ -92,18 +92,25 @@ Minimum E2E:
 
 ### 3.1 Synthetic video generator
 
-Add a utility to generate small MP4/GIF/image sequence fixtures:
+Phase 12 implements a local fixture generator through
+`python3 -m motionjson.cli benchmark`. It writes small MP4 files, ground-truth
+masks, `fixture_manifest.json`, and `expected.json` for:
 
 - red ball moving across static background;
 - two moving colored circles;
-- object enters/exits frame;
-- crossing objects;
-- large foreground object;
-- whole-frame color change;
+- partial occlusion;
+- tiny object masks;
 - camera-pan simulation;
-- noisy background.
+- whole-frame regression masks.
 
-This avoids licensing issues and makes expected behavior controllable.
+The current built-in fixture set is documented in
+[`docs/benchmark_fixtures.md`](benchmark_fixtures.md): `red_ball`,
+`multi_object`, `occlusion`, `small_object`, `camera_motion`, and
+`whole_frame_regression`. This avoids licensing issues and makes expected
+behavior controllable.
+
+Future fixture candidates include object enter/exit, crossing identities, large
+foreground objects, whole-frame color changes, and noisy backgrounds.
 
 ### 3.2 Golden output strategy
 
@@ -158,22 +165,39 @@ For real ML providers, use tolerant metrics:
 
 ## 5. Benchmark command
 
-Suggested command:
+Command:
 
 ```bash
-python -m motionjson.cli benchmark --fixtures synthetic --modes manual,motion,mock --out out/benchmarks
+python3 -m motionjson.cli benchmark --fixtures synthetic --modes external --out out/benchmarks
 ```
 
-Suggested output:
+Lightweight CI command:
+
+```bash
+python3 -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out out/benchmarks
+```
+
+Output:
 
 ```text
 out/benchmarks/
   summary.json
   summary.md
   runs/
-    red_ball_manual_mock/
-    red_ball_motion/
+    red_ball_external_masks/
+  fixtures/
+    red_ball/
+      video.mp4
+      fixture_manifest.json
+      expected.json
+      masks/
 ```
+
+`summary.json` is machine-readable
+(`motionjson.evaluation_benchmark.v0.1`) and validates against the packaged
+benchmark schema. `summary.md` is a human-readable table with accepted/rejected
+track counts, duplicate-overlap metrics, fallback reasons, and runtime. The
+benchmark uses CPU/no-model providers and records `aiUsage: none`.
 
 ## 6. Acceptance thresholds for release candidate
 
