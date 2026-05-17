@@ -59,6 +59,11 @@ provider availability, optional model extras, and FFmpeg status from
 detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
 claiming those providers are available in mock mode.
 
+The wizard may show CLI-capable no-model workflows such as `motion_foreground`
+so users can inspect and save a valid run config. The current local UI worker
+starts only `mock`, `threshold`, and `external` extraction jobs; use the CLI for
+`motion` until that worker path is wired.
+
 ## Routes
 
 The UI serves static files under `/ui/` and local JSON routes under `/api/`:

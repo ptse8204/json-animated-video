@@ -44,13 +44,13 @@ const MotionJSONUI = (() => {
       outputMode: "authoring",
     },
     text_detector: {
-      label: "Find objects from text",
+      label: "Find objects from text (mock)",
       discoveryMode: "text_detector",
       maskProvider: "mock",
       outputMode: "authoring",
     },
     sam_auto_masks: {
-      label: "Propose all visible segments",
+      label: "Propose visible segments (mock)",
       discoveryMode: "sam_auto_masks",
       maskProvider: "mock",
       outputMode: "authoring",
@@ -645,10 +645,11 @@ const MotionJSONUI = (() => {
     const hasPointOrBox = config.prompts.some((prompt) => ["point", "positive_point", "box"].includes(prompt.kind));
 
     for (const provider of [discovery, mask].filter(Boolean)) {
-      if (!provider.available) {
+      if (!provider.available || provider.runnable === false) {
         const reasons = asArray(provider.reasons).join(" ");
+        const setup = provider.available && provider.runnable === false ? "configured but not runnable yet" : provider.status || "unavailable";
         warnings.push(
-          `${provider.name}: ${provider.status || "unavailable"}${reasons ? ` - ${reasons}` : ""}${
+          `${provider.name}: ${setup}${reasons ? ` - ${reasons}` : ""}${
             provider.mockAvailable ? " Mock/no-model mode is available for UI checks." : ""
           }`,
         );
@@ -1376,6 +1377,13 @@ const MotionJSONUI = (() => {
       if (provider.device) details.push(`device: ${provider.device}`);
       if (provider.optionalExtra) details.push(`extra: ${provider.optionalExtra}`);
       if (provider.noModelSafe === true) details.push("no-model safe");
+      if (provider.estimatedCost?.status?.startsWith("zero_local") && !provider.networkRequired) details.push("local/free");
+      if (provider.networkRequired === true) details.push("network");
+      if (provider.needsCredentials === true) details.push("credentials");
+      if (provider.needsGpu === true) details.push("GPU required");
+      if (provider.needsModelPath === true) details.push("model path");
+      if (provider.runnable === true) details.push("runnable");
+      if (provider.configured === true && provider.runnable === false) details.push("configured, not runnable");
       if (provider.mockAvailable === true) details.push("mock available");
       return details;
     }
@@ -2220,7 +2228,7 @@ const MotionJSONUI = (() => {
       const warningBox = $("#providerWarning");
       if (warnings.length) {
         warningBox.textContent = warnings.join(" ");
-        warningBox.className = warnings.some((warning) => /requires|needs|unavailable|missing|not_configured/.test(warning)) ? "warning-box is-bad" : "warning-box";
+        warningBox.className = warnings.some((warning) => /requires|needs|unavailable|missing|not_configured|not runnable/.test(warning)) ? "warning-box is-bad" : "warning-box";
       } else {
         warningBox.textContent = "Selected providers are ready or no-model safe.";
         warningBox.className = "warning-box is-ready";
@@ -2951,7 +2959,7 @@ const MotionJSONUI = (() => {
         $("#fallbackDiagnostics").innerHTML = `
           <div class="diagnostic-row is-bad">
             <strong>${escapeHtml(requestedProvider)}</strong>
-            <span class="row-meta">Local job execution currently accepts deterministic providers only: mock, threshold, or external. Use the mock job control for a no-model smoke run, or switch providers before starting.</span>
+            <span class="row-meta">Local UI job execution currently accepts deterministic legacy providers only: mock, threshold, or external. Some CLI no-model providers, including motion, are shown for configuration clarity but are not started by this worker yet.</span>
           </div>
         `;
         return;

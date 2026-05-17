@@ -39,35 +39,66 @@ class ProviderCapability:
     available: bool
     status: str
     configured: bool = True
+    installed: bool | None = None
+    runnable: bool | None = None
     supports: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
     install_hint: str | None = None
     device: str | None = None
     no_model_safe: bool = False
     network_required: bool = False
+    needs_credentials: bool = False
+    needs_gpu: bool = False
+    needs_model_path: bool = False
+    model_paths: list[dict[str, Any]] = field(default_factory=list)
     mock_available: bool = False
     optional_extra: str | None = None
     checks: list[dict[str, Any]] = field(default_factory=list)
+    estimated_cost: dict[str, Any] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
+        installed = self.installed if self.installed is not None else self.status != "missing_dependency"
+        runnable = self.runnable if self.runnable is not None else bool(self.available and not self.network_required)
+        estimated_cost = self.estimated_cost or _default_estimated_cost(self.network_required)
         return {
             "name": self.name,
             "kind": self.kind,
             "available": self.available,
             "status": self.status,
             "configured": self.configured,
+            "installed": bool(installed),
+            "runnable": bool(runnable),
             "supports": list(self.supports),
             "reasons": list(self.reasons),
             "installHint": self.install_hint,
             "device": self.device,
             "noModelSafe": self.no_model_safe,
             "networkRequired": self.network_required,
+            "needsCredentials": bool(self.needs_credentials or self.network_required),
+            "needsGpu": bool(self.needs_gpu),
+            "needsModelPath": bool(self.needs_model_path or self.model_paths),
+            "modelPaths": [dict(path) for path in self.model_paths],
             "mockAvailable": self.mock_available,
             "optionalExtra": self.optional_extra,
             "checks": list(self.checks),
+            "estimatedCost": dict(estimated_cost),
             "metadata": dict(self.metadata),
         }
+
+
+def _default_estimated_cost(network_required: bool) -> dict[str, Any]:
+    if network_required:
+        return {
+            "amount": None,
+            "unit": "provider_request",
+            "status": "unknown_provider_cost",
+        }
+    return {
+        "amount": 0.0,
+        "unit": "local",
+        "status": "zero_local",
+    }
 
 
 def _check(name: str, status: str, detail: str | None = None, value: Any | None = None) -> dict[str, Any]:
@@ -232,6 +263,7 @@ def provider_capabilities(
     *,
     sam2_checkpoint: str | Path | None = None,
     sam2_model_config: str | Path | None = None,
+    hosted_allow_network: bool = False,
 ) -> list[ProviderCapability]:
     deps = {dep.module: dep.available for dep in dependency_statuses()}
     cv_ready = deps.get("cv2", False) and deps.get("numpy", False)
@@ -319,6 +351,7 @@ def provider_capabilities(
             device="cpu",
             no_model_safe=True,
             network_required=False,
+            runnable=cv_ready,
             mock_available=True,
             metadata={"backendEligible": True},
         ),
@@ -333,6 +366,7 @@ def provider_capabilities(
             device="cpu",
             no_model_safe=True,
             network_required=False,
+            runnable=cv_ready,
             mock_available=True,
             metadata={"backendEligible": False},
         ),
@@ -347,6 +381,7 @@ def provider_capabilities(
             device="cpu",
             no_model_safe=True,
             network_required=False,
+            runnable=cv_ready and pil_ready,
             mock_available=True,
             metadata={"backendEligible": True},
         ),
@@ -361,6 +396,7 @@ def provider_capabilities(
             device="cpu",
             no_model_safe=True,
             network_required=False,
+            runnable=cv_ready,
             mock_available=True,
             metadata={"backendEligible": True},
         ),
@@ -369,6 +405,8 @@ def provider_capabilities(
             kind="mask_provider",
             available=False,
             configured=False,
+            installed=False,
+            runnable=False,
             status="unavailable",
             supports=["legacy_stub"],
             reasons=["Legacy sam2 provider is a stub and requires an injected client; use sam2-local or sam2-hosted for explicit providers."],
@@ -385,6 +423,8 @@ def provider_capabilities(
             kind="mask_provider",
             available=sam2_local_ready,
             configured=bool(checkpoint["configured"] and model_config["configured"]),
+            installed=bool(sam2_installed and torch_info["torchInstalled"]),
+            runnable=sam2_local_ready,
             status=sam2_local_status,
             supports=["point", "box", "video_propagation", "local_model"],
             reasons=sam2_local_reasons,
@@ -392,6 +432,8 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_model_path=True,
+            model_paths=[checkpoint, model_config],
             mock_available=True,
             optional_extra="sam2",
             checks=[
@@ -407,6 +449,8 @@ def provider_capabilities(
             kind="mask_provider",
             available=bool(hosted_endpoint["configured"] and hosted_auth["configured"]),
             configured=bool(hosted_endpoint["configured"] and hosted_auth["configured"]),
+            installed=True,
+            runnable=bool(hosted_endpoint["configured"] and hosted_auth["configured"] and hosted_allow_network),
             status="ready" if hosted_endpoint["configured"] and hosted_auth["configured"] else "not_configured",
             supports=["point", "box", "hosted_segmentation"],
             reasons=[
@@ -421,26 +465,30 @@ def provider_capabilities(
             device="remote",
             no_model_safe=False,
             network_required=True,
+            needs_credentials=True,
             mock_available=True,
             optional_extra="hosted-segmentation",
             checks=[
                 _check("endpoint_env", "ok" if hosted_endpoint["configured"] else "missing", hosted_endpoint["env"], hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if hosted_auth["configured"] else "missing", hosted_auth["env"], hosted_auth["configured"]),
-                _check("network_default", "skipped", "Diagnostics does not make hosted network calls.", "disabled"),
+                _check("network_opt_in", "ok" if hosted_allow_network else "required", "Hosted segmentation requires explicit network opt-in.", hosted_allow_network),
             ],
-            metadata={"endpointEnv": hosted_endpoint, "authEnv": hosted_auth, "networkDefault": "disabled"},
+            metadata={"endpointEnv": hosted_endpoint, "authEnv": hosted_auth, "networkDefault": "disabled", "networkOptIn": hosted_allow_network},
         ),
         ProviderCapability(
             name="openrouter",
             kind="llm_provider",
             available=bool(openrouter_key["configured"]),
             configured=bool(openrouter_key["configured"]),
+            installed=True,
+            runnable=bool(openrouter_key["configured"]),
             status="ready" if openrouter_key["configured"] else "not_configured",
             supports=["llm", "vlm_reasoning", "labels"],
             reasons=[] if openrouter_key["configured"] else ["OPENROUTER_API_KEY is not set."],
             install_hint="Set OPENROUTER_API_KEY only for LLM/VLM reasoning. OpenRouter is not a segmentation provider.",
             no_model_safe=False,
             network_required=True,
+            needs_credentials=True,
             mock_available=True,
             optional_extra="openrouter",
             checks=[_check("api_key_env", "ok" if openrouter_key["configured"] else "missing", openrouter_key["env"], openrouter_key["configured"])],
@@ -451,6 +499,7 @@ def provider_capabilities(
             kind="discovery_provider",
             available=True,
             configured=True,
+            runnable=True,
             status="ready",
             supports=["point_candidates", "box_candidates", "mask_ref_candidates"],
             reasons=[],
@@ -469,6 +518,7 @@ def provider_capabilities(
             kind="discovery_provider",
             available=cv_ready,
             configured=True,
+            runnable=cv_ready,
             status="ready" if cv_ready else "missing_dependency",
             supports=["frame_difference", "moving_foreground", "generated_mask_sequences"],
             reasons=[] if cv_ready else ["numpy and opencv-python are required for motion foreground discovery."],
@@ -487,6 +537,7 @@ def provider_capabilities(
             kind="discovery_provider",
             available=cv_ready and pil_ready,
             configured=True,
+            runnable=cv_ready and pil_ready,
             status="ready" if cv_ready and pil_ready else "missing_dependency",
             supports=["mask_directories", "manifest_import", "multi_object_candidates"],
             reasons=[] if cv_ready and pil_ready else ["Pillow, numpy, and opencv-python are required for external mask discovery."],
@@ -505,6 +556,8 @@ def provider_capabilities(
             kind="discovery_provider",
             available=False,
             configured=bool(checkpoint["configured"] and model_config["configured"]),
+            installed=bool(sam2_installed and torch_info["torchInstalled"]),
+            runnable=False,
             status=sam_auto_masks_status,
             supports=["automatic_keyframe_masks", "area_filter", "stability_filter", "overlap_filter"],
             reasons=[
@@ -515,6 +568,8 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_model_path=True,
+            model_paths=[checkpoint, model_config],
             mock_available=True,
             optional_extra="sam2",
             metadata={
@@ -527,6 +582,8 @@ def provider_capabilities(
             kind="discovery_provider",
             available=False,
             configured=bool(text_detector_model["configured"]),
+            installed=text_detector_installed,
+            runnable=False,
             status=text_detector_runtime_status,
             supports=["text_guided_boxes", "open_vocabulary_candidates"],
             reasons=[
@@ -536,6 +593,8 @@ def provider_capabilities(
             install_hint="Install/configure an open-vocabulary detector, or use discovery mock mode for local smoke tests.",
             no_model_safe=False,
             network_required=False,
+            needs_model_path=True,
+            model_paths=[text_detector_model],
             mock_available=True,
             optional_extra="detectors",
             checks=[
@@ -554,6 +613,8 @@ def provider_capabilities(
             kind="discovery_provider",
             available=False,
             configured=bool(class_detector_model["configured"]),
+            installed=class_detector_installed,
+            runnable=False,
             status=class_detector_runtime_status,
             supports=["known_class_boxes", "fixed_label_candidates"],
             reasons=[
@@ -563,6 +624,8 @@ def provider_capabilities(
             install_hint="Install/configure a known-class detector, or use discovery mock mode for local smoke tests.",
             no_model_safe=False,
             network_required=False,
+            needs_model_path=True,
+            model_paths=[class_detector_model],
             mock_available=True,
             optional_extra="yolo",
             checks=[
@@ -685,13 +748,25 @@ def build_capability_report(
     video_path: str | Path | None = None,
     sam2_checkpoint: str | Path | None = None,
     sam2_model_config: str | Path | None = None,
+    hosted_allow_network: bool = False,
 ) -> dict[str, Any]:
     deps = dependency_statuses()
-    providers = provider_capabilities(sam2_checkpoint=sam2_checkpoint, sam2_model_config=sam2_model_config)
+    providers = provider_capabilities(
+        sam2_checkpoint=sam2_checkpoint,
+        sam2_model_config=sam2_model_config,
+        hosted_allow_network=hosted_allow_network,
+    )
+    provider_records = [provider.to_dict() for provider in providers]
     ready_no_model = [
-        provider.name
-        for provider in providers
-        if provider.available and provider.no_model_safe and not provider.network_required
+        provider["name"]
+        for provider in provider_records
+        if provider["available"] and provider["noModelSafe"] and not provider["networkRequired"]
+    ]
+    runnable_providers = [provider["name"] for provider in provider_records if provider["runnable"]]
+    local_free_providers = [
+        provider["name"]
+        for provider in provider_records
+        if provider["runnable"] and provider["estimatedCost"]["status"].startswith("zero_local")
     ]
     unavailable_required_setup = [
         provider.name
@@ -719,11 +794,13 @@ def build_capability_report(
             "videoIO": video_io_status(video_path),
             "output": output_path_status(output_dir),
         },
-        "providers": [provider.to_dict() for provider in providers],
+        "providers": provider_records,
         "summary": {
             "providersReady": sum(1 for provider in providers if provider.available),
             "providersTotal": len(providers),
             "readyNoModelProviders": ready_no_model,
+            "runnableProviders": runnable_providers,
+            "localFreeRunnableProviders": local_free_providers,
             "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
             "firstRun": {
                 "ready": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
@@ -770,6 +847,7 @@ def format_capability_report(report: dict[str, Any]) -> str:
     video_io = environment.get("videoIO", {})
     output = environment.get("output", {})
     ready_no_model = summary.get("readyNoModelProviders") or []
+    local_free = summary.get("localFreeRunnableProviders") or []
     missing_optional = summary.get("missingOptional") or []
 
     lines = [
@@ -781,6 +859,8 @@ def format_capability_report(report: dict[str, Any]) -> str:
         lines.append(f"No-model providers ready: {', '.join(ready_no_model)}")
     else:
         lines.append("No-model providers ready: none reported")
+    if local_free:
+        lines.append(f"Runnable local/free providers: {', '.join(local_free)}")
     lines.append(
         "No-model smoke: "
         + (

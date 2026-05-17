@@ -92,6 +92,31 @@ def test_small_and_short_tracks_are_rejected_with_specific_codes():
     assert "track_too_short" in short.reason_codes
 
 
+def test_no_masks_confidence_and_background_warnings_are_distinct():
+    no_masks = evaluate_track(track("empty"), width=40, height=32)
+    low_confidence = evaluate_track(
+        track("low_confidence", bbox=[5, 5, 8, 8], confidence=0.2),
+        width=40,
+        height=32,
+        config=TrackFilterConfig(min_confidence=0.5),
+    )
+    large_mask = np.zeros((32, 40), dtype=np.uint8)
+    large_mask[:, :30] = 255
+    background_like = evaluate_track(
+        track("background_like", bbox=[0, 0, 30, 32], mask=large_mask),
+        width=40,
+        height=32,
+        config=TrackFilterConfig(max_frame_coverage_ratio=0.9, background_likelihood_ratio=0.5),
+    )
+
+    assert no_masks.status == "rejected"
+    assert no_masks.reason_codes[0] == "no_masks_accepted"
+    assert low_confidence.status == "rejected"
+    assert low_confidence.reason_codes == ["confidence_below_filter"]
+    assert background_like.status == "accepted"
+    assert background_like.warnings == ["background_likelihood_high"]
+
+
 def test_duplicate_tracks_emit_merge_suggestion_and_keep_best_track():
     tracks = [
         track("obj_0001", label="Ball", bbox=[6, 10, 8, 8], confidence=0.9),
@@ -108,6 +133,26 @@ def test_duplicate_tracks_emit_merge_suggestion_and_keep_best_track():
     assert tracks[0].export_status == "accepted"
     assert tracks[1].export_status == "rejected"
     assert "duplicate_track" in tracks[1].warnings
+
+
+def test_duplicate_filter_ignores_below_threshold_overlap_and_uses_stable_tie_break():
+    below_threshold = [
+        track("obj_left", bbox=[2, 4, 8, 8], confidence=0.8),
+        track("obj_right", bbox=[20, 4, 8, 8], confidence=0.8),
+    ]
+    report = filter_and_dedupe_tracks(below_threshold, width=40, height=32, config=TrackFilterConfig(min_area=1, duplicate_iou_threshold=0.8))
+    assert report.to_dict()["summary"]["acceptedTracks"] == 2
+    assert report.to_dict()["mergeSuggestions"] == []
+
+    tied = [
+        track("obj_a", bbox=[6, 10, 8, 8], confidence=0.5),
+        track("obj_b", bbox=[6, 10, 8, 8], confidence=0.5),
+        track("obj_c", bbox=[24, 10, 8, 8], confidence=0.5),
+    ]
+    tied_report = filter_and_dedupe_tracks(tied, width=40, height=32, config=TrackFilterConfig(min_area=1, duplicate_iou_threshold=0.8))
+    payload = tied_report.to_dict()
+    assert payload["summary"]["acceptedTracks"] == 2
+    assert payload["mergeSuggestions"] == [{"keepObjectId": "obj_b", "mergeObjectId": "obj_a", "meanIou": 1.0, "reason": "duplicate_track"}]
 
 
 def test_raster_fallback_model_lists_reason_code_and_suggested_fixes():

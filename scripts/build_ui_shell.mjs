@@ -187,6 +187,8 @@ for (const affordance of [
   "renderFirstRunChecklist",
   "No-model smoke",
   "Optional models",
+  "local/free",
+  "configured, not runnable",
 ]) {
   if (!combined.includes(affordance)) {
     throw new Error(`UI shell is missing ${affordance}`);

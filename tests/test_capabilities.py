@@ -26,9 +26,24 @@ def test_capability_report_is_machine_readable_json() -> None:
     assert "installHint" in decoded["environment"]["dependencies"][0]
     assert "install_hint" not in decoded["environment"]["dependencies"][0]
     assert isinstance(decoded["summary"]["readyNoModelProviders"], list)
+    assert isinstance(decoded["summary"]["runnableProviders"], list)
+    assert isinstance(decoded["summary"]["localFreeRunnableProviders"], list)
     assert decoded["summary"]["canRunNoModelSmoke"] is True
     assert decoded["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
     assert isinstance(decoded["summary"]["firstRun"]["nonBlockingOptionalMissing"], list)
+    for provider in decoded["providers"]:
+        for field in (
+            "installed",
+            "configured",
+            "runnable",
+            "needsCredentials",
+            "needsGpu",
+            "needsModelPath",
+            "modelPaths",
+            "estimatedCost",
+        ):
+            assert field in provider
+        assert "status" in provider["estimatedCost"]
 
 
 def test_capability_report_marks_missing_optional_sam2_without_breaking_base_cli(monkeypatch) -> None:
@@ -215,7 +230,13 @@ def test_capability_secret_envs_are_presence_only(monkeypatch) -> None:
     assert "secret-hosted-token" not in encoded
     assert "secret-openrouter-token" not in encoded
     assert _provider(report, "sam2-hosted")["available"] is True
+    assert _provider(report, "sam2-hosted")["runnable"] is False
+    assert _provider(report, "sam2-hosted")["needsCredentials"] is True
+    assert _provider(report, "sam2-hosted")["estimatedCost"]["status"] == "unknown_provider_cost"
     assert _provider(report, "openrouter")["available"] is True
+
+    opted_in_report = capabilities.build_capability_report(hosted_allow_network=True)
+    assert _provider(opted_in_report, "sam2-hosted")["runnable"] is True
 
 
 def test_capability_report_includes_phase5_discovery_provider_modes(monkeypatch) -> None:
@@ -282,7 +303,10 @@ def test_scaffolded_heavy_discovery_modes_do_not_report_runnable_until_backend_w
     for name in ("sam_auto_masks", "text_detector", "class_detector"):
         provider = _provider(report, name)
         assert provider["available"] is False
+        assert provider["runnable"] is False
         assert provider["status"] == "not_configured"
+        assert provider["needsModelPath"] is True
+        assert provider["modelPaths"]
         assert "scaffolded" in " ".join(provider["reasons"])
 
 
@@ -293,4 +317,17 @@ def test_no_model_discovery_modes_are_marked_available_or_mock_available() -> No
         provider = _provider(report, name)
         assert provider["mockAvailable"] is True
         assert provider["networkRequired"] is False
+        assert provider["runnable"] is True
+        assert provider["estimatedCost"]["status"] == "zero_local"
         assert provider["metadata"]["whenToUse"]
+
+
+def test_local_free_mask_providers_report_zero_cost_and_runnable() -> None:
+    report = capabilities.build_capability_report()
+
+    for name in ("threshold", "motion", "external", "mock"):
+        provider = _provider(report, name)
+        if provider["available"]:
+            assert provider["runnable"] is True
+            assert provider["estimatedCost"] == {"amount": 0.0, "unit": "local", "status": "zero_local"}
+            assert name in report["summary"]["localFreeRunnableProviders"]

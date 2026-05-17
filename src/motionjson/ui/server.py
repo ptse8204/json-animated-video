@@ -777,18 +777,23 @@ class LocalUIApp:
         field: str,
     ) -> None:
         provider = providers.get((kind, name))
-        if not provider or provider.get("available") is not False:
+        if not provider or (provider.get("available") is not False and provider.get("runnable") is not False):
             return
+        status = provider.get("status")
+        message = f"{name} is not available on this machine."
+        if provider.get("available") is not False and provider.get("runnable") is False:
+            status = "not_runnable"
+            message = f"{name} is configured but cannot run from this local workflow yet."
         warnings.append(
             {
                 "code": "provider_unavailable",
                 "field": field,
                 "provider": name,
                 "kind": kind,
-                "status": provider.get("status"),
+                "status": status,
                 "severity": "error",
                 "action": provider.get("installHint") or "Choose a ready no-model provider or configure this optional provider before starting a run.",
-                "message": f"{name} is not available on this machine.",
+                "message": message,
                 "reasons": _public_value(provider.get("reasons") or []),
                 "installHint": provider.get("installHint"),
             }

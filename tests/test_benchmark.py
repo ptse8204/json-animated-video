@@ -64,6 +64,27 @@ def test_benchmark_runner_writes_machine_and_human_reports_without_gpu(tmp_path)
     assert (tmp_path / "benchmarks" / "runs" / "red_ball_external_masks" / "scene_graph.json").exists()
 
 
+def test_benchmark_multi_object_external_masks_keeps_two_stable_tracks(tmp_path):
+    summary = run_evaluation_benchmark(
+        out_dir=tmp_path / "benchmarks",
+        fixtures="multi_object",
+        modes="external",
+        width=64,
+        height=48,
+        frames=4,
+    )
+
+    assert summary["summary"]["passedRuns"] == 1
+    run = summary["runs"][0]
+    assert run["quality"]["acceptedTracks"] == 2
+    assert run["quality"]["rejectedTracks"] == 0
+    assert run["quality"]["expectedObjectIds"] == ["red_ball", "blue_block"]
+    assert run["quality"]["sceneObjectIds"] == ["red_ball", "blue_block"]
+    assert run["quality"]["fallbackReasonCounts"] == {}
+    assert run["quality"]["duplicateOverlap"]["pairCount"] == 1
+    assert run["quality"]["duplicateOverlap"]["maxMeanIou"] < 0.2
+
+
 def test_benchmark_name_normalizers_support_documented_aliases():
     assert "whole_frame_regression" in normalize_fixture_names("synthetic")
     assert normalize_fixture_names("red_ball,small_object") == ["red_ball", "small_object"]

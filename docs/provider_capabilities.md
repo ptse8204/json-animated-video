@@ -33,6 +33,22 @@ only reports whether relevant secret environment variables are present. For
 SAM2 model paths, explicit `--sam2-checkpoint` and `--sam2-config` values take
 precedence over `SAM2_LOCAL_CHECKPOINT` and `SAM2_LOCAL_CONFIG`.
 
+Each provider record keeps the older `available`, `configured`, and `status`
+fields, then adds clearer first-run fields:
+
+- `installed`: required local packages for that provider are present.
+- `configured`: environment variables, model paths, or provider settings are
+  present.
+- `runnable`: the provider can execute in the current local workflow without
+  another opt-in. Hosted segmentation can be credentialed but still not
+  runnable until network use is explicitly enabled.
+- `needsCredentials`: secrets or hosted credentials are required.
+- `needsGpu`: a GPU is required. Current no-model providers do not need one.
+- `needsModelPath` and `modelPaths`: model/checkpoint/config paths required by
+  local ML providers.
+- `estimatedCost`: `zero_local` for local/free providers and
+  `unknown_provider_cost` for hosted/network providers.
+
 ## Status Values
 
 - `ready`: usable in this environment.
@@ -56,6 +72,8 @@ Current no-model providers:
 - `external`
 - `mock`
 
+These report `estimatedCost.status: zero_local` when runnable.
+
 Optional SAM2/hosted providers:
 
 - `sam2`: legacy stub retained for CLI compatibility; it fails clearly unless a
@@ -64,7 +82,8 @@ Optional SAM2/hosted providers:
   torch, `SAM2_LOCAL_CHECKPOINT`, and `SAM2_LOCAL_CONFIG`.
 - `sam2-hosted`: hosted segmentation; requires `HOSTED_SEGMENTATION_URL` and
   `HOSTED_SEGMENTATION_API_KEY`, and extraction still requires explicit network
-  opt-in.
+  opt-in. Diagnostics may show `configured: true` while `runnable: false` until
+  that opt-in/client path is provided.
 
 Reasoning provider:
 

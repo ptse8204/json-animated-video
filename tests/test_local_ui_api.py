@@ -98,6 +98,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert any(provider["name"] == "mock" and provider["noModelSafe"] for provider in capabilities["providers"])
     assert capabilities["summary"]["canRunNoModelSmoke"] is True
     assert "mock" in capabilities["summary"]["readyNoModelProviders"]
+    assert "mock" in capabilities["summary"]["runnableProviders"]
+    assert "mock" in capabilities["summary"]["localFreeRunnableProviders"]
     assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
 
     status, _headers, body = app.handle(
@@ -226,6 +228,58 @@ def test_local_ui_capabilities_preserve_provider_failure_details(tmp_path, monke
     assert providers["text_detector"]["noModelSafe"] is False
     assert providers["text_detector"]["metadata"]["uiDescription"]
     assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
+
+
+def test_local_ui_validation_warns_when_configured_provider_is_not_runnable(tmp_path, monkeypatch):
+    def fake_capability_report(**_kwargs):
+        return {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 1, "providersTotal": 1},
+            "environment": {},
+            "providers": [
+                {
+                    "name": "sam2-hosted",
+                    "kind": "mask_provider",
+                    "available": True,
+                    "configured": True,
+                    "runnable": False,
+                    "status": "ready",
+                    "reasons": ["Hosted segmentation requires explicit network opt-in."],
+                    "installHint": "Enable hosted network use explicitly.",
+                    "mockAvailable": True,
+                    "noModelSafe": False,
+                    "networkRequired": True,
+                    "needsCredentials": True,
+                    "estimatedCost": {"amount": None, "unit": "provider_request", "status": "unknown_provider_cost"},
+                    "metadata": {},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(ui_server, "build_capability_report", fake_capability_report)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps(
+            {
+                "schema": "motionjson.extraction_run_config.v0.1",
+                "input": {"path": "local-ui://assets/asset_1"},
+                "output": {"directory": str(tmp_path / "out")},
+                "sampling": {"sample_fps": 12, "max_frames": 2},
+                "provider": {"name": "sam2-hosted"},
+                "prompts": [{"kind": "point", "frame_index": 0, "object_id": "object_0", "label": "Object", "data": {"x": 1, "y": 1}}],
+            }
+        ).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    warning = next(item for item in payload["warnings"] if item["code"] == "provider_unavailable")
+    assert warning["status"] == "not_runnable"
+    assert "cannot run" in warning["message"]
+    assert warning["action"] == "Enable hosted network use explicitly."
 
 
 def test_local_ui_serves_static_shell(tmp_path):

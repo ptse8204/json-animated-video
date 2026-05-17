@@ -240,6 +240,13 @@ python3 -m motionjson.cli backend diagnostics --text
 python3 -m motionjson.cli backend diagnostics --json
 ```
 
+Diagnostics now separate `installed`, `configured`, and `runnable`. A provider
+can be configured but not runnable, for example hosted segmentation with
+credentials present but no explicit network opt-in. The local UI worker
+currently starts `mock`, `threshold`, and `external` jobs; some CPU CLI paths
+such as `motion` are shown in the wizard but still need CLI execution or a
+later worker integration.
+
 ## Troubleshooting
 
 The full troubleshooting guide is [docs/troubleshooting.md](docs/troubleshooting.md).

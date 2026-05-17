@@ -38,6 +38,16 @@ provider receives boxes or masks.
 | `text_detector` | Users describe objects with text labels. | Detector package/model is missing or boxes are semantically wrong. | Use mock smoke tests, class detector, or manual/external masks. |
 | `class_detector` | Known classes are enough for the video domain. | YOLO/known-class model is unavailable or returns too many classes. | Limit classes, lower max candidates, or use manual review. |
 
+## UI vs CLI Support Today
+
+| Workflow | CLI support | Local UI job support |
+| --- | --- | --- |
+| `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
+| `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path. | Visible in the wizard, but the current local UI worker does not start `motion` jobs yet. |
+| `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
+| `text_detector` and `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as mock/scaffolded presets so users can preview the flow without claiming real detection. |
+| `sam_auto_masks` | Mock mode is runnable; real automatic masks need a SAM2-style backend. | Shown as a mock/scaffolded preset until a runnable backend is available. |
+
 ## CLI Examples
 
 CPU moving-region discovery:

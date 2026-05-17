@@ -104,6 +104,11 @@ Then configure the relevant detector model path and rerun diagnostics. If you
 only need a local smoke path, use manual prompts, motion foreground, external
 masks, or mock mode instead.
 
+If a provider is `configured` but `runnable: false`, setup was found but the
+current local workflow still cannot execute it. Hosted segmentation is the
+common case: credentials can be present while network use still requires an
+explicit opt-in or injected client.
+
 ## Bad Masks Or Whole-Frame Masks
 
 A point prompt or automatic proposal can select background, floor, wall, or the

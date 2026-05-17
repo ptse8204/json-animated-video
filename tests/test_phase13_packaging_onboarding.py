@@ -76,6 +76,8 @@ def test_local_ui_exposes_first_run_diagnostics_panel():
     assert "Optional models" in app
     assert "Next action" in app
     assert "recommendedCommand" in app
+    assert "local/free" in app
+    assert "configured, not runnable" in app
     assert "firstRunChecklist" in build_script
     assert "renderFirstRunChecklist" in build_script
 
@@ -87,6 +89,7 @@ def test_extraction_mode_docs_include_failure_modes_and_multi_object_sample():
 
     assert "When To Use And Failure Modes" in discovery
     assert "whole-frame masks" in discovery
+    assert "UI vs CLI Support Today" in discovery
     assert "Safer Fallback" in discovery
     assert "python3 -m motionjson.cli benchmark --fixtures multi_object" in multi
     assert "blue_block=out/benchmarks/fixtures/multi_object/masks/blue_block" in multi
