@@ -10,6 +10,8 @@ state, rights metadata, and web playback.
 Start with the no-model demo. It runs on CPU and does not need SAM2, CUDA,
 detectors, model weights, cloud APIs, or provider credentials.
 
+![Local UI first-run checklist](docs/assets/local-ui-first-run.png)
+
 ## What it does
 
 - Samples short videos with OpenCV.
@@ -146,8 +148,9 @@ python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli ui --no-open --mock --host 0.0.0.0
 ```
 
-A devcontainer is planned in the first-run phase. Until then, install Python
-dependencies in the Codespaces terminal and use forwarded ports.
+This repository includes `.devcontainer/devcontainer.json` for Codespaces. It
+installs Python and Node dependencies after the container starts; then use the
+forwarded UI port from the Codespaces Ports panel.
 
 ### Google Colab CLI demo
 
@@ -164,9 +167,25 @@ detector demos should stay optional and clearly labeled.
 
 ## Screenshots and demos
 
-Screenshot automation is not ready yet, so this README does not embed fake or
-placeholder PNGs. The required README assets and regeneration plan live in
-`docs/assets/README_ASSETS.md`.
+These images are generated from the local mock UI and the deterministic
+red-ball extraction. Regenerate them with:
+
+```bash
+python3 scripts/capture_docs_assets.py --check
+python3 scripts/capture_docs_assets.py
+```
+
+![Local UI project setup](docs/assets/local-ui-new-project.png)
+
+![Goal-first extraction wizard](docs/assets/local-ui-extraction-wizard.png)
+
+![Provider diagnostics](docs/assets/local-ui-provider-diagnostics.png)
+
+![Job review and track status](docs/assets/local-ui-job-review.png)
+
+![Red-ball canvas preview](docs/assets/canvas-preview-red-ball.png)
+
+![Red-ball demo GIF](docs/assets/red-ball-demo.gif)
 
 Available local demo inputs today:
 

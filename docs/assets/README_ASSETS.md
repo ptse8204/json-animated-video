@@ -1,25 +1,51 @@
 # README Assets
 
-This file tracks the real assets the public README should eventually embed.
-Do not add fake screenshots or decorative placeholder images. If an asset is
-not captured yet, keep it listed here as pending.
+This file tracks the real assets embedded by the public README. Do not add fake
+screenshots or decorative placeholder images. If an asset is not captured yet,
+keep it listed here as pending.
 
 ## Required Assets
 
 | Asset | Status | How to regenerate |
 | --- | --- | --- |
-| `docs/assets/local-ui-first-run.png` | Pending | Phase 03 should start `python3 -m motionjson.cli ui --no-open --mock`, open the local UI, and capture the first-run checklist. |
-| `docs/assets/local-ui-new-project.png` | Pending | Phase 03 should seed or create a local project in mock mode and capture the project panel. |
-| `docs/assets/local-ui-extraction-wizard.png` | Pending | Phase 03 should select a demo video and capture the goal-first extraction wizard. |
-| `docs/assets/local-ui-provider-diagnostics.png` | Pending | Phase 03 should capture capability diagnostics showing ready no-model providers and unavailable optional ML providers. |
-| `docs/assets/local-ui-job-review.png` | Pending | Phase 03 should run or seed a mock job and capture object tracks, confidence, warnings, and export status. |
-| `docs/assets/canvas-preview-red-ball.png` | Pending | Phase 03 should run the red-ball demo and capture a real preview frame or canvas playback view. |
-| `docs/assets/red-ball-demo.gif` | Optional pending | Phase 03 may create a small GIF if size and quality are acceptable. |
-| `docs/assets/red-ball-demo.mp4` | Optional pending | Phase 03 may create a short MP4 if it is more efficient than GIF. |
+| `docs/assets/local-ui-first-run.png` | Generated | `python3 scripts/capture_docs_assets.py` starts the local UI in mock mode and captures the first-run checklist. |
+| `docs/assets/local-ui-new-project.png` | Generated | `python3 scripts/capture_docs_assets.py` seeds a demo project/video and captures the project setup panel. |
+| `docs/assets/local-ui-extraction-wizard.png` | Generated | `python3 scripts/capture_docs_assets.py` captures the goal-first extraction wizard with the text-detector preset selected. |
+| `docs/assets/local-ui-provider-diagnostics.png` | Generated | `python3 scripts/capture_docs_assets.py` captures capability diagnostics from `/api/capabilities`. |
+| `docs/assets/local-ui-job-review.png` | Generated | `python3 scripts/capture_docs_assets.py` runs a mock job and captures the job review/track panel. |
+| `docs/assets/canvas-preview-red-ball.png` | Generated | `python3 scripts/capture_docs_assets.py` runs the threshold red-ball extraction and overlays the real mask on a sampled frame. |
+| `docs/assets/red-ball-demo.gif` | Generated | `python3 scripts/capture_docs_assets.py` creates a small GIF from generated red-ball frames and masks. |
+| `docs/assets/red-ball-demo.mp4` | Not generated | The GIF is the current lightweight README demo; generate MP4 only if later docs need lower file size or better playback quality. |
 
-## Current Manual Demo Commands
+## Regenerate Assets
 
-Use these until screenshot automation exists:
+Check whether Chrome/Chromium is available for UI screenshots:
+
+```bash
+python3 scripts/capture_docs_assets.py --check
+```
+
+Capture every README asset:
+
+```bash
+python3 scripts/capture_docs_assets.py
+```
+
+Generate only the red-ball preview and GIF, without browser screenshots:
+
+```bash
+python3 scripts/capture_docs_assets.py --skip-browser
+```
+
+The full capture path uses temporary SQLite/storage directories, starts
+`python3 -m motionjson.cli ui --no-open --mock`, seeds a demo project through
+the real local API, runs a deterministic mock job, and captures screenshots with
+headless Chrome/Chromium. It does not require SAM2, CUDA, detectors, model
+weights, cloud APIs, or provider credentials.
+
+## Manual Demo Commands
+
+Use these when debugging the underlying red-ball extraction:
 
 ```bash
 python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4

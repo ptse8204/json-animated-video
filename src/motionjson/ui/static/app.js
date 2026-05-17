@@ -2855,6 +2855,52 @@ const MotionJSONUI = (() => {
       renderConfigPreview();
     }
 
+    function applyDocsCaptureMode() {
+      const params = new URLSearchParams(window.location.search);
+      const capture = params.get("capture");
+      if (!capture) return;
+
+      document.documentElement.dataset.capture = capture;
+      const shell = document.querySelector(".app-shell");
+      const sidebar = document.querySelector(".sidebar");
+      const workspace = document.querySelector(".workspace");
+      const rightRail = document.querySelector(".right-rail");
+      const goalList = document.querySelector(".goal-list");
+      const firstRunPanel = document.querySelector("#firstRunChecklist")?.closest(".compact-panel");
+      const wizardPanel = document.querySelector(".wizard-panel");
+
+      if (capture === "extraction-wizard") {
+        applyPreset("text_detector");
+      } else if (capture === "provider-diagnostics") {
+        applyPreset("motion_foreground");
+        if (goalList) goalList.style.display = "none";
+        if (firstRunPanel) firstRunPanel.style.display = "none";
+      } else if (capture === "new-project") {
+        if (shell) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
+        if (rightRail) rightRail.style.display = "none";
+        if (wizardPanel) wizardPanel.style.display = "none";
+      } else if (capture === "job-review") {
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (workspace) workspace.style.display = "none";
+        if (rightRail) {
+          rightRail.style.display = "grid";
+          rightRail.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+          rightRail.style.gap = "16px";
+          rightRail.style.borderLeft = "0";
+          rightRail.style.minHeight = "100vh";
+        }
+      }
+
+      window.setTimeout(() => {
+        window.scrollTo({ top: 0, left: 0 });
+        document.documentElement.dataset.captureReady = "true";
+      }, 350);
+    }
+
     async function startJobFromConfig({ forceMock = false } = {}) {
       if (!state.selectedProjectId) {
         $("#runStatus").textContent = "No project";
@@ -3539,7 +3585,7 @@ const MotionJSONUI = (() => {
     renderPresetFields();
     renderVideoMetrics();
     renderConfigPreview();
-    refreshAll();
+    refreshAll().then(applyDocsCaptureMode);
   }
 
   const publicApi = {
