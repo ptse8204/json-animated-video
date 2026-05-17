@@ -11,6 +11,7 @@ from motionjson.exporters.final_render import final_export_entry, write_final_ex
 from motionjson.exporters.website_package import export_website_package
 from motionjson.masks import ThresholdMaskProvider
 from motionjson.pipeline import run_pipeline
+from motionjson.rights import build_rights_review_report
 from motionjson.validation import validate_document
 
 
@@ -112,3 +113,70 @@ def test_final_and_website_exports_preserve_rights_manifest(tmp_path):
     assert "rights_manifest.json" in names
     assert package_manifest["rightsManifest"] == "rights_manifest.json"
     assert package_manifest["rightsSummary"] == rights_manifest["summary"]
+
+
+def test_rights_review_report_accepts_legacy_boolean_source_attribution():
+    scene = {
+        "objects": [
+            {
+                "id": "object_true",
+                "label": "Legacy attribution",
+                "rights": {
+                    "sourceAttribution": True,
+                    "license": "user_uploaded_placeholder",
+                    "notes": "Rights review required.",
+                },
+            },
+            {
+                "id": "object_false",
+                "label": "Legacy no attribution",
+                "rights": {
+                    "sourceAttribution": False,
+                    "license": "user_uploaded_placeholder",
+                    "notes": "Rights review required.",
+                },
+            },
+        ]
+    }
+
+    report = build_rights_review_report(scene=scene, source_asset_id="asset_legacy")
+
+    assert report["sourceAssetId"] == "asset_legacy"
+    assert report["summary"]["attributionRequired"] == ["object_true"]
+    summaries = {item["objectId"]: item for item in report["objects"]}
+    assert summaries["object_true"]["sourceAttribution"]["required"] is True
+    assert summaries["object_false"]["sourceAttribution"]["required"] is False
+    attribution_warnings = [warning["objectId"] for warning in report["warnings"] if warning["code"] == "attribution_required"]
+    assert attribution_warnings == ["object_true"]
+
+
+def test_rights_review_report_has_no_review_warnings_for_approved_rights():
+    scene = {
+        "objects": [
+            {
+                "id": "object_approved",
+                "label": "Approved layer",
+                "rights": {
+                    "sourceAttribution": {
+                        "required": False,
+                        "sourceType": "creator_pack",
+                        "sourceAssetId": "asset_approved",
+                        "displayText": "Creator approved pack",
+                    },
+                    "license": "creator_pack_commercial",
+                    "licenseDetails": {"name": "Creator Pack Commercial", "scope": "commercial"},
+                    "creatorApproval": {"approved": True, "status": "approved", "evidence": [{"type": "release"}]},
+                    "commercialUse": True,
+                    "commercialUseStatus": "approved",
+                    "assetLineage": {"origin": "source_video", "operations": [{"operation": "pack_import"}]},
+                },
+            }
+        ]
+    }
+
+    report = build_rights_review_report(scene=scene, source_asset_id="asset_approved")
+
+    assert report["summary"]["commercialUseApproved"] is True
+    assert report["summary"]["commercialUseReviewRequired"] == []
+    assert report["summary"]["attributionRequired"] == []
+    assert report["warnings"] == []

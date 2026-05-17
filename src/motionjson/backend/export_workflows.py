@@ -20,9 +20,10 @@ from motionjson import __version__
 from motionjson.backend.assets import list_assets_for_job, register_generated_asset
 from motionjson.backend.corrections import build_track_correction_state, list_track_corrections
 from motionjson.backend.jobs import create_completed_job, get_job, record_job_event
-from motionjson.backend.rights import record_audit_event
+from motionjson.backend.rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from motionjson.exporters.final_render import build_final_export_manifest, final_export_entry, render_frames
 from motionjson.providers.base import StorageProvider
+from motionjson.rights import build_rights_review_report
 from motionjson.validation import validate_document, validate_file, validate_output_dir
 
 
@@ -633,6 +634,62 @@ def _source_asset_id(conn: sqlite3.Connection, source_job_id: str) -> str | None
     return row["source_asset_id"] if row else None
 
 
+def _rights_by_object(scene: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rights: dict[str, dict[str, Any]] = {}
+    for index, obj in enumerate(scene.get("objects", [])):
+        if not isinstance(obj, dict):
+            continue
+        object_id = str(obj.get("id") or obj.get("objectId") or f"object_{index}")
+        value = obj.get("rights") if isinstance(obj.get("rights"), dict) else {}
+        rights[object_id] = copy.deepcopy(value)
+    return rights
+
+
+def _object_id_for_export_rel_path(rel_path: Path) -> str | None:
+    parts = rel_path.parts
+    if len(parts) >= 2 and parts[0] == "masks":
+        return parts[1]
+    if len(parts) >= 3 and parts[0] == "objects":
+        return parts[1]
+    return None
+
+
+def _record_export_asset_rights_and_lineage(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    job_id: str,
+    asset: dict[str, Any],
+    source_asset_id: str | None,
+    rel_path: Path,
+    export_id: str,
+    preset: str,
+    rights_by_object: dict[str, dict[str, Any]],
+) -> None:
+    object_id = _object_id_for_export_rel_path(rel_path)
+    record_asset_lineage(
+        conn,
+        project_id=project_id,
+        source_asset_id=source_asset_id,
+        derived_asset_id=asset["id"],
+        job_id=job_id,
+        operation="validated_motionjson_export",
+        object_id=object_id,
+        metadata={
+            "exportId": export_id,
+            "preset": preset,
+            "rel_path": rel_path.as_posix(),
+            "kind": asset.get("kind"),
+            "aiUsage": "none",
+        },
+    )
+    if object_id and object_id in rights_by_object:
+        record_rights_metadata(conn, project_id=project_id, asset_id=asset["id"], object_id=object_id, job_id=job_id, rights=rights_by_object[object_id])
+        return
+    for rights_object_id, rights in rights_by_object.items():
+        record_rights_metadata(conn, project_id=project_id, asset_id=asset["id"], object_id=rights_object_id, job_id=job_id, rights=rights)
+
+
 def _build_export_tree(
     conn: sqlite3.Connection,
     *,
@@ -770,17 +827,22 @@ def _build_export_tree(
 
     payload = json.loads(job.get("payload_json") or "{}")
     export_id = export_dir.name
+    source_asset_id = _source_asset_id(conn, job_id)
+    rights_report = _sanitize_value(build_rights_review_report(scene=exported_scene, source_asset_id=source_asset_id))
+    export_warnings = rights_report["warnings"]
     provenance = {
         "app": "motionjson",
         "version": __version__,
         "sourceJobId": job_id,
-        "sourceAssetId": _source_asset_id(conn, job_id),
+        "sourceAssetId": source_asset_id,
         "exportId": export_id,
         "exportPreset": preset,
         "correctionEventCount": len(corrections),
         "includedObjectIds": included_ids,
         "excludedObjectIds": excluded_ids,
         "diagnostics": diagnostics,
+        "rightsSummary": rights_report["summary"],
+        "rightsWarningCount": len(export_warnings),
         "aiUsage": "none",
     }
     config = {
@@ -799,6 +861,7 @@ def _build_export_tree(
         provenance=provenance,
         config=config,
         quality_routing=quality_routing,
+        export_warnings=export_warnings,
         validation={key: value for key, value in validation.items() if key != "issues"},
     )
     validation = _validate_export_documents([("scene_graph.json", exported_scene), ("final_export_manifest.json", manifest)])
@@ -815,6 +878,8 @@ def _build_export_tree(
         "excludedObjectIds": excluded_ids,
         "diagnostics": diagnostics,
         "qualityRouting": quality_routing,
+        "rightsSummary": rights_report,
+        "exportWarnings": export_warnings,
         "aiUsage": "none",
     }
     validation_path = export_dir / "validation_report.json"
@@ -842,6 +907,8 @@ def _build_export_tree(
         "preview": preview,
         "contours": contour_document,
         "qualityRouting": quality_routing,
+        "rightsSummary": rights_report,
+        "exportWarnings": export_warnings,
         "maskPaths": mask_paths,
         "includedObjectIds": included_ids,
         "excludedObjectIds": excluded_ids,
@@ -884,6 +951,8 @@ def validate_motionjson_export_job(
             "excludedObjectIds": result["excludedObjectIds"],
             "diagnostics": result["diagnostics"],
             "qualityRouting": result["qualityRouting"],
+            "rightsSummary": result["rightsSummary"],
+            "exportWarnings": result["exportWarnings"],
             "provenance": result["provenance"],
             "config": result["config"],
         }
@@ -918,6 +987,8 @@ def export_motionjson_job(
             first_issue = result["validation"]["issues"][0]["message"] if result["validation"].get("issues") else "validation failed"
             raise ValueError(f"MotionJSON export validation failed: {first_issue}")
         assets = []
+        rights_by_object = _rights_by_object(result["scene"])
+        source_asset_id = result["provenance"].get("sourceAssetId")
         for rel_path, kind, content_type in _export_asset_specs(result["exportDir"]):
             path = result["exportDir"] / rel_path
             metadata: dict[str, Any] = {
@@ -925,9 +996,11 @@ def export_motionjson_job(
                 "exportId": export_id,
                 "preset": preset,
                 "validation": {key: value for key, value in result["validation"].items() if key != "issues"},
+                "rightsWarningCount": len(result["exportWarnings"]),
             }
             if kind in {"export_quality_routing", "export_validation_report"}:
                 metadata["qualityRouting"] = result["qualityRouting"]
+                metadata["rightsSummary"] = result["rightsSummary"]
             asset = register_generated_asset(
                 conn,
                 storage=storage,
@@ -940,6 +1013,17 @@ def export_motionjson_job(
                 metadata=metadata,
             )
             assets.append(asset)
+            _record_export_asset_rights_and_lineage(
+                conn,
+                project_id=job["project_id"],
+                job_id=job_id,
+                asset=asset,
+                source_asset_id=source_asset_id,
+                rel_path=rel_path,
+                export_id=export_id,
+                preset=preset,
+                rights_by_object=rights_by_object,
+            )
     record_job_event(
         conn,
         job_id=job_id,
@@ -951,6 +1035,7 @@ def export_motionjson_job(
             "validation": {key: value for key, value in result["validation"].items() if key != "issues"},
             "includedObjectIds": result["includedObjectIds"],
             "excludedObjectIds": result["excludedObjectIds"],
+            "rightsWarningCount": len(result["exportWarnings"]),
         },
     )
     record_audit_event(
@@ -959,7 +1044,7 @@ def export_motionjson_job(
         project_id=job["project_id"],
         job_id=job_id,
         event_type="validated_motionjson_export",
-        metadata={"exportId": export_id, "preset": preset, "aiUsage": "none"},
+        metadata={"exportId": export_id, "preset": preset, "aiUsage": "none", "rightsWarningCount": len(result["exportWarnings"])},
     )
     return {**{key: value for key, value in result.items() if key != "exportDir"}, "assets": assets}
 

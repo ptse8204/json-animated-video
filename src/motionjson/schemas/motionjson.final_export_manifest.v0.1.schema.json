@@ -62,6 +62,20 @@
         "preview": { "type": "object" }
       }
     },
+    "exportWarnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string" },
+          "objectId": { "type": "string" },
+          "message": { "type": "string" },
+          "suggestedAction": { "type": "string" }
+        }
+      }
+    },
     "validation": {
       "type": "object",
       "additionalProperties": true,

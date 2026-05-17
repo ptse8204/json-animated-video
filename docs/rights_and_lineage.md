@@ -27,6 +27,22 @@ Default extraction rights are intentionally conservative: `user_uploaded_unverif
 
 Scene graphs, object manifests, web asset manifests, final export manifests, Remotion plans, and website ZIP package manifests preserve structured rights. Export surfaces keep `aiUsage: none` because they use cached raster/alpha assets and JSON transforms. Normal drag, scale, rotate, preview, and export paths do not rerun segmentation, matting, LLM, VLM, or hosted AI providers.
 
+Validated local UI exports also surface rights review before and during export:
+
+- `rightsSummary` reports source attribution, license, creator approval,
+  commercial-use status, and lineage operation counts for included objects.
+- `exportWarnings` records user-visible warning codes such as
+  `commercial_use_review_required`, `creator_approval_unverified`,
+  `license_unverified`, and `attribution_required`.
+- `final_export_manifest.json` embeds `exportWarnings` so downstream handoff
+  consumers see the same warnings as the UI.
+- Generated export artifacts record `validated_motionjson_export` lineage rows
+  and rights rows in the local backend database.
+
+These warnings are not legal advice and do not block local JSON export. They
+make conservative rights state visible so users can review source approval
+before publishing or handing assets to another tool.
+
 Website ZIP packages include:
 
 - `rights_manifest.json`
@@ -41,7 +57,7 @@ The local SQLite backend stores:
 - `asset_lineage`: source asset to derived asset edges with job id, operation, object id, and metadata.
 - `audit_events`: user, project, job, asset, and object scoped audit events.
 
-Uploads record source rights and an `asset_uploaded` audit event. Extraction records source-video to generated-manifest/cutout lineage plus rights rows for object-scoped generated assets. Website package exports record package lineage, package rights, and a `website_package_exported` audit event.
+Uploads record source rights and an `asset_uploaded` audit event. Extraction records source-video to generated-manifest/cutout lineage plus rights rows for object-scoped generated assets. Website package exports record package lineage, package rights, and a `website_package_exported` audit event. Validated local UI exports record lineage and rights rows for generated handoff artifacts, plus a `validated_motionjson_export` audit event.
 
 ## CLI Boundaries
 

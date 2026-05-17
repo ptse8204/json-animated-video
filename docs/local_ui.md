@@ -160,6 +160,9 @@ preflight reflects the exact handoff settings. The response includes
 `qualityRouting`, which explains the cached raster/vector/delivery/preview
 route that export will use. MP4 preview validation is a dry run: it reports
 `plan_ready` when FFmpeg is available and encodes only during final export.
+The response also includes `rightsSummary` and `exportWarnings` so unverified
+source attribution, creator approval, license, and commercial-use status are
+visible before handoff.
 `POST /api/jobs/JOB_ID/exports` writes a validated MotionJSON handoff from the
 corrected review state, registers the generated artifacts on the selected job,
 and returns public content links for export files. The local UI supports these
@@ -179,8 +182,10 @@ extraction JSON and imported SVG files remain metadata-only unless they are
 part of this explicit export workflow. Export manifests include source job id,
 source asset id when known, preset, correction event count, included/excluded
 object ids, sanitized run config/correction state, quality routing, validation
-status, and `aiUsage: "none"`. Local absolute paths and storage keys are
-redacted from public export payloads.
+status, rights warnings, and `aiUsage: "none"`. Local absolute paths and
+storage keys are redacted from public export payloads. The export panel and
+selected-track detail surface rights status without requiring users to open raw
+JSON.
 
 `POST /api/projects/PROJECT_ID/imports/motionjson` imports an existing
 MotionJSON file or output directory into a succeeded `motionjson_import` job

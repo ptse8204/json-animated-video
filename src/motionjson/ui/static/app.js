@@ -782,6 +782,7 @@ const MotionJSONUI = (() => {
       warnings: asArray(track.warnings).map(String),
       exportStatus: track.exportStatus || track.export_status || "accepted",
       providerName: track.providerName || track.provider_name || null,
+      rightsSummary: track.rightsSummary || track.rights_summary || null,
       color: TRACK_COLORS[index % TRACK_COLORS.length],
       frames: frames.map((frame) => {
         const polygon = normalizePolygonPoints(frame.polygon || frame.contour || frame.points);
@@ -849,7 +850,16 @@ const MotionJSONUI = (() => {
   function buildReviewTracks({ job, config, artifacts, review }) {
     const reviewTracks = asArray(review?.tracks);
     if (reviewTracks.length) {
-      return reviewTracks.map(normalizeApiTrack);
+      const objectsById = new Map(
+        asArray(review?.objects)
+          .map((object) => [String(object?.objectId || object?.id || ""), object])
+          .filter(([id]) => id),
+      );
+      return reviewTracks.map((track, index) => {
+        const normalized = normalizeApiTrack(track, index);
+        const object = objectsById.get(normalized.objectId) || {};
+        return { ...normalized, rightsSummary: normalized.rightsSummary || object.rightsSummary || null };
+      });
     }
 
     const result = job?.result || {};
@@ -1892,6 +1902,9 @@ const MotionJSONUI = (() => {
       const polygonFrames = frames.filter((frame) => asArray(frame.polygon).length >= 3).length;
       const warningChips = asArray(track.warnings).map((warning) => detailChip(warning)).join("");
       const relatedArtifacts = relatedArtifactsForTrack(track);
+      const rights = track.rightsSummary || {};
+      const sourceAttribution = rights.sourceAttribution || {};
+      const rightsStatus = rights.commercialUseStatus || rights.creatorApprovalStatus || "not reported";
       const artifactLinks = relatedArtifacts
         .slice(0, 4)
         .map((artifact) => {
@@ -1910,6 +1923,9 @@ const MotionJSONUI = (() => {
           <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} polygon frame${polygonFrames === 1 ? "" : "s"}` : "box overlay")}</dd>
           <dt>Preview</dt><dd>${escapeHtml(isTrackVisibleInReview(track) ? "visible" : "hidden")}</dd>
           <dt>Export</dt><dd>${escapeHtml(isTrackExportIncluded(track) ? "included" : "excluded")}</dd>
+          <dt>Rights</dt><dd>${escapeHtml(rightsStatus)}</dd>
+          <dt>License</dt><dd>${escapeHtml(rights.license || "not reported")}</dd>
+          <dt>Attribution</dt><dd>${escapeHtml(sourceAttribution.displayText || (rights.attributionRequired ? "required" : "not reported"))}</dd>
         </dl>
         <div class="track-actions">
           ${detailChip(track.reviewSource || "review")}
@@ -2093,6 +2109,30 @@ const MotionJSONUI = (() => {
       );
     }
 
+    function rightsWarningRows(rightsReport, exportWarnings) {
+      const warnings = asArray(exportWarnings).length ? asArray(exportWarnings) : asArray(rightsReport?.warnings);
+      if (!rightsReport && !warnings.length) return "";
+      const summary = rightsReport?.summary || {};
+      const status = summary.commercialUseApproved === true ? "ready" : "warn";
+      const commercialDetail = summary.commercialUseApproved === true
+        ? "commercial use approved for included objects"
+        : `${asArray(summary.commercialUseReviewRequired).length || warnings.length} rights item${(asArray(summary.commercialUseReviewRequired).length || warnings.length) === 1 ? "" : "s"} need review`;
+      const warningRows = warnings
+        .slice(0, 4)
+        .map((warning) => {
+          const severity = warning.severity === "info" ? "warn" : warning.severity === "bad" ? "bad" : "warn";
+          return `<div class="diagnostic-row is-${severity}"><strong>${escapeHtml(warning.code || "rights warning")}</strong><span class="row-meta">${escapeHtml(warning.message || warning.suggestedAction || "review rights metadata")}</span></div>`;
+        })
+        .join("");
+      return `
+        <div class="diagnostic-row is-${status}">
+          <strong>rights and lineage</strong>
+          <span class="row-meta">${escapeHtml(commercialDetail)}</span>
+        </div>
+        ${warningRows}
+      `;
+    }
+
     function clearExportPreflightState() {
       state.exportValidation = null;
       state.exportResult = null;
@@ -2152,6 +2192,7 @@ const MotionJSONUI = (() => {
         : candidateRouting
           ? `<div class="diagnostic-row is-warn"><strong>quality routing changed</strong><span class="row-meta">Validate again to refresh routes for the current export settings.</span></div>`
           : "";
+      const rightsRows = rightsWarningRows(exportState.rightsSummary || storedValidationArtifact?.metadata?.rightsSummary || state.jobReview?.rightsSummary, exportState.exportWarnings);
       $("#exportSummary").innerHTML = job
         ? `
             <div class="diagnostic-row is-${ok ? "ready" : status ? "warn" : "warn"}">
@@ -2169,6 +2210,7 @@ const MotionJSONUI = (() => {
                 : ""
             }
             ${issueRows}
+            ${rightsRows}
             ${routingRows}
             ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta">${artifactLinks}</span></div>` : ""}
           `

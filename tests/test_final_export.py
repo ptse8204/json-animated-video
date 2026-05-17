@@ -75,10 +75,20 @@ def test_mp4_final_render_reports_cached_no_ai_manifest(tmp_path):
             "objects": [{"objectId": "object_0", "selectedOutput": "raster_alpha_sequence"}],
             "preview": {"mp4Preview": {"status": "skipped", "path": "preview/preview.mp4"}},
         },
+        export_warnings=[
+            {
+                "code": "commercial_use_review_required",
+                "severity": "warn",
+                "objectId": "object_0",
+                "message": "object_0 requires review",
+                "suggestedAction": "review rights metadata",
+            }
+        ],
     )
     assert validate_document(manifest) == []
     assert manifest["source"]["directory"] == "."
     assert manifest["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert manifest["exportWarnings"][0]["code"] == "commercial_use_review_required"
 
 
 def test_phase11e_delivery_fallback_chooses_smallest_ready_production_asset():

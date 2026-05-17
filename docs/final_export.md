@@ -72,6 +72,9 @@ Phase 11 adds optional manifest blocks for validated local UI exports:
   plus preview route status. It records whether the handoff selected raster
   alpha, optional vector silhouettes, sprite atlas/WebM delivery, and MP4
   preview availability without rerunning providers.
+- `exportWarnings`: user-visible rights/lineage warnings, such as unverified
+  commercial-use rights, missing creator approval, unverified licenses, or
+  attribution requirements.
 
 ## Export Quality Routing
 
@@ -132,3 +135,7 @@ packages cached artifacts and saved correction state only.
 
 Preflight validation reports the MP4 preview route as `plan_ready` when FFmpeg
 is available, but it does not encode the MP4 until the final export request.
+Both preflight and final export include `rightsSummary` and `exportWarnings`.
+Warnings do not block local export, but they explain when source attribution,
+creator approval, license scope, or commercial-use review still needs attention
+before publishing.

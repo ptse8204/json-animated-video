@@ -138,8 +138,9 @@ Correction schemas are provider-neutral. They do not encode OpenRouter, hosted s
 Phase 8 writes `final_export_manifest.json` next to final exports. Each entry reports type, format, status, output path, bytes, fps, frame count, source scene, optional object id, rights passthrough, `rightsManifest`, and `aiUsage: none`. Export status can be `ready`, `plan_ready`, `not_configured`, `skipped`, `unavailable`, `unsupported`, or `error`.
 
 Phase 11 adds optional `provenance`, `config`, `qualityRouting`, and
-`validation` blocks to the same schema for local UI validated exports. These
-blocks record sanitized source job/config metadata, correction history state,
-export preset, included and excluded object ids, export quality routing,
-preview route status, validation status, and `aiUsage: none`. Export manifests
-now use `source.directory: "."` instead of embedding local absolute paths.
+`exportWarnings`, and `validation` blocks to the same schema for local UI
+validated exports. These blocks record sanitized source job/config metadata,
+correction history state, export preset, included and excluded object ids,
+export quality routing, preview route status, rights/lineage warnings,
+validation status, and `aiUsage: none`. Export manifests now use
+`source.directory: "."` instead of embedding local absolute paths.

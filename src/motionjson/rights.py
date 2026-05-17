@@ -10,6 +10,32 @@ from .exporters.scene_graph import write_json
 RIGHTS_MANIFEST_SCHEMA = "motionjson.rights_manifest.v0.1"
 
 
+def _source_attribution_summary(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return {
+            "required": bool(raw.get("required", True)),
+            "sourceType": raw.get("sourceType") or "user_upload",
+            "sourceAssetId": raw.get("sourceAssetId"),
+            "sourceUri": raw.get("sourceUri") or "",
+            "displayText": raw.get("displayText") or "User uploaded source video",
+        }
+    if isinstance(raw, bool):
+        return {
+            "required": raw,
+            "sourceType": "user_upload",
+            "sourceAssetId": None,
+            "sourceUri": "",
+            "displayText": "User uploaded source video",
+        }
+    return {
+        "required": True,
+        "sourceType": "user_upload",
+        "sourceAssetId": None,
+        "sourceUri": "",
+        "displayText": "User uploaded source video",
+    }
+
+
 @dataclass(frozen=True)
 class RightsContext:
     source_type: str = "user_upload"
@@ -45,9 +71,14 @@ def normalize_rights_context(
     else:
         raise TypeError("rights context must be a RightsContext, dict, or None")
 
-    source_attribution = raw.get("sourceAttribution") if isinstance(raw.get("sourceAttribution"), dict) else {}
+    source_attribution_raw = raw.get("sourceAttribution")
+    source_attribution = source_attribution_raw if isinstance(source_attribution_raw, dict) else {}
     license_details = raw.get("licenseDetails") if isinstance(raw.get("licenseDetails"), dict) else {}
     creator_approval = raw.get("creatorApproval") if isinstance(raw.get("creatorApproval"), dict) else {}
+    if isinstance(source_attribution_raw, bool):
+        attribution_required = source_attribution_raw
+    else:
+        attribution_required = bool(source_attribution.get("required", raw.get("attribution_required", True)))
 
     commercial_use = bool(raw.get("commercialUse", raw.get("commercial_use", False)))
     creator_approved = bool(creator_approval.get("approved", raw.get("creator_approved", False)))
@@ -58,7 +89,7 @@ def normalize_rights_context(
         source_asset_id=source_attribution.get("sourceAssetId") or raw.get("source_asset_id"),
         source_uri=str(source_attribution.get("sourceUri") or raw.get("source_uri") or fallback_source_uri or ""),
         display_text=str(source_attribution.get("displayText") or raw.get("display_text") or "User uploaded source video"),
-        attribution_required=bool(source_attribution.get("required", raw.get("attribution_required", True))),
+        attribution_required=attribution_required,
         license=str(raw.get("license") or "user_uploaded_unverified"),
         license_name=str(license_details.get("name") or raw.get("license_name") or "User uploaded - rights unverified"),
         license_url=license_details.get("url") or raw.get("license_url"),
@@ -130,7 +161,7 @@ def rights_summary(objects: dict[str, dict[str, Any]]) -> dict[str, Any]:
     for object_id, rights in objects.items():
         if rights.get("commercialUseStatus") != "approved":
             review_required.append(object_id)
-        if rights.get("sourceAttribution", {}).get("required"):
+        if _source_attribution_summary(rights.get("sourceAttribution"))["required"]:
             attribution_required.append(object_id)
         if rights.get("license"):
             licenses.add(str(rights["license"]))
@@ -140,6 +171,114 @@ def rights_summary(objects: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "commercialUseReviewRequired": sorted(review_required),
         "attributionRequired": sorted(attribution_required),
         "licenses": sorted(licenses),
+    }
+
+
+def rights_review_summary(rights: dict[str, Any]) -> dict[str, Any]:
+    source = _source_attribution_summary(rights.get("sourceAttribution"))
+    license_details = rights.get("licenseDetails") if isinstance(rights.get("licenseDetails"), dict) else {}
+    creator_approval = rights.get("creatorApproval") if isinstance(rights.get("creatorApproval"), dict) else {}
+    return {
+        "sourceAttribution": {
+            "required": source["required"],
+            "sourceType": source["sourceType"],
+            "sourceAssetId": source.get("sourceAssetId"),
+            "sourceUri": source["sourceUri"],
+            "displayText": source["displayText"],
+        },
+        "license": rights.get("license") or "user_uploaded_unverified",
+        "licenseName": license_details.get("name") or "User uploaded - rights unverified",
+        "licenseUrl": license_details.get("url"),
+        "licenseScope": license_details.get("scope") or "unknown",
+        "creatorApproved": bool(creator_approval.get("approved")),
+        "creatorApprovalStatus": creator_approval.get("status") or "unverified",
+        "commercialUse": bool(rights.get("commercialUse")),
+        "commercialUseStatus": rights.get("commercialUseStatus") or "review_required",
+        "attributionRequired": source["required"],
+        "lineageOperationCount": len(rights.get("assetLineage", {}).get("operations", [])) if isinstance(rights.get("assetLineage"), dict) else 0,
+    }
+
+
+def rights_warning_items(objects: dict[str, dict[str, Any]], *, labels: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    labels = labels or {}
+    warnings: list[dict[str, Any]] = []
+    for object_id, rights in objects.items():
+        label = labels.get(object_id) or object_id
+        summary = rights_review_summary(rights)
+        if summary["commercialUseStatus"] != "approved":
+            warnings.append(
+                {
+                    "code": "commercial_use_review_required",
+                    "severity": "warn",
+                    "objectId": object_id,
+                    "label": label,
+                    "message": f"{label} requires commercial-use review before external handoff.",
+                    "suggestedAction": "Confirm source rights or mark commercial-use approval before publishing.",
+                }
+            )
+        if not summary["creatorApproved"] or summary["creatorApprovalStatus"] != "approved":
+            warnings.append(
+                {
+                    "code": "creator_approval_unverified",
+                    "severity": "warn",
+                    "objectId": object_id,
+                    "label": label,
+                    "message": f"{label} does not have verified creator approval.",
+                    "suggestedAction": "Attach creator approval evidence or keep the export internal.",
+                }
+            )
+        if summary["license"] == "user_uploaded_unverified" or summary["licenseScope"] == "unknown":
+            warnings.append(
+                {
+                    "code": "license_unverified",
+                    "severity": "warn",
+                    "objectId": object_id,
+                    "label": label,
+                    "message": f"{label} uses unverified or unknown license metadata.",
+                    "suggestedAction": "Review the source license and update rights metadata before external use.",
+                }
+            )
+        if summary["attributionRequired"]:
+            warnings.append(
+                {
+                    "code": "attribution_required",
+                    "severity": "info",
+                    "objectId": object_id,
+                    "label": label,
+                    "message": f"{label} requires source attribution.",
+                    "suggestedAction": "Carry attribution text into downstream publishing surfaces.",
+                }
+            )
+    return warnings
+
+
+def build_rights_review_report(*, scene: dict[str, Any], source_asset_id: str | None = None) -> dict[str, Any]:
+    objects = scene.get("objects") if isinstance(scene.get("objects"), list) else []
+    rights_by_object: dict[str, dict[str, Any]] = {}
+    labels: dict[str, str] = {}
+    object_summaries: list[dict[str, Any]] = []
+    for index, obj in enumerate(objects):
+        if not isinstance(obj, dict):
+            continue
+        object_id = str(obj.get("id") or obj.get("objectId") or f"object_{index}")
+        rights = obj.get("rights") if isinstance(obj.get("rights"), dict) else {}
+        rights_by_object[object_id] = copy.deepcopy(rights)
+        labels[object_id] = str(obj.get("label") or object_id)
+        object_summaries.append(
+            {
+                "objectId": object_id,
+                "label": labels[object_id],
+                **rights_review_summary(rights),
+            }
+        )
+    return {
+        "format": "motionjson.export_rights_summary.v0.1",
+        "rightsManifest": scene.get("rightsManifest", "rights_manifest.json"),
+        "sourceAssetId": source_asset_id,
+        "summary": rights_summary(rights_by_object),
+        "objects": object_summaries,
+        "warnings": rights_warning_items(rights_by_object, labels=labels),
+        "aiUsage": "none",
     }
 
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from motionjson.backend.assets import list_assets_for_job, register_generated_asset
+from motionjson.backend.rights import list_asset_lineage, list_asset_rights
 from motionjson.backend.jobs import record_job_event
 from motionjson.ui import server as ui_server
 from motionjson.ui.server import LOCAL_UI_EMAIL
@@ -641,6 +642,14 @@ def test_local_ui_api_runs_mock_job_from_run_config_and_exposes_review_metadata(
     assert review["tracks"][0]["objectId"] == "object_0"
     assert review["tracks"][0]["visibleFrameCount"] == 2
     assert review["objects"][0]["objectId"] == "object_0"
+    assert review["objects"][0]["rightsSummary"]["license"] == "user_uploaded_unverified"
+    assert review["rightsSummary"]["format"] == "motionjson.export_rights_summary.v0.1"
+    assert review["rightsSummary"]["summary"]["commercialUseApproved"] is False
+    assert {warning["code"] for warning in review["rightsSummary"]["warnings"]} >= {
+        "commercial_use_review_required",
+        "creator_approval_unverified",
+        "license_unverified",
+    }
     assert review["fallbackDiagnostics"] == []
     assert str(tmp_path) not in body.decode("utf-8")
     assert "storage_key" not in body.decode("utf-8")
@@ -734,6 +743,13 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
         "transparent_webm",
     }
     assert validation_payload["qualityRouting"]["preview"]["mp4Preview"]["status"] == "skipped"
+    assert validation_payload["rightsSummary"]["format"] == "motionjson.export_rights_summary.v0.1"
+    assert validation_payload["rightsSummary"]["summary"]["commercialUseApproved"] is False
+    assert {warning["code"] for warning in validation_payload["exportWarnings"]} >= {
+        "commercial_use_review_required",
+        "creator_approval_unverified",
+        "license_unverified",
+    }
 
     status, _headers, body = app.handle(
         "POST",
@@ -753,6 +769,12 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert exported["qualityRouting"]["objects"][0]["rasterAlpha"]["status"] == "ready"
     assert exported["qualityRouting"]["objects"][0]["vectorSilhouette"]["status"] in {"ready", "skipped"}
     assert exported["qualityRouting"]["preview"]["mp4Preview"]["status"] in {"ready", "unavailable", "error", "skipped"}
+    assert exported["rightsSummary"]["summary"]["commercialUseApproved"] is False
+    assert {warning["code"] for warning in exported["exportWarnings"]} >= {
+        "commercial_use_review_required",
+        "creator_approval_unverified",
+        "license_unverified",
+    }
     kinds = {asset["kind"] for asset in exported["assets"]}
     assert {
         "validated_motionjson_scene",
@@ -803,9 +825,15 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
         "hybrid_vector_silhouette_plus_raster",
     }
     assert manifest["qualityRouting"]["preview"]["mp4Preview"]["status"] in {"ready", "unavailable", "error", "skipped"}
+    assert {warning["code"] for warning in manifest["exportWarnings"]} >= {
+        "commercial_use_review_required",
+        "creator_approval_unverified",
+        "license_unverified",
+    }
 
     routing_asset = next(asset for asset in exported["assets"] if asset["kind"] == "export_quality_routing")
     assert routing_asset["metadata"]["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert routing_asset["metadata"]["rightsSummary"]["format"] == "motionjson.export_rights_summary.v0.1"
     status, _headers, routing_body = app.handle("GET", routing_asset["contentUrl"])
     routing = decode(routing_body)
     assert status == 200
@@ -813,6 +841,15 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert routing["objects"][0]["label"] == "Export Ball"
     assert str(tmp_path) not in routing_body.decode("utf-8")
     assert "projects/" not in routing_body.decode("utf-8")
+
+    conn = app.connection()
+    try:
+        zip_lineage = list_asset_lineage(conn, asset_id=zip_asset["id"])
+        zip_rights = list_asset_rights(conn, asset_id=zip_asset["id"])
+    finally:
+        conn.close()
+    assert any(row["operation"] == "validated_motionjson_export" and row["source_asset_id"] == video["id"] for row in zip_lineage)
+    assert any(json.loads(row["rights_json"])["license"] == "user_uploaded_unverified" for row in zip_rights)
 
     imported_scene = tmp_path / "imported_scene_graph.json"
     imported_scene.write_bytes(scene_body)
@@ -834,6 +871,38 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     imported_review = decode(body)["review"]
     assert imported_review["objects"][0]["objectId"] == "object_0"
     assert imported_review["objects"][0]["label"] == "Export Ball"
+
+
+def test_local_ui_review_and_export_accept_legacy_boolean_rights(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Legacy Rights Export")
+    scene_asset = scene_asset_for_job(app, job)
+    storage = app.storage()
+    scene = json.loads(storage.load_bytes(scene_asset["storage_key"]).decode("utf-8"))
+    scene["objects"][0]["rights"] = {
+        "sourceAttribution": True,
+        "license": "user_uploaded_placeholder",
+        "notes": "Rights and likeness review required before remixing third-party footage.",
+    }
+    storage.save_bytes(scene_asset["storage_key"], json.dumps(scene).encode("utf-8"), content_type="application/json")
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    review = decode(body)["review"]
+    assert status == 200
+    assert review["objects"][0]["rightsSummary"]["sourceAttribution"]["required"] is True
+    assert review["rightsSummary"]["summary"]["attributionRequired"] == ["object_0"]
+    assert "attribution_required" in {warning["code"] for warning in review["rightsSummary"]["warnings"]}
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "compact", "includeMasks": False, "includeContours": False, "includePreview": False}).encode("utf-8"),
+    )
+    exported = decode(body)["export"]
+    assert status == 200
+    assert exported["validation"]["ok"] is True
+    assert exported["rightsSummary"]["summary"]["attributionRequired"] == ["object_0"]
+    assert "attribution_required" in {warning["code"] for warning in exported["exportWarnings"]}
 
 
 def test_local_ui_motionjson_import_missing_path_returns_redacted_bad_request(tmp_path):

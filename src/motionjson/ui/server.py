@@ -41,6 +41,7 @@ from motionjson.capabilities import build_capability_report
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
 from motionjson.providers.discovery import discovery_provider_schemas
 from motionjson.providers.local_storage import LocalStorageProvider
+from motionjson.rights import build_rights_review_report, rights_review_summary
 
 
 LOCAL_UI_EMAIL = "local-ui@motionjson.local"
@@ -325,6 +326,7 @@ def _track_review_summary(track: dict[str, Any]) -> dict[str, Any]:
 def _scene_object_review_summary(item: dict[str, Any]) -> dict[str, Any]:
     motion = item.get("motion") if isinstance(item.get("motion"), list) else []
     visible_motion = [frame for frame in motion if isinstance(frame, dict) and frame.get("visible")]
+    rights = item.get("rights") if isinstance(item.get("rights"), dict) else {}
     return {
         "objectId": item.get("id") or item.get("objectId"),
         "label": item.get("label"),
@@ -334,6 +336,7 @@ def _scene_object_review_summary(item: dict[str, Any]) -> dict[str, Any]:
         "frameCount": len(motion),
         "visibleFrameCount": len(visible_motion),
         "quality": item.get("quality", {}),
+        "rightsSummary": rights_review_summary(rights),
         "firstVisibleFrame": visible_motion[0].get("frame") if visible_motion else None,
         "lastVisibleFrame": visible_motion[-1].get("frame") if visible_motion else None,
     }
@@ -1156,6 +1159,16 @@ class LocalUIApp:
             for item in objects
             if isinstance(item, dict)
         ]
+        source_asset_id = None
+        for item in objects:
+            if not isinstance(item, dict):
+                continue
+            rights = item.get("rights") if isinstance(item.get("rights"), dict) else {}
+            source_attribution = rights.get("sourceAttribution") if isinstance(rights.get("sourceAttribution"), dict) else {}
+            source_asset_id = source_attribution.get("sourceAssetId")
+            if source_asset_id:
+                break
+        review["rightsSummary"] = _public_review_value(build_rights_review_report(scene=document, source_asset_id=source_asset_id))
 
     def _video_content(self, asset_id: str, *, headers: dict[str, str], head: bool = False) -> tuple[int, dict[str, str], bytes]:
         conn = self.connection()
