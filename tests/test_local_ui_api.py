@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from urllib.parse import quote
 
-from motionjson.backend.assets import list_assets_for_job, register_generated_asset
+from motionjson.backend.assets import list_assets_for_job, register_generated_asset, register_upload
 from motionjson.backend.rights import list_asset_lineage, list_asset_rights
 from motionjson.backend.jobs import record_job_event
 from motionjson.ui import server as ui_server
@@ -19,6 +19,20 @@ from motionjson.validation import validate_document
 
 def demo_video() -> Path:
     return Path(__file__).resolve().parents[1] / "examples" / "demo_red_ball.mp4"
+
+
+def approved_creator_pack_rights() -> dict:
+    return {
+        "source_uri": "local://approved-library-layer.mp4",
+        "display_text": "Approved local library layer",
+        "license": "creator_pack_license",
+        "license_name": "Creator Pack License",
+        "license_scope": "commercial",
+        "creator_approved": True,
+        "creator_approval_status": "approved",
+        "commercial_use": True,
+        "commercial_use_status": "approved",
+    }
 
 
 def decode(body: bytes) -> dict:
@@ -91,6 +105,11 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/exports" in health["routes"]
     assert "/api/jobs/{jobId}/cancel" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
+    assert "/api/library/assets" in health["routes"]
+    assert "/api/library/assets/{libraryAssetId}" in health["routes"]
+    assert "/api/library/collections" in health["routes"]
+    assert "/api/library/packs" in health["routes"]
+    assert "/api/projects/{projectId}/library-assets" in health["routes"]
 
     status, _headers, body = app.handle("GET", "/api/capabilities")
     capabilities = decode(body)
@@ -161,6 +180,123 @@ def test_local_ui_capabilities_redacts_windows_probe_paths(tmp_path):
         assert "[LOCAL_PATH_REDACTED]" in encoded
         for value in leaked:
             assert value not in encoded
+
+
+def test_local_ui_asset_library_routes_save_collections_and_creator_packs(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Library UI Project"}).encode("utf-8"))
+    assert status == 200
+    project = decode(body)["project"]
+    approved_path = tmp_path / "approved-layer.mp4"
+    approved_path.write_bytes(b"approved layer bytes")
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        asset = register_upload(
+            conn,
+            storage=app.storage(),
+            user_id=user["id"],
+            project_id=project["id"],
+            path=approved_path,
+            kind="source_video",
+            metadata={"rights_context": approved_creator_pack_rights()},
+        )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/library-assets",
+        body=json.dumps({"assetId": asset["id"], "type": "motion_sticker", "title": "Approved Layer", "tags": ["Hero"]}).encode("utf-8"),
+    )
+    assert status == 200
+    library_asset = decode(body)["libraryAsset"]
+    assert library_asset["type"] == "motion_sticker"
+    assert library_asset["creatorApproved"] is True
+    assert library_asset["commercialUseStatus"] == "approved"
+    assert "storage_key" not in body.decode("utf-8")
+    assert "approved layer bytes" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", f"/api/library/assets/{library_asset['id']}")
+    assert status == 200
+    assert decode(body)["libraryAsset"]["id"] == library_asset["id"]
+
+    status, _headers, body = app.handle("GET", "/api/library/assets?creatorApproved=true&tag=hero")
+    listed = decode(body)
+    assert status == 200
+    assert listed["assets"][0]["id"] == library_asset["id"]
+    assert listed["aiUsage"] == "none"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/library/collections",
+        body=json.dumps({"projectId": project["id"], "title": "Approved Brand"}).encode("utf-8"),
+    )
+    assert status == 200
+    collection = decode(body)["collection"]
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/library/collections/{collection['id']}/assets",
+        body=json.dumps({"libraryAssetId": library_asset["id"]}).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["collectionAsset"]["aiUsage"] == "none"
+
+    status, _headers, body = app.handle("GET", f"/api/library/collections/{collection['id']}/assets")
+    assert status == 200
+    assert decode(body)["assets"][0]["id"] == library_asset["id"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/library/packs",
+        body=json.dumps({"collectionId": collection["id"], "title": "Approved Pack"}).encode("utf-8"),
+    )
+    assert status == 200
+    pack = decode(body)["pack"]
+    assert pack["assetCount"] == 1
+    status, _headers, body = app.handle("GET", f"/api/library/assets?packId={pack['id']}")
+    assert status == 200
+    assert decode(body)["assets"][0]["id"] == library_asset["id"]
+
+
+def test_local_ui_asset_library_pack_rejects_unapproved_layers(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Unapproved Library"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    source = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/library-assets",
+        body=json.dumps({"assetId": source["id"], "type": "motion_sticker", "title": "Needs Review"}).encode("utf-8"),
+    )
+    library_asset = decode(body)["libraryAsset"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/library/collections",
+        body=json.dumps({"projectId": project["id"], "title": "Review Collection"}).encode("utf-8"),
+    )
+    collection = decode(body)["collection"]
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/library/collections/{collection['id']}/assets",
+        body=json.dumps({"libraryAssetId": library_asset["id"]}).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/library/packs",
+        body=json.dumps({"collectionId": collection["id"], "title": "Blocked Pack"}).encode("utf-8"),
+    )
+
+    assert status == 400
+    assert "creator-approved packs require approved creator and commercial-use asset rights" in decode(body)["error"]
+    assert "storage_key" not in body.decode("utf-8")
 
 
 def test_local_ui_capabilities_preserve_provider_failure_details(tmp_path, monkeypatch):

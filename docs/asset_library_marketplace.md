@@ -4,6 +4,13 @@ Phase 18 adds a local asset-library foundation for reusable MotionJSON motion
 layers. It is not a public marketplace launch and does not add billing,
 commerce, public listings, new AI calls, or paid provider calls.
 
+Phase 11G also exposes these existing primitives in the local UI through an
+Asset Library panel. The UI panel saves explicit generated/export artifacts as
+`motion_sticker` library assets, searches saved layers, creates brand
+collections, attaches selected layers to collections, and attempts
+creator-approved pack creation through the same backend rights gate described
+below.
+
 MotionJSON turns useful video elements into reusable motion layers for editors
 and websites. Photoreal objects remain cached raster/alpha assets by default
 and are controlled by JSON transforms. SVG/Lottie stays limited to simple
@@ -64,6 +71,12 @@ REST:
 GET /v1/library/assets?q=&tag=&license=&licenseScope=&creatorApproved=&commercialUseStatus=&collectionId=&packId=
 ```
 
+Local UI route:
+
+```http
+GET /api/library/assets?q=&tag=&creatorApproved=&commercialUseStatus=&collectionId=&packId=
+```
+
 Search uses deterministic SQLite `LIKE` matching over title, description,
 license, and tags. It does not use external search services.
 
@@ -120,6 +133,19 @@ REST endpoints:
 - `GET /v1/library/collections/{collectionId}/assets`
 - `POST /v1/library/packs`
 - `GET /v1/library/packs`
+
+The dependency-light local UI mirrors the same workflow under `/api/` for the
+reserved local UI user:
+
+- `POST /api/projects/{projectId}/library-assets`
+- `GET /api/library/assets`
+- `GET /api/library/assets/{libraryAssetId}`
+- `POST /api/library/collections`
+- `GET /api/library/collections`
+- `POST /api/library/collections/{collectionId}/assets`
+- `GET /api/library/collections/{collectionId}/assets`
+- `POST /api/library/packs`
+- `GET /api/library/packs`
 
 JavaScript SDK helpers:
 

@@ -33,6 +33,17 @@ from motionjson.backend.export_workflows import (
     validate_motionjson_export_job,
 )
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
+from motionjson.backend.library import (
+    add_asset_to_collection,
+    create_collection,
+    create_creator_pack,
+    get_library_asset,
+    list_collection_assets,
+    list_collections,
+    list_creator_packs,
+    list_library_assets,
+    save_library_asset,
+)
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.backend.queue import request_cancel_job
@@ -434,6 +445,12 @@ class LocalUIApp:
                     "/api/artifacts",
                     "/api/artifacts/{artifactId}/content",
                     "/api/exports/formats",
+                    "/api/library/assets",
+                    "/api/library/assets/{libraryAssetId}",
+                    "/api/library/collections",
+                    "/api/library/collections/{collectionId}/assets",
+                    "/api/library/packs",
+                    "/api/projects/{projectId}/library-assets",
                     "/api/projects/{projectId}/imports/motionjson",
                 ],
             }
@@ -489,8 +506,65 @@ class LocalUIApp:
                         description=str(payload.get("description") or ""),
                     )
                 }
+            if path == "/api/library/assets" and method == "GET":
+                return _public_value(list_library_assets(conn, user_id=user_id, filters=self._library_filters(query)))
+            if path.startswith("/api/library/assets/") and method == "GET":
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 4:
+                    return {"libraryAsset": _public_value(get_library_asset(conn, user_id=user_id, library_asset_id=parts[3]))}
+            if path == "/api/library/collections" and method == "GET":
+                return _public_value(list_collections(conn, user_id=user_id))
+            if path == "/api/library/collections" and method == "POST":
+                collection = create_collection(
+                    conn,
+                    user_id=user_id,
+                    title=str(payload.get("title") or payload.get("name") or ""),
+                    description=str(payload.get("description") or ""),
+                    project_id=payload.get("projectId"),
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                return {"collection": _public_value(collection)}
+            if path.startswith("/api/library/collections/"):
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 5 and parts[4] == "assets" and method == "GET":
+                    return _public_value(list_collection_assets(conn, user_id=user_id, collection_id=parts[3]))
+                if len(parts) == 5 and parts[4] == "assets" and method == "POST":
+                    added = add_asset_to_collection(
+                        conn,
+                        user_id=user_id,
+                        collection_id=parts[3],
+                        library_asset_id=str(payload.get("libraryAssetId") or ""),
+                    )
+                    return {"collectionAsset": _public_value(added)}
+            if path == "/api/library/packs" and method == "GET":
+                return _public_value(list_creator_packs(conn, user_id=user_id))
+            if path == "/api/library/packs" and method == "POST":
+                pack = create_creator_pack(
+                    conn,
+                    user_id=user_id,
+                    collection_id=str(payload.get("collectionId") or ""),
+                    title=str(payload.get("title") or payload.get("name") or ""),
+                    description=str(payload.get("description") or ""),
+                    library_asset_ids=payload.get("libraryAssetIds") if isinstance(payload.get("libraryAssetIds"), list) else None,
+                    metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                )
+                return {"pack": _public_value(pack)}
             if path.startswith("/api/projects/") and method == "POST":
                 parts = [part for part in path.split("/") if part]
+                if len(parts) == 4 and parts[3] == "library-assets":
+                    library_asset = save_library_asset(
+                        conn,
+                        user_id=user_id,
+                        project_id=parts[2],
+                        asset_id=str(payload.get("assetId") or ""),
+                        type=str(payload.get("type") or "saved_asset"),
+                        title=str(payload.get("title") or ""),
+                        description=str(payload.get("description") or ""),
+                        tags=payload.get("tags") if isinstance(payload.get("tags"), list) else None,
+                        metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                    )
+                    public_asset = _public_value(library_asset)
+                    return {"libraryAsset": public_asset, "asset": public_asset}
                 if len(parts) == 5 and parts[3] == "imports" and parts[4] == "motionjson":
                     imported = import_motionjson_result(
                         conn,
@@ -1263,6 +1337,22 @@ class LocalUIApp:
     def _query_one(query: dict[str, list[str]], key: str) -> str | None:
         values = query.get(key) or []
         return values[0] if values else None
+
+    @staticmethod
+    def _library_filters(query: dict[str, list[str]]) -> dict[str, str]:
+        allowed = {
+            "collectionId",
+            "commercialUse",
+            "commercialUseStatus",
+            "creatorApproved",
+            "license",
+            "licenseScope",
+            "packId",
+            "q",
+            "tag",
+            "type",
+        }
+        return {key: values[0] for key, values in query.items() if key in allowed and values and values[0] != ""}
 
 
 def make_handler(app: LocalUIApp) -> type[BaseHTTPRequestHandler]:

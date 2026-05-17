@@ -20,6 +20,12 @@ const MotionJSONUI = (() => {
     "/api/progress",
     "/api/artifacts",
     "/api/exports/formats",
+    "/api/library/assets",
+    "/api/library/assets/{libraryAssetId}",
+    "/api/library/collections",
+    "/api/library/collections/{collectionId}/assets",
+    "/api/library/packs",
+    "/api/projects/{projectId}/library-assets",
     "/api/projects/{projectId}/imports/motionjson",
   ];
 
@@ -29,6 +35,19 @@ const MotionJSONUI = (() => {
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external"]);
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
+  const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
+    "cutout",
+    "final_render_mp4",
+    "lottie_silhouette",
+    "motionjson_export_zip",
+    "object_manifest",
+    "remotion_plan",
+    "scene_graph",
+    "transparent_webm",
+    "validated_motionjson_scene",
+    "web_manifest",
+    "website_package",
+  ]);
   const EXPORT_PRESET_DEFAULTS = {
     compact: { includeMasks: false, includeContours: false, includePreview: true },
     debug: { includeMasks: true, includeContours: true, includePreview: true },
@@ -125,6 +144,13 @@ const MotionJSONUI = (() => {
     correctionState: emptyCorrectionState(),
     exportValidation: null,
     exportResult: null,
+    libraryAssets: [],
+    libraryCollections: [],
+    libraryPacks: [],
+    selectedLibraryAssetId: "",
+    selectedLibraryArtifactId: "",
+    selectedLibraryCollectionId: "",
+    libraryStatus: "Not loaded",
     importStatus: "",
     selectedCorrectionTrackId: "",
     mergeSelection: new Set(),
@@ -1790,6 +1816,166 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Artifacts appear here after the worker registers output files.</div>`;
     }
 
+    function libraryAssetRoute() {
+      const params = new URLSearchParams();
+      const query = $("#librarySearch")?.value?.trim();
+      const tag = $("#libraryTagFilter")?.value?.trim();
+      if (query) params.set("q", query);
+      if (tag) params.set("tag", tag);
+      const suffix = params.toString();
+      return suffix ? `/api/library/assets?${suffix}` : "/api/library/assets";
+    }
+
+    function libraryArtifactIsSaveable(artifact) {
+      return Boolean(artifact?.id && LIBRARY_SAVEABLE_ARTIFACT_KINDS.has(String(artifact.kind || "")));
+    }
+
+    function librarySourceArtifacts() {
+      return state.jobArtifacts.filter(libraryArtifactIsSaveable);
+    }
+
+    function libraryUnsupportedArtifactCount() {
+      return state.jobArtifacts.filter((artifact) => artifact?.id && !libraryArtifactIsSaveable(artifact)).length;
+    }
+
+    function selectedLibraryArtifactId(sourceArtifacts = librarySourceArtifacts()) {
+      if (!state.selectedLibraryArtifactId || !sourceArtifacts.some((artifact) => artifact.id === state.selectedLibraryArtifactId)) {
+        state.selectedLibraryArtifactId = sourceArtifacts[0]?.id || "";
+      }
+      return state.selectedLibraryArtifactId;
+    }
+
+    function selectedLibraryCollectionId() {
+      if (
+        !state.selectedLibraryCollectionId ||
+        !state.libraryCollections.some((collection) => collection.id === state.selectedLibraryCollectionId)
+      ) {
+        state.selectedLibraryCollectionId = state.libraryCollections[0]?.id || "";
+      }
+      return state.selectedLibraryCollectionId;
+    }
+
+    function selectedLibraryAsset() {
+      return state.libraryAssets.find((asset) => asset.id === state.selectedLibraryAssetId) || state.libraryAssets[0] || null;
+    }
+
+    function libraryTagsFromInput() {
+      return String($("#libraryAssetTags")?.value || "")
+        .split(/[,\s]+/)
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+    }
+
+    function libraryRightsStatus(asset) {
+      if (asset?.creatorApproved && asset?.commercialUseStatus === "approved") return "approved";
+      return asset?.commercialUseStatus || asset?.creatorApprovalStatus || "review_required";
+    }
+
+    function renderAssetLibraryPanel() {
+      const status = $("#libraryStatus");
+      const sourceArtifacts = librarySourceArtifacts();
+      const unsupportedArtifactCount = libraryUnsupportedArtifactCount();
+      if (state.errors.library) {
+        status.textContent = "Unavailable";
+        status.className = "status-chip is-bad";
+      } else {
+        status.textContent = `${state.libraryAssets.length} saved`;
+        status.className = `status-chip ${state.libraryAssets.length ? "is-ready" : "is-muted"}`;
+      }
+
+      const libraryError = $("#libraryError");
+      libraryError.hidden = !state.errors.library;
+      libraryError.textContent = state.errors.library || "";
+
+      const artifactNotice = $("#libraryArtifactNotice");
+      artifactNotice.hidden = unsupportedArtifactCount === 0;
+      artifactNotice.textContent = unsupportedArtifactCount
+        ? `${unsupportedArtifactCount} current artifacts are diagnostics, logs, or unsupported files and cannot be saved as motion layers.`
+        : "";
+
+      const selectedArtifactId = selectedLibraryArtifactId(sourceArtifacts);
+      const artifactSelect = $("#libraryArtifactSelect");
+      artifactSelect.disabled = !sourceArtifacts.length;
+      artifactSelect.innerHTML = sourceArtifacts.length
+        ? sourceArtifacts
+            .map((artifact) => {
+              const relPath = artifact.metadata?.rel_path || artifact.path || artifact.kind || artifact.id;
+              const selected = artifact.id === selectedArtifactId ? " selected" : "";
+              return `<option value="${escapeAttribute(artifact.id)}"${selected}>${escapeHtml(`${artifact.kind || "artifact"} - ${relPath}`)}</option>`;
+            })
+            .join("")
+        : `<option value="">No reusable layer/export artifacts</option>`;
+      $("#saveLibraryAssetButton").disabled = !state.selectedProjectId || !sourceArtifacts.length;
+
+      if (!state.selectedLibraryAssetId || !state.libraryAssets.some((asset) => asset.id === state.selectedLibraryAssetId)) {
+        state.selectedLibraryAssetId = state.libraryAssets[0]?.id || "";
+      }
+      const selectedAsset = selectedLibraryAsset();
+      const collectionId = selectedLibraryCollectionId();
+      $("#addLibraryAssetToCollectionButton").disabled = !selectedAsset || !state.libraryCollections.length;
+
+      $("#libraryAssetList").innerHTML = state.libraryAssets.length
+        ? state.libraryAssets
+            .map((asset) => {
+              const selected = asset.id === state.selectedLibraryAssetId;
+              const details = [
+                asset.type,
+                asset.license || "license not reported",
+                asset.licenseScope || "scope unknown",
+                asArray(asset.tags).length ? `tags: ${asset.tags.join(", ")}` : "",
+              ]
+                .filter(Boolean)
+                .join(" - ");
+              return `
+                <button class="library-row ${selected ? "is-selected" : ""}" type="button" data-library-asset-id="${escapeAttribute(asset.id)}" aria-pressed="${selected}">
+                  <strong>${escapeHtml(asset.title || asset.id)}</strong>
+                  ${statusChip(libraryRightsStatus(asset), libraryRightsStatus(asset), asset.creatorApproved && asset.commercialUseStatus === "approved")}
+                  <span class="row-meta">${escapeHtml(details)}</span>
+                </button>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">${escapeHtml(state.errors.library || "Save a generated artifact as a reusable motion layer after a run.")}</div>`;
+
+      const collectionSelect = $("#libraryCollectionSelect");
+      collectionSelect.innerHTML = state.libraryCollections.length
+        ? state.libraryCollections
+            .map((collection) => {
+              const selected = collection.id === collectionId ? " selected" : "";
+              return `<option value="${escapeAttribute(collection.id)}"${selected}>${escapeHtml(collection.title || collection.id)}</option>`;
+            })
+            .join("")
+        : `<option value="">No collection</option>`;
+      $("#libraryCollectionList").innerHTML = state.libraryCollections.length
+        ? state.libraryCollections
+            .map(
+              (collection) => `
+                <div class="library-row">
+                  <strong>${escapeHtml(collection.title || collection.id)}</strong>
+                  ${statusChip(`${collection.assetCount || 0} layers`, "ready", true)}
+                  <span class="row-meta">${escapeHtml(collection.description || collection.id)}</span>
+                </div>
+              `,
+            )
+            .join("")
+        : `<div class="empty-state">Create a brand collection before assembling packs.</div>`;
+
+      $("#libraryPackForm button").disabled = !state.libraryCollections.length;
+      $("#libraryPackList").innerHTML = state.libraryPacks.length
+        ? state.libraryPacks
+            .map(
+              (pack) => `
+                <div class="library-row">
+                  <strong>${escapeHtml(pack.title || pack.id)}</strong>
+                  ${statusChip(`${pack.assetCount || 0} approved`, pack.assetCount ? "ready" : "warn", pack.assetCount > 0)}
+                  <span class="row-meta">${escapeHtml(`collection: ${pack.collectionId || "not reported"}`)}</span>
+                </div>
+              `,
+            )
+            .join("")
+        : `<div class="empty-state">Creator-approved packs appear after all selected collection assets pass rights checks.</div>`;
+    }
+
     function renderCandidateSummary() {
       const summary = state.jobReview?.candidateSummary || null;
       const candidates = asArray(summary?.candidates);
@@ -2235,6 +2421,7 @@ const MotionJSONUI = (() => {
       renderSelectedJobFacts();
       renderEventLog();
       renderArtifactBrowser();
+      renderAssetLibraryPanel();
       renderCandidateSummary();
       renderCorrectionPanel();
       renderTrackList();
@@ -3002,6 +3189,9 @@ const MotionJSONUI = (() => {
           ["runDefaults", "/api/run-config/defaults"],
           ["exportFormats", "/api/exports/formats"],
           ["projects", "/api/projects"],
+          ["libraryAssets", libraryAssetRoute()],
+          ["libraryCollections", "/api/library/collections"],
+          ["libraryPacks", "/api/library/packs"],
         ].map(async ([key, route]) => {
           try {
             return [key, await api(route), null];
@@ -3019,7 +3209,11 @@ const MotionJSONUI = (() => {
         if (key === "runDefaults") state.runDefaults = payload;
         if (key === "exportFormats") state.exportFormats = payload;
         if (key === "projects") state.projects = payload?.projects || [];
+        if (key === "libraryAssets") state.libraryAssets = payload?.assets || [];
+        if (key === "libraryCollections") state.libraryCollections = payload?.collections || [];
+        if (key === "libraryPacks") state.libraryPacks = payload?.packs || [];
       }
+      state.errors.library = [state.errors.libraryAssets, state.errors.libraryCollections, state.errors.libraryPacks].filter(Boolean).join(" ");
     }
 
     function mergeProgressJobs(jobs, progress) {
@@ -3156,6 +3350,7 @@ const MotionJSONUI = (() => {
       renderFirstRunChecklist();
       renderRunDefaults();
       renderProjects();
+      renderAssetLibraryPanel();
       renderExportPresetOptions();
       renderMaskProviderOptions();
       renderPresetFields();
@@ -3603,6 +3798,117 @@ const MotionJSONUI = (() => {
       }
     }
 
+    async function refreshLibraryData() {
+      const entries = await Promise.all(
+        [
+          ["libraryAssets", libraryAssetRoute()],
+          ["libraryCollections", "/api/library/collections"],
+          ["libraryPacks", "/api/library/packs"],
+        ].map(async ([key, route]) => {
+          try {
+            return [key, await api(route), null];
+          } catch (error) {
+            return [key, null, error.message];
+          }
+        }),
+      );
+      state.errors.library = "";
+      for (const [key, payload, error] of entries) {
+        if (error) state.errors.library = [state.errors.library, error].filter(Boolean).join(" ");
+        if (key === "libraryAssets") state.libraryAssets = payload?.assets || [];
+        if (key === "libraryCollections") state.libraryCollections = payload?.collections || [];
+        if (key === "libraryPacks") state.libraryPacks = payload?.packs || [];
+      }
+      renderAssetLibraryPanel();
+    }
+
+    async function saveSelectedLibraryAsset() {
+      const artifactId = selectedLibraryArtifactId();
+      if (!state.selectedProjectId || !artifactId) return;
+      $("#libraryStatus").textContent = "Saving";
+      $("#libraryStatus").className = "status-chip is-neutral";
+      try {
+        const response = await api(`/api/projects/${encodeURIComponent(state.selectedProjectId)}/library-assets`, {
+          method: "POST",
+          body: JSON.stringify({
+            assetId: artifactId,
+            type: "motion_sticker",
+            title: $("#libraryAssetTitle").value.trim() || "Reusable motion layer",
+            description: "Saved from the local UI asset library panel.",
+            tags: libraryTagsFromInput(),
+            metadata: { source: "local_ui_asset_library" },
+          }),
+        });
+        state.selectedLibraryAssetId = response.libraryAsset?.id || response.asset?.id || state.selectedLibraryAssetId;
+        await refreshLibraryData();
+      } catch (error) {
+        state.errors.library = error.message;
+        renderAssetLibraryPanel();
+      }
+    }
+
+    async function createLibraryCollection() {
+      const title = $("#libraryCollectionTitle").value.trim();
+      if (!title) return;
+      $("#libraryStatus").textContent = "Creating";
+      $("#libraryStatus").className = "status-chip is-neutral";
+      try {
+        await api("/api/library/collections", {
+          method: "POST",
+          body: JSON.stringify({
+            projectId: state.selectedProjectId || null,
+            title,
+            metadata: { source: "local_ui_asset_library" },
+          }),
+        });
+        state.selectedLibraryCollectionId = "";
+        await refreshLibraryData();
+      } catch (error) {
+        state.errors.library = error.message;
+        renderAssetLibraryPanel();
+      }
+    }
+
+    async function addSelectedLibraryAssetToCollection() {
+      const asset = selectedLibraryAsset();
+      const collectionId = selectedLibraryCollectionId();
+      if (!asset || !collectionId) return;
+      $("#libraryStatus").textContent = "Adding";
+      $("#libraryStatus").className = "status-chip is-neutral";
+      try {
+        await api(`/api/library/collections/${encodeURIComponent(collectionId)}/assets`, {
+          method: "POST",
+          body: JSON.stringify({ libraryAssetId: asset.id }),
+        });
+        await refreshLibraryData();
+      } catch (error) {
+        state.errors.library = error.message;
+        renderAssetLibraryPanel();
+      }
+    }
+
+    async function createCreatorPackFromCollection() {
+      const collectionId = selectedLibraryCollectionId();
+      const title = $("#libraryPackTitle").value.trim();
+      if (!collectionId || !title) return;
+      $("#libraryStatus").textContent = "Creating pack";
+      $("#libraryStatus").className = "status-chip is-neutral";
+      try {
+        await api("/api/library/packs", {
+          method: "POST",
+          body: JSON.stringify({
+            collectionId,
+            title,
+            metadata: { source: "local_ui_asset_library" },
+          }),
+        });
+        await refreshLibraryData();
+      } catch (error) {
+        state.errors.library = error.message;
+        renderAssetLibraryPanel();
+      }
+    }
+
     $("#refreshButton").addEventListener("click", refreshAll);
     $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
@@ -3612,6 +3918,35 @@ const MotionJSONUI = (() => {
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
     ["exportIncludeMasks", "exportIncludeContours", "exportIncludePreview"].forEach((id) => {
       $(`#${id}`).addEventListener("change", clearExportPreflightState);
+    });
+
+    $("#librarySearchForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await refreshLibraryData();
+    });
+    $("#saveLibraryAssetButton").addEventListener("click", saveSelectedLibraryAsset);
+    $("#libraryArtifactSelect").addEventListener("change", (event) => {
+      state.selectedLibraryArtifactId = event.target.value;
+      renderAssetLibraryPanel();
+    });
+    $("#libraryAssetList").addEventListener("click", (event) => {
+      const row = event.target.closest("[data-library-asset-id]");
+      if (!row) return;
+      state.selectedLibraryAssetId = row.dataset.libraryAssetId;
+      renderAssetLibraryPanel();
+    });
+    $("#libraryCollectionSelect").addEventListener("change", (event) => {
+      state.selectedLibraryCollectionId = event.target.value;
+      renderAssetLibraryPanel();
+    });
+    $("#libraryCollectionForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await createLibraryCollection();
+    });
+    $("#addLibraryAssetToCollectionButton").addEventListener("click", addSelectedLibraryAssetToCollection);
+    $("#libraryPackForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await createCreatorPackFromCollection();
     });
 
     $("#jobList").addEventListener("click", async (event) => {

@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const staticDir = join(root, "src", "motionjson", "ui", "static");
-const files = ["index.html", "app.css", "app.js", "config_builder.js"];
+const files = ["index.html", "app.css", "app.js", "config_builder.js", "favicon.svg"];
 const contents = new Map();
 
 for (const file of files) {
@@ -20,7 +20,7 @@ const style = contents.get("app.css");
 const configBuilder = contents.get("config_builder.js");
 const combined = [...contents.values()].join("\n");
 
-for (const reference of ["/ui/app.css", "/ui/app.js"]) {
+for (const reference of ["/ui/app.css", "/ui/app.js", "/ui/favicon.svg"]) {
   if (!index.includes(reference)) {
     throw new Error(`index.html does not reference ${reference}`);
   }
@@ -74,6 +74,25 @@ for (const id of [
   "jobEventLog",
   "artifactCount",
   "artifactBrowser",
+  "libraryStatus",
+  "librarySearchForm",
+  "librarySearch",
+  "libraryTagFilter",
+  "libraryArtifactSelect",
+  "libraryAssetTitle",
+  "libraryAssetTags",
+  "saveLibraryAssetButton",
+  "libraryCollectionForm",
+  "libraryCollectionTitle",
+  "libraryCollectionSelect",
+  "addLibraryAssetToCollectionButton",
+  "libraryPackForm",
+  "libraryPackTitle",
+  "libraryError",
+  "libraryArtifactNotice",
+  "libraryAssetList",
+  "libraryCollectionList",
+  "libraryPackList",
   "candidateSummaryStatus",
   "candidateSummaryList",
   "trackCount",
@@ -120,6 +139,12 @@ for (const route of [
   "/api/jobs/{jobId}/track-edits",
   "/api/progress",
   "/api/artifacts",
+  "/api/library/assets",
+  "/api/library/assets/{libraryAssetId}",
+  "/api/library/collections",
+  "/api/library/collections/{collectionId}/assets",
+  "/api/library/packs",
+  "/api/projects/{projectId}/library-assets",
 ]) {
   if (!script.includes(route)) {
     throw new Error(`app.js does not call ${route}`);
@@ -198,6 +223,17 @@ for (const affordance of [
   "Optional models",
   "local/free",
   "configured, not runnable",
+  "Asset Library",
+  "LIBRARY_SAVEABLE_ARTIFACT_KINDS",
+  "librarySourceArtifacts",
+  "libraryArtifactIsSaveable",
+  "renderAssetLibraryPanel",
+  "saveSelectedLibraryAsset",
+  "selectedLibraryCollectionId",
+  "selectedLibraryArtifactId",
+  "createCreatorPackFromCollection",
+  "motion_sticker",
+  "Creator-approved packs",
 ]) {
   if (!combined.includes(affordance)) {
     throw new Error(`UI shell is missing ${affordance}`);
@@ -210,7 +246,8 @@ if (!configBuilder.includes("export function buildRunConfig") || !configBuilder.
 
 const remotePattern = /https?:\/\//;
 for (const [file, content] of contents) {
-  if (remotePattern.test(content)) {
+  const checkedContent = content.replaceAll("http://www.w3.org/2000/svg", "");
+  if (remotePattern.test(checkedContent)) {
     throw new Error(`local UI shell must not load remote resources: ${file}`);
   }
 }

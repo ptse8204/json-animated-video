@@ -92,6 +92,15 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `POST /api/jobs/JOB_ID/validate`
 - `POST /api/jobs/JOB_ID/exports`
 - `GET /api/artifacts?jobId=JOB_ID`
+- `POST /api/projects/PROJECT_ID/library-assets`
+- `GET /api/library/assets`
+- `GET /api/library/assets/LIBRARY_ASSET_ID`
+- `POST /api/library/collections`
+- `GET /api/library/collections`
+- `POST /api/library/collections/COLLECTION_ID/assets`
+- `GET /api/library/collections/COLLECTION_ID/assets`
+- `POST /api/library/packs`
+- `GET /api/library/packs`
 - `POST /api/projects/PROJECT_ID/imports/motionjson`
 
 The local UI creates a reserved local user in the selected SQLite database and
@@ -102,6 +111,16 @@ from local storage without exposing the storage path.
 JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
+
+The Asset Library panel wraps the existing local asset-library backend for
+approachable reuse workflows. After a run or validated export registers
+artifacts, select an artifact, save it as a `motion_sticker`, search saved
+layers by text or tag, create a brand collection, add the selected saved layer
+to that collection, and create a creator-approved pack. Pack creation uses the
+backend rights gate: every included saved layer must already have approved
+creator and commercial-use rights metadata. Rejected packs return a visible
+local UI error instead of silently creating an unsafe pack. Library responses
+keep `aiUsage: "none"` and omit storage keys and raw stored bytes.
 
 `POST /api/run-config/validate` accepts either a run config object directly or
 `{"runConfig": {...}}`. It returns `valid`, `errors`, `warnings`, and the
@@ -210,6 +229,9 @@ storage, and exposes the imported scene through the normal job review routes.
 9. After a run succeeds, correct track labels/visibility/export inclusion if
    needed, validate the export preset, then use `Export MotionJSON` to write a
    validated local handoff with preview and optional contour/mask artifacts.
+10. Use the Asset Library panel to save useful generated/export artifacts as
+    reusable motion layers, add them to brand collections, and assemble
+    creator-approved packs when rights metadata permits.
 
 Video registration copies the selected local file into the configured local
 storage root and records rights source metadata for the upload. Missing paths

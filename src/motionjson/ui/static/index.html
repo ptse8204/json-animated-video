@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MotionJSON Local UI</title>
+    <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
   <body>
@@ -325,6 +326,64 @@
             <span id="artifactCount" class="subtle-chip">0 files</span>
           </div>
           <div id="artifactBrowser" class="artifact-list"></div>
+        </section>
+        <section class="compact-panel">
+          <div class="panel-heading compact-heading">
+            <h2>Asset Library</h2>
+            <span id="libraryStatus" class="status-chip is-muted">Not loaded</span>
+          </div>
+          <form id="librarySearchForm" class="inline-form">
+            <label>
+              <span>Search</span>
+              <input id="librarySearch" type="text" value="" />
+            </label>
+            <label>
+              <span>Tag</span>
+              <input id="libraryTagFilter" type="text" value="" />
+            </label>
+            <button type="submit">Search</button>
+          </form>
+          <div class="library-save-controls">
+            <label>
+              <span>Save artifact</span>
+              <select id="libraryArtifactSelect"></select>
+            </label>
+            <label>
+              <span>Title</span>
+              <input id="libraryAssetTitle" type="text" value="Reusable motion layer" />
+            </label>
+            <label>
+              <span>Tags</span>
+              <input id="libraryAssetTags" type="text" value="motion, local-ui" />
+            </label>
+            <button id="saveLibraryAssetButton" type="button">Save layer</button>
+          </div>
+          <div class="library-collection-controls">
+            <form id="libraryCollectionForm" class="inline-form">
+              <label>
+                <span>Collection</span>
+                <input id="libraryCollectionTitle" type="text" value="Local brand collection" />
+              </label>
+              <button type="submit">Create</button>
+            </form>
+            <label>
+              <span>Add to collection</span>
+              <select id="libraryCollectionSelect"></select>
+            </label>
+            <button id="addLibraryAssetToCollectionButton" type="button">Add selected</button>
+          </div>
+          <form id="libraryPackForm" class="inline-form">
+            <label>
+              <span>Creator pack</span>
+              <input id="libraryPackTitle" type="text" value="Creator-approved pack" />
+            </label>
+            <button type="submit">Create pack</button>
+          </form>
+          <div id="libraryError" class="warning-box" hidden></div>
+          <div id="libraryArtifactNotice" class="empty-state" hidden></div>
+          <div id="libraryAssetList" class="library-list"></div>
+          <div id="libraryCollectionList" class="library-list"></div>
+          <div id="libraryPackList" class="library-list"></div>
         </section>
         <section class="compact-panel">
           <div class="panel-heading compact-heading">

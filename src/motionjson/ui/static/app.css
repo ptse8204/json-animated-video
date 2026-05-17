@@ -367,7 +367,10 @@ h2 {
 .capability-list,
 .first-run-list,
 .artifact-list,
+.library-list,
 .route-list,
+.library-save-controls,
+.library-collection-controls,
 .export-panel,
 .export-summary {
   display: grid;
@@ -563,6 +566,7 @@ input[type="range"] {
 .capability-row,
 .first-run-row,
 .artifact-row,
+.library-row,
 .route-row,
 .warning-box {
   display: grid;
@@ -574,6 +578,13 @@ input[type="range"] {
 }
 
 .artifact-row {
+  width: 100%;
+  text-align: left;
+}
+
+.library-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   width: 100%;
   text-align: left;
 }
@@ -593,6 +604,11 @@ input[type="range"] {
   background: var(--api-soft);
 }
 
+.library-row.is-selected {
+  border-color: #7ab9b1;
+  background: var(--ready-soft);
+}
+
 .capability-row,
 .first-run-row,
 .prompt-row {
@@ -603,7 +619,8 @@ input[type="range"] {
 .capability-row .status-chip,
 .first-run-row .status-chip,
 .prompt-row .status-chip,
-.artifact-row .status-chip {
+.artifact-row .status-chip,
+.library-row .status-chip {
   justify-self: end;
 }
 
@@ -611,6 +628,7 @@ input[type="range"] {
 .first-run-row strong,
 .prompt-row strong,
 .artifact-row strong,
+.library-row strong,
 .route-row strong {
   min-width: 0;
   overflow-wrap: anywhere;
