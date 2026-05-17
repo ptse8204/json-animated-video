@@ -297,7 +297,9 @@ motionjson-signature: t=TIMESTAMP,v1=HEX_DIGEST
 
 The SDK lives in `packages/motionjson-sdk` and exports `MotionJSONClient` plus
 `verifyWebhookSignature`. It uses injected or global `fetch`, has no AI/provider
-runtime dependency, and does not hardcode secrets.
+runtime dependency, and does not hardcode secrets. Use it for backend
+orchestration; use the [runtime guide](runtime.md) and `@motionjson/runtime`
+for browser playback of generated manifests.
 
 ```js
 import { MotionJSONClient } from "@motionjson/sdk";

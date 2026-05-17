@@ -4,6 +4,9 @@
   "description": "Dependency-light MotionJSON browser runtime for cached raster/alpha motion layers.",
   "type": "module",
   "sideEffects": false,
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "exports": {
     ".": "./src/index.js",
     "./canvas": "./src/canvas.js",

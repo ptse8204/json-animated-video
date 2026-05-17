@@ -219,6 +219,54 @@ Use `scene_graph.json` or `web_asset_manifest.json` for playback. Use
 `tracks.json`, `provider_diagnostics.json`, and `fallback_diagnostics.json` to
 understand what was accepted, rejected, or unavailable before export.
 
+## Use MotionJSON on a website
+
+Frontend developers can start with the generated `web_asset_manifest.json`
+without reading the extraction backend. Serve the repository or an exported
+package and open:
+
+```text
+http://localhost:8080/examples/plain_js_embed.html?manifest=/out/demo_red_ball/web_asset_manifest.json
+```
+
+The plain JavaScript embed uses the local `@motionjson/runtime` source from
+`packages/motionjson-runtime`. It auto-mounts elements with
+`data-motionjson-src`, renders cached raster/alpha media with JSON timing, and
+does not call SAM2, detectors, hosted providers, or model APIs in the browser.
+
+Use `web_asset_manifest.json` for a single object layer. Use
+`scene_graph.json` for multi-object playback, layer order, and scene-level edit
+state. Both formats reference local cutouts, spritesheets, preview assets,
+rights metadata, and production assets when exports create them.
+
+The local package checks are:
+
+```bash
+npm test
+npm --workspace @motionjson/runtime run test
+npm --workspace @motionjson/sdk run test
+npm pack --dry-run --workspace @motionjson/runtime
+npm pack --dry-run --workspace @motionjson/sdk
+```
+
+Use `@motionjson/sdk` when a web app needs to call the local/backend API:
+`MotionJSONClient` can create projects, upload assets, start extractions,
+create `website-zip` packages, and request `remotion-plan` render jobs. The SDK
+is API orchestration code; website playback still belongs to
+`@motionjson/runtime` or the copied `runtime/` folder in a website ZIP.
+
+```bash
+python3 -m motionjson.cli export out/demo_red_ball \
+  --format website-zip \
+  --out out/demo_red_ball/exports/website_package.zip
+```
+
+`website-zip` packages the runtime source, HTML previews, snippets, manifests,
+cached object media, rights metadata, and production assets for static hosting
+or handoff review. `remotion-plan` is intentionally honest: it writes a JSON
+integration plan for a future Remotion adapter and does not install Remotion or
+generate a Remotion component today.
+
 ## Provider options
 
 | Provider or mode | Local/free? | Best for | Notes |

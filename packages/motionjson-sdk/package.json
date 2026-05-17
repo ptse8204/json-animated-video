@@ -4,6 +4,9 @@
   "description": "Dependency-light MotionJSON developer API client for reusable motion layer workflows.",
   "type": "module",
   "sideEffects": false,
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
   "exports": {
     ".": "./src/index.js"
   }
