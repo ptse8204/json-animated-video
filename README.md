@@ -236,6 +236,7 @@ understand what was accepted, rejected, or unavailable before export.
 Run this before choosing a provider:
 
 ```bash
+python3 -m motionjson.cli backend diagnostics --text
 python3 -m motionjson.cli backend diagnostics --json
 ```
 

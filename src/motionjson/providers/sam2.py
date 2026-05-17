@@ -166,14 +166,16 @@ class LocalSAM2SegmentationProvider:
             if not self.checkpoint or not self.model_config:
                 raise ProviderConfigError(
                     "sam2-local requires --sam2-checkpoint and --sam2-model-config unless a predictor or predictor_factory is injected. "
-                    "Install SAM2 separately and keep torch/SAM2 out of default MotionJSON dependencies."
+                    "Install SAM2 separately and keep torch/SAM2 out of default MotionJSON dependencies. "
+                    "Run `python3 -m motionjson.cli backend diagnostics --text` for setup status."
                 )
             try:
                 from sam2.build_sam import build_sam2_video_predictor  # type: ignore
             except ImportError as exc:
                 raise ProviderConfigError(
                     "SAM2 is not installed. Install Meta SAM2 and torch in your local environment, then pass "
-                    "--sam2-checkpoint and --sam2-model-config, or inject a fake predictor for tests."
+                    "--sam2-checkpoint and --sam2-model-config, or inject a fake predictor for tests. "
+                    "Run `python3 -m motionjson.cli backend diagnostics --text` for setup status."
                 ) from exc
             self.predictor_factory = build_sam2_video_predictor
 

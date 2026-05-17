@@ -4,6 +4,8 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from motionjson import capabilities
 from motionjson.cli import main
 
@@ -23,6 +25,10 @@ def test_capability_report_is_machine_readable_json() -> None:
     assert decoded["summary"]["providersTotal"] == len(decoded["providers"])
     assert "installHint" in decoded["environment"]["dependencies"][0]
     assert "install_hint" not in decoded["environment"]["dependencies"][0]
+    assert isinstance(decoded["summary"]["readyNoModelProviders"], list)
+    assert decoded["summary"]["canRunNoModelSmoke"] is True
+    assert decoded["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
+    assert isinstance(decoded["summary"]["firstRun"]["nonBlockingOptionalMissing"], list)
 
 
 def test_capability_report_marks_missing_optional_sam2_without_breaking_base_cli(monkeypatch) -> None:
@@ -107,6 +113,34 @@ def test_backend_diagnostics_capability_cli_outputs_json_without_initializing_ba
     assert payload["schema"] == capabilities.CAPABILITY_SCHEMA
     assert "providers" in payload
     assert not (tmp_path / ".motionjson").exists()
+
+
+def test_backend_diagnostics_cli_outputs_human_summary_without_initializing_backend(tmp_path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    main(["backend", "diagnostics", "--text"])
+
+    output = capsys.readouterr().out
+    assert "MotionJSON diagnostics" in output
+    assert "No-model smoke:" in output
+    assert "Optional providers needing setup:" in output
+    assert "Text prompts need detector candidates before SAM2" in output
+    assert "--json" in output
+    assert not (tmp_path / ".motionjson").exists()
+
+
+def test_backend_diagnostics_help_documents_probe_and_output_modes(capsys) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["backend", "diagnostics", "--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    assert "--json" in output
+    assert "--text" in output
+    assert "--video" in output
+    assert "--output-dir" in output
+    assert "--sam2-checkpoint" in output
+    assert "--sam2-config" in output
 
 
 def test_backend_diagnostics_cli_accepts_sam2_model_path_flags(tmp_path, monkeypatch, capsys) -> None:

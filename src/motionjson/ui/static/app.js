@@ -1437,6 +1437,10 @@ const MotionJSONUI = (() => {
         .filter((detail, index, values) => values.indexOf(detail) === index)
         .slice(0, 4);
       const ffmpeg = state.capabilities.environment?.ffmpeg || {};
+      const summary = state.capabilities.summary || {};
+      const firstRun = summary.firstRun || {};
+      const readyNoModel = asArray(summary.readyNoModelProviders);
+      const missingOptional = asArray(summary.missingOptional);
       const steps = [
         {
           label: "Base install",
@@ -1452,16 +1456,20 @@ const MotionJSONUI = (() => {
         },
         {
           label: "No-model smoke",
-          status: readyNoModelProviders.length >= 3 ? "ready" : "limited",
-          available: readyNoModelProviders.length >= 3,
-          detail: "Use examples/demo_red_ball.mp4 with mock, threshold, motion, or external masks.",
+          status: summary.canRunNoModelSmoke ? "ready" : "limited",
+          available: Boolean(summary.canRunNoModelSmoke),
+          detail: summary.canRunNoModelSmoke
+            ? `Ready now: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}. Try Start mock job or run the red-ball demo.`
+            : "Install base CPU dependencies before using mock, threshold, motion, or external masks.",
         },
         {
           label: "Optional models",
-          status: optionalMissing.length ? "optional" : "ready",
-          available: !optionalMissing.length,
-          detail: optionalMissing.length
-            ? `Optional provider setup: ${optionalMissing.join("; ")}. Install extras only when needed.`
+          status: missingOptional.length ? "optional" : optionalMissing.length ? "optional" : "ready",
+          available: !(missingOptional.length || optionalMissing.length),
+          detail: missingOptional.length
+            ? `Non-blocking setup needed for: ${missingOptional.slice(0, 6).join(", ")}. Mock mode does not claim these are available.`
+            : optionalMissing.length
+              ? `Optional provider setup: ${optionalMissing.join("; ")}. Install extras only when needed.`
             : "Configured optional providers reported ready.",
         },
         {
@@ -1469,6 +1477,14 @@ const MotionJSONUI = (() => {
           status: ffmpeg.available ? "ready" : "optional",
           available: Boolean(ffmpeg.available),
           detail: ffmpeg.available ? "FFmpeg is available for video exports." : "MotionJSON export works; MP4/WebM encoding needs FFmpeg.",
+        },
+        {
+          label: "Next action",
+          status: summary.canRunNoModelSmoke ? "ready" : "check",
+          available: Boolean(summary.canRunNoModelSmoke),
+          detail: summary.canRunNoModelSmoke
+            ? `Create a project, register examples/demo_red_ball.mp4, then choose Start mock job. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open --mock"}`
+            : "Run backend diagnostics --text and fix base dependency blockers first.",
         },
       ];
 

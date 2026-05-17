@@ -10,6 +10,12 @@ environment before a user starts extraction or export.
 python -m motionjson.cli backend diagnostics --json
 ```
 
+For a shorter first-run summary:
+
+```bash
+python -m motionjson.cli backend diagnostics --text
+```
+
 Add a video probe and output-directory writability check when preparing a run:
 
 ```bash

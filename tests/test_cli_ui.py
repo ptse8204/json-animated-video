@@ -20,6 +20,26 @@ def test_ui_command_help_documents_local_launcher(capsys):
     assert "--no-open" in output
 
 
+def test_extract_help_documents_discovery_modes_and_flags(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["extract", "--help"])
+
+    assert exc.value.code == 0
+    output = capsys.readouterr().out
+    for expected in [
+        "--discovery-provider",
+        "sam_auto_masks",
+        "text_detector",
+        "class_detector",
+        "motion_foreground",
+        "external_masks",
+        "--discovery-text",
+        "--discovery-class",
+        "--discovery-config",
+    ]:
+        assert expected in output
+
+
 def test_ui_command_launches_server_with_local_defaults(tmp_path, monkeypatch, capsys):
     calls = []
 

@@ -54,7 +54,10 @@ python -m motionjson.cli ui --no-open --mock
 
 The sidebar First Run checklist summarizes base dependency readiness, no-model
 provider availability, optional model extras, and FFmpeg status from
-`/api/capabilities`.
+`/api/capabilities`. It also shows the recommended no-model command,
+`python3 -m motionjson.cli ui --no-open --mock`, and keeps optional SAM2,
+detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
+claiming those providers are available in mock mode.
 
 ## Routes
 

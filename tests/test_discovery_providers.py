@@ -251,6 +251,40 @@ def test_manual_prompt_discovery_cli_feeds_shared_pipeline_with_prompt_factory(t
     assert validate_output_dir(out).ok
 
 
+def test_mock_text_detector_discovery_cli_smoke_uses_detector_candidates(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+
+    cli.main(
+        [
+            "extract",
+            str(video),
+            "--out",
+            str(out),
+            "--discovery-provider",
+            "text_detector",
+            "--discovery-text",
+            "red ball . hand",
+            "--discovery-config",
+            '{"mock": true, "max_candidates": 2}',
+            "--mask-provider",
+            "mock",
+            "--max-frames",
+            "2",
+            "--min-area",
+            "1",
+        ]
+    )
+
+    candidates_payload = json.loads((out / "candidates.json").read_text())
+    assert candidates_payload["provider"] == "text_detector"
+    assert [candidate["label"] for candidate in candidates_payload["candidates"]] == ["red ball", "hand"]
+    assert all(candidate["metadata"]["mock"] is True for candidate in candidates_payload["candidates"])
+    assert all(candidate["source"] == "text_detector" for candidate in candidates_payload["candidates"])
+    assert validate_output_dir(out, object_id="text_detector_red_ball").ok
+
+
 def test_discovery_candidate_summaries_include_ui_description_source_score_and_filters(tmp_path):
     candidates = MotionForegroundDiscoveryProvider().propose(
         video_source(),

@@ -688,6 +688,22 @@ def build_capability_report(
 ) -> dict[str, Any]:
     deps = dependency_statuses()
     providers = provider_capabilities(sam2_checkpoint=sam2_checkpoint, sam2_model_config=sam2_model_config)
+    ready_no_model = [
+        provider.name
+        for provider in providers
+        if provider.available and provider.no_model_safe and not provider.network_required
+    ]
+    unavailable_required_setup = [
+        provider.name
+        for provider in providers
+        if not provider.available and provider.optional_extra
+    ]
+    missing_optional = [
+        provider.name
+        for provider in providers
+        if not provider.available
+        and provider.name in {"sam2-local", "sam2-hosted", "openrouter", "sam_auto_masks", "text_detector", "class_detector", "ffmpeg-video"}
+    ]
     return {
         "schema": CAPABILITY_SCHEMA,
         "python": {
@@ -707,15 +723,108 @@ def build_capability_report(
         "summary": {
             "providersReady": sum(1 for provider in providers if provider.available),
             "providersTotal": len(providers),
-            "missingOptional": [
-                provider.name
-                for provider in providers
-                if not provider.available
-                and provider.name in {"sam2-local", "sam2-hosted", "openrouter", "sam_auto_masks", "text_detector", "class_detector", "ffmpeg-video"}
-            ],
+            "readyNoModelProviders": ready_no_model,
+            "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
+            "firstRun": {
+                "ready": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
+                "recommendedCommand": "python3 -m motionjson.cli ui --no-open --mock",
+                "recommendedDemoCommand": "python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4 && python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo_red_ball --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12",
+                "nextActions": [
+                    "Launch the local UI in mock mode.",
+                    "Run the red-ball threshold demo.",
+                    "Install optional ML extras only after diagnostics show a workflow needs them.",
+                ],
+                "nonBlockingOptionalMissing": missing_optional,
+            },
+            "missingOptional": missing_optional,
+            "unavailableRequiredSetup": unavailable_required_setup,
         },
     }
 
 
 def capability_report_json(**kwargs: Any) -> str:
     return json.dumps(build_capability_report(**kwargs), indent=2, sort_keys=True)
+
+
+def _provider_by_name(report: dict[str, Any], name: str) -> dict[str, Any] | None:
+    return next((provider for provider in report.get("providers", []) if provider.get("name") == name), None)
+
+
+def _first_reason(provider: dict[str, Any] | None) -> str:
+    if not provider:
+        return "not reported"
+    reasons = provider.get("reasons") or []
+    if reasons:
+        return str(reasons[0])
+    return str(provider.get("installHint") or "no extra setup reported")
+
+
+def format_capability_report(report: dict[str, Any]) -> str:
+    """Return a compact human-readable diagnostics summary."""
+
+    summary = report.get("summary", {})
+    environment = report.get("environment", {})
+    python = report.get("python", {})
+    cuda = environment.get("cuda", {})
+    ffmpeg = environment.get("ffmpeg", {})
+    video_io = environment.get("videoIO", {})
+    output = environment.get("output", {})
+    ready_no_model = summary.get("readyNoModelProviders") or []
+    missing_optional = summary.get("missingOptional") or []
+
+    lines = [
+        "MotionJSON diagnostics",
+        f"Python: {python.get('executableName', 'python')} {python.get('version', 'unknown')} ({python.get('implementation', 'unknown')})",
+        f"Providers ready: {summary.get('providersReady', 0)}/{summary.get('providersTotal', 0)}",
+    ]
+    if ready_no_model:
+        lines.append(f"No-model providers ready: {', '.join(ready_no_model)}")
+    else:
+        lines.append("No-model providers ready: none reported")
+    lines.append(
+        "No-model smoke: "
+        + (
+            "ready - run `python3 -m motionjson.cli ui --no-open --mock` or the red-ball demo."
+            if summary.get("canRunNoModelSmoke")
+            else "limited - install base dependencies before running the mock UI or red-ball demo."
+        )
+    )
+    lines.append(f"CUDA: {'ready' if cuda.get('available') else 'not available'} ({cuda.get('device', 'cpu')})")
+    for reason in cuda.get("reasons") or []:
+        lines.append(f"  - {reason}")
+    lines.append(
+        "FFmpeg: "
+        + (
+            f"ready ({ffmpeg.get('path')})"
+            if ffmpeg.get("available")
+            else f"not found - {ffmpeg.get('installHint') or 'MP4/WebM exports require FFmpeg.'}"
+        )
+    )
+    if video_io.get("checkedVideo"):
+        lines.append(f"Video probe: {'readable' if video_io.get('readable') else 'not readable'}")
+        for reason in video_io.get("reasons") or []:
+            lines.append(f"  - {reason}")
+    if output.get("checked"):
+        lines.append(f"Output probe: {'writable' if output.get('writable') else 'not writable'}")
+        for reason in output.get("reasons") or []:
+            lines.append(f"  - {reason}")
+
+    if missing_optional:
+        lines.append("Optional providers needing setup:")
+        for name in missing_optional:
+            provider = _provider_by_name(report, name)
+            extra = provider.get("optionalExtra") if provider else None
+            suffix = f" [{extra}]" if extra else ""
+            lines.append(f"  - {name}{suffix}: {_first_reason(provider)}")
+    else:
+        lines.append("Optional providers needing setup: none reported")
+
+    lines.extend(
+        [
+            "Provider guidance:",
+            "  - Text prompts need detector candidates before SAM2 segmentation/tracking.",
+            "  - Missing SAM2, detector, CUDA, FFmpeg, or credential setup is diagnostic status, not a base-install failure.",
+            "Use `--json` for the full machine-readable report.",
+        ]
+    )
+    return "\n".join(lines)

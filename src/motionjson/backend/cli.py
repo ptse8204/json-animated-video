@@ -79,6 +79,7 @@ def add_backend_parser(parser: argparse.ArgumentParser) -> None:
 
     diagnostics = sub.add_parser("diagnostics", help="Print provider and environment capability diagnostics")
     diagnostics.add_argument("--json", action="store_true", help="Emit machine-readable JSON diagnostics (default output)")
+    diagnostics.add_argument("--text", action="store_true", help="Emit a human-readable first-run diagnostics summary")
     diagnostics.add_argument("--video", default=None, help="Optional video path to probe with local video IO")
     diagnostics.add_argument("--output-dir", "--out", dest="output_dir", default=None, help="Optional output directory to check for writability")
     diagnostics.add_argument("--sam2-checkpoint", default=None, help="Optional local SAM2 checkpoint path to validate")
@@ -369,16 +370,18 @@ def run_backend_command(args: argparse.Namespace) -> None:
     if args.backend_command is None:
         raise SystemExit("backend command is required")
     if args.backend_command == "diagnostics":
-        from motionjson.capabilities import build_capability_report
+        from motionjson.capabilities import build_capability_report, format_capability_report
 
-        _print_json(
-            build_capability_report(
-                output_dir=args.output_dir,
-                video_path=args.video,
-                sam2_checkpoint=args.sam2_checkpoint,
-                sam2_model_config=args.sam2_model_config,
-            )
+        report = build_capability_report(
+            output_dir=args.output_dir,
+            video_path=args.video,
+            sam2_checkpoint=args.sam2_checkpoint,
+            sam2_model_config=args.sam2_model_config,
         )
+        if args.text and not args.json:
+            print(format_capability_report(report))
+        else:
+            _print_json(report)
         return
     conn, storage = _open(args)
     if args.backend_command == "init":

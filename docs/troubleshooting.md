@@ -5,6 +5,7 @@ look wrong, or an export falls back to raster-only output. Start by collecting
 diagnostics:
 
 ```bash
+python3 -m motionjson.cli backend diagnostics --text
 python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli validate out/demo_red_ball
 ```

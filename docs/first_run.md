@@ -41,6 +41,7 @@ Optional extras are only needed for heavier provider families:
 Run diagnostics before choosing a provider:
 
 ```bash
+python3 -m motionjson.cli backend diagnostics --text
 python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out out/benchmarks
 python3 -m motionjson.cli ui --no-open --mock
@@ -49,6 +50,7 @@ python3 -m motionjson.cli ui --no-open --mock
 PowerShell:
 
 ```powershell
+python -m motionjson.cli backend diagnostics --text
 python -m motionjson.cli backend diagnostics --json
 python -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out out\benchmarks
 python -m motionjson.cli ui --no-open --mock

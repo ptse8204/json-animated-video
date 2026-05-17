@@ -74,6 +74,8 @@ def test_local_ui_exposes_first_run_diagnostics_panel():
     assert "function renderFirstRunChecklist" in app
     assert "No-model smoke" in app
     assert "Optional models" in app
+    assert "Next action" in app
+    assert "recommendedCommand" in app
     assert "firstRunChecklist" in build_script
     assert "renderFirstRunChecklist" in build_script
 

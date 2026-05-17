@@ -96,6 +96,9 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert capabilities["schema"] == "motionjson.provider_diagnostics.v0.1"
     assert any(provider["name"] == "mock" and provider["noModelSafe"] for provider in capabilities["providers"])
+    assert capabilities["summary"]["canRunNoModelSmoke"] is True
+    assert "mock" in capabilities["summary"]["readyNoModelProviders"]
+    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
 
     status, _headers, body = app.handle(
         "GET",
@@ -115,7 +118,22 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert defaults["format"] == "motionjson.local_ui_run_config_defaults.v0.1"
     assert "mock" in defaults["maskProviders"]
-    assert "manual_prompt" in defaults["discoveryProviders"]
+    assert {
+        "manual_prompt",
+        "sam_auto_masks",
+        "text_detector",
+        "class_detector",
+        "motion_foreground",
+        "external_masks",
+    } <= set(defaults["discoveryProviders"])
+    schemas = {schema["mode"]: schema for schema in defaults["discoveryProviderSchemas"]}
+    assert set(defaults["discoveryProviders"]) == set(schemas)
+    for schema in schemas.values():
+        assert schema["description"]
+        assert schema["whenToUse"]
+        assert "configSchema" in schema
+        assert "noModelSafe" in schema
+        assert "mockAvailable" in schema
     assert defaults["defaults"]["maskProvider"] == "mock"
 
     status, _headers, body = app.handle("GET", "/api/exports/formats")
@@ -140,6 +158,74 @@ def test_local_ui_capabilities_redacts_windows_probe_paths(tmp_path):
         assert "[LOCAL_PATH_REDACTED]" in encoded
         for value in leaked:
             assert value not in encoded
+
+
+def test_local_ui_capabilities_preserve_provider_failure_details(tmp_path, monkeypatch):
+    def fake_capability_report(**_kwargs):
+        return {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {
+                "providersReady": 1,
+                "providersTotal": 3,
+                "readyNoModelProviders": ["motion_foreground"],
+                "canRunNoModelSmoke": False,
+                "missingOptional": ["text_detector", "sam_auto_masks"],
+                "firstRun": {
+                    "ready": False,
+                    "recommendedCommand": "python3 -m motionjson.cli ui --no-open --mock",
+                    "nonBlockingOptionalMissing": ["text_detector", "sam_auto_masks"],
+                },
+            },
+            "environment": {},
+            "providers": [
+                {
+                    "name": "motion_foreground",
+                    "kind": "discovery_provider",
+                    "available": True,
+                    "status": "ready",
+                    "reasons": [],
+                    "mockAvailable": True,
+                    "noModelSafe": True,
+                    "metadata": {"uiDescription": "CPU moving-region proposals."},
+                },
+                {
+                    "name": "text_detector",
+                    "kind": "discovery_provider",
+                    "available": False,
+                    "status": "missing_dependency",
+                    "reasons": ["Open-vocabulary detector package is not importable."],
+                    "installHint": "Install/configure an open-vocabulary detector, or use discovery mock mode.",
+                    "mockAvailable": True,
+                    "noModelSafe": False,
+                    "metadata": {"uiDescription": "Text prompts become detector candidates before segmentation/tracking."},
+                },
+                {
+                    "name": "sam_auto_masks",
+                    "kind": "discovery_provider",
+                    "available": False,
+                    "status": "not_configured",
+                    "reasons": ["SAM automatic-mask discovery is scaffolded."],
+                    "mockAvailable": True,
+                    "noModelSafe": False,
+                    "metadata": {"uiDescription": "Automatic visible-segment proposals."},
+                },
+            ],
+        }
+
+    monkeypatch.setattr(ui_server, "build_capability_report", fake_capability_report)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("GET", "/api/capabilities")
+    capabilities = decode(body)
+
+    assert status == 200
+    providers = {provider["name"]: provider for provider in capabilities["providers"]}
+    assert providers["text_detector"]["status"] == "missing_dependency"
+    assert providers["text_detector"]["reasons"]
+    assert providers["text_detector"]["mockAvailable"] is True
+    assert providers["text_detector"]["noModelSafe"] is False
+    assert providers["text_detector"]["metadata"]["uiDescription"]
+    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
 
 
 def test_local_ui_serves_static_shell(tmp_path):
@@ -305,6 +391,11 @@ def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_
         "provider_unavailable",
         "local_job_policy",
     }
+    by_code = {warning["code"]: warning for warning in payload["warnings"]}
+    assert by_code["provider_unavailable"]["severity"] == "error"
+    assert by_code["provider_unavailable"]["action"] == "Install SAM2 separately."
+    assert by_code["local_job_policy"]["severity"] == "error"
+    assert "deterministic local provider" in by_code["local_job_policy"]["action"]
 
     invalid = {**run_config, "prompts": []}
     status, _headers, body = app.handle(

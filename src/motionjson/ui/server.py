@@ -760,6 +760,8 @@ class LocalUIApp:
                     "code": "local_job_policy",
                     "field": "provider.name",
                     "provider": config.provider.name,
+                    "severity": "error",
+                    "action": "Choose a deterministic local provider such as mock, threshold, or external masks for the local UI worker.",
                     "message": str(exc),
                 }
             )
@@ -784,6 +786,8 @@ class LocalUIApp:
                 "provider": name,
                 "kind": kind,
                 "status": provider.get("status"),
+                "severity": "error",
+                "action": provider.get("installHint") or "Choose a ready no-model provider or configure this optional provider before starting a run.",
                 "message": f"{name} is not available on this machine.",
                 "reasons": _public_value(provider.get("reasons") or []),
                 "installHint": provider.get("installHint"),
