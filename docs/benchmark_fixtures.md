@@ -49,8 +49,9 @@ out/benchmarks/
 MotionJSON schema tools. `summary.md` is the human-readable table for local
 review. Reports include duplicate-overlap metrics (`pairCount`, `maxMeanIou`,
 and merge-suggestion counts), fallback reasons, continuity, coverage, runtime,
-and validation status. Run paths are relative to the benchmark output directory
-so reports do not embed machine-specific local paths.
+candidate-derived confidence for modes that report it, and validation status.
+Run paths are relative to the benchmark output directory so reports do not
+embed machine-specific local paths.
 
 ## Built-In Fixtures
 

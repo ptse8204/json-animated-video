@@ -43,7 +43,7 @@ provider receives boxes or masks.
 | Workflow | CLI support | Local UI job support |
 | --- | --- | --- |
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
-| `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path. | Visible in the wizard, but the current local UI worker does not start `motion` jobs yet. |
+| `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable; real detector backends are scaffolded until configured and wired. | Shown as a mock/scaffolded preset so users can preview the config without claiming real detection. |
@@ -61,6 +61,12 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --discovery-max-candidates 3 \
   --max-frames 12
 ```
+
+The same workflow is available in the local UI through `Find moving objects`.
+It uses the CPU `motion_foreground` discovery provider, records threshold and
+morphology settings in `candidates.json`, writes generated foreground masks
+under `discovery/motion_foreground/`, and carries each candidate score into
+track confidence for review.
 
 External mask discovery from a manifest:
 

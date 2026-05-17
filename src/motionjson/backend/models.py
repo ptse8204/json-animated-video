@@ -24,7 +24,7 @@ class ProviderPolicyError(BackendError):
     """Raised when a job payload requests a disallowed provider."""
 
 
-ALLOWED_EXTRACT_MASK_PROVIDERS = {"threshold", "external", "mock"}
+ALLOWED_EXTRACT_MASK_PROVIDERS = {"threshold", "external", "mock", "motion"}
 REJECTED_SEGMENTATION_ALIASES = {"openrouter", "llm", "vlm", "sam2", "sam2-local", "sam2-hosted", "hosted", "replicate", "runpod"}
 
 
@@ -32,7 +32,7 @@ def validate_extract_provider_policy(mask_provider: str) -> str:
     provider = (mask_provider or "threshold").strip().lower()
     if provider in REJECTED_SEGMENTATION_ALIASES or provider not in ALLOWED_EXTRACT_MASK_PROVIDERS:
         raise ProviderPolicyError(
-            "backend extraction only allows deterministic local providers: threshold, external, or mock"
+            "backend extraction only allows deterministic local providers: threshold, external, mock, or motion"
         )
     return provider
 

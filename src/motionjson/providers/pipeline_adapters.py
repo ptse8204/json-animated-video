@@ -109,6 +109,7 @@ class ObjectSpecInitialMaskProvider:
                     frame_index=candidate.frame_index,
                     provider_name=_provider_name(spec.mask_provider),
                     candidate=candidate,
+                    score=candidate.score,
                     metadata={"mode": "legacy_per_frame_mask_provider"},
                 )
             )
@@ -237,6 +238,7 @@ class PerFrameMaskVideoTracker:
             source=self.name,
             frames=track_frames,
             z_index=int(getattr(spec, "z_index", 10)),
+            confidence=initial.score if initial is not None else None,
             provider_name=provider_name,
         )
         return track, provider_performance

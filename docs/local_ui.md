@@ -59,11 +59,10 @@ provider availability, optional model extras, and FFmpeg status from
 detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
 claiming those providers are available in mock mode.
 
-The wizard may show CLI-capable no-model workflows such as `motion_foreground`
-so users can inspect and save a valid run config. The local UI worker starts
-`mock`, `threshold`, and `external` extraction jobs, plus mock
-`text_detector` discovery jobs that use `mock` as the mask handoff provider.
-Use the CLI for `motion` until that worker path is wired.
+The local UI worker starts `mock`, `threshold`, `motion`, and `external`
+extraction jobs, plus mock `text_detector` and `sam_auto_masks` discovery jobs
+that use generated mask handoffs. `motion_foreground` is CPU/no-model and runs
+from the `Find moving objects` preset.
 
 ## Routes
 
@@ -217,8 +216,10 @@ Automatic segment proposals map to `sam_auto_masks`. In local UI mock mode,
 the selected keyframes, feeds them through track filtering/dedupe, and shows
 the resulting candidate summary, tracks, fallback diagnostics, and merge
 suggestions for review before export. Moving-object discovery maps to the
-CPU/no-model `motion_foreground` workflow. External mask imports use
-`external_masks` plus the `external` mask provider.
+CPU/no-model `motion_foreground` workflow: frame differences become candidate
+masks, candidate scores become track confidence, and low-quality/background
+fragments remain visible through fallback diagnostics. External mask imports
+use `external_masks` plus the `external` mask provider.
 
 ## Build And Smoke
 

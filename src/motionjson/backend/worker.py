@@ -23,10 +23,10 @@ from motionjson.exporters.production_assets import export_transparent_webm_objec
 from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
 from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
-from motionjson.masks import ExternalMaskProvider, ThresholdMaskProvider
+from motionjson.masks import ExternalMaskProvider, MotionMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
 from motionjson.providers.base import StorageProvider
-from motionjson.providers.discovery import SamAutoMasksDiscoveryProvider, TextDetectorDiscoveryProvider, object_specs_from_candidates
+from motionjson.providers.discovery import MotionForegroundDiscoveryProvider, SamAutoMasksDiscoveryProvider, TextDetectorDiscoveryProvider, object_specs_from_candidates
 from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
@@ -240,11 +240,13 @@ def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payl
     }
 
 
-def _mock_discovery_provider(mode: str) -> tuple[Any, str] | None:
+def _ui_discovery_provider(mode: str) -> tuple[Any, str, bool] | None:
     if mode == "text_detector":
-        return TextDetectorDiscoveryProvider(), "text detector mock discovery configured"
+        return TextDetectorDiscoveryProvider(), "text detector mock discovery configured", True
     if mode == "sam_auto_masks":
-        return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured"
+        return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
+    if mode == "motion_foreground":
+        return MotionForegroundDiscoveryProvider(), "motion foreground CPU discovery configured", False
     return None
 
 
@@ -296,11 +298,11 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
 
         try:
             discovery_mode = run_config.discovery.mode if run_config is not None else None
-            discovery_provider = _mock_discovery_provider(discovery_mode or "")
+            discovery_provider = _ui_discovery_provider(discovery_mode or "")
             if discovery_provider is not None:
-                provider, message = discovery_provider
+                provider, message, requires_mock = discovery_provider
                 discovery_config = dict(run_config.discovery.config)
-                if not discovery_config.get("mock"):
+                if requires_mock and not discovery_config.get("mock"):
                     raise RuntimeError(
                         f"local UI {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
                     )
@@ -351,6 +353,9 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             else:
                 if provider_name == "mock":
                     mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
+                elif provider_name == "motion":
+                    motion_config = dict(run_config.discovery.config) if run_config is not None and run_config.discovery.mode == "motion_foreground" else {}
+                    mask_provider = MotionMaskProvider(var_threshold=float(motion_config.get("threshold", 25.0) or 25.0))
                 else:
                     lower = tuple(int(v) for v in payload.get("lower_hsv", [0, 80, 80]))
                     upper = tuple(int(v) for v in payload.get("upper_hsv", [12, 255, 255]))

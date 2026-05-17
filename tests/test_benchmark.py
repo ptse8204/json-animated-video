@@ -153,6 +153,25 @@ def test_benchmark_sam_auto_mock_mode_writes_candidate_review_fixture(tmp_path):
     assert validate_file(tmp_path / "benchmarks" / "summary.json").ok
 
 
+def test_benchmark_motion_foreground_mode_records_candidate_confidence(tmp_path):
+    run_evaluation_benchmark(
+        out_dir=tmp_path / "benchmarks",
+        fixtures="red_ball",
+        modes="motion",
+        width=64,
+        height=48,
+        frames=4,
+        min_area=1,
+    )
+    run_dir = tmp_path / "benchmarks" / "runs" / "red_ball_motion_foreground"
+    candidates = json.loads((run_dir / "candidates.json").read_text(encoding="utf-8"))
+    tracks = json.loads((run_dir / "tracks.json").read_text(encoding="utf-8"))
+
+    assert candidates["provider"] == "motion_foreground"
+    assert candidates["candidates"][0]["score"] > 0
+    assert tracks["tracks"][0]["confidence"] == candidates["candidates"][0]["score"]
+
+
 def test_benchmark_validation_checks_every_scene_object(tmp_path):
     run_evaluation_benchmark(
         out_dir=tmp_path / "benchmarks",
