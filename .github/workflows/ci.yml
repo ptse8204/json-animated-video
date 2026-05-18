@@ -50,6 +50,8 @@ jobs:
         run: npm run lint
       - name: Static UI build smoke
         run: npm run build
+      - name: Website embed browser smoke
+        run: npm run embed:smoke
       - name: Workspace package dry runs
         run: |
           npm --workspace @motionjson/runtime run test

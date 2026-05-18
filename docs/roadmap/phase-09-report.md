@@ -132,3 +132,11 @@ staged, leaving the preexisting untracked docs out of the commit.
 - Add a license file before publishing packages or inviting redistribution.
 - Keep `CHANGELOG.md` and `docs/release_notes.md` synchronized for the first
   real tag.
+
+## 2026-05-18 Revalidation
+
+Phase 09 was rechecked after the runtime embed smoke was added in Phase 08. The
+GitHub Actions JavaScript job and release checklist now include
+`npm run embed:smoke`, so CI/release gates cover the plain JavaScript website
+embed in a real browser when Chrome is available. The Phase 09 readiness test
+now asserts that command in both workflow and checklist coverage.

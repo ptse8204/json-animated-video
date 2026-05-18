@@ -27,6 +27,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src python
 npm test
 npm run lint
 npm run build
+npm run embed:smoke
 npm --workspace @motionjson/runtime run test
 npm --workspace @motionjson/sdk run test
 git diff --check
@@ -90,6 +91,7 @@ segmentation, OpenRouter, and provider credentials must remain opt-in.
 - Read `README.md` as a first-time user.
 - Confirm `CONTRIBUTING.md`, `SECURITY.md`, and `CHANGELOG.md` are current.
 - Confirm CI is green for Python tests, docs link checks, JavaScript
-  build/lint/tests, package dry runs, and Docker build smoke.
+  build/lint/tests, website embed smoke, package dry runs, and Docker build
+  smoke.
 - Confirm `docs/repo_status.md` still has current GitHub About, website,
   topics, and release-status recommendations.
