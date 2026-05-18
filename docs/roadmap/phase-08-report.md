@@ -105,3 +105,12 @@ Node/static and dependency-free.
   a `files` allowlist before external package publication.
 - Implement a real Remotion adapter only when the project is ready to own the
   dependency, generated component shape, and docs/tests.
+
+## 2026-05-18 Revalidation
+
+Phase 08 was rechecked after the Local UI roadmap phases. The deferred browser
+smoke is now implemented as `npm run embed:smoke`: it serves the repository,
+opens `examples/plain_js_embed.html` against `/out/demo/web_asset_manifest.json`
+in headless Chrome, checks for browser runtime errors, and verifies a nonblank
+Canvas2D embed surface. README, runtime docs, package metadata, and Phase 08
+tests now document and assert that command.

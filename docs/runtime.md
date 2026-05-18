@@ -57,7 +57,15 @@ npm --workspace @motionjson/runtime run test
 npm --workspace @motionjson/sdk run test
 npm pack --dry-run --workspace @motionjson/runtime
 npm pack --dry-run --workspace @motionjson/sdk
+npm run embed:smoke
 ```
+
+`npm run embed:smoke` is dependency-gated by local Chrome/Chromium. It serves
+the repository, opens `examples/plain_js_embed.html` against
+`/out/demo/web_asset_manifest.json`, and verifies that the browser mounts a
+nonblank Canvas2D surface without runtime errors. Use
+`node scripts/smoke_embed_examples.mjs --check` to see whether the current
+machine has Chrome and the demo manifest available.
 
 ## Output Manifest Anatomy
 

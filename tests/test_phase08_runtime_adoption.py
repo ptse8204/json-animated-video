@@ -23,6 +23,7 @@ def test_runtime_and_sdk_workspace_metadata_are_actionable() -> None:
     assert root_package["scripts"]["test"].startswith("node --test ")
     assert root_package["scripts"]["lint"] == "node scripts/lint_runtime.mjs"
     assert root_package["scripts"]["build"] == "node scripts/build_ui_shell.mjs"
+    assert root_package["scripts"]["embed:smoke"] == "node scripts/smoke_embed_examples.mjs"
 
     assert runtime_package["scripts"]["test"] == "node --test test/*.test.mjs"
     assert runtime_package["exports"] == {
@@ -54,6 +55,7 @@ def test_readme_explains_website_embed_runtime_sdk_and_export_paths() -> None:
         "npm --workspace @motionjson/runtime run test",
         "npm --workspace @motionjson/sdk run test",
         "npm pack --dry-run --workspace @motionjson/runtime",
+        "npm run embed:smoke",
         "@motionjson/sdk",
         "MotionJSONClient",
         "website-zip",
@@ -107,3 +109,13 @@ def test_plain_js_embed_example_and_demo_manifest_are_local_first() -> None:
     assert manifest["canvas"]["width"] > 0
     assert manifest["canvas"]["height"] > 0
     assert manifest["assets"]["sequence"]
+
+
+def test_plain_js_embed_browser_smoke_script_is_documented() -> None:
+    script = read("scripts/smoke_embed_examples.mjs")
+    runtime = read("docs/runtime.md")
+
+    assert "plain_js_embed.html" in script
+    assert "visiblePixels" in script
+    assert "variedPixels" in script
+    assert "npm run embed:smoke" in runtime

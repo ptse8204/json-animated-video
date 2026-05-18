@@ -9,6 +9,7 @@
     "build": "node scripts/build_ui_shell.mjs",
     "test": "node --test scripts/test_ui_config_builder.mjs packages/motionjson-runtime/test/*.test.mjs packages/motionjson-sdk/test/*.test.mjs",
     "lint": "node scripts/lint_runtime.mjs",
-    "ui:layout": "node scripts/check_local_ui_layout.mjs"
+    "ui:layout": "node scripts/check_local_ui_layout.mjs",
+    "embed:smoke": "node scripts/smoke_embed_examples.mjs"
   }
 }

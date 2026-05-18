@@ -251,6 +251,7 @@ npm --workspace @motionjson/runtime run test
 npm --workspace @motionjson/sdk run test
 npm pack --dry-run --workspace @motionjson/runtime
 npm pack --dry-run --workspace @motionjson/sdk
+npm run embed:smoke
 ```
 
 Use `@motionjson/sdk` when a web app needs to call the local/backend API:
