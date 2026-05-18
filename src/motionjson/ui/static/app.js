@@ -3,6 +3,7 @@ const MotionJSONUI = (() => {
     "/api/health",
     "/api/workspace",
     "/api/preferences",
+    "/api/commercial-readiness",
     "/api/capabilities",
     "/api/provider-settings",
     "/api/provider-settings/{providerId}",
@@ -136,6 +137,7 @@ const MotionJSONUI = (() => {
     exportFormats: null,
     providerSettings: null,
     workspace: null,
+    commercialReadiness: null,
     projects: [],
     selectedProjectId: "",
     videos: [],
@@ -1585,6 +1587,52 @@ const MotionJSONUI = (() => {
       status.textContent = configuredHosted ? `${configuredHosted} hosted configured` : "Mock default";
       status.className = `status-chip ${configuredHosted ? "is-warn" : "is-ready"}`;
       list.innerHTML = providers.map(renderProviderSettingsRow).join("");
+    }
+
+    function renderCommercialReadiness() {
+      const status = $("#commercialReadinessStatus");
+      const summary = $("#commercialReadinessSummary");
+      const list = $("#commercialReadinessList");
+      if (!state.commercialReadiness) {
+        status.textContent = state.errors.commercialReadiness ? "Unavailable" : "Not loaded";
+        status.className = `status-chip ${state.errors.commercialReadiness ? "is-bad" : "is-muted"}`;
+        setFacts(summary, {
+          account: "not reported",
+          billing: "not reported",
+          exports: "not reported",
+        });
+        list.innerHTML = `<div class="${state.errors.commercialReadiness ? "error-state" : "empty-state"}">${escapeHtml(state.errors.commercialReadiness || "Commercial readiness has not loaded yet.")}</div>`;
+        return;
+      }
+      const readiness = state.commercialReadiness;
+      const usageTotals = readiness.usageCost?.totals || {};
+      const providerHistory = asArray(readiness.providerRunHistory);
+      const exports = asArray(readiness.exportHistory);
+      const notices = [...asArray(readiness.privacyNotices), ...asArray(readiness.rightsReminders)];
+      status.textContent = readiness.accountBoundary?.teamMode === "placeholder_not_enabled" ? "Local team placeholder" : "Ready";
+      status.className = "status-chip is-neutral";
+      setFacts(summary, {
+        account: readiness.accountBoundary?.mode || "local",
+        billing: readiness.accountBoundary?.billing || "not implemented",
+        "provider runs": providerHistory.length,
+        exports: exports.length,
+        "cost policy": readiness.usageCost?.costDashboard?.policy || "local providers report zero cost",
+      });
+      list.innerHTML = `
+        <div class="diagnostic-row">
+          <strong>Usage</strong>
+          <span>${escapeHtml(Object.keys(usageTotals).length ? Object.keys(usageTotals).join(", ") : "No usage recorded yet.")}</span>
+        </div>
+        <div class="diagnostic-row">
+          <strong>Provider history</strong>
+          <span>${escapeHtml(providerHistory.length ? providerHistory.map((event) => event.metadata?.provider || event.eventType).join(", ") : "No provider attempts recorded.")}</span>
+        </div>
+        <div class="diagnostic-row">
+          <strong>Export history</strong>
+          <span>${escapeHtml(exports.length ? exports.map((item) => item.kind).join(", ") : "No exports yet.")}</span>
+        </div>
+        ${notices.map((notice) => `<div class="diagnostic-row"><strong>Notice</strong><span>${escapeHtml(notice)}</span></div>`).join("")}
+      `;
     }
 
     function renderProviderSettingsRow(provider) {
@@ -3393,6 +3441,7 @@ const MotionJSONUI = (() => {
         [
           ["health", "/api/health"],
           ["workspace", "/api/workspace"],
+          ["commercialReadiness", "/api/commercial-readiness"],
           ["capabilities", capabilityRoute],
           ["providerSettings", "/api/provider-settings"],
           ["runDefaults", "/api/run-config/defaults"],
@@ -3415,6 +3464,7 @@ const MotionJSONUI = (() => {
         if (error) state.errors[key] = error;
         if (key === "health") state.health = payload;
         if (key === "workspace") state.workspace = payload;
+        if (key === "commercialReadiness") state.commercialReadiness = payload;
         if (key === "capabilities") state.capabilities = payload;
         if (key === "providerSettings") state.providerSettings = payload;
         if (key === "runDefaults") state.runDefaults = payload;
@@ -3560,6 +3610,7 @@ const MotionJSONUI = (() => {
       renderWorkspace();
       renderCapabilities();
       renderProviderSettings();
+      renderCommercialReadiness();
       renderFirstRunChecklist();
       renderRunDefaults();
       renderProjects();

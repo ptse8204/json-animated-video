@@ -529,6 +529,36 @@ def test_local_ui_workspace_preferences_and_recent_work_are_public(tmp_path):
     assert decode(body)["preferences"]["defaultGoal"] == "motion_foreground"
 
 
+def test_local_ui_commercial_readiness_surface_is_local_and_audit_friendly(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Readiness Project"}).encode("utf-8"))
+    assert status == 200
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle("GET", "/api/commercial-readiness")
+    readiness = decode(body)
+    text = body.decode("utf-8")
+    assert status == 200
+    assert readiness["format"] == "motionjson.local_ui_commercial_readiness.v0.1"
+    assert readiness["accountBoundary"]["mode"] == "local_single_user"
+    assert readiness["accountBoundary"]["teamMode"] == "placeholder_not_enabled"
+    assert readiness["accountBoundary"]["billing"] == "not_implemented"
+    assert readiness["usageCost"]["costDashboard"]["schema"] == "motionjson.backend_cost_dashboard.v0.1"
+    assert isinstance(readiness["providerRunHistory"], list)
+    assert isinstance(readiness["exportHistory"], list)
+    assert any("Hosted providers require explicit opt-in" in notice for notice in readiness["privacyNotices"])
+    assert any("Commercial-use status" in reminder for reminder in readiness["rightsReminders"])
+    assert str(demo_video()) not in text
+    assert "storage_key" not in text
+
+
 def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
     status, _headers, body = app.handle(

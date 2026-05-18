@@ -47,7 +47,12 @@ from motionjson.backend.library import (
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.backend.queue import request_cancel_job
-from motionjson.backend.workspace import get_workspace_preferences, save_workspace_preferences, workspace_response
+from motionjson.backend.workspace import (
+    commercial_readiness_response,
+    get_workspace_preferences,
+    save_workspace_preferences,
+    workspace_response,
+)
 from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
@@ -437,6 +442,7 @@ class LocalUIApp:
                     "/api/health",
                     "/api/workspace",
                     "/api/preferences",
+                    "/api/commercial-readiness",
                     "/api/capabilities",
                     "/api/provider-settings",
                     "/api/provider-settings/{providerId}",
@@ -535,6 +541,8 @@ class LocalUIApp:
                 return _public_value(get_workspace_preferences(conn, user_id=user_id))
             if path == "/api/preferences" and method == "POST":
                 return _public_value(save_workspace_preferences(conn, user_id=user_id, payload=payload))
+            if path == "/api/commercial-readiness" and method == "GET":
+                return _public_value(commercial_readiness_response(conn, user_id=user_id))
             if path == "/api/projects" and method == "GET":
                 return {"projects": list_projects(conn, user_id=user_id)}
             if path == "/api/projects" and method == "POST":

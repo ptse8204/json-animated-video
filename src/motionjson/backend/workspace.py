@@ -8,11 +8,12 @@ from typing import Any, Mapping
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS
 
 from .projects import list_projects
-from .usage import utc_now
+from .usage import summarize_usage, utc_now
 
 
 WORKSPACE_FORMAT = "motionjson.local_ui_workspace.v0.1"
 PREFERENCES_FORMAT = "motionjson.local_ui_preferences.v0.1"
+COMMERCIAL_READINESS_FORMAT = "motionjson.local_ui_commercial_readiness.v0.1"
 
 WORKSPACE_NAMESPACE = "local_ui"
 EXPORT_PRESETS = {"compact", "debug", "vector-heavy", "raster-fallback"}
@@ -244,4 +245,109 @@ def workspace_response(
             "mockNoModelDefault": True,
         },
         "exportPresets": export_presets_payload,
+    }
+
+
+def _audit_events(conn: sqlite3.Connection, *, user_id: str, limit: int = 8) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT audit_events.id, audit_events.project_id, audit_events.job_id, audit_events.asset_id,
+               audit_events.object_id, audit_events.event_type, audit_events.metadata_json, audit_events.created_at
+        FROM audit_events
+        LEFT JOIN projects ON projects.id = audit_events.project_id
+        WHERE audit_events.user_id = ? OR projects.owner_user_id = ?
+        ORDER BY audit_events.created_at DESC
+        LIMIT ?
+        """,
+        (user_id, user_id, limit),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "projectId": row["project_id"],
+            "jobId": row["job_id"],
+            "assetId": row["asset_id"],
+            "objectId": row["object_id"],
+            "eventType": row["event_type"],
+            "metadata": _load_json(row["metadata_json"]),
+            "createdAt": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def _export_history(conn: sqlite3.Connection, *, user_id: str, limit: int = 8) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT assets.id, assets.project_id, assets.kind, assets.content_type, assets.byte_size,
+               assets.source_job_id, assets.metadata_json, assets.created_at
+        FROM assets
+        JOIN projects ON projects.id = assets.project_id
+        WHERE projects.owner_user_id = ?
+          AND assets.kind IN (
+            'final_export_manifest',
+            'motionjson_export_zip',
+            'validated_motionjson_scene',
+            'export_quality_routing',
+            'mp4_preview'
+          )
+        ORDER BY assets.created_at DESC
+        LIMIT ?
+        """,
+        (user_id, limit),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "projectId": row["project_id"],
+            "kind": row["kind"],
+            "contentType": row["content_type"],
+            "byteSize": row["byte_size"],
+            "sourceJobId": row["source_job_id"],
+            "metadata": _load_json(row["metadata_json"]),
+            "createdAt": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def commercial_readiness_response(conn: sqlite3.Connection, *, user_id: str) -> dict[str, Any]:
+    user = conn.execute("SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+    usage = summarize_usage(conn, user_id=user_id)
+    provider_history = [
+        {
+            "eventType": event["event_type"],
+            "quantity": event["quantity"],
+            "unit": event["unit"],
+            "projectId": event["project_id"],
+            "jobId": event["job_id"],
+            "metadata": _load_json(event["metadata_json"]),
+            "createdAt": event["created_at"],
+        }
+        for event in usage["events"]
+        if _load_json(event.get("metadata_json")).get("provider") or event["event_type"] in {"provider_attempts", "job_failures"}
+    ][-12:]
+    return {
+        "format": COMMERCIAL_READINESS_FORMAT,
+        "accountBoundary": {
+            "mode": "local_single_user",
+            "teamMode": "placeholder_not_enabled",
+            "userId": user["id"] if user else user_id,
+            "email": user["email"] if user else "local-ui@motionjson.local",
+            "billing": "not_implemented",
+        },
+        "usageCost": usage,
+        "providerRunHistory": provider_history,
+        "exportHistory": _export_history(conn, user_id=user_id),
+        "auditEvents": _audit_events(conn, user_id=user_id),
+        "privacyNotices": [
+            "Local providers keep source frames on this machine.",
+            "Hosted providers require explicit opt-in and may send frames, prompts, or frame-derived data to a third party.",
+            "Provider keys are redacted from Local UI responses and are not included in exported settings.",
+        ],
+        "rightsReminders": [
+            "Commercial-use status should be reviewed before publishing exports.",
+            "Creator approval and attribution requirements are surfaced as export warnings when metadata is incomplete.",
+            "Asset library creator packs are metadata packs; they are not a public marketplace or billing system.",
+        ],
     }

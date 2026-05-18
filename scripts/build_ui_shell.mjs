@@ -120,6 +120,10 @@ for (const id of [
   "workspacePreferencesForm",
   "preferenceDefaultGoal",
   "preferenceExportPreset",
+  "commercialReadinessPanel",
+  "commercialReadinessStatus",
+  "commercialReadinessSummary",
+  "commercialReadinessList",
   "routeList",
 ]) {
   if (!index.includes(`id="${id}"`)) {
@@ -131,6 +135,7 @@ for (const route of [
   "/api/health",
   "/api/workspace",
   "/api/preferences",
+  "/api/commercial-readiness",
   "/api/capabilities",
   "/api/projects",
   "/api/run-config/defaults",

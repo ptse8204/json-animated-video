@@ -25,10 +25,16 @@ The backing API routes are:
 - `GET /api/workspace`
 - `GET /api/preferences`
 - `POST /api/preferences`
+- `GET /api/commercial-readiness`
 
 Preferences are local SQLite rows for the reserved local UI user. They do not
 store provider secrets, media paths, or cloud account data. Hosted provider
 keys stay in the Provider settings flow and remain redacted.
+
+The Commercial readiness panel is intentionally a foundation, not billing. It
+shows local account/team placeholders, usage and cost policy, provider run
+history, export history, privacy notices, and rights reminders so commercial
+review work has an audit trail before team accounts or paid plans exist.
 
 ## Launch
 
