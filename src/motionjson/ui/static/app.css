@@ -697,6 +697,37 @@ input[type="range"] {
   color: var(--ink);
 }
 
+.workspace-recent,
+.workspace-preferences,
+.workspace-block {
+  display: grid;
+  gap: 8px;
+}
+
+.workspace-recent {
+  margin-top: 12px;
+}
+
+.workspace-block {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.workspace-task {
+  min-height: 32px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.workspace-preferences {
+  margin-top: 12px;
+}
+
+.workspace-preferences label {
+  display: grid;
+  gap: 4px;
+}
+
 .empty-state,
 .error-state {
   padding: 10px;

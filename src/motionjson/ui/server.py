@@ -47,6 +47,7 @@ from motionjson.backend.library import (
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.backend.queue import request_cancel_job
+from motionjson.backend.workspace import get_workspace_preferences, save_workspace_preferences, workspace_response
 from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
@@ -434,6 +435,8 @@ class LocalUIApp:
                 "mockMode": self.mock_mode,
                 "routes": [
                     "/api/health",
+                    "/api/workspace",
+                    "/api/preferences",
                     "/api/capabilities",
                     "/api/provider-settings",
                     "/api/provider-settings/{providerId}",
@@ -518,6 +521,20 @@ class LocalUIApp:
         try:
             user = self._local_user(conn)
             user_id = user["id"]
+            if path == "/api/workspace" and method == "GET":
+                settings = provider_settings_response(conn, user_id=user_id)
+                return _public_value(
+                    workspace_response(
+                        conn,
+                        user_id=user_id,
+                        provider_settings=settings,
+                        export_presets_payload=export_presets(),
+                    )
+                )
+            if path == "/api/preferences" and method == "GET":
+                return _public_value(get_workspace_preferences(conn, user_id=user_id))
+            if path == "/api/preferences" and method == "POST":
+                return _public_value(save_workspace_preferences(conn, user_id=user_id, payload=payload))
             if path == "/api/projects" and method == "GET":
                 return {"projects": list_projects(conn, user_id=user_id)}
             if path == "/api/projects" and method == "POST":

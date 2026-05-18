@@ -476,6 +476,59 @@ def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     assert decode(body)["progress"] == []
 
 
+def test_local_ui_workspace_preferences_and_recent_work_are_public(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Workspace Project"}).encode("utf-8"))
+    assert status == 200
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle("GET", "/api/workspace")
+    workspace = decode(body)
+    assert status == 200
+    assert workspace["format"] == "motionjson.local_ui_workspace.v0.1"
+    assert workspace["projects"][0]["id"] == project["id"]
+    assert workspace["recentVideos"][0]["filename"] == "demo_red_ball.mp4"
+    assert workspace["preferences"]["preferences"]["defaultGoal"] == "trace_one_object"
+    assert workspace["preferences"]["preferences"]["defaultExportPreset"] == "compact"
+    assert workspace["providerSettingsSummary"]["mockNoModelDefault"] is True
+    assert {preset["id"] for preset in workspace["exportPresets"]} >= {"compact", "debug"}
+    assert str(demo_video()) not in body.decode("utf-8")
+    assert "storage_key" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/preferences",
+        body=json.dumps(
+            {
+                "preferences": {
+                    "defaultGoal": "motion_foreground",
+                    "defaultMaskProvider": "motion",
+                    "defaultExportPreset": "debug",
+                    "lastProjectId": project["id"],
+                }
+            }
+        ).encode("utf-8"),
+    )
+    preferences = decode(body)
+    assert status == 200
+    assert preferences["format"] == "motionjson.local_ui_preferences.v0.1"
+    assert preferences["preferences"]["defaultGoal"] == "motion_foreground"
+    assert preferences["preferences"]["defaultMaskProvider"] == "motion"
+    assert preferences["preferences"]["defaultExportPreset"] == "debug"
+    assert preferences["preferences"]["lastProjectId"] == project["id"]
+
+    status, _headers, body = app.handle("GET", "/api/preferences")
+    assert status == 200
+    assert decode(body)["preferences"]["defaultGoal"] == "motion_foreground"
+
+
 def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
     status, _headers, body = app.handle(

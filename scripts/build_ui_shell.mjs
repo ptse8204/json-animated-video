@@ -115,6 +115,11 @@ for (const id of [
   "correctionHistoryCount",
   "correctionHistory",
   "fallbackDiagnostics",
+  "workspaceSummary",
+  "workspaceRecent",
+  "workspacePreferencesForm",
+  "preferenceDefaultGoal",
+  "preferenceExportPreset",
   "routeList",
 ]) {
   if (!index.includes(`id="${id}"`)) {
@@ -124,6 +129,8 @@ for (const id of [
 
 for (const route of [
   "/api/health",
+  "/api/workspace",
+  "/api/preferences",
   "/api/capabilities",
   "/api/projects",
   "/api/run-config/defaults",

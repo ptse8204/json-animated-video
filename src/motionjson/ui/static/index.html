@@ -32,6 +32,34 @@
           </nav>
         </section>
 
+        <details class="compact-panel disclosure-panel" open>
+          <summary>Workspace</summary>
+          <dl id="workspaceSummary" class="facts"></dl>
+          <div id="workspaceRecent" class="workspace-recent"></div>
+          <form id="workspacePreferencesForm" class="workspace-preferences">
+            <label>
+              <span>Default goal</span>
+              <select id="preferenceDefaultGoal">
+                <option value="trace_one_object">Trace one object</option>
+                <option value="text_detector">Find objects from text</option>
+                <option value="class_detector">Find known classes</option>
+                <option value="motion_foreground">Find moving objects</option>
+                <option value="review_existing">Review existing result</option>
+              </select>
+            </label>
+            <label>
+              <span>Default export</span>
+              <select id="preferenceExportPreset">
+                <option value="compact">compact</option>
+                <option value="debug">debug</option>
+                <option value="vector-heavy">vector-heavy</option>
+                <option value="raster-fallback">raster-fallback</option>
+              </select>
+            </label>
+            <button type="submit">Save preferences</button>
+          </form>
+        </details>
+
         <section class="compact-panel">
           <div class="panel-heading compact-heading">
             <h2>First Run</h2>

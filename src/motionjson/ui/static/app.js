@@ -1,6 +1,8 @@
 const MotionJSONUI = (() => {
   const API_ROUTES = [
     "/api/health",
+    "/api/workspace",
+    "/api/preferences",
     "/api/capabilities",
     "/api/provider-settings",
     "/api/provider-settings/{providerId}",
@@ -133,6 +135,7 @@ const MotionJSONUI = (() => {
     runDefaults: null,
     exportFormats: null,
     providerSettings: null,
+    workspace: null,
     projects: [],
     selectedProjectId: "",
     videos: [],
@@ -1474,6 +1477,47 @@ const MotionJSONUI = (() => {
           return `<div class="route-row"><strong>${escapeHtml(route)}</strong><span class="row-meta">${routeState}</span></div>`;
         })
         .join("");
+    }
+
+    function renderWorkspace() {
+      const summary = $("#workspaceSummary");
+      const recent = $("#workspaceRecent");
+      if (!state.workspace) {
+        setFacts(summary, {
+          status: state.errors.workspace || "not loaded",
+          projects: "not reported",
+          providers: "not reported",
+        });
+        recent.innerHTML = `<div class="${state.errors.workspace ? "error-state" : "empty-state"}">${escapeHtml(state.errors.workspace || "Workspace summary has not loaded yet.")}</div>`;
+        return;
+      }
+      const preferences = state.workspace.preferences?.preferences || {};
+      const providerSummary = state.workspace.providerSettingsSummary || {};
+      setFacts(summary, {
+        projects: asArray(state.workspace.projects).length,
+        recent: `${asArray(state.workspace.recentVideos).length} videos, ${asArray(state.workspace.recentJobs).length} jobs`,
+        providers: `${providerSummary.configuredCount || 0} configured`,
+        "safe default": providerSummary.mockNoModelDefault ? "mock/no-model" : "check settings",
+      });
+      $("#preferenceDefaultGoal").value = preferences.defaultGoal || "trace_one_object";
+      $("#preferenceExportPreset").value = preferences.defaultExportPreset || "compact";
+      const tasks = asArray(state.workspace.guidedTasks).slice(0, 4);
+      const videos = asArray(state.workspace.recentVideos).slice(0, 3);
+      const jobs = asArray(state.workspace.recentJobs).slice(0, 3);
+      recent.innerHTML = `
+        <div class="workspace-block">
+          <strong>Guided tasks</strong>
+          ${tasks.map((task) => `<button class="workspace-task" type="button" data-preset="${escapeAttribute(task.id)}">${escapeHtml(task.label)}</button>`).join("") || `<span class="row-meta">No tasks reported.</span>`}
+        </div>
+        <div class="workspace-block">
+          <strong>Recent videos</strong>
+          ${videos.map((video) => `<span class="row-meta">${escapeHtml(video.filename || video.id)}</span>`).join("") || `<span class="row-meta">Add a video to start.</span>`}
+        </div>
+        <div class="workspace-block">
+          <strong>Recent jobs</strong>
+          ${jobs.map((job) => `<span class="row-meta">${escapeHtml(job.status)} - ${escapeHtml(job.provider || job.type || job.id)}</span>`).join("") || `<span class="row-meta">No extraction jobs yet.</span>`}
+        </div>
+      `;
     }
 
     function providerDetails(provider) {
@@ -3348,6 +3392,7 @@ const MotionJSONUI = (() => {
       const entries = await Promise.all(
         [
           ["health", "/api/health"],
+          ["workspace", "/api/workspace"],
           ["capabilities", capabilityRoute],
           ["providerSettings", "/api/provider-settings"],
           ["runDefaults", "/api/run-config/defaults"],
@@ -3369,6 +3414,7 @@ const MotionJSONUI = (() => {
       for (const [key, payload, error] of entries) {
         if (error) state.errors[key] = error;
         if (key === "health") state.health = payload;
+        if (key === "workspace") state.workspace = payload;
         if (key === "capabilities") state.capabilities = payload;
         if (key === "providerSettings") state.providerSettings = payload;
         if (key === "runDefaults") state.runDefaults = payload;
@@ -3511,6 +3557,7 @@ const MotionJSONUI = (() => {
       renderApiStatus("is-neutral", "Checking API");
       await loadRootData();
       renderHealth();
+      renderWorkspace();
       renderCapabilities();
       renderProviderSettings();
       renderFirstRunChecklist();
@@ -4092,6 +4139,27 @@ const MotionJSONUI = (() => {
     }
 
     $("#refreshButton").addEventListener("click", refreshAll);
+    $("#workspaceRecent").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-preset]");
+      if (!button) return;
+      applyPreset(button.dataset.preset);
+    });
+    $("#workspacePreferencesForm").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const payload = {
+        preferences: {
+          defaultGoal: $("#preferenceDefaultGoal").value,
+          defaultExportPreset: $("#preferenceExportPreset").value,
+          lastProjectId: state.selectedProjectId || null,
+        },
+      };
+      const response = await api("/api/preferences", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (state.workspace) state.workspace.preferences = response;
+      await refreshAll();
+    });
     $("#startRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: false }));
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
     $("#cancelJobButton").addEventListener("click", cancelSelectedJob);

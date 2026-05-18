@@ -7,6 +7,29 @@ reusable motion layers. It runs against the existing SQLite backend and
 filesystem storage. It does not require GPU, SAM2, hosted services, or network
 access for the mock/no-model smoke path.
 
+## Commercial Workspace Mode
+
+The sidebar Workspace panel collects the product-level state a nontechnical
+user needs before running extraction:
+
+- recent projects, source videos, and jobs;
+- guided tasks such as tracing one object, text-guided discovery, moving
+  objects, and reviewing an existing result;
+- saved local preferences for default goal, default mask provider, default
+  export preset, and last project;
+- provider-settings summary that keeps mock/no-model as the safe default;
+- export preset inventory.
+
+The backing API routes are:
+
+- `GET /api/workspace`
+- `GET /api/preferences`
+- `POST /api/preferences`
+
+Preferences are local SQLite rows for the reserved local UI user. They do not
+store provider secrets, media paths, or cloud account data. Hosted provider
+keys stay in the Provider settings flow and remain redacted.
+
 ## Launch
 
 Use the packaged console command for normal local UI sessions:
