@@ -80,6 +80,29 @@ fields, then adds clearer first-run fields:
 
 ## Provider Names
 
+## Provider Matrix
+
+Use this table before choosing a workflow. "Local/free" means the provider can
+run without hosted calls or provider billing when its local dependencies are
+installed. "Model weights" means a user must bring a local checkpoint, config,
+or detector model before the real backend can run.
+
+| Provider | Local/free | GPU required | Model weights | Credentials | Best for | Common failure modes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `mock` | Yes | No | No | No | UI smoke checks, demos, tests, and no-model reviews. | Mock output is deterministic and should not be mistaken for real segmentation. |
+| `threshold` | Yes | No | No | No | Simple color-separated objects such as the red-ball demo. | Lighting shifts, similar colors, or broad HSV ranges can create bad masks. |
+| `motion` | Yes | No | No | No | Moving object masks when the object separates from the background. | Camera motion, shadows, and reflections can become foreground. |
+| `external` | Yes | No | No | No | Reusing masks from another trusted local tool. | Missing frames, wrong object IDs, or masks that cover the background. |
+| `manual_prompt` | Yes | No | No | No | One known object marked by a point, box, or imported mask. | Loose prompts can select a wall, floor, or whole-frame region. |
+| `motion_foreground` | Yes | No | No | No | Discovering moving regions before tracking. | Static objects are missed and camera movement can create false candidates. |
+| `external_masks` | Yes | No | No | No | Multi-object extraction from prepared mask folders or manifests. | Frame-count mismatches and path mistakes can leave tracks incomplete. |
+| `sam2-local` | Local once installed | Recommended for real use | Yes | No | Promptable local segmentation/tracking with SAM2-style models. | Missing SAM2 package, checkpoint, config, CUDA, or an overly broad prompt. |
+| `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
+| `sam_auto_masks` | Mock only today | Future backend dependent | Yes for real backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
+| `text_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Text-guided candidate boxes before segmentation. | Missing detector package/model or semantically wrong boxes. |
+| `class_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Known classes such as people, vehicles, or custom local labels. | Missing YOLO-style backend, too many candidates, or wrong class selection. |
+| `openrouter` | No | No local GPU | No local weights | Yes | Optional LLM/VLM reasoning or label help. | Missing key/base URL, hosted cost/privacy concerns, and no pixel segmentation capability. |
+
 Current no-model providers:
 
 - `threshold`

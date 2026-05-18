@@ -84,6 +84,7 @@ def test_local_ui_exposes_first_run_diagnostics_panel():
 
 def test_extraction_mode_docs_include_failure_modes_and_multi_object_sample():
     discovery = read("docs/discovery_providers.md")
+    provider_capabilities = read("docs/provider_capabilities.md")
     multi = read("docs/multi_object_extraction.md")
     local_ui = read("docs/local_ui.md")
 
@@ -91,6 +92,11 @@ def test_extraction_mode_docs_include_failure_modes_and_multi_object_sample():
     assert "whole-frame masks" in discovery
     assert "UI vs CLI Support Today" in discovery
     assert "Safer Fallback" in discovery
+    assert "Provider Matrix" in provider_capabilities
+    for phrase in ["Local/free", "GPU required", "Model weights", "Credentials", "Best for", "Common failure modes"]:
+        assert phrase in provider_capabilities
+    for provider in ["`threshold`", "`motion_foreground`", "`external_masks`", "`sam2-local`", "`sam2-hosted`", "`text_detector`", "`class_detector`", "`openrouter`"]:
+        assert provider in provider_capabilities
     assert "python3 -m motionjson.cli benchmark --fixtures multi_object" in multi
     assert "blue_block=out/benchmarks/fixtures/multi_object/masks/blue_block" in multi
     assert "PowerShell" in local_ui

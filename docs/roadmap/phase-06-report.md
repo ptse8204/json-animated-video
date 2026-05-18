@@ -112,3 +112,16 @@ the final diff. No material follow-up findings were left unaddressed.
   capability-gated scaffolds.
 - Expand the provider capability report from run configs when users override
   hosted endpoint/auth environment variable names.
+
+## 2026-05-18 Revalidation
+
+Phase 06 was rechecked after the provider-settings phase. The provider
+capability docs now include an explicit provider matrix covering local/free
+status, GPU requirements, model-weight requirements, credential needs, best-use
+cases, and common failure modes for local, hosted, detector, SAM2, and
+OpenRouter-style providers. A docs test now asserts that the matrix remains in
+the user manual. Revalidation commands passed:
+`python3 -m pytest -q tests/test_phase13_packaging_onboarding.py::test_extraction_mode_docs_include_failure_modes_and_multi_object_sample tests/test_capabilities.py tests/test_benchmark.py::test_benchmark_multi_object_external_masks_keeps_two_stable_tracks tests/test_track_filtering.py`,
+`python3 -m motionjson.cli backend diagnostics --json`,
+`python3 -m motionjson.cli backend diagnostics --text`, and
+`python3 -m motionjson.cli benchmark --fixtures multi_object,whole_frame_regression --modes external --out /tmp/motionjson-phase06-recheck-benchmarks --width 64 --height 48 --frames 4`.
