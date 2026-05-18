@@ -19,35 +19,36 @@
           </div>
         </div>
 
-        <nav class="goal-list" aria-label="Extraction wizard presets">
-          <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Trace one object</button>
-          <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
-          <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
-          <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
-          <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
-          <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
-          <button class="goal" type="button" data-preset="review_existing" aria-pressed="false">Review existing result</button>
-        </nav>
-
-        <section class="compact-panel">
-          <h2>Local API</h2>
-          <dl id="healthStatus" class="facts"></dl>
+        <section class="sidebar-section">
+          <p class="section-kicker">Choose a goal</p>
+          <nav class="goal-list" aria-label="Extraction wizard presets">
+            <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Trace one object</button>
+            <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
+            <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
+            <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
+            <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
+            <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
+            <button class="goal" type="button" data-preset="review_existing" aria-pressed="false">Review existing result</button>
+          </nav>
         </section>
 
         <section class="compact-panel">
-          <h2>First Run</h2>
+          <div class="panel-heading compact-heading">
+            <h2>First Run</h2>
+            <span class="subtle-chip">safe path</span>
+          </div>
           <div id="firstRunChecklist" class="first-run-list" aria-live="polite"></div>
         </section>
 
-        <section class="compact-panel">
-          <h2>Provider Warnings</h2>
-          <div id="providerWarning" class="warning-box" role="status"></div>
-        </section>
+        <details class="compact-panel disclosure-panel" open>
+          <summary>Local API</summary>
+          <dl id="healthStatus" class="facts"></dl>
+        </details>
 
-        <section class="compact-panel">
-          <h2>Capabilities</h2>
+        <details class="compact-panel disclosure-panel">
+          <summary>Capabilities</summary>
           <div id="capabilityList" class="capability-list" aria-live="polite"></div>
-        </section>
+        </details>
       </aside>
 
       <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1">
@@ -55,6 +56,7 @@
           <div>
             <p class="eyebrow">Local release candidate</p>
             <h1>Object tracing workspace</h1>
+            <p class="topbar-copy">Start in no-model mode, confirm provider readiness, then review tracks before export.</p>
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
@@ -62,10 +64,74 @@
           </div>
         </header>
 
+        <ol class="workflow-steps" aria-label="Local workflow">
+          <li><span>1</span>Create or open</li>
+          <li><span>2</span>Add video</li>
+          <li><span>3</span>Mode and model</li>
+          <li><span>4</span>Confirm locality</li>
+          <li><span>5</span>Run</li>
+          <li><span>6</span>Review candidates</li>
+          <li><span>7</span>Correct tracks</li>
+          <li><span>8</span>Preview</li>
+          <li><span>9</span>Export</li>
+        </ol>
+
         <section class="workspace-grid">
+          <article class="panel viewer-panel" aria-label="Video viewer">
+            <div class="panel-heading">
+              <div>
+                <h2>Preview and prompts</h2>
+                <p class="panel-note">Draw prompts against native video pixels. Keyboard shortcuts stay available when the viewer is focused.</p>
+              </div>
+              <span id="videoMetricReadout">video pixels unavailable</span>
+            </div>
+
+            <div class="viewer-toolbar" role="toolbar" aria-label="Prompt tools">
+              <div class="tool-group" aria-label="Drawing tools">
+                <button class="tool-button is-active" type="button" data-tool="point" title="Point tool" data-tooltip="Point prompt" aria-keyshortcuts="P">Point</button>
+                <button class="tool-button" type="button" data-tool="box" title="Box tool" data-tooltip="Box prompt" aria-keyshortcuts="B">Box</button>
+                <button class="tool-button" type="button" data-tool="brush" title="Mask brush" data-tooltip="Paint mask">Brush</button>
+                <button class="tool-button" type="button" data-tool="eraser" title="Mask erase" data-tooltip="Erase mask" aria-keyshortcuts="E">Erase</button>
+                <button class="tool-button" type="button" data-tool="label" title="Label selected object" data-tooltip="Label selected prompt">Label</button>
+                <button class="tool-button" type="button" data-tool="keyframe" title="Mark keyframe" data-tooltip="Mark keyframe" aria-keyshortcuts="M">Keyframe</button>
+              </div>
+              <div class="tool-group secondary-tools" aria-label="Point polarity">
+                <button id="positivePointButton" class="tool-button is-active" type="button" data-point-kind="positive_point" data-tooltip="Positive point">Positive</button>
+                <button id="negativePointButton" class="tool-button" type="button" data-point-kind="negative_point" data-tooltip="Negative point">Negative</button>
+                <label class="compact-field">
+                  <span>Brush</span>
+                  <input id="brushSize" type="number" min="2" max="96" step="1" value="18" />
+                </label>
+              </div>
+            </div>
+
+            <div id="viewerStage" class="viewer-stage" tabindex="0" aria-label="Video frame and prompt overlay" aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Space M P B E">
+              <video id="previewVideo" class="preview-video" muted playsinline preload="metadata"></video>
+              <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+              <div id="emptyViewerState" class="empty-viewer-state">
+                <strong>No browser preview loaded</strong>
+                <span>Use the browser preview control to draw on native video pixels.</span>
+              </div>
+            </div>
+
+            <div class="viewer-status">
+              <span id="coordinateReadout">x: -, y: -</span>
+              <span id="frameReadout">frame 0</span>
+            </div>
+
+            <div class="timeline-controls" aria-label="Timeline controls">
+              <button id="playPauseButton" type="button" aria-keyshortcuts="Space" title="Play or pause preview">Play</button>
+              <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
+              <button id="markKeyframeButton" type="button" aria-keyshortcuts="M" title="Mark current frame as a keyframe">Mark keyframe</button>
+            </div>
+          </article>
+
           <article class="panel setup-panel" aria-label="Project and video setup">
             <div class="panel-heading">
-              <h2>Project</h2>
+              <div>
+                <h2>Project and video</h2>
+                <p class="panel-note">Keep work local. Register a path for backend jobs and optionally load a browser preview for drawing.</p>
+              </div>
               <span id="projectCount" class="subtle-chip">0 projects</span>
             </div>
             <form id="projectForm" class="inline-form">
@@ -77,8 +143,8 @@
             </form>
             <select id="projectSelect" aria-label="Project"></select>
 
-            <div class="panel-heading secondary-heading">
-              <h2>Source Video</h2>
+            <div class="section-divider">
+              <h3>Source Video</h3>
               <span id="videoCount" class="subtle-chip">0 videos</span>
             </div>
             <form id="videoForm" class="inline-form">
@@ -95,66 +161,32 @@
             </label>
             <div id="videoList" class="artifact-list"></div>
 
-            <div class="panel-heading secondary-heading">
-              <h2>Existing Result</h2>
-              <span id="importStatus" class="subtle-chip">Not imported</span>
-            </div>
-            <form id="importMotionJsonForm" class="inline-form">
-              <label>
-                <span>MotionJSON path</span>
-                <input id="motionJsonImportPath" type="text" value="out/demo" />
-              </label>
-              <button type="submit">Import</button>
-            </form>
-          </article>
-
-          <article class="panel viewer-panel" aria-label="Video viewer">
-            <div class="viewer-toolbar" role="toolbar" aria-label="Prompt tools">
-              <div class="tool-group" aria-label="Drawing tools">
-                <button class="tool-button is-active" type="button" data-tool="point" title="Point tool" data-tooltip="Point prompt" aria-keyshortcuts="P">Point</button>
-                <button class="tool-button" type="button" data-tool="box" title="Box tool" data-tooltip="Box prompt" aria-keyshortcuts="B">Box</button>
-                <button class="tool-button" type="button" data-tool="brush" title="Mask brush" data-tooltip="Paint mask">Brush</button>
-                <button class="tool-button" type="button" data-tool="eraser" title="Mask erase" data-tooltip="Erase mask" aria-keyshortcuts="E">Erase</button>
-                <button class="tool-button" type="button" data-tool="label" title="Label selected object" data-tooltip="Label selected prompt">Label</button>
-                <button class="tool-button" type="button" data-tool="keyframe" title="Mark keyframe" data-tooltip="Mark keyframe" aria-keyshortcuts="M">Keyframe</button>
+            <details class="advanced-panel">
+              <summary>Review existing MotionJSON</summary>
+              <div class="panel-heading secondary-heading">
+                <h2>Existing Result</h2>
+                <span id="importStatus" class="subtle-chip">Not imported</span>
               </div>
-              <div class="tool-group" aria-label="Point polarity">
-                <button id="positivePointButton" class="tool-button is-active" type="button" data-point-kind="positive_point" data-tooltip="Positive point">Positive</button>
-                <button id="negativePointButton" class="tool-button" type="button" data-point-kind="negative_point" data-tooltip="Negative point">Negative</button>
-              </div>
-              <label class="compact-field">
-                <span>Brush</span>
-                <input id="brushSize" type="number" min="2" max="96" step="1" value="18" />
-              </label>
-            </div>
-
-            <div id="viewerStage" class="viewer-stage" tabindex="0" aria-label="Video frame and prompt overlay" aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Space M P B E">
-              <video id="previewVideo" class="preview-video" muted playsinline preload="metadata"></video>
-              <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
-              <div id="emptyViewerState" class="empty-viewer-state">
-                <strong>No browser preview loaded</strong>
-                <span>Use the browser preview control to draw on native video pixels.</span>
-              </div>
-            </div>
-
-            <div class="viewer-status">
-              <span id="coordinateReadout">x: -, y: -</span>
-              <span id="frameReadout">frame 0</span>
-              <span id="videoMetricReadout">video pixels unavailable</span>
-            </div>
-
-            <div class="timeline-controls">
-              <button id="playPauseButton" type="button" aria-keyshortcuts="Space" title="Play or pause preview">Play</button>
-              <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
-              <button id="markKeyframeButton" type="button" aria-keyshortcuts="M" title="Mark current frame as a keyframe">Mark keyframe</button>
-            </div>
+              <form id="importMotionJsonForm" class="inline-form">
+                <label>
+                  <span>MotionJSON path</span>
+                  <input id="motionJsonImportPath" type="text" value="out/demo" />
+                </label>
+                <button type="submit">Import</button>
+              </form>
+            </details>
           </article>
 
           <article class="panel wizard-panel" aria-label="Extraction wizard">
             <div class="panel-heading">
-              <h2>Wizard</h2>
+              <div>
+                <h2>Extraction settings</h2>
+                <p class="panel-note">Mock/no-model is the safe default. Hosted or heavy providers stay gated by diagnostics.</p>
+              </div>
               <span id="presetSummary" class="status-chip is-neutral">Trace one object</span>
             </div>
+
+            <div id="providerWarning" class="warning-box" role="status"></div>
 
             <div class="wizard-fields">
               <label>
@@ -203,7 +235,7 @@
               </label>
             </div>
 
-            <details class="advanced-panel" open>
+            <details class="advanced-panel">
               <summary>Advanced parameters</summary>
               <div class="advanced-grid">
                 <label>
@@ -272,7 +304,10 @@
 
           <article class="panel config-panel" aria-label="Config preview">
             <div class="panel-heading">
-              <h2>Config Preview</h2>
+              <div>
+                <h2>Run preview</h2>
+                <p class="panel-note">Validate before running. The generated config is the same shape the backend receives.</p>
+              </div>
               <span id="configStatus" class="status-chip is-neutral">Ready</span>
             </div>
             <div class="config-actions">
@@ -291,210 +326,233 @@
       </section>
 
       <aside class="right-rail" aria-label="Jobs and diagnostics">
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Run Defaults</h2>
-            <span class="subtle-chip">No-model safe</span>
-          </div>
-          <dl id="runDefaults" class="facts"></dl>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Jobs</h2>
-            <span id="jobSummary" class="subtle-chip">0 active</span>
-          </div>
-          <div id="jobList" class="artifact-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Selected Run</h2>
-            <span id="runStatus" class="status-chip is-muted">No run</span>
-          </div>
-          <dl id="selectedJobFacts" class="facts"></dl>
-          <button id="cancelJobButton" class="danger-action" type="button" data-tooltip="Request cooperative cancellation for the selected run" disabled>Cancel run</button>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Logs</h2>
-            <span id="eventCount" class="subtle-chip">0 events</span>
-          </div>
-          <div id="jobEventLog" class="event-log" aria-live="polite"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Artifacts</h2>
-            <span id="artifactCount" class="subtle-chip">0 files</span>
-          </div>
-          <div id="artifactBrowser" class="artifact-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Asset Library</h2>
-            <span id="libraryStatus" class="status-chip is-muted">Not loaded</span>
-          </div>
-          <form id="librarySearchForm" class="inline-form">
-            <label>
-              <span>Search</span>
-              <input id="librarySearch" type="text" value="" />
-            </label>
-            <label>
-              <span>Tag</span>
-              <input id="libraryTagFilter" type="text" value="" />
-            </label>
-            <button type="submit">Search</button>
-          </form>
-          <div class="library-save-controls">
-            <label>
-              <span>Save artifact</span>
-              <select id="libraryArtifactSelect"></select>
-            </label>
-            <label>
-              <span>Title</span>
-              <input id="libraryAssetTitle" type="text" value="Reusable motion layer" />
-            </label>
-            <label>
-              <span>Tags</span>
-              <input id="libraryAssetTags" type="text" value="motion, local-ui" />
-            </label>
-            <button id="saveLibraryAssetButton" type="button">Save layer</button>
-          </div>
-          <div class="library-collection-controls">
-            <form id="libraryCollectionForm" class="inline-form">
+        <details class="rail-section" open>
+          <summary>Run monitor</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Run Defaults</h2>
+              <span class="subtle-chip">No-model safe</span>
+            </div>
+            <dl id="runDefaults" class="facts"></dl>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Jobs</h2>
+              <span id="jobSummary" class="subtle-chip">0 active</span>
+            </div>
+            <div id="jobList" class="artifact-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Selected Run</h2>
+              <span id="runStatus" class="status-chip is-muted">No run</span>
+            </div>
+            <dl id="selectedJobFacts" class="facts"></dl>
+            <button id="cancelJobButton" class="danger-action" type="button" data-tooltip="Request cooperative cancellation for the selected run" disabled>Cancel run</button>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Logs</h2>
+              <span id="eventCount" class="subtle-chip">0 events</span>
+            </div>
+            <div id="jobEventLog" class="event-log" aria-live="polite"></div>
+          </section>
+        </details>
+
+        <details class="rail-section">
+          <summary>Review</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Candidates</h2>
+              <span id="candidateSummaryStatus" class="status-chip is-muted">Not loaded</span>
+            </div>
+            <div id="candidateSummaryList" class="artifact-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Tracks</h2>
+              <span id="trackCount" class="subtle-chip">0 tracks</span>
+            </div>
+            <div id="trackList" class="track-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Track Detail</h2>
+              <span id="selectedTrackStatus" class="status-chip is-muted">No track</span>
+            </div>
+            <div id="selectedTrackDetail" class="track-detail"></div>
+          </section>
+          <section class="compact-panel">
+            <h2>Fallback Diagnostics</h2>
+            <div id="fallbackDiagnostics" class="diagnostic-list" role="status"></div>
+          </section>
+        </details>
+
+        <details class="rail-section">
+          <summary>Artifacts and exports</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Artifacts</h2>
+              <span id="artifactCount" class="subtle-chip">0 files</span>
+            </div>
+            <div id="artifactBrowser" class="artifact-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Export</h2>
+              <span id="exportStatus" class="status-chip is-muted">Not validated</span>
+            </div>
+            <div class="export-panel">
               <label>
-                <span>Collection</span>
-                <input id="libraryCollectionTitle" type="text" value="Local brand collection" />
+                <span>Preset</span>
+                <select id="exportPresetSelect">
+                  <option value="compact">compact</option>
+                  <option value="debug">debug</option>
+                  <option value="vector-heavy">vector-heavy</option>
+                  <option value="raster-fallback">raster-fallback</option>
+                </select>
               </label>
-              <button type="submit">Create</button>
+              <label class="track-toggle">
+                <input id="exportIncludeMasks" type="checkbox" />
+                <span>masks</span>
+              </label>
+              <label class="track-toggle">
+                <input id="exportIncludeContours" type="checkbox" />
+                <span>contours</span>
+              </label>
+              <label class="track-toggle">
+                <input id="exportIncludePreview" type="checkbox" checked />
+                <span>preview</span>
+              </label>
+            </div>
+            <div class="export-actions">
+              <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate</button>
+              <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
+            </div>
+            <div id="exportSummary" class="export-summary"></div>
+          </section>
+        </details>
+
+        <details class="rail-section">
+          <summary>Corrections</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Corrections</h2>
+              <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
+            </div>
+            <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
+            <div class="correction-editor">
+              <label>
+                <span>Track</span>
+                <select id="correctionTrackSelect" aria-label="Correction target track"></select>
+              </label>
+              <label>
+                <span>Label</span>
+                <input id="correctionLabelInput" type="text" placeholder="object label" />
+              </label>
+              <button id="relabelTrackButton" type="button">Relabel</button>
+            </div>
+            <div class="correction-range">
+              <label>
+                <span>Start frame</span>
+                <input id="correctionFrameStart" type="number" min="0" step="1" value="0" />
+              </label>
+              <label>
+                <span>End frame</span>
+                <input id="correctionFrameEnd" type="number" min="0" step="1" value="0" />
+              </label>
+              <button id="useCurrentFrameRangeButton" type="button">Use current</button>
+            </div>
+            <div class="correction-actions">
+              <button id="mergeTracksButton" type="button">Merge selected</button>
+              <button id="splitTrackButton" type="button">Split track</button>
+              <button id="addObjectButton" type="button">Add from prompts</button>
+              <button id="repairTrackButton" class="primary-action" type="button">Repair with prompts</button>
+            </div>
+            <div class="correction-meta">
+              <span id="mergeSelectionCount" class="subtle-chip">0 selected</span>
+              <span id="correctionPromptCount" class="subtle-chip">0 prompts</span>
+            </div>
+            <div id="mergeSuggestionList" class="suggestion-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Correction History</h2>
+              <span id="correctionHistoryCount" class="subtle-chip">0 edits</span>
+            </div>
+            <div id="correctionHistory" class="history-list"></div>
+          </section>
+        </details>
+
+        <details class="rail-section">
+          <summary>Asset library</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Asset Library</h2>
+              <span id="libraryStatus" class="status-chip is-muted">Not loaded</span>
+            </div>
+            <form id="librarySearchForm" class="inline-form">
+              <label>
+                <span>Search</span>
+                <input id="librarySearch" type="text" value="" />
+              </label>
+              <label>
+                <span>Tag</span>
+                <input id="libraryTagFilter" type="text" value="" />
+              </label>
+              <button type="submit">Search</button>
             </form>
-            <label>
-              <span>Add to collection</span>
-              <select id="libraryCollectionSelect"></select>
-            </label>
-            <button id="addLibraryAssetToCollectionButton" type="button">Add selected</button>
-          </div>
-          <form id="libraryPackForm" class="inline-form">
-            <label>
-              <span>Creator pack</span>
-              <input id="libraryPackTitle" type="text" value="Creator-approved pack" />
-            </label>
-            <button type="submit">Create pack</button>
-          </form>
-          <div id="libraryError" class="warning-box" hidden></div>
-          <div id="libraryArtifactNotice" class="empty-state" hidden></div>
-          <div id="libraryAssetList" class="library-list"></div>
-          <div id="libraryCollectionList" class="library-list"></div>
-          <div id="libraryPackList" class="library-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Candidates</h2>
-            <span id="candidateSummaryStatus" class="status-chip is-muted">Not loaded</span>
-          </div>
-          <div id="candidateSummaryList" class="artifact-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Tracks</h2>
-            <span id="trackCount" class="subtle-chip">0 tracks</span>
-          </div>
-          <div id="trackList" class="track-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Track Detail</h2>
-            <span id="selectedTrackStatus" class="status-chip is-muted">No track</span>
-          </div>
-          <div id="selectedTrackDetail" class="track-detail"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Export</h2>
-            <span id="exportStatus" class="status-chip is-muted">Not validated</span>
-          </div>
-          <div class="export-panel">
-            <label>
-              <span>Preset</span>
-              <select id="exportPresetSelect">
-                <option value="compact">compact</option>
-                <option value="debug">debug</option>
-                <option value="vector-heavy">vector-heavy</option>
-                <option value="raster-fallback">raster-fallback</option>
-              </select>
-            </label>
-            <label class="track-toggle">
-              <input id="exportIncludeMasks" type="checkbox" />
-              <span>masks</span>
-            </label>
-            <label class="track-toggle">
-              <input id="exportIncludeContours" type="checkbox" />
-              <span>contours</span>
-            </label>
-            <label class="track-toggle">
-              <input id="exportIncludePreview" type="checkbox" checked />
-              <span>preview</span>
-            </label>
-          </div>
-          <div class="export-actions">
-            <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate</button>
-            <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
-          </div>
-          <div id="exportSummary" class="export-summary"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Corrections</h2>
-            <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
-          </div>
-          <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
-          <div class="correction-editor">
-            <label>
-              <span>Track</span>
-              <select id="correctionTrackSelect" aria-label="Correction target track"></select>
-            </label>
-            <label>
-              <span>Label</span>
-              <input id="correctionLabelInput" type="text" placeholder="object label" />
-            </label>
-            <button id="relabelTrackButton" type="button">Relabel</button>
-          </div>
-          <div class="correction-range">
-            <label>
-              <span>Start frame</span>
-              <input id="correctionFrameStart" type="number" min="0" step="1" value="0" />
-            </label>
-            <label>
-              <span>End frame</span>
-              <input id="correctionFrameEnd" type="number" min="0" step="1" value="0" />
-            </label>
-            <button id="useCurrentFrameRangeButton" type="button">Use current</button>
-          </div>
-          <div class="correction-actions">
-            <button id="mergeTracksButton" type="button">Merge selected</button>
-            <button id="splitTrackButton" type="button">Split track</button>
-            <button id="addObjectButton" type="button">Add from prompts</button>
-            <button id="repairTrackButton" class="primary-action" type="button">Repair with prompts</button>
-          </div>
-          <div class="correction-meta">
-            <span id="mergeSelectionCount" class="subtle-chip">0 selected</span>
-            <span id="correctionPromptCount" class="subtle-chip">0 prompts</span>
-          </div>
-          <div id="mergeSuggestionList" class="suggestion-list"></div>
-        </section>
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>Correction History</h2>
-            <span id="correctionHistoryCount" class="subtle-chip">0 edits</span>
-          </div>
-          <div id="correctionHistory" class="history-list"></div>
-        </section>
-        <section class="compact-panel">
-          <h2>Fallback Diagnostics</h2>
-          <div id="fallbackDiagnostics" class="diagnostic-list" role="status"></div>
-        </section>
-        <section class="compact-panel">
-          <h2>Routes</h2>
-          <div id="routeList" class="route-list"></div>
-        </section>
+            <div class="library-save-controls">
+              <label>
+                <span>Save artifact</span>
+                <select id="libraryArtifactSelect"></select>
+              </label>
+              <label>
+                <span>Title</span>
+                <input id="libraryAssetTitle" type="text" value="Reusable motion layer" />
+              </label>
+              <label>
+                <span>Tags</span>
+                <input id="libraryAssetTags" type="text" value="motion, local-ui" />
+              </label>
+              <button id="saveLibraryAssetButton" type="button">Save layer</button>
+            </div>
+            <div class="library-collection-controls">
+              <form id="libraryCollectionForm" class="inline-form">
+                <label>
+                  <span>Collection</span>
+                  <input id="libraryCollectionTitle" type="text" value="Local brand collection" />
+                </label>
+                <button type="submit">Create</button>
+              </form>
+              <label>
+                <span>Add to collection</span>
+                <select id="libraryCollectionSelect"></select>
+              </label>
+              <button id="addLibraryAssetToCollectionButton" type="button">Add selected</button>
+            </div>
+            <form id="libraryPackForm" class="inline-form">
+              <label>
+                <span>Creator pack</span>
+                <input id="libraryPackTitle" type="text" value="Creator-approved pack" />
+              </label>
+              <button type="submit">Create pack</button>
+            </form>
+            <div id="libraryError" class="warning-box" hidden></div>
+            <div id="libraryArtifactNotice" class="empty-state" hidden></div>
+            <div id="libraryAssetList" class="library-list"></div>
+            <div id="libraryCollectionList" class="library-list"></div>
+            <div id="libraryPackList" class="library-list"></div>
+          </section>
+        </details>
+
+        <details class="rail-section">
+          <summary>Routes</summary>
+          <section class="compact-panel">
+            <h2>Routes</h2>
+            <div id="routeList" class="route-list"></div>
+          </section>
+        </details>
       </aside>
     </main>
     <script type="module" src="/ui/app.js"></script>

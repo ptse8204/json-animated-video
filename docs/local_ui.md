@@ -111,6 +111,28 @@ JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
 
+## Product Shell
+
+The commercial Local UI shell is organized around a stable app frame:
+
+- left goal rail for tracing modes and first-run readiness;
+- main workspace for project/video setup, preview tools, extraction settings,
+  and run config preview;
+- right inspector for run monitor, review, artifacts/export, corrections,
+  asset library, and route diagnostics.
+
+The visible workflow is: create or open a project, add video, choose mode/model,
+confirm locality, run, review candidates, correct tracks, preview, and export.
+Advanced parameters, raw routes, library management, review panels, and
+correction history are available through native disclosure panels instead of
+being expanded by default.
+
+Design and validation notes live in:
+
+- [Local UI audit](design/local-ui-audit.md)
+- [Local UI product principles](design/local-ui-product-principles.md)
+- [Local UI design system](design/design-system.md)
+
 The Asset Library panel wraps the existing local asset-library backend for
 approachable reuse workflows. After a run or validated export registers
 artifacts, select an artifact, save it as a `motion_sticker`, search saved
@@ -285,4 +307,16 @@ Useful command-surface checks:
 ```bash
 motionjson ui --help
 python3 -m motionjson.cli ui --help
+```
+
+Commercial layout smoke:
+
+```bash
+npm run ui:layout
+```
+
+For screenshot evidence across the supported viewport matrix:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03a
 ```

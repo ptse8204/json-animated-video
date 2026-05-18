@@ -31,6 +31,12 @@ Capture every README asset:
 python3 scripts/capture_docs_assets.py
 ```
 
+Capture the commercial Local UI viewport matrix and overlap checks:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03a
+```
+
 Generate only the red-ball preview and GIF, without browser screenshots:
 
 ```bash
@@ -66,5 +72,6 @@ python3 -m motionjson.cli ui --no-open --mock
 - Images should show actual MotionJSON UI state, not stock imagery.
 - If provider failures are visible, they should be real diagnostics from
   `backend diagnostics --json` or `/api/capabilities`.
+- UI screenshots should have a matching layout smoke run when the shell changes.
 - Do not commit large generated videos unless the phase report justifies the
   size and regeneration path.
