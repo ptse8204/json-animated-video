@@ -110,3 +110,11 @@ fixed in docs and this report.
   review-state manifest creation, validation, and export.
 - Capture a dedicated bad-mask recovery screenshot once the UI repair flow can
   seed that state deterministically.
+
+## 2026-05-18 Revalidation
+
+Phase 07 was rechecked after the commercial UI redesign. The correction docs
+still include the bad-mask-to-repaired-track walkthrough, reference the real
+job-review screenshot, and explain `review/review_state_manifest.json` as the
+durable review/export audit artifact. A docs regression assertion now protects
+that walkthrough and screenshot reference.
