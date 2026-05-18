@@ -1,89 +1,92 @@
-# Phase 12 Report - Evaluation Fixtures and Benchmarks
+# Phase 12 Report: Final Public Launch Audit
 
 ## Summary
 
-Phase 12 adds a CPU-only evaluation benchmark workflow for MotionJSON. The new
-`benchmark` CLI command generates small synthetic videos, writes ground-truth
-masks and fixture manifests, runs extraction through no-model providers, and
-emits both machine-readable `summary.json` and human-readable `summary.md`
-reports.
+This phase completes the final public launch audit from the current commercial
+roadmap. It updates public-facing status docs after Phase 11I, refreshes the
+final audit for the commercial UI redesign, BYOK provider settings, workspace
+mode, commercial-readiness foundation, and browser embed smoke, and keeps
+`docs/roadmap/final-audit.md` linked from the docs index.
 
-The fixture suite includes deterministic reference cases for a red ball,
-multiple objects, occlusion, a tiny object, camera motion, and a whole-frame
-regression. The whole-frame fixture expects the existing track filtering logic
-to reject raster-only/full-frame masks with `masks_too_large_whole_frame`.
+The phase started from a dirty working tree containing two preexisting
+untracked planning docs:
 
-Benchmark outputs use relative run paths and record `aiUsage: none`. The
-machine-readable summary declares and validates against
-`motionjson.evaluation_benchmark.v0.1`. Runtime summaries include validation
-status for every object in the run, accepted/rejected tracks, fallback reason
-counts, duplicate-overlap metrics, continuity, coverage, sampled frame counts,
-and elapsed time. The deterministic external-mask mode is the default and is
-suitable for lightweight CI; motion foreground and mock detector modes are
-available as comparison paths without requiring GPU, SAM2, network access, or
-heavyweight ML dependencies.
+- `docs/Codex Prompt Instrcution.md`
+- `docs/MOTIONJSON_CODEX_FUTURE_PLAN.md`
 
-The phase started from a dirty working tree. The unrelated dirty files were
-pre-existing `README.md`, `out/demo/**`, `AGENTS_old.md`, `README_old.md`, and
-generated `out/demo` preview/runtime artifacts; they were left unstaged and
-untouched.
+They were left unstaged and untouched.
 
 ## Changed Files
 
-- `src/motionjson/benchmark.py`
-- `src/motionjson/cli.py`
-- `src/motionjson/schemas/__init__.py`
-- `src/motionjson/schemas/motionjson.evaluation_benchmark.v0.1.schema.json`
-- `tests/test_benchmark.py`
-- `docs/benchmark_fixtures.md`
-- `docs/codex_motionjson_quality_benchmarks.md`
-- `docs/schemas.md`
+- `README.md`
+- `docs/ai_provider_architecture.md`
+- `docs/asset_library_marketplace.md`
+- `docs/billing_pricing.md`
+- `docs/codex_future_plan.md`
+- `docs/codex_motionjson_architecture.md`
+- `docs/deployment.md`
+- `docs/developer_api.md`
+- `docs/first_run.md`
+- `docs/ga_launch.md`
+- `docs/index.md`
+- `docs/job_artifacts.md`
+- `docs/local_ui.md`
+- `docs/migration_and_known_limitations.md`
+- `docs/onboarding.md`
+- `docs/phase_commit_checklist.md`
+- `docs/phase_gates.md`
+- `docs/provider_capabilities.md`
+- `docs/release_notes.md`
+- `docs/repo_status.md`
+- `docs/run_config.md`
+- `docs/saas_backend.md`
+- `docs/sam2_segmentation.md`
+- `docs/roadmap/final-audit.md`
 - `docs/roadmap/phase-12-report.md`
+- `src/motionjson/cli.py`
+- `tests/test_benchmark.py`
+- `tests/test_ga_launch_docs.py`
 
 ## Tests Run
 
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m py_compile src/motionjson/benchmark.py src/motionjson/cli.py`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m py_compile src/motionjson/benchmark.py src/motionjson/cli.py src/motionjson/schemas/__init__.py`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli extract --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli backend --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli benchmark --help`
-- `python -m motionjson.cli benchmark --help` failed because `python` is not
-  available in this shell (`zsh:1: command not found: python`); the equivalent
-  `python3` command above passed.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_benchmark.py -q` (`4 passed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests -k benchmark -q` (`6 passed, 212 deselected`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests -k "benchmark or track_filtering" -q` (`12 passed, 206 deselected`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_track_filtering.py tests/test_discovery_providers.py -q` (`18 passed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_benchmark.py tests/test_schema_validation.py -q` (`13 passed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out /tmp/motionjson-phase12-smoke --width 64 --height 48 --frames 4`
-  (`2 passed, 0 regressed, 0 failed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli benchmark --fixtures synthetic --modes external --out /tmp/motionjson-phase12-all-fixtures --width 64 --height 48 --frames 4`
-  (`6 passed, 0 regressed, 0 failed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli benchmark --fixtures synthetic --out /tmp/motionjson-phase12-default-smoke --width 64 --height 48 --frames 4 --fail-on-regression`
-  (`6 passed, 0 regressed, 0 failed`)
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q` (`218 passed`)
+- `python3 -m motionjson.cli --help`
+- `python3 -m motionjson.cli extract --help`
+- `python3 -m motionjson.cli backend --help`
+- `python3 -m motionjson.cli ui --help`
+- `python3 -m motionjson.cli benchmark --help`
+- `python3 scripts/capture_docs_assets.py --check`
+- `npm run embed:smoke`
+- `npm run ui:layout -- --check`
+- `python3 -m pytest tests/test_benchmark.py::test_cli_benchmark_help_and_command_write_reports -q` (`1 passed`)
+- `python3 -m pytest tests/test_docs_links.py tests/test_docs_assets.py -q` (`8 passed`)
+- `python3 -m pytest tests/test_ga_launch_docs.py tests/test_benchmark.py::test_cli_benchmark_help_and_command_write_reports tests/test_docs_links.py tests/test_docs_assets.py -q` (`15 passed`)
+- `python3 -m pytest -q` (`306 passed`)
+- `npm test` (`19 passed`)
+- `npm run lint`
+- `npm run build`
+- `git diff --check`
+- Bounded read-only docs and command-verification scouts reviewed the public
+  launch docs. Findings were fixed before commit.
+
+## 2026-05-18 Revalidation
+
+The canonical Phase 12 report now points to this final public launch audit.
+The older benchmark Phase 12 report from a previous roadmap was preserved as
+`docs/roadmap/phase-12-benchmarks-report.md`. The final audit now reflects
+Phase 03A/03B commercial UI and provider settings work plus Phase 11H/11I
+workspace and commercial-readiness work.
 
 ## Known Limitations
 
-- The benchmark suite is intentionally CPU/no-model. It measures pipeline,
-  filtering, validation, and regression behavior, but it does not score real
-  SAM2 or detector quality.
-- External-mask mode is the deterministic reference path and default. Motion
-  foreground and mock detector modes are opt-in comparison paths and may mark
-  individual runs as regressed without making the command fail unless
-  `--fail-on-regression` is set.
-- Quality metrics are summary-level checks against expected accepted/rejected
-  tracks and fallback reasons. Pixel-level IoU scoring against the ground-truth
-  masks remains future work.
-- Generated fixtures are compact by design for CI speed and do not replace
-  larger human-reviewed demo videos.
+- No license file is present in this repository snapshot.
+- No release tag has been created by this phase.
+- Package build and Docker release checks remain tag-time release checklist
+  gates.
 
 ## Follow-Up Tasks
 
-- Add optional mask IoU/temporal stability scoring against each fixture's
-  ground-truth masks.
-- Add release-threshold presets once more provider modes have stable benchmark
-  baselines.
-- Extend documentation with benchmark examples for any future real-provider
-  evaluation modes while preserving the current no-GPU default.
+- Choose and add a license before publishing a reusable release.
+- Run the complete release checklist in a clean environment before tagging
+  `v0.1.0-rc1`.
+- Create a pinned GitHub demo issue or project with no-model setup, red-ball
+  demo steps, screenshots, known limitations, and support links.

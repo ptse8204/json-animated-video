@@ -1,6 +1,6 @@
 # MotionJSON Final Public Launch Audit
 
-Date: 2026-05-17
+Date: 2026-05-18
 
 ## Summary
 
@@ -20,17 +20,22 @@ annotations, and simple graphics.
 
 - Public README with no-model quick start, red-ball CLI demo, screenshots,
   provider boundaries, troubleshooting links, and current launch risks.
+- Commercial-grade Local UI shell with stable workspace/sidebar/right-rail
+  regions, layout smoke coverage, first-run guidance, provider settings,
+  workspace preferences, commercial-readiness notices, and no-model defaults.
 - Local UI and dependency-light local API for projects, videos, provider
-  diagnostics, run config validation, jobs, progress, artifacts, review,
-  corrections, validated exports, and Asset Library workflows.
+  diagnostics, provider/model settings, run config validation, jobs, progress,
+  artifacts, review, corrections, validated exports, and Asset Library
+  workflows.
 - CPU/no-model providers and mock paths for tests and UI smoke checks.
 - Capability diagnostics for missing CUDA, SAM2, detectors, hosted endpoints,
   OpenRouter, FFmpeg, model paths, and optional dependencies.
 - Multi-object/product slices for text-guided mock discovery, automatic object
   proposals, motion-only discovery, detector class presets, export quality
-  routing, rights/lineage warnings, and local reusable layer collections.
+  routing, rights/lineage warnings, local reusable layer collections,
+  commercial workspace mode, and local commercial-readiness foundation.
 - JavaScript runtime and SDK packages with offline tests and package dry-run
-  guidance.
+  guidance, plus a real-browser plain JavaScript embed smoke.
 - Deterministic benchmark fixtures for red ball, multi-object, occlusion, small
   object, camera motion, and whole-frame regression checks.
 - Release notes, migration and known limitations, release checklist, docs
@@ -39,13 +44,15 @@ annotations, and simple graphics.
 ## Verified Commands
 
 The final audit validation used the current local environment and the latest
-Phase 11G code:
+Phase 11I code:
 
 ```bash
-python3 -m pytest
+python3 -m pytest -q
 npm test
 npm run lint
 npm run build
+npm run embed:smoke
+npm run ui:layout -- --check
 python3 -m motionjson.cli --help
 python3 -m motionjson.cli extract --help
 python3 -m motionjson.cli backend --help
@@ -72,9 +79,11 @@ slower and depend on local Docker/build tooling.
   CPU-friendly.
 - Hugging Face Space support is a documented plan, not an operated public demo.
 - Browser screenshot capture is available locally when Chrome/Chromium exists,
-  but CI primarily verifies docs assets and static UI shell checks.
+  and the local layout matrix/browser embed smoke are now repeatable commands.
 - The local UI server is designed for local development and review, not
   production streaming of large private media.
+- Saved hosted provider credentials in the Local UI are settings/diagnostics
+  data only until a later runtime adapter consumes them for execution.
 
 ## Next Release Milestones
 

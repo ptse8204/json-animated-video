@@ -28,9 +28,15 @@ artifacts were not staged for the phase commits or this report.
 | 9 | `79297f0 phase 9: add ui job execution and result review` | `docs/roadmap/phase-9-report.md` |
 | 10 | `7e77319 phase 10: add track correction workflows` | `docs/roadmap/phase-10-correction-workflows-report.md` |
 | 11 | `404b45d phase 11: add validated export workflows` | `docs/roadmap/phase-11-report.md` |
-| 12 | `a46bbba phase 12: add evaluation fixtures and benchmarks` | `docs/roadmap/phase-12-report.md` |
+| 12 | `a46bbba phase 12: add evaluation fixtures and benchmarks` | `docs/roadmap/phase-12-benchmarks-report.md` |
 | 13 | `629f7c8 phase 13: add packaging and onboarding docs` | `docs/roadmap/phase-13-report.md` |
 | 14 | `3fc7451 phase 14: prepare ui multi-object tracing release candidate` | `docs/roadmap/phase-14-report.md` |
+
+Current commercial-roadmap canonical reports use
+`docs/roadmap/phase-10-report.md` for free hosted demo paths and
+`docs/roadmap/phase-12-report.md` for the final public launch audit. The older
+Phase 10 correction and Phase 12 benchmark reports from a previous roadmap are
+preserved under more specific filenames in the table above.
 
 ## Final Checks
 
