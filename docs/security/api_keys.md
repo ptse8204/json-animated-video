@@ -20,6 +20,8 @@ The Local UI Provider settings panel currently covers:
 - `text_detector` and `class_detector`: local model-choice surfaces for
   scaffolded detector workflows.
 
+![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
+
 ## Where Keys Are Stored
 
 Environment variables are preferred for headless and CLI use:

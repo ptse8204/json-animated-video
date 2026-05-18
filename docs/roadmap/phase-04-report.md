@@ -83,3 +83,10 @@ uses the real assets generated in Phase 03:
 - Phase 06 should expand provider-specific docs with local/free, GPU, model
   weight, and failure-mode fields.
 - Phase 09 should decide generated-output ignore policy for local run artifacts.
+
+## 2026-05-18 Revalidation
+
+After Phase 03B added Local UI provider key and model settings, Phase 04 was
+rechecked from a clean working tree. The docs spine now includes
+`docs/security/api_keys.md` in the scoped link test, and that page includes a
+real provider-settings screenshot from the Phase 03B layout matrix.
