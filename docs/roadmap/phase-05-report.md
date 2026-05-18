@@ -97,3 +97,11 @@ remain current enough for README use.
 - Future UI polish can add a dedicated one-click seeded demo flow; Phase 05
   keeps the existing project/video/job workflow and makes the next action
   clearer.
+
+## 2026-05-18 Revalidation
+
+Phase 05 was rechecked after the commercial UI and provider-settings phases.
+`motionjson backend diagnostics --text` still presents a normal-user summary,
+the UI still exposes the First Run checklist and Start mock job path, and
+provider diagnostics still distinguish CPU/no-model readiness from optional
+SAM2, detector, hosted, OpenRouter, and CUDA setup.
