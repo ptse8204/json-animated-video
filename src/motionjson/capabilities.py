@@ -8,7 +8,7 @@ import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
@@ -122,6 +122,24 @@ def _dependency(name: str, module: str, install_hint: str | None = None) -> Depe
 
 def _env_config(name: str) -> dict[str, Any]:
     return {"env": name, "configured": bool(os.environ.get(name))}
+
+
+def _settings_presence_config(
+    name: str,
+    provider_settings: Mapping[str, Mapping[str, Any]] | None,
+    provider_id: str,
+    setting_key: str,
+) -> dict[str, Any]:
+    entry = dict((provider_settings or {}).get(provider_id, {}))
+    env_configured = bool(os.environ.get(name))
+    settings_configured = bool(entry.get(setting_key))
+    if env_configured:
+        source = "environment"
+    elif settings_configured:
+        source = "local_settings"
+    else:
+        source = "unset"
+    return {"env": name, "configured": bool(env_configured or settings_configured), "source": source}
 
 
 def _path_config_status(name: str, explicit_value: str | Path | None = None) -> dict[str, Any]:
@@ -264,6 +282,7 @@ def provider_capabilities(
     sam2_checkpoint: str | Path | None = None,
     sam2_model_config: str | Path | None = None,
     hosted_allow_network: bool = False,
+    provider_settings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[ProviderCapability]:
     deps = {dep.module: dep.available for dep in dependency_statuses()}
     cv_ready = deps.get("cv2", False) and deps.get("numpy", False)
@@ -272,9 +291,12 @@ def provider_capabilities(
     torch_info = cuda_status()
     checkpoint = _path_config_status("SAM2_LOCAL_CHECKPOINT", sam2_checkpoint)
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
-    hosted_endpoint = _env_config("HOSTED_SEGMENTATION_URL")
-    hosted_auth = _env_config("HOSTED_SEGMENTATION_API_KEY")
-    openrouter_key = _env_config("OPENROUTER_API_KEY")
+    hosted_settings = dict((provider_settings or {}).get("sam2-hosted", {}))
+    openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
+    hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
+    hosted_endpoint = _settings_presence_config("HOSTED_SEGMENTATION_URL", provider_settings, "sam2-hosted", "endpoint_configured")
+    hosted_auth = _settings_presence_config("HOSTED_SEGMENTATION_API_KEY", provider_settings, "sam2-hosted", "api_key_configured")
+    openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
     class_detector_installed = _module_available("ultralytics")
@@ -338,6 +360,38 @@ def provider_capabilities(
     else:
         class_detector_status = "ready"
     class_detector_runtime_status = class_detector_status if class_detector_status != "ready" else "not_configured"
+
+    hosted_configured = bool(hosted_endpoint["configured"] and hosted_auth["configured"])
+    hosted_settings_only = bool(hosted_settings.get("settings_only"))
+    hosted_endpoint_valid = hosted_settings.get("endpoint_valid", True) is not False
+    hosted_runtime_runnable = bool(
+        hosted_configured
+        and hosted_endpoint_valid
+        and hosted_allow_network_effective
+        and not hosted_settings_only
+    )
+    if not hosted_endpoint_valid:
+        hosted_status = "invalid_configuration"
+    elif hosted_settings_only and hosted_configured:
+        hosted_status = "configured_settings_only"
+    elif hosted_configured and not hosted_allow_network_effective:
+        hosted_status = "needs_network_opt_in"
+    elif hosted_configured:
+        hosted_status = "ready"
+    else:
+        hosted_status = "not_configured"
+
+    openrouter_configured = bool(openrouter_key["configured"])
+    openrouter_settings_only = bool(openrouter_settings.get("settings_only"))
+    openrouter_base_url_valid = openrouter_settings.get("base_url_valid", True) is not False
+    if not openrouter_base_url_valid:
+        openrouter_status = "invalid_configuration"
+    elif openrouter_settings_only and openrouter_configured:
+        openrouter_status = "configured_settings_only"
+    elif openrouter_configured:
+        openrouter_status = "ready"
+    else:
+        openrouter_status = "not_configured"
 
     providers = [
         ProviderCapability(
@@ -447,17 +501,20 @@ def provider_capabilities(
         ProviderCapability(
             name="sam2-hosted",
             kind="mask_provider",
-            available=bool(hosted_endpoint["configured"] and hosted_auth["configured"]),
-            configured=bool(hosted_endpoint["configured"] and hosted_auth["configured"]),
+            available=hosted_configured and hosted_endpoint_valid and not hosted_settings_only,
+            configured=hosted_configured and hosted_endpoint_valid,
             installed=True,
-            runnable=bool(hosted_endpoint["configured"] and hosted_auth["configured"] and hosted_allow_network),
-            status="ready" if hosted_endpoint["configured"] and hosted_auth["configured"] else "not_configured",
+            runnable=hosted_runtime_runnable,
+            status=hosted_status,
             supports=["point", "box", "hosted_segmentation"],
             reasons=[
                 reason
                 for reason in (
                     None if hosted_endpoint["configured"] else "HOSTED_SEGMENTATION_URL is not set.",
                     None if hosted_auth["configured"] else "HOSTED_SEGMENTATION_API_KEY is not set.",
+                    None if hosted_endpoint_valid else "Hosted segmentation endpoint must be an http:// or https:// URL.",
+                    None if not hosted_settings_only or not hosted_configured else "Saved Local UI hosted credentials are settings-only; export them to environment variables or wire an execution adapter before treating the provider as runnable.",
+                    None if hosted_allow_network_effective or not hosted_configured else "Hosted segmentation requires explicit network opt-in.",
                 )
                 if reason
             ],
@@ -471,20 +528,38 @@ def provider_capabilities(
             checks=[
                 _check("endpoint_env", "ok" if hosted_endpoint["configured"] else "missing", hosted_endpoint["env"], hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if hosted_auth["configured"] else "missing", hosted_auth["env"], hosted_auth["configured"]),
-                _check("network_opt_in", "ok" if hosted_allow_network else "required", "Hosted segmentation requires explicit network opt-in.", hosted_allow_network),
+                _check("network_opt_in", "ok" if hosted_allow_network_effective else "required", "Hosted segmentation requires explicit network opt-in.", hosted_allow_network_effective),
+                _check("settings_runtime", "settings_only" if hosted_settings_only else "runtime", "Local UI saved provider keys are not passed to runtime providers.", hosted_settings_only),
             ],
-            metadata={"endpointEnv": hosted_endpoint, "authEnv": hosted_auth, "networkDefault": "disabled", "networkOptIn": hosted_allow_network},
+            metadata={
+                "endpointEnv": hosted_endpoint,
+                "authEnv": hosted_auth,
+                "networkDefault": "disabled",
+                "networkOptIn": hosted_allow_network_effective,
+                "credentialSource": hosted_auth.get("source"),
+                "endpointSource": hosted_endpoint.get("source"),
+                "settingsOnly": hosted_settings_only,
+                "selectedModel": hosted_settings.get("selected_model"),
+            },
         ),
         ProviderCapability(
             name="openrouter",
             kind="llm_provider",
-            available=bool(openrouter_key["configured"]),
-            configured=bool(openrouter_key["configured"]),
+            available=openrouter_configured and openrouter_base_url_valid and not openrouter_settings_only,
+            configured=openrouter_configured and openrouter_base_url_valid,
             installed=True,
-            runnable=bool(openrouter_key["configured"]),
-            status="ready" if openrouter_key["configured"] else "not_configured",
+            runnable=bool(openrouter_configured and openrouter_base_url_valid and not openrouter_settings_only),
+            status=openrouter_status,
             supports=["llm", "vlm_reasoning", "labels"],
-            reasons=[] if openrouter_key["configured"] else ["OPENROUTER_API_KEY is not set."],
+            reasons=[
+                reason
+                for reason in (
+                    None if openrouter_key["configured"] else "OPENROUTER_API_KEY is not set.",
+                    None if openrouter_base_url_valid else "OPENROUTER_BASE_URL must be an http:// or https:// URL.",
+                    None if not openrouter_settings_only or not openrouter_configured else "Saved Local UI OpenRouter keys are settings-only; OpenRouterLLMProvider currently reads constructor values or environment variables.",
+                )
+                if reason
+            ],
             install_hint="Set OPENROUTER_API_KEY only for LLM/VLM reasoning. OpenRouter is not a segmentation provider.",
             no_model_safe=False,
             network_required=True,
@@ -492,7 +567,14 @@ def provider_capabilities(
             mock_available=True,
             optional_extra="openrouter",
             checks=[_check("api_key_env", "ok" if openrouter_key["configured"] else "missing", openrouter_key["env"], openrouter_key["configured"])],
-            metadata={"apiKeyEnv": openrouter_key, "segmentationProvider": False},
+            metadata={
+                "apiKeyEnv": openrouter_key,
+                "credentialSource": openrouter_key.get("source"),
+                "baseUrlSource": openrouter_settings.get("base_url_source"),
+                "settingsOnly": openrouter_settings_only,
+                "selectedModel": openrouter_settings.get("selected_model"),
+                "segmentationProvider": False,
+            },
         ),
         ProviderCapability(
             name="manual_prompt",
@@ -749,12 +831,14 @@ def build_capability_report(
     sam2_checkpoint: str | Path | None = None,
     sam2_model_config: str | Path | None = None,
     hosted_allow_network: bool = False,
+    provider_settings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     deps = dependency_statuses()
     providers = provider_capabilities(
         sam2_checkpoint=sam2_checkpoint,
         sam2_model_config=sam2_model_config,
         hosted_allow_network=hosted_allow_network,
+        provider_settings=provider_settings,
     )
     provider_records = [provider.to_dict() for provider in providers]
     ready_no_model = [

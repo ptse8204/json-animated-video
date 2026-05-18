@@ -1628,6 +1628,71 @@ button,
   grid-template-columns: 1fr;
 }
 
+.provider-settings-list {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.provider-settings-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.provider-settings-row.is-hosted {
+  border-color: #e5be5f;
+  background: #fffaf0;
+}
+
+.provider-settings-header {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.provider-privacy,
+.provider-test-result {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.provider-credential-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.provider-settings-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.provider-settings-fields label {
+  min-width: 0;
+}
+
+.provider-custom-model[hidden] {
+  display: none !important;
+}
+
+.provider-hosted-toggle {
+  align-items: flex-start;
+  color: #553f08;
+  font-size: 12px;
+}
+
+.provider-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
 [data-tooltip]:hover::after,
 [data-tooltip]:focus-visible::after {
   z-index: var(--z-popover);

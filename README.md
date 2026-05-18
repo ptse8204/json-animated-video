@@ -299,6 +299,12 @@ credentials present but no explicit network opt-in. The local UI worker starts
 `class_detector`, and `sam_auto_masks` discovery jobs that feed generated mask
 handoffs through the shared review/export path.
 
+The Local UI Provider settings panel lets users bring their own hosted keys and
+choose provider models without editing shell files. Raw keys are stored only in
+the selected local SQLite database when a user chooses to save them, environment
+variables still take precedence for CLI/headless use, and UI/API responses show
+only redacted values. See [docs/security/api_keys.md](docs/security/api_keys.md).
+
 ## Troubleshooting
 
 The full troubleshooting guide is [docs/troubleshooting.md](docs/troubleshooting.md).
@@ -329,6 +335,7 @@ More docs:
 - [Glossary](docs/glossary.md)
 - [Local UI](docs/local_ui.md)
 - [Provider capabilities](docs/provider_capabilities.md)
+- [Provider API keys](docs/security/api_keys.md)
 - [Discovery providers](docs/discovery_providers.md)
 - [Track filtering](docs/track_filtering.md)
 - [Runtime guide](docs/runtime.md)

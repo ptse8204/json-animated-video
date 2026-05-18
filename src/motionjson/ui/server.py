@@ -50,6 +50,14 @@ from motionjson.backend.queue import request_cancel_job
 from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
+from motionjson.provider_settings import (
+    provider_settings_for_capabilities,
+    provider_settings_response,
+    redact_secret_text,
+    reset_provider_settings,
+    save_provider_settings,
+    test_provider_settings,
+)
 from motionjson.providers.discovery import discovery_provider_schemas
 from motionjson.providers.local_storage import LocalStorageProvider
 from motionjson.rights import build_rights_review_report, rights_review_summary
@@ -123,18 +131,20 @@ def _is_local_path_field(key: Any) -> bool:
 
 
 def _redact_public_text(value: str) -> str:
-    return WINDOWS_ABSOLUTE_PATH_RE.sub(
-        "[LOCAL_PATH_REDACTED]",
-        LOCAL_ABSOLUTE_PATH_RE.sub(
+    return redact_secret_text(
+        WINDOWS_ABSOLUTE_PATH_RE.sub(
             "[LOCAL_PATH_REDACTED]",
-            LOCAL_FILE_URI_RE.sub(
-                "[LOCAL_FILE_URI_REDACTED]",
-                STORAGE_KEY_PATH_RE.sub(
-                    "[STORAGE_KEY_REDACTED]",
-                    STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value),
+            LOCAL_ABSOLUTE_PATH_RE.sub(
+                "[LOCAL_PATH_REDACTED]",
+                LOCAL_FILE_URI_RE.sub(
+                    "[LOCAL_FILE_URI_REDACTED]",
+                    STORAGE_KEY_PATH_RE.sub(
+                        "[STORAGE_KEY_REDACTED]",
+                        STORAGE_KEY_ASSIGNMENT_RE.sub("[REDACTED]", value),
+                    ),
                 ),
             ),
-        ),
+        )
     )
 
 
@@ -425,6 +435,9 @@ class LocalUIApp:
                 "routes": [
                     "/api/health",
                     "/api/capabilities",
+                    "/api/provider-settings",
+                    "/api/provider-settings/{providerId}",
+                    "/api/provider-settings/{providerId}/test",
                     "/api/projects",
                     "/api/videos",
                     "/api/videos/{videoId}/content",
@@ -456,11 +469,21 @@ class LocalUIApp:
             }
         if path == "/api/capabilities" and method == "GET":
             return _public_value(
-                build_capability_report(
+                self._capability_report(
                     video_path=self._query_one(query, "video") or self._query_one(query, "videoPath"),
                     output_dir=self._query_one(query, "outputDir") or self._query_one(query, "output"),
                 )
             )
+        if path == "/api/provider-settings" and method == "GET":
+            return self._provider_settings_response()
+        if path == "/api/provider-settings" and method == "POST":
+            return self._save_provider_settings(payload)
+        if path.startswith("/api/provider-settings/"):
+            parts = [part for part in path.split("/") if part]
+            if len(parts) == 3 and method == "DELETE":
+                return self._reset_provider_settings(parts[2])
+            if len(parts) == 4 and parts[3] == "test" and method == "POST":
+                return self._test_provider_settings(parts[2])
         if path == "/api/run-config/defaults" and method == "GET":
             return {
                 "format": "motionjson.local_ui_run_config_defaults.v0.1",
@@ -826,7 +849,7 @@ class LocalUIApp:
         warnings: list[dict[str, Any]] = []
         providers = {
             (str(provider.get("kind") or ""), str(provider.get("name") or "")): provider
-            for provider in build_capability_report().get("providers", [])
+            for provider in self._capability_report().get("providers", [])
             if isinstance(provider, dict)
         }
         self._append_provider_warning(
@@ -1023,6 +1046,62 @@ class LocalUIApp:
             self._worker_thread = thread
             thread.start()
         return {"status": "started"}
+
+    def _capability_report(
+        self,
+        *,
+        video_path: str | Path | None = None,
+        output_dir: str | Path | None = None,
+    ) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            settings = provider_settings_for_capabilities(conn, user_id=user["id"])
+        finally:
+            conn.close()
+        try:
+            return build_capability_report(
+                video_path=video_path,
+                output_dir=output_dir,
+                provider_settings=settings,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            return build_capability_report()
+
+    def _provider_settings_response(self) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(provider_settings_response(conn, user_id=user["id"]))
+        finally:
+            conn.close()
+
+    def _save_provider_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(save_provider_settings(conn, user_id=user["id"], payload=payload))
+        finally:
+            conn.close()
+
+    def _reset_provider_settings(self, provider_id: str) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            result = reset_provider_settings(conn, user_id=user["id"], provider_id=provider_id)
+            return _public_value({**result, "providerSettings": provider_settings_response(conn, user_id=user["id"])})
+        finally:
+            conn.close()
+
+    def _test_provider_settings(self, provider_id: str) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(test_provider_settings(conn, user_id=user["id"], provider_id=provider_id))
+        finally:
+            conn.close()
 
     def _worker_loop(self) -> None:
         conn = self.connection()

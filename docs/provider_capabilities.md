@@ -26,12 +26,21 @@ python3 -m motionjson.cli backend diagnostics --json \
   --sam2-config configs/sam2.yaml
 ```
 
-The command emits JSON with schema `motionjson.provider_diagnostics.v0.1`. It
-does not initialize the backend SQLite database, create storage directories,
-download models, import SAM2, call hosted providers, or read secret values. It
-only reports whether relevant secret environment variables are present. For
-SAM2 model paths, explicit `--sam2-checkpoint` and `--sam2-config` values take
-precedence over `SAM2_LOCAL_CHECKPOINT` and `SAM2_LOCAL_CONFIG`.
+The command emits JSON with schema `motionjson.provider_diagnostics.v0.1`. CLI
+diagnostics do not initialize the backend SQLite database, create storage
+directories, download models, import SAM2, call hosted providers, or read
+secret values. They only report whether relevant secret environment variables
+are present. For SAM2 model paths, explicit `--sam2-checkpoint` and
+`--sam2-config` values take precedence over `SAM2_LOCAL_CHECKPOINT` and
+`SAM2_LOCAL_CONFIG`.
+
+The Local UI also passes redacted local provider settings into diagnostics.
+That lets `/api/capabilities` report a provider as configured when a user has
+saved a BYOK key or hosted endpoint in the Local UI. The response still returns
+only presence, source, selected model, and redacted display values; it never
+returns raw keys. Saved Local UI credentials are marked `configured_settings_only`
+until a concrete runtime adapter consumes them; they should not be treated as
+runnable provider execution.
 
 Each provider record keeps the older `available`, `configured`, and `status`
 fields, then adds clearer first-run fields:
@@ -58,6 +67,12 @@ fields, then adds clearer first-run fields:
   existing model/config file.
 - `not_configured`: credentials, endpoints, model paths, or provider settings
   are absent.
+- `configured_settings_only`: a Local UI setting exists, but the runtime
+  provider still reads environment variables or explicit constructor settings.
+- `needs_network_opt_in`: credentials are present, but hosted/network use was
+  not explicitly enabled.
+- `invalid_configuration`: a saved URL, model, or credential setting is
+  malformed.
 - `not_implemented`: planned provider surface exists in the diagnostics model,
   but execution is intentionally deferred to a later phase.
 - `unavailable`: retained legacy or unsupported path that should not be chosen
@@ -89,6 +104,24 @@ Reasoning provider:
 
 - `openrouter`: optional LLM/VLM reasoning only. It is not a segmentation
   provider.
+
+Provider settings:
+
+- `GET /api/provider-settings` returns the provider/model registry and redacted
+  per-user settings.
+- `POST /api/provider-settings` saves a provider model choice, endpoint/base
+  URL, hosted-call opt-in, or replacement API key.
+- `DELETE /api/provider-settings/PROVIDER_ID` clears local settings and saved
+  key material for that provider.
+- `POST /api/provider-settings/PROVIDER_ID/test` runs a no-network readiness
+  check. Hosted providers are checked for required fields and plausible key
+  format, but the smoke test does not call the remote provider.
+
+Environment variables override Local UI settings. This keeps CLI/headless use
+predictable and avoids surprising hosted calls in shared environments. For
+Phase 03B, saved hosted keys are settings-only in diagnostics; use environment
+variables for actual provider execution until a later phase wires per-user
+runtime provider construction.
 
 Discovery providers:
 

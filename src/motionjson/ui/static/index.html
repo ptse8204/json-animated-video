@@ -327,6 +327,17 @@
 
       <aside class="right-rail" aria-label="Jobs and diagnostics">
         <details class="rail-section" open>
+          <summary>Provider settings</summary>
+          <section id="providerSettingsPanel" class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Providers and models</h2>
+              <span id="providerSettingsStatus" class="status-chip is-muted">Not loaded</span>
+            </div>
+            <div id="providerSettingsList" class="provider-settings-list" aria-live="polite"></div>
+          </section>
+        </details>
+
+        <details class="rail-section" open>
           <summary>Run monitor</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">

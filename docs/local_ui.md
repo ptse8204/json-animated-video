@@ -70,6 +70,10 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 
 - `GET /api/health`
 - `GET /api/capabilities`
+- `GET /api/provider-settings`
+- `POST /api/provider-settings`
+- `DELETE /api/provider-settings/PROVIDER_ID`
+- `POST /api/provider-settings/PROVIDER_ID/test`
 - `GET /api/run-config/defaults`
 - `POST /api/run-config/validate`
 - `GET /api/exports/formats`
@@ -110,6 +114,35 @@ from local storage without exposing the storage path.
 JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
+
+## Provider And Model Settings
+
+The right inspector includes a Provider settings panel for choosing providers,
+models, and optional credentials without editing shell profiles. Mock/no-model
+remains the default safe path. Local providers such as `mock`, `threshold`,
+`motion`, and `external` do not accept API keys. Hosted providers show a cost
+and privacy warning before they can be marked as allowed for hosted calls.
+
+The Local UI currently exposes settings for:
+
+- `mock`, `threshold`, `motion`, and `external`: local/free, no key required.
+- `sam2-local`: local SAM2 model selection and diagnostics. Model weights and
+  package setup still come from local environment paths.
+- `sam2-hosted`: endpoint, model, API key, and explicit hosted-call opt-in.
+- `openrouter`: LLM/VLM model selection and API key for reasoning only. It is
+  not a mask or segmentation provider.
+- `text_detector` and `class_detector`: local model settings for scaffolded
+  detector surfaces. They remain capability-gated until concrete dependencies
+  and adapters are configured.
+
+Provider settings are stored in the selected local SQLite database for the
+reserved Local UI user. Raw keys are never returned by `/api/provider-settings`,
+`/api/capabilities`, validation responses, screenshots, or error messages.
+Environment variables take precedence over local UI settings for headless/CLI
+work. Saved hosted keys are currently settings-only for diagnostics; the local
+worker still runs only deterministic providers until runtime provider routing
+is explicitly wired. See [Provider API keys](security/api_keys.md) for storage,
+redaction, deletion, and hosted-provider guidance.
 
 ## Product Shell
 
@@ -318,5 +351,5 @@ npm run ui:layout
 For screenshot evidence across the supported viewport matrix:
 
 ```bash
-npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03a
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03b
 ```

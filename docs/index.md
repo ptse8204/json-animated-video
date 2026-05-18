@@ -59,6 +59,8 @@ it on a page:
   asset lineage, and export warnings.
 - [Privacy and data handling](privacy.md) explains local media and provider
   data boundaries.
+- [Provider API keys](security/api_keys.md) explains Local UI BYOK storage,
+  redaction, hosted-provider warnings, and cleanup.
 
 Minimal local preview after running the red-ball demo:
 
@@ -80,6 +82,9 @@ vectorization, or export providers:
 - [Provider capabilities and diagnostics](provider_capabilities.md) documents
   provider names, status values, optional extras, CUDA/model/credential checks,
   and how failures should be surfaced.
+- [Provider API keys](security/api_keys.md) documents user-entered provider
+  keys, model selection, local settings, environment-variable precedence, and
+  redaction rules.
 - [Extraction provider pipeline](provider_pipeline.md) explains the
   `ObjectCandidateProvider`, `MaskProvider`, `VideoTracker`, `TrackLinker`,
   `Vectorizer`, and `Exporter` boundaries.
@@ -124,6 +129,7 @@ files, tests, screenshots or demos, known limitations, and follow-up tasks.
 - [Billing and pricing](billing_pricing.md)
 - [Onboarding guide](onboarding.md)
 - [Security checklist](security_checklist.md)
+- [Provider API keys](security/api_keys.md)
 - [Developer API](developer_api.md)
 - [Support operations](support.md)
 - [Release checklist](release_checklist.md)

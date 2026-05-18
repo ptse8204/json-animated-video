@@ -2,6 +2,9 @@ const MotionJSONUI = (() => {
   const API_ROUTES = [
     "/api/health",
     "/api/capabilities",
+    "/api/provider-settings",
+    "/api/provider-settings/{providerId}",
+    "/api/provider-settings/{providerId}/test",
     "/api/projects",
     "/api/run-config/defaults",
     "/api/run-config/validate",
@@ -129,6 +132,7 @@ const MotionJSONUI = (() => {
     capabilities: null,
     runDefaults: null,
     exportFormats: null,
+    providerSettings: null,
     projects: [],
     selectedProjectId: "",
     videos: [],
@@ -699,6 +703,17 @@ const MotionJSONUI = (() => {
 
   function providerByName(name, kind = null) {
     return asArray(state.capabilities?.providers).find((provider) => provider.name === name && (!kind || provider.kind === kind));
+  }
+
+  function providerSettingsById(providerId) {
+    return asArray(state.providerSettings?.providers).find(
+      (provider) => provider.id === providerId || provider.capabilityName === providerId,
+    );
+  }
+
+  function providerEffectiveModel(provider) {
+    if (!provider) return "";
+    return provider.effectiveModel || provider.settings?.customModelId || provider.settings?.selectedModel || provider.defaultModel || "";
   }
 
   function selectedCapabilityWarnings(config, $) {
@@ -1485,7 +1500,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
+      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
       const providers = asArray(state.capabilities.providers)
         .filter((provider) => priority.has(provider.name))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -1509,6 +1524,116 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">The local API returned no provider records.</div>`;
+    }
+
+    function renderProviderSettings() {
+      const list = $("#providerSettingsList");
+      const status = $("#providerSettingsStatus");
+      if (!state.providerSettings) {
+        status.textContent = state.errors.providerSettings ? "Unavailable" : "Not loaded";
+        status.className = `status-chip ${state.errors.providerSettings ? "is-bad" : "is-muted"}`;
+        list.innerHTML = `<div class="${state.errors.providerSettings ? "error-state" : "empty-state"}">${escapeHtml(state.errors.providerSettings || "Provider settings have not loaded yet.")}</div>`;
+        return;
+      }
+
+      const providers = asArray(state.providerSettings.providers);
+      const configuredHosted = providers.filter((provider) => provider.locality === "hosted" && provider.readiness?.configured).length;
+      status.textContent = configuredHosted ? `${configuredHosted} hosted configured` : "Mock default";
+      status.className = `status-chip ${configuredHosted ? "is-warn" : "is-ready"}`;
+      list.innerHTML = providers.map(renderProviderSettingsRow).join("");
+    }
+
+    function renderProviderSettingsRow(provider) {
+      const capability = providerByName(provider.capabilityName || provider.id, provider.kind);
+      const readiness = provider.readiness || {};
+      const settings = provider.settings || {};
+      const credentials = asArray(provider.credentials);
+      const hosted = provider.locality === "hosted";
+      const modelOptions = asArray(provider.modelOptions);
+      const selectedModel = settings.selectedModel || provider.defaultModel || "";
+      const customHidden = selectedModel !== "__custom__";
+      const customModelField = provider.customModelAllowed
+        ? `<label class="provider-custom-model" ${customHidden ? "hidden" : ""}>
+            <span>Custom model id</span>
+            <input data-provider-field="customModelId" type="text" value="${escapeAttribute(settings.customModelId || "")}" />
+          </label>`
+        : "";
+      const cost = provider.cost?.label || (hosted ? "Provider billed" : "Free local");
+      const capabilityStatus = capability?.status || (provider.implemented ? "registered" : "planned");
+      const credentialSummary = credentials.length
+        ? credentials
+            .map((credential) => {
+              const display = credential.configured ? `${credential.source}: ${credential.display || "configured"}` : `missing ${credential.env || credential.name}`;
+              return `<span class="row-meta">${escapeHtml(credential.label || credential.name)} - ${escapeHtml(display)}</span>`;
+            })
+            .join("")
+        : `<span class="row-meta">No API key required.</span>`;
+      const endpointField = provider.endpointField
+        ? `<label>
+            <span>${escapeHtml(provider.endpointField.label || "Endpoint URL")}</span>
+            <input data-provider-field="endpoint" type="url" value="${escapeAttribute(settings.endpoint || "")}" placeholder="${escapeAttribute(provider.endpointField.env || "")}" />
+          </label>`
+        : "";
+      const baseUrlField = provider.baseUrlField
+        ? `<label>
+            <span>${escapeHtml(provider.baseUrlField.label || "Base URL")}</span>
+            <input data-provider-field="baseUrl" type="url" value="${escapeAttribute(settings.baseUrl || "")}" placeholder="${escapeAttribute(provider.baseUrlField.env || "")}" />
+          </label>`
+        : "";
+      const credentialField = credentials.some((credential) => credential.name === "api_key")
+        ? `<label>
+            <span>API key</span>
+            <input data-provider-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(provider.name)} API key" />
+          </label>`
+        : "";
+      return `
+        <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}">
+          <div class="provider-settings-header">
+            <div>
+              <strong>${escapeHtml(provider.name)}</strong>
+              <span class="row-meta">${escapeHtml(provider.locality)} - ${escapeHtml(provider.kind || "provider")}</span>
+            </div>
+            ${statusChip(readiness.status || capabilityStatus, readiness.status || capabilityStatus, readiness.configured && capability?.available !== false)}
+          </div>
+          <div class="provider-detail">
+            ${detailChip(cost)}
+            ${detailChip(provider.runsInLocalWorker ? "local worker" : "settings only")}
+            ${detailChip(provider.hardware || "hardware varies")}
+            ${detailChip(capabilityStatus)}
+          </div>
+          <p class="provider-privacy">${escapeHtml(provider.privacy || "")}</p>
+          ${provider.warning ? `<div class="warning-box ${hosted ? "is-warn" : ""}">${escapeHtml(provider.warning)}</div>` : ""}
+          <div class="provider-credential-summary">${credentialSummary}</div>
+          <div class="provider-settings-fields">
+            <label>
+              <span>Model</span>
+              <select data-provider-field="selectedModel">
+                ${modelOptions
+                  .map((option) => `<option value="${escapeAttribute(option.id)}" ${option.id === selectedModel ? "selected" : ""}>${escapeHtml(option.label || option.id)}</option>`)
+                  .join("")}
+              </select>
+            </label>
+            ${customModelField}
+            ${endpointField}
+            ${baseUrlField}
+            ${credentialField}
+            ${
+              hosted
+                ? `<label class="track-toggle provider-hosted-toggle">
+                    <input data-provider-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+                    <span>I understand hosted calls can send data off-device and may cost money</span>
+                  </label>`
+                : ""
+            }
+          </div>
+          <div class="provider-actions">
+            <button type="button" data-provider-action="save">Save</button>
+            <button type="button" data-provider-action="test">Test setup</button>
+            <button type="button" data-provider-action="reset">Reset</button>
+          </div>
+          <div class="provider-test-result" role="status">${escapeHtml(readiness.message || "Review provider settings before use.")}</div>
+        </article>
+      `;
     }
 
     function renderFirstRunChecklist() {
@@ -1617,6 +1742,44 @@ const MotionJSONUI = (() => {
         frames: defaults.maxFrames,
         output: defaults.outputMode,
       });
+    }
+
+    function applyProviderSettingsToRunForm() {
+      const selectedProvider = $("#maskProviderSelect")?.value || "";
+      const provider = providerSettingsById(selectedProvider);
+      const model = providerEffectiveModel(provider);
+      if (provider && ["sam2", "sam2-local", "sam2-hosted"].includes(selectedProvider) && model) {
+        $("#modelName").value = model;
+      }
+    }
+
+    function providerSettingsPayloadFromRow(row) {
+      const value = (selector) => row.querySelector(selector)?.value?.trim() || "";
+      const checked = (selector) => Boolean(row.querySelector(selector)?.checked);
+      const payload = {
+        providerId: row.dataset.providerSettingsId,
+        selectedModel: value("[data-provider-field='selectedModel']"),
+        customModelId: value("[data-provider-field='customModelId']"),
+        endpoint: value("[data-provider-field='endpoint']"),
+        baseUrl: value("[data-provider-field='baseUrl']"),
+        allowHosted: checked("[data-provider-field='allowHosted']"),
+      };
+      const key = value("[data-provider-field='apiKey']");
+      if (key) payload.apiKey = key;
+      return payload;
+    }
+
+    async function saveProviderSettingsFromRow(row) {
+      const payload = providerSettingsPayloadFromRow(row);
+      const response = await api("/api/provider-settings", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      state.providerSettings = response;
+      row.querySelectorAll("[data-provider-field='apiKey']").forEach((input) => {
+        input.value = "";
+      });
+      await refreshAll();
     }
 
     function renderProjects() {
@@ -3186,6 +3349,7 @@ const MotionJSONUI = (() => {
         [
           ["health", "/api/health"],
           ["capabilities", capabilityRoute],
+          ["providerSettings", "/api/provider-settings"],
           ["runDefaults", "/api/run-config/defaults"],
           ["exportFormats", "/api/exports/formats"],
           ["projects", "/api/projects"],
@@ -3206,6 +3370,7 @@ const MotionJSONUI = (() => {
         if (error) state.errors[key] = error;
         if (key === "health") state.health = payload;
         if (key === "capabilities") state.capabilities = payload;
+        if (key === "providerSettings") state.providerSettings = payload;
         if (key === "runDefaults") state.runDefaults = payload;
         if (key === "exportFormats") state.exportFormats = payload;
         if (key === "projects") state.projects = payload?.projects || [];
@@ -3347,12 +3512,14 @@ const MotionJSONUI = (() => {
       await loadRootData();
       renderHealth();
       renderCapabilities();
+      renderProviderSettings();
       renderFirstRunChecklist();
       renderRunDefaults();
       renderProjects();
       renderAssetLibraryPanel();
       renderExportPresetOptions();
       renderMaskProviderOptions();
+      applyProviderSettingsToRunForm();
       renderPresetFields();
       renderApiStatus(state.errors.health ? "is-bad" : "is-ready", state.errors.health ? "API unavailable" : "API ready");
       await refreshProjectData();
@@ -3379,6 +3546,21 @@ const MotionJSONUI = (() => {
         applyPreset("motion_foreground");
         if (goalList) goalList.style.display = "none";
         if (firstRunPanel) firstRunPanel.style.display = "none";
+      } else if (capture === "provider-settings") {
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (workspace) workspace.style.display = "none";
+        if (rightRail) {
+          rightRail.style.display = "block";
+          rightRail.style.borderLeft = "0";
+          rightRail.style.minHeight = "100vh";
+        }
+        document.querySelectorAll(".right-rail details").forEach((details) => {
+          details.open = details.querySelector("#providerSettingsPanel") !== null;
+        });
       } else if (capture === "new-project") {
         if (shell) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
         if (rightRail) rightRail.style.display = "none";
@@ -4179,7 +4361,45 @@ const MotionJSONUI = (() => {
 
     $("#maskProviderSelect").addEventListener("change", () => {
       $("#maskProviderSelect").dataset.userSelected = "true";
+      applyProviderSettingsToRunForm();
       renderConfigPreview();
+    });
+
+    $("#providerSettingsList").addEventListener("change", (event) => {
+      const row = event.target.closest("[data-provider-settings-id]");
+      if (!row) return;
+      const customModel = row.querySelector(".provider-custom-model");
+      const select = row.querySelector("[data-provider-field='selectedModel']");
+      if (customModel && select) customModel.hidden = select.value !== "__custom__";
+    });
+
+    $("#providerSettingsList").addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-provider-action]");
+      if (!button) return;
+      const row = button.closest("[data-provider-settings-id]");
+      if (!row) return;
+      const providerId = row.dataset.providerSettingsId;
+      const result = row.querySelector(".provider-test-result");
+      const action = button.dataset.providerAction;
+      button.disabled = true;
+      if (result) result.textContent = `${action} in progress...`;
+      try {
+        if (action === "save") {
+          await saveProviderSettingsFromRow(row);
+          if (result) result.textContent = "Provider settings saved.";
+        } else if (action === "test") {
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/test`, { method: "POST", body: JSON.stringify({}) });
+          if (result) result.textContent = payload.message || payload.status || "Provider setup checked.";
+        } else if (action === "reset") {
+          await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
+          await refreshAll();
+          return;
+        }
+      } catch (error) {
+        if (result) result.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
     });
 
     [

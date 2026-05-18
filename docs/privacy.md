@@ -8,17 +8,23 @@ by JSON with cached raster/alpha assets for photoreal objects.
 
 The backend stores:
 
-- user emails, password hashes, session token hashes, and API key hashes
+- user emails, password hashes, session token hashes, and local backend API key
+  hashes
 - project, asset, job, queue, usage, rights, lineage, audit, and webhook records
 - beta invite metadata with hashed invite tokens only
 - beta member role metadata
 - feedback and error reports with redacted context
 - local billing plan status derived from configuration
+- optional BYOK provider settings for the Local UI, including raw provider
+  API keys only when the user chooses to save them locally
 
-The backend does not store raw API keys after first response, raw invite tokens
-after first response, or raw session tokens. Admin dashboard responses do not
-include API key hashes, invite token hashes, webhook signing secrets, storage
-keys, uploaded file bytes, or private storage internals.
+The backend does not store raw local backend API keys after first response, raw
+invite tokens after first response, or raw session tokens. Provider API keys
+saved through the Local UI are different: they are stored in the selected local
+SQLite database so the local backend can use them later, and they are not a
+managed secrets vault. Admin dashboard responses do not include API key hashes,
+invite token hashes, webhook signing secrets, storage keys, uploaded file
+bytes, or private storage internals.
 
 Billing/pricing routes expose local catalog and entitlement metadata only. They
 do not store payment methods, tax identifiers, invoice data, or checkout
@@ -34,6 +40,9 @@ Feedback and error reports redact or truncate:
   `password`, `secret`, `signingSecret`, `storage_key`, and `token`
 - URL query strings
 - large text, stack traces, lists, and nested context payloads
+
+Local UI provider-settings responses redact saved provider keys and report only
+whether credentials came from the environment, local settings, or are unset.
 
 Redaction is a defensive local safeguard, not a license to send secrets. Beta
 users should still avoid submitting credentials or raw uploaded media in support

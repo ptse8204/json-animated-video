@@ -34,7 +34,7 @@ python3 scripts/capture_docs_assets.py
 Capture the commercial Local UI viewport matrix and overlap checks:
 
 ```bash
-npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03a
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03b
 ```
 
 Generate only the red-ball preview and GIF, without browser screenshots:

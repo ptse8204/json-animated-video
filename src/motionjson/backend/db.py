@@ -235,6 +235,17 @@ CREATE TABLE IF NOT EXISTS error_reports (
     resolved_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS provider_settings (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    provider_id TEXT NOT NULL,
+    settings_json TEXT NOT NULL,
+    secret_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(user_id, provider_id)
+);
+
 CREATE TABLE IF NOT EXISTS library_assets (
     id TEXT PRIMARY KEY,
     owner_user_id TEXT NOT NULL REFERENCES users(id),
@@ -323,6 +334,7 @@ CREATE INDEX IF NOT EXISTS idx_beta_invites_email ON beta_invites(email, revoked
 CREATE INDEX IF NOT EXISTS idx_beta_members_user ON beta_members(user_id, disabled_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_project_status ON feedback_items(project_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_error_reports_project_status ON error_reports(project_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_provider_settings_user ON provider_settings(user_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_library_assets_owner ON library_assets(owner_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_library_assets_project ON library_assets(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_library_assets_asset ON library_assets(asset_id);

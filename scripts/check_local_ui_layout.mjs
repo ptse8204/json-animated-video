@@ -14,7 +14,7 @@ const VIEWPORTS = [
   { name: "tablet-1024", width: 1024, height: 768 },
 ];
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
-const CAPTURE_STATES = ["first-run", "new-project", "extraction-wizard", "provider-diagnostics", "job-review"];
+const CAPTURE_STATES = ["first-run", "new-project", "extraction-wizard", "provider-diagnostics", "provider-settings", "job-review"];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
 
 function parseArgs(argv) {
@@ -251,7 +251,7 @@ async function evaluateLayout(cdp) {
       const importantSelectors = [
         ".app-shell", ".sidebar", ".workspace", ".right-rail", ".topbar",
         ".workspace-grid", ".viewer-panel", ".setup-panel", ".wizard-panel",
-        ".config-panel", "#viewerStage", "#providerWarning"
+        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel"
       ];
       const rect = (selector) => {
         const element = document.querySelector(selector);

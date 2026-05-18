@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
+from motionjson.provider_settings import redact_secret_text
+
 from .base import ProviderConfigError, ProviderExecutionError
 
 
@@ -25,9 +27,9 @@ def _urllib_transport(url: str, payload: Mapping[str, Any], headers: Mapping[str
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise ProviderExecutionError(f"OpenRouter request failed with HTTP {exc.code}: {body}") from exc
+        raise ProviderExecutionError(redact_secret_text(f"OpenRouter request failed with HTTP {exc.code}: {body}")) from exc
     except urllib.error.URLError as exc:
-        raise ProviderExecutionError(f"OpenRouter request failed: {exc.reason}") from exc
+        raise ProviderExecutionError(redact_secret_text(f"OpenRouter request failed: {exc.reason}")) from exc
 
 
 @dataclass
