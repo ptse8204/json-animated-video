@@ -90,3 +90,13 @@ def test_huggingface_space_plan_is_cpu_basic_no_secret_no_gpu() -> None:
         "provider credentials",
     ]:
         assert expected in plan
+
+
+def test_canonical_phase10_report_matches_free_hosted_demo_phase() -> None:
+    report = read("docs/roadmap/phase-10-report.md")
+    older_report = read("docs/roadmap/phase-10-correction-workflows-report.md")
+
+    assert "Free Hosted Demo Paths" in report
+    assert "Colab notebook" in report
+    assert "Hugging Face Space" in report
+    assert "local UI correction workflows" in older_report

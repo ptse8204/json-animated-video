@@ -1,67 +1,105 @@
-# Phase 10 Report
+# Phase 10 Report: Free Hosted Demo Paths
+
+Date: 2026-05-17
 
 ## Summary
 
-- Added SQLite-backed correction history for local jobs and authenticated API track edits.
-- Added local UI correction workflows for relabel, show/hide, export inclusion, delete, merge, split, add object, and repair prompts.
-- Added edited review/export-inclusion state so corrections survive API refetches, app reloads, and browser reloads.
-- Updated `/api/jobs/{jobId}/track-edits` and authenticated `/v1/jobs/{jobId}/track-edits` to apply deterministic artifact edits where possible.
-- Added deterministic no-model partial-rerun hooks for add-object and repair requests with explicit unavailable diagnostics and `aiUsage: "none"`.
-- Documented correction routes, supported operations, and current partial-rerun limitations.
+Phase 10 added concrete low-install demo surfaces without introducing hosted
+runtime dependencies, paid GPU assumptions, or hidden secrets. The README now
+has an "Open in GitHub Codespaces" badge, links to the checked-in Colab CLI
+notebook, and points to a Hugging Face Space handoff plan.
 
-The working tree was not clean at phase start. Pre-existing README and `out/demo` generated changes were left untouched.
+The Colab notebook is a CPU/no-model red-ball CLI walkthrough: clone the repo,
+install the local package, run provider diagnostics, generate the deterministic
+demo video, extract with the threshold provider, validate output, inspect key
+MotionJSON files, and download a ZIP of the generated folder.
+
+The Hugging Face Space plan is a static Docker Space handoff document for a
+CPU Basic mock-mode demo. It documents the intended port, startup command,
+diagnostics, tiny demo video, ephemeral storage assumptions, and no-secret/no
+paid-GPU boundaries. Deployment docs now call out free hosted demo constraints
+around persistence, privacy, provider credentials, and model downloads.
+
+The working tree was not clean at phase start because
+`docs/MOTIONJSON_CODEX_FUTURE_PLAN.md` and
+`docs/Codex Prompt Instrcution.md` were preexisting untracked docs. They were
+not staged for this phase.
 
 ## Changed Files
 
-- `docs/developer_api.md`
-- `docs/local_ui.md`
-- `docs/roadmap/phase-10-report.md`
-- `scripts/build_ui_shell.mjs`
-- `scripts/phase10_correction_workflow_smoke.py`
-- `scripts/test_ui_config_builder.mjs`
-- `src/motionjson/backend/api.py`
-- `src/motionjson/backend/corrections.py`
-- `src/motionjson/backend/db.py`
-- `src/motionjson/ui/server.py`
-- `src/motionjson/ui/static/app.css`
-- `src/motionjson/ui/static/app.js`
-- `src/motionjson/ui/static/index.html`
-- `tests/test_backend_api_product.py`
-- `tests/test_backend_track_corrections.py`
-- `tests/test_phase10_track_edit_workflows.py`
+- `README.md`
+  - Adds a Codespaces badge and links to the free-instance guide, Colab
+    notebook, and Hugging Face Space handoff plan.
+- `docs/run_free_instances.md`
+  - Links the checked-in Colab notebook and Space plan from the existing
+    Codespaces/Colab/Hugging Face guidance.
+- `docs/deployment.md`
+  - Adds free hosted demo constraints for CPU/mock-first demos, ephemeral
+    storage, no paid GPU requirement, no hidden secrets, and opt-in providers.
+- `notebooks/colab_red_ball_cli_demo.ipynb`
+  - Adds the no-model Colab CLI demo.
+- `spaces/huggingface/README.md`
+  - Adds the CPU Basic mock-mode Space proof-of-concept plan.
+- `tests/test_phase10_free_hosted_demos.py`
+  - Adds structural tests for devcontainer, README/docs links, notebook
+    contents, and Space no-secret/no-paid-GPU constraints.
 
 ## Tests Run
 
-- `python -m pytest tests -k track_edit` failed because `python` is not installed on this machine.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m py_compile src/motionjson/backend/corrections.py src/motionjson/ui/server.py src/motionjson/backend/api.py`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests -k track_edit -q` — 7 passed, 198 deselected.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_backend_track_corrections.py tests/test_phase10_track_edit_workflows.py tests/test_phase9_ui_job_review_smoke.py -q` — 8 passed.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_backend_track_corrections.py tests/test_phase10_track_edit_workflows.py tests/test_backend_api_product.py -q` — 13 passed.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest tests/test_backend_track_corrections.py tests/test_phase10_track_edit_workflows.py tests/test_local_ui_api.py tests/test_backend_api_product.py tests/test_backend_jobs_worker.py tests/test_mask_corrections.py -q` — 44 passed.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q` — 205 passed.
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 scripts/phase10_correction_workflow_smoke.py`
-- `node --check src/motionjson/ui/static/app.js`
-- `node --check scripts/build_ui_shell.mjs`
-- `node scripts/test_ui_config_builder.mjs`
-- `npm test` — 19 passed.
+- `PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src python3 -m pytest -p no:cacheprovider tests/test_phase10_free_hosted_demos.py tests/test_docs_links.py -q`
+  - Result: 8 passed.
+- `python3 -m json.tool .devcontainer/devcontainer.json`
+  - Result: passed.
+- `python3 -m json.tool notebooks/colab_red_ball_cli_demo.ipynb`
+  - Result: passed.
+- `PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src python3 -m pytest -p no:cacheprovider -q`
+  - Result: 261 passed.
+- `npm test`
+  - Result: 19 passed.
 - `npm run lint`
+  - Result: passed.
 - `npm run build`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli extract --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli backend --help`
-- `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m motionjson.cli ui --help`
-- Browser smoke at `http://127.0.0.1:8788/`: created a project/video, ran a mock job, relabeled a reviewed track through the correction UI, reloaded the page, confirmed the relabel/history persisted, and found no console errors.
-- Browser smoke at `http://127.0.0.1:8789/`: created a project/video, ran a mock job, saved a repair request, reloaded the page, confirmed `repair_provider_unavailable` and partial-rerun diagnostics were visible in correction history, and found no console errors.
-- `git diff --check`
+  - Result: passed.
+
+## Screenshots And Demos Produced
+
+No screenshots were produced. The new demo surface is the checked-in Colab
+notebook, which generates the red-ball demo on demand instead of committing
+additional generated outputs.
+
+## Review
+
+Read-only scout audits found the missing notebook, missing README Codespaces
+badge, missing Space-specific handoff file, and missing targeted tests. The
+implementation addresses those gaps while keeping hosted demos static and
+CPU/mock-first. Final reviewer found no blocking issues, confirmed the
+distinct report filename is acceptable because the older
+`docs/roadmap/phase-10-report.md` should not be overwritten, and approved
+commit after explicit staging.
 
 ## Known Limitations
 
-- `add_object` and `repair_track` persist prompts and expose deterministic review hooks, but do not run model-assisted partial extraction yet.
-- Synthetic add-object review tracks are placeholders until a repair/partial extraction worker materializes masks and cutouts.
-- `/api/jobs/{jobId}/track-edits` and `/v1/jobs/{jobId}/track-edits` apply deterministic artifact edits for relabel, hide/show, delete, merge, and split. Full export/render worker consumption of correction state across every output format remains Phase 11 work.
+- The Colab notebook is structurally validated but not executed in Colab during
+  this phase.
+- The Hugging Face Space artifact is a proof-of-concept plan, not a deployed
+  public Space or committed Space-specific Dockerfile.
+- External platform behavior, pricing, storage policies, and badge URLs can
+  change; the docs point users back to platform guidance where relevant.
+- Free-hosted UI demos still require careful persistence and privacy design
+  before accepting private user videos.
 
 ## Follow-Up Tasks
 
-- Add a real partial-rerun worker that materializes add-object and repair artifacts when a capable provider is available.
-- Teach export/render workers to consume correction state directly for every export format, beyond edited artifacts and review/export-inclusion metadata.
-- Add richer visual split/merge controls once edited track timelines are available in the UI.
+- Execute the notebook in Colab before public release and record any Colab-only
+  setup fixes.
+- Convert the Hugging Face plan into a minimal Space branch or directory once
+  the project is ready to own hosted demo operations.
+- Add an automated notebook lint step to CI if more notebooks are added.
+
+## 2026-05-18 Revalidation
+
+The current commercial roadmap expects Phase 10 at
+`docs/roadmap/phase-10-report.md`, so the free-hosted demo report now uses that
+canonical path. The older correction-workflow Phase 10 report from a previous
+roadmap was preserved as
+`docs/roadmap/phase-10-correction-workflows-report.md`.
