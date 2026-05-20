@@ -13,6 +13,8 @@ from PIL import Image
 from ..masks import ExternalMaskProvider
 from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
+from .mask_cache import normalize_binary_mask
+from .sam2 import LocalSAM2AutomaticMaskProposalBackend
 
 
 DISCOVERY_MODES = {
@@ -59,7 +61,7 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
     "auto_object_proposals": {
         "mode": "auto_object_proposals",
         "title": "Discover objects",
-        "description": "API-first automatic object proposals with low-cost default presets and review gates.",
+        "description": "API-first automatic object proposals with low-cost default presets, review gates, mock mode, and optional SAM2 local proposals.",
         "whenToUse": "Use as the default discovery workflow when users should choose from API-returned candidates before tracking.",
         "inputs": ["quality preset", "keyframe policy", "candidate caps", "filter controls", "optional mock"],
         "configSchema": {
@@ -89,8 +91,8 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
     "sam_auto_masks": {
         "mode": "sam_auto_masks",
         "title": "Automatic masks",
-        "description": "Scaffold for automatic keyframe mask proposals with area, stability, and overlap filters.",
-        "whenToUse": "Use for proposing visible segments after a SAM2 automatic-mask backend is configured.",
+        "description": "Automatic keyframe mask proposals with area, stability, overlap filters, and optional SAM2 local execution.",
+        "whenToUse": "Use for proposing visible segments after SAM2 automatic masks are configured, or in mock mode for smoke tests.",
         "inputs": ["keyframes", "filter controls", "optional mock"],
         "configSchema": {
             "keyframes": "array of frame indexes",
@@ -212,6 +214,30 @@ def _bool_config_any(config: Mapping[str, Any], names: Sequence[str], default: b
     return bool(default)
 
 
+def _value_config_any(config: Mapping[str, Any], names: Sequence[str], default: Any = None) -> Any:
+    for name in names:
+        if name in config and config[name] is not None:
+            return config[name]
+    return default
+
+
+def _float_config_any(config: Mapping[str, Any], names: Sequence[str], default: float) -> float:
+    value = _value_config_any(config, names, default)
+    if isinstance(value, bool):
+        raise ProviderConfigError(f"discovery.{names[0]}: expected number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ProviderConfigError(f"discovery.{names[0]}: expected number") from exc
+
+
+def _ratio_config_any(config: Mapping[str, Any], names: Sequence[str], default: float) -> float:
+    value = _float_config_any(config, names, default)
+    if value < 0.0 or value > 1.0:
+        raise ProviderConfigError(f"discovery.{names[0]}: expected number between 0 and 1")
+    return value
+
+
 def _float_config(config: Mapping[str, Any], name: str, default: float) -> float:
     value = config.get(name, default)
     if isinstance(value, bool):
@@ -310,7 +336,13 @@ def _box_mask(video: VideoSource, candidate: ObjectCandidate) -> np.ndarray:
     return mask
 
 
-def _write_mock_candidate_previews(video: VideoSource, candidate: ObjectCandidate, mask_dir: Path) -> dict[str, str]:
+def _write_candidate_previews(
+    video: VideoSource,
+    candidate: ObjectCandidate,
+    mask_dir: Path,
+    *,
+    mask: np.ndarray | None = None,
+) -> dict[str, str]:
     if not video.frames:
         return {}
     frame_index = max(0, min(len(video.frames) - 1, int(candidate.frame_index or 0)))
@@ -330,7 +362,10 @@ def _write_mock_candidate_previews(video: VideoSource, candidate: ObjectCandidat
     thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
     thumb.save(thumbnail_path)
 
-    mask = _box_mask(video, candidate)
+    if mask is None:
+        mask = _box_mask(video, candidate)
+    else:
+        mask = normalize_binary_mask(mask)
     overlay = frame_image.convert("RGBA")
     red = Image.new("RGBA", overlay.size, (235, 72, 72, 0))
     alpha = Image.fromarray(np.where(mask > 0, 112, 0).astype(np.uint8))
@@ -347,6 +382,10 @@ def _write_mock_candidate_previews(video: VideoSource, candidate: ObjectCandidat
         "thumbnailArtifactPath": f"{rel_base}/thumbnail.png",
         "maskPreviewArtifactPath": f"{rel_base}/mask_preview.png",
     }
+
+
+def _write_mock_candidate_previews(video: VideoSource, candidate: ObjectCandidate, mask_dir: Path) -> dict[str, str]:
+    return _write_candidate_previews(video, candidate, mask_dir)
 
 
 def _mock_object_filter_metadata(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -595,6 +634,128 @@ class MotionForegroundDiscoveryProvider:
         return candidates
 
 
+def _proposal_keyframe_indexes(video: VideoSource, config: Mapping[str, Any]) -> list[int]:
+    frame_count = len(video.frames)
+    if frame_count <= 0:
+        return []
+    max_keyframes = max(1, _int_config_any(config, ("maxKeyframes", "max_keyframes", "max_keyframes_per_video"), 3))
+    raw_keyframes = config.get("keyframes")
+    if isinstance(raw_keyframes, Sequence) and not isinstance(raw_keyframes, (str, bytes, bytearray)):
+        indexes: list[int] = []
+        for raw_index in raw_keyframes:
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError) as exc:
+                raise ProviderConfigError("discovery.keyframes: expected integer frame indexes") from exc
+            if 0 <= index < frame_count and index not in indexes:
+                indexes.append(index)
+        return indexes[:max_keyframes] or [0]
+
+    frame_interval = _value_config_any(config, ("frameInterval", "frame_interval"), None)
+    if frame_interval is not None:
+        interval = max(1, _int_config_any(config, ("frameInterval", "frame_interval"), 1))
+        return list(range(0, frame_count, interval))[:max_keyframes] or [0]
+
+    if max_keyframes >= frame_count:
+        return list(range(frame_count))
+    if max_keyframes == 1:
+        return [0]
+    step = (frame_count - 1) / float(max_keyframes - 1)
+    indexes = [round(index * step) for index in range(max_keyframes)]
+    return list(dict.fromkeys(max(0, min(frame_count - 1, int(index))) for index in indexes))
+
+
+def _box_from_mask(mask: np.ndarray) -> Box:
+    normalized = normalize_binary_mask(mask)
+    ys, xs = np.where(normalized > 0)
+    if not len(xs) or not len(ys):
+        height, width = normalized.shape[:2]
+        return Box(0, 0, max(1, width), max(1, height))
+    x0 = int(xs.min())
+    y0 = int(ys.min())
+    x1 = int(xs.max()) + 1
+    y1 = int(ys.max()) + 1
+    return Box(x0, y0, max(1, x1 - x0), max(1, y1 - y0))
+
+
+def _box_iou(left: Box, right: Box) -> float:
+    left_x1 = left.x + left.w
+    left_y1 = left.y + left.h
+    right_x1 = right.x + right.w
+    right_y1 = right.y + right.h
+    inter_w = max(0, min(left_x1, right_x1) - max(left.x, right.x))
+    inter_h = max(0, min(left_y1, right_y1) - max(left.y, right.y))
+    intersection = inter_w * inter_h
+    if intersection <= 0:
+        return 0.0
+    union = max(1, left.w * left.h + right.w * right.h - intersection)
+    return intersection / union
+
+
+def _record_value(record: Mapping[str, Any], keys: Sequence[str]) -> Any:
+    for key in keys:
+        if key in record and record[key] is not None:
+            return record[key]
+    return None
+
+
+def _proposal_mask(record: Mapping[str, Any], *, width: int, height: int) -> np.ndarray:
+    mask_value = None
+    for key in ("segmentation", "mask", "binary_mask"):
+        if key in record and record[key] is not None:
+            mask_value = record[key]
+            break
+    if mask_value is None:
+        raw_box = _record_value(record, ("bbox", "box"))
+        box = _proposal_box(raw_box, width=width, height=height)
+        mask = np.zeros((height, width), dtype=np.uint8)
+        mask[box.y : box.y + box.h, box.x : box.x + box.w] = 255
+        return mask
+    mask = normalize_binary_mask(np.asarray(mask_value))
+    if mask.ndim > 2:
+        mask = normalize_binary_mask(np.squeeze(mask))
+    if mask.shape[:2] != (height, width):
+        raise ProviderConfigError(
+            f"SAM2 automatic proposal mask shape {mask.shape[:2]} does not match video frame {(height, width)}"
+        )
+    return mask
+
+
+def _proposal_box(raw_box: Any, *, width: int, height: int) -> Box:
+    if isinstance(raw_box, Mapping):
+        x = int(raw_box.get("x", 0))
+        y = int(raw_box.get("y", 0))
+        w = int(raw_box.get("w", raw_box.get("width", 1)))
+        h = int(raw_box.get("h", raw_box.get("height", 1)))
+    elif isinstance(raw_box, (list, tuple)) and len(raw_box) >= 4:
+        x, y, w, h = (int(raw_box[0]), int(raw_box[1]), int(raw_box[2]), int(raw_box[3]))
+    else:
+        return Box(0, 0, max(1, width), max(1, height))
+    x = max(0, min(width - 1, x))
+    y = max(0, min(height - 1, y))
+    w = max(1, min(width - x, w))
+    h = max(1, min(height - y, h))
+    return Box(x, y, w, h)
+
+
+def _sam2_proposal_filters(config: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "keyframePolicy": config.get("keyframePolicy", config.get("keyframe_policy")),
+        "maxKeyframes": config.get("maxKeyframes", config.get("max_keyframes")),
+        "frameInterval": config.get("frameInterval", config.get("frame_interval")),
+        "maxCandidatesPerKeyframe": config.get("maxCandidatesPerKeyframe", config.get("max_candidates")),
+        "maxObjects": config.get("maxObjects", config.get("max_objects")),
+        "minMaskArea": config.get("minMaskArea", config.get("min_area")),
+        "maxMaskAreaRatio": config.get("maxMaskAreaRatio", config.get("max_area_ratio")),
+        "dedupeIou": config.get("dedupeIou", config.get("dedupe_iou", config.get("overlap_threshold"))),
+        "stabilityThreshold": config.get("stabilityThreshold", config.get("stability_threshold")),
+        "rejectWholeFrame": config.get("rejectWholeFrame", config.get("reject_whole_frame")),
+        "rejectBackgroundLike": config.get("rejectBackgroundLike", config.get("reject_background_like", config.get("reject_background"))),
+        "trackSelectedOnly": config.get("trackSelectedOnly", config.get("track_selected_only", True)),
+        "writeRejectedCandidates": config.get("writeRejectedCandidates", config.get("write_rejected_candidates", True)),
+    }
+
+
 @dataclass
 class SamAutoMasksDiscoveryProvider:
     backend: Any | None = None
@@ -602,16 +763,250 @@ class SamAutoMasksDiscoveryProvider:
 
     def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
         if self.backend is not None:
-            result = self.backend.propose(video, config, ctx)
-            return list(result)
+            if hasattr(self.backend, "propose"):
+                result = self.backend.propose(video, config, ctx)
+                return list(result)
+            return SAM2AutomaticProposalDiscoveryProvider(backend=self.backend, name=self.name).propose(video, config, ctx)
         if config.get("mock"):
             max_candidates = max(1, _int_config(config, "max_candidates", 3))
             labels = [f"Visible segment {index + 1}" for index in range(max_candidates)]
             return _mock_box_candidates(video, {**dict(config), "labels": labels}, ctx, self.name, "Mock automatic mask proposal")
-        raise ProviderConfigError(
-            "sam_auto_masks discovery requires a configured automatic-mask backend. "
-            "Install/configure SAM2 automatic masks or set discovery mock mode for tests."
+        return SAM2AutomaticProposalDiscoveryProvider(name=self.name).propose(video, config, ctx)
+
+
+@dataclass
+class SAM2AutomaticProposalDiscoveryProvider:
+    backend: Any | None = None
+    backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
+    name: str = "auto_object_proposals"
+    provider_name: str = "sam2-local"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "sam2-local")
+        if provider_preference not in {"auto", "sam2-local", "sam_auto_masks"}:
+            raise ProviderConfigError(
+                f"{self.name} SAM2 automatic proposals require providerPreference 'auto' or 'sam2-local', got {provider_preference!r}"
+            )
+        backend = self._backend(config)
+        if hasattr(backend, "propose") and backend is not self:
+            result = backend.propose(video, config, ctx)
+            return list(result)
+
+        width = int(getattr(video.info, "width", 0))
+        height = int(getattr(video.info, "height", 0))
+        if width <= 0 or height <= 0:
+            raise ProviderConfigError(f"{self.name} discovery needs video dimensions for SAM2 proposals")
+        keyframes = _proposal_keyframe_indexes(video, config)
+        max_per_keyframe = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates"), 32))
+        max_objects = max(1, _int_config_any(config, ("maxObjects", "max_objects"), 12))
+        min_area = max(1, _int_config_any(config, ("minMaskArea", "min_area"), 96))
+        max_area_ratio = _ratio_config_any(config, ("maxMaskAreaRatio", "max_area_ratio"), 0.45)
+        stability_threshold = _ratio_config_any(config, ("stabilityThreshold", "stability_threshold"), 0.86)
+        dedupe_iou = _ratio_config_any(config, ("dedupeIou", "dedupe_iou", "overlap_threshold"), 0.78)
+        reject_whole_frame = _bool_config_any(config, ("rejectWholeFrame", "reject_whole_frame"), True)
+        reject_background_like = _bool_config_any(config, ("rejectBackgroundLike", "reject_background_like", "reject_background"), True)
+        write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
+        quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
+
+        accepted_boxes: list[Box] = []
+        accepted_count = 0
+        rejected_count = 0
+        candidates: list[ObjectCandidate] = []
+        frame_area = max(1, width * height)
+        for frame_index in keyframes:
+            frame = video.frames[frame_index]
+            records = list(backend.propose_masks(frame.rgb, frame_index=frame_index, config=config))
+            sortable = sorted(records, key=lambda record: _proposal_score(record), reverse=True)[:max_per_keyframe]
+            for record_index, record in enumerate(sortable):
+                mask = _proposal_mask(record, width=width, height=height)
+                box = _proposal_box(_record_value(record, ("bbox", "box")), width=width, height=height)
+                if box.w == width and box.h == height and "bbox" not in record and "box" not in record:
+                    box = _box_from_mask(mask)
+                area = int(np.count_nonzero(mask))
+                area_ratio = area / frame_area
+                stability = _proposal_stability(record)
+                rejection_reason: str | None = None
+                warnings: list[str] = []
+                if area < min_area:
+                    rejection_reason = "too_small"
+                elif area_ratio > max_area_ratio:
+                    rejection_reason = "whole_frame" if reject_whole_frame else "too_large"
+                elif stability < stability_threshold:
+                    rejection_reason = "unstable_mask"
+                elif any(_box_iou(box, previous) >= dedupe_iou for previous in accepted_boxes):
+                    rejection_reason = "duplicate_mask"
+                elif reject_background_like and _background_like(box, width=width, height=height, area_ratio=area_ratio):
+                    rejection_reason = "background_like"
+                elif accepted_count >= max_objects:
+                    rejection_reason = "max_objects"
+
+                accepted = rejection_reason is None
+                if accepted:
+                    accepted_count += 1
+                    accepted_boxes.append(box)
+                    index_for_id = accepted_count
+                else:
+                    rejected_count += 1
+                    index_for_id = rejected_count
+                    warnings.append(f"SAM2 automatic proposal rejected: {rejection_reason}")
+                    if not write_rejected:
+                        continue
+
+                object_id = f"{self.name}_{'cand' if accepted else 'rejected'}_{index_for_id:03d}"
+                if accepted:
+                    mask_sequence, tracking_warning = self._mask_sequence_for_candidate(
+                        backend,
+                        video,
+                        frame_index=frame_index,
+                        object_id=object_id,
+                        box=box,
+                        mask=mask,
+                        config=config,
+                    )
+                else:
+                    mask_sequence = [mask.copy() for _frame in video.frames]
+                    tracking_warning = None
+                if tracking_warning:
+                    warnings.append(tracking_warning)
+                mask_dir, mask_dir_rel = _relative_mask_dir(ctx, self.name, object_id)
+                _write_mask_sequence(video, mask_dir, mask_sequence)
+                score = _proposal_score(record)
+                confidence = round((score * 0.65) + (stability * 0.35), 4)
+                frame_coverage = _mask_sequence_coverage(mask_sequence)
+                candidate = ObjectCandidate(
+                    id=object_id,
+                    label=f"SAM2 proposal {index_for_id}" if accepted else f"Rejected SAM2 proposal {index_for_id}",
+                    source=self.name,
+                    frame_index=frame_index,
+                    box=box,
+                    score=confidence,
+                    z_index=10 + (accepted_count * 10 if accepted else 1000 + rejected_count),
+                    metadata=_candidate_metadata(
+                        self.name,
+                        "SAM2 automatic keyframe mask proposal",
+                        {
+                            "providerName": self.provider_name,
+                            "qualityPreset": quality_preset,
+                            "mock": False,
+                            "aiUsage": "local_optional_sam2",
+                            "keyframeIndex": frame_index,
+                            "proposalIndex": record_index,
+                            "filters": _sam2_proposal_filters({**dict(config), "keyframes": keyframes}),
+                            "areaRatio": round(area_ratio, 6),
+                            "stabilityScore": round(stability, 4),
+                            "motionScore": None,
+                            "confidence": confidence,
+                            "frameCoverageEstimate": frame_coverage,
+                            "defaultSelected": accepted,
+                            "reviewStatus": "pending" if accepted else "rejected",
+                            "warnings": warnings,
+                            "rejectionReason": rejection_reason,
+                            "maskDir": mask_dir_rel,
+                            "maskFiles": len(mask_sequence),
+                            "trackingProvider": self.provider_name if tracking_warning is None else "keyframe_seed_sequence",
+                        },
+                    ),
+                )
+                artifact_paths = _write_candidate_previews(video, candidate, mask_dir, mask=mask)
+                candidates.append(
+                    ObjectCandidate(
+                        id=candidate.id,
+                        label=candidate.label,
+                        source=candidate.source,
+                        frame_index=candidate.frame_index,
+                        box=candidate.box,
+                        score=candidate.score,
+                        z_index=candidate.z_index,
+                        metadata={**candidate.metadata, **artifact_paths},
+                    )
+                )
+                ctx.emit(
+                    "candidate_discovery",
+                    "running",
+                    f"SAM2 object candidate {object_id} generated",
+                    metadata={"objectId": object_id, "keyframeIndex": frame_index, "rejectionReason": rejection_reason},
+                )
+        if not candidates:
+            raise ProviderConfigError("SAM2 automatic proposals produced no candidates after filtering.")
+        return candidates
+
+    def _backend(self, config: Mapping[str, Any]) -> Any:
+        if self.backend is not None:
+            return self.backend
+        if self.backend_factory is not None:
+            self.backend = self.backend_factory(config)
+        else:
+            self.backend = LocalSAM2AutomaticMaskProposalBackend.from_config(config)
+        return self.backend
+
+    def _mask_sequence_for_candidate(
+        self,
+        backend: Any,
+        video: VideoSource,
+        *,
+        frame_index: int,
+        object_id: str,
+        box: Box,
+        mask: np.ndarray,
+        config: Mapping[str, Any],
+    ) -> tuple[list[np.ndarray], str | None]:
+        box_tuple = (box.x, box.y, box.w, box.h)
+        if hasattr(backend, "track_candidate"):
+            masks = list(
+                backend.track_candidate(
+                    video,
+                    frame_index=frame_index,
+                    object_id=object_id,
+                    box=box_tuple,
+                    mask=mask,
+                    config=config,
+                )
+            )
+            if len(masks) != len(video.frames):
+                raise ProviderConfigError("SAM2 selected-candidate propagation returned the wrong number of masks.")
+            return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None
+        return [mask.copy() for _frame in video.frames], (
+            "SAM2 propagation backend was not available; selected tracking will use the keyframe proposal mask sequence."
         )
+
+
+def _proposal_score(record: Mapping[str, Any]) -> float:
+    for key in ("score", "confidence", "predicted_iou", "iou"):
+        if key in record and record[key] is not None:
+            try:
+                return max(0.0, min(1.0, float(record[key])))
+            except (TypeError, ValueError):
+                continue
+    return 0.75
+
+
+def _proposal_stability(record: Mapping[str, Any]) -> float:
+    for key in ("stability_score", "stabilityScore", "stability"):
+        if key in record and record[key] is not None:
+            try:
+                return max(0.0, min(1.0, float(record[key])))
+            except (TypeError, ValueError):
+                continue
+    return _proposal_score(record)
+
+
+def _background_like(box: Box, *, width: int, height: int, area_ratio: float) -> bool:
+    touches = sum(
+        (
+            box.x <= 1,
+            box.y <= 1,
+            box.x + box.w >= width - 1,
+            box.y + box.h >= height - 1,
+        )
+    )
+    return area_ratio >= 0.35 and touches >= 2
+
+
+def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
+    if not masks:
+        return 0.0
+    visible = sum(1 for mask in masks if np.count_nonzero(mask) > 0)
+    return round(visible / len(masks), 4)
 
 
 @dataclass

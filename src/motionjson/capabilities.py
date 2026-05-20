@@ -106,7 +106,10 @@ def _check(name: str, status: str, detail: str | None = None, value: Any | None 
 
 
 def _module_available(module: str) -> bool:
-    return importlib.util.find_spec(module) is not None
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
 
 
 def _dependency(name: str, module: str, install_hint: str | None = None) -> DependencyStatus:
@@ -288,6 +291,7 @@ def provider_capabilities(
     cv_ready = deps.get("cv2", False) and deps.get("numpy", False)
     pil_ready = deps.get("PIL", False)
     sam2_installed = deps.get("sam2", False)
+    sam2_auto_installed = bool(sam2_installed and _module_available("sam2.automatic_mask_generator"))
     torch_info = cuda_status()
     checkpoint = _path_config_status("SAM2_LOCAL_CHECKPOINT", sam2_checkpoint)
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
@@ -313,6 +317,18 @@ def provider_capabilities(
         if reason
     ]
     sam2_local_ready = bool(sam2_installed and checkpoint["exists"] and model_config["exists"] and torch_info["torchInstalled"])
+    sam2_auto_reasons = [
+        reason
+        for reason in (
+            None if sam2_installed else "Python module 'sam2' is not importable.",
+            None if sam2_auto_installed else "SAM2 automatic mask generator module is not importable.",
+            *_model_path_reasons(checkpoint, "SAM2 checkpoint", "--sam2-checkpoint"),
+            *_model_path_reasons(model_config, "SAM2 model config", "--sam2-config"),
+            None if torch_info["torchInstalled"] else "torch is not installed.",
+        )
+        if reason
+    ]
+    sam2_auto_ready = bool(sam2_auto_installed and checkpoint["exists"] and model_config["exists"] and torch_info["torchInstalled"])
     if not sam2_installed or not torch_info["torchInstalled"]:
         sam2_local_status = "missing_dependency"
     elif (checkpoint["configured"] and not checkpoint["exists"]) or (model_config["configured"] and not model_config["exists"]):
@@ -323,7 +339,16 @@ def provider_capabilities(
         sam2_local_status = "available_cpu_only"
     else:
         sam2_local_status = "ready"
-    sam_auto_masks_status = sam2_local_status if sam2_local_status != "ready" else "not_configured"
+    if not sam2_auto_installed or not torch_info["torchInstalled"]:
+        sam_auto_masks_status = "missing_dependency"
+    elif (checkpoint["configured"] and not checkpoint["exists"]) or (model_config["configured"] and not model_config["exists"]):
+        sam_auto_masks_status = "missing_model"
+    elif not checkpoint["configured"] or not model_config["configured"]:
+        sam_auto_masks_status = "not_configured"
+    elif not torch_info["available"]:
+        sam_auto_masks_status = "available_cpu_only"
+    else:
+        sam_auto_masks_status = "ready"
     text_detector_reasons = [
         reason
         for reason in (
@@ -636,23 +661,22 @@ def provider_capabilities(
         ProviderCapability(
             name="auto_object_proposals",
             kind="discovery_provider",
-            available=False,
+            available=sam2_auto_ready,
             configured=bool(checkpoint["configured"] and model_config["configured"]),
-            installed=bool(sam2_installed and torch_info["torchInstalled"]),
-            runnable=False,
+            installed=bool(sam2_auto_installed and torch_info["torchInstalled"]),
+            runnable=sam2_auto_ready,
             status=sam_auto_masks_status,
             supports=[
                 "quality_presets",
                 "automatic_keyframe_proposals",
+                "sam2_automatic_mask_generation",
+                "sam2_video_propagation",
                 "candidate_caps",
                 "review_required",
                 "selected_candidate_tracking_contract",
             ],
-            reasons=[
-                *sam2_local_reasons,
-                "API-first object proposals are scaffolded; real automatic proposal adapters remain capability-gated.",
-            ],
-            install_hint="Use the clean mock/no-model path for smoke checks, or configure SAM2 automatic masks in a later provider phase.",
+            reasons=sam2_auto_reasons,
+            install_hint="Use the clean mock/no-model path for smoke checks, or install/configure SAM2 automatic masks for real local proposals.",
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
@@ -660,27 +684,33 @@ def provider_capabilities(
             model_paths=[checkpoint, model_config],
             mock_available=True,
             optional_extra="sam2",
+            checks=[
+                _check("sam2_import", "ok" if sam2_installed else "missing", None if sam2_installed else "sam2 package is not importable"),
+                _check("sam2_auto_mask_generator", "ok" if sam2_auto_installed else "missing", None if sam2_auto_installed else "sam2 automatic mask generator is not importable"),
+                _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
+                _check("checkpoint", "ok" if checkpoint["exists"] else "missing", checkpoint["env"], checkpoint["exists"]),
+                _check("model_config", "ok" if model_config["exists"] else "missing", model_config["env"], model_config["exists"]),
+            ],
             metadata={
                 "uiDescription": "Default object discovery flow with clean, balanced, maximum-recall, and Trace Everything presets.",
                 "whenToUse": "Use when users should choose from API-returned object candidates before tracking.",
                 "defaultQualityPreset": "clean",
                 "mockRunnable": cv_ready and pil_ready,
                 "requiresReview": True,
+                "sam2AutomaticProposals": True,
+                "selectedTracking": "SAM2 propagation when configured; otherwise review uses generated candidate mask artifacts.",
             },
         ),
         ProviderCapability(
             name="sam_auto_masks",
             kind="discovery_provider",
-            available=False,
+            available=sam2_auto_ready,
             configured=bool(checkpoint["configured"] and model_config["configured"]),
-            installed=bool(sam2_installed and torch_info["torchInstalled"]),
-            runnable=False,
+            installed=bool(sam2_auto_installed and torch_info["torchInstalled"]),
+            runnable=sam2_auto_ready,
             status=sam_auto_masks_status,
-            supports=["automatic_keyframe_masks", "area_filter", "stability_filter", "overlap_filter"],
-            reasons=[
-                *sam2_local_reasons,
-                "SAM automatic-mask discovery is scaffolded; configure a concrete automatic-mask backend or use mock mode.",
-            ],
+            supports=["automatic_keyframe_masks", "sam2_automatic_mask_generation", "sam2_video_propagation", "area_filter", "stability_filter", "overlap_filter"],
+            reasons=sam2_auto_reasons,
             install_hint="Install/configure SAM2 automatic masks, or use motion_foreground/external_masks for no-model discovery.",
             device=torch_info.get("device"),
             no_model_safe=False,
@@ -689,9 +719,17 @@ def provider_capabilities(
             model_paths=[checkpoint, model_config],
             mock_available=True,
             optional_extra="sam2",
+            checks=[
+                _check("sam2_import", "ok" if sam2_installed else "missing", None if sam2_installed else "sam2 package is not importable"),
+                _check("sam2_auto_mask_generator", "ok" if sam2_auto_installed else "missing", None if sam2_auto_installed else "sam2 automatic mask generator is not importable"),
+                _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
+                _check("checkpoint", "ok" if checkpoint["exists"] else "missing", checkpoint["env"], checkpoint["exists"]),
+                _check("model_config", "ok" if model_config["exists"] else "missing", model_config["env"], model_config["exists"]),
+            ],
             metadata={
                 "uiDescription": "Automatic visible-segment proposals from a configured SAM2-style backend.",
                 "whenToUse": "Use when the user wants broad visible-segment proposals and local SAM2 is configured.",
+                "sam2AutomaticProposals": True,
             },
         ),
         ProviderCapability(

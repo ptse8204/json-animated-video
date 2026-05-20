@@ -74,6 +74,41 @@ The local provider follows the SAM2 video flow:
 - Masks are propagated through the video.
 - Returned logits or masks are normalized to 2D binary `uint8` arrays with values `0` or `255`.
 
+## Automatic Object Proposals
+
+`motionjson.providers.sam2.LocalSAM2AutomaticMaskProposalBackend` adds an
+optional SAM2 automatic-mask path for discovery providers. It is used by
+`auto_object_proposals` and `sam_auto_masks` only when local SAM2 diagnostics
+pass or a fake backend is injected in tests.
+
+Example:
+
+```bash
+SAM2_LOCAL_CHECKPOINT=/path/to/sam2_checkpoint.pt \
+SAM2_LOCAL_CONFIG=/path/to/sam2_config.yaml \
+python3 -m motionjson.cli extract input.mp4 \
+  --out out/sam2-auto \
+  --discovery-provider auto_object_proposals \
+  --discovery-config '{"providerPreference":"sam2-local","qualityPreset":"clean"}' \
+  --mask-provider mock
+```
+
+The adapter:
+
+- lazy-imports `sam2.automatic_mask_generator` only after checkpoint/config
+  paths are supplied;
+- samples keyframes from the selected discovery preset;
+- filters proposals by area, stability, whole-frame/background-like shape, and
+  duplicate overlap;
+- writes accepted and rejected candidates into `candidates.json` with preview
+  artifacts under `discovery/`;
+- uses SAM2 video propagation for accepted candidate mask sequences when the
+  local predictor is available.
+
+This is object proposal and tracking infrastructure, not semantic discovery.
+Text or concept search still needs a detector/SAM3-style provider before SAM2
+receives boxes or masks.
+
 ## Hosted SAM2 Contract
 
 The hosted provider lives at `motionjson.providers.sam2.HostedSAM2SegmentationProvider`. It accepts an injected client or JSON transport and makes no network calls by default.

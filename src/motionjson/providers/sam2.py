@@ -22,6 +22,152 @@ class JsonTransport(Protocol):
 
 
 @dataclass
+class LocalSAM2AutomaticMaskProposalBackend:
+    """Optional SAM2 automatic mask proposal backend with lazy imports.
+
+    The class is deliberately small: tests can inject a fake generator or
+    generator_factory, while real local runs only import SAM2 after checkpoint
+    and config paths have been supplied.
+    """
+
+    checkpoint: str | Path | None = None
+    model_config: str | Path | None = None
+    device: str = "cpu"
+    generator: Any | None = None
+    generator_factory: Any | None = None
+    predictor_factory: Any | None = None
+    provider_name: str = "sam2-local"
+    _generator: Any | None = field(default=None, init=False)
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any]) -> "LocalSAM2AutomaticMaskProposalBackend":
+        checkpoint = (
+            config.get("sam2Checkpoint")
+            or config.get("sam2_checkpoint")
+            or config.get("checkpoint")
+            or os.environ.get("SAM2_LOCAL_CHECKPOINT")
+        )
+        model_config = (
+            config.get("sam2ModelConfig")
+            or config.get("sam2_model_config")
+            or config.get("model_config")
+            or os.environ.get("SAM2_LOCAL_CONFIG")
+        )
+        device = str(config.get("sam2Device") or config.get("sam2_device") or config.get("device") or os.environ.get("SAM2_LOCAL_DEVICE") or "cpu")
+        return cls(checkpoint=checkpoint, model_config=model_config, device=device)
+
+    def propose_masks(self, frame_rgb: np.ndarray, *, frame_index: int, config: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
+        generator = self._ensure_generator()
+        if hasattr(generator, "generate"):
+            records = generator.generate(frame_rgb)
+        elif hasattr(generator, "propose_masks"):
+            records = generator.propose_masks(frame_rgb, frame_index=frame_index, config=config)
+        elif callable(generator):
+            try:
+                records = generator(frame_rgb, frame_index=frame_index, config=config)
+            except TypeError:
+                records = generator(frame_rgb)
+        else:
+            raise ProviderExecutionError("SAM2 automatic mask generator must expose generate(), propose_masks(), or be callable.")
+        return self._normalize_records(records)
+
+    def track_candidate(
+        self,
+        video: Any,
+        *,
+        frame_index: int,
+        object_id: str,
+        box: tuple[int, int, int, int] | None,
+        mask: np.ndarray,
+        config: Mapping[str, Any],
+    ) -> Sequence[np.ndarray]:
+        """Propagate a selected/proposed candidate with SAM2 video prediction."""
+
+        prompt_box = box or _mask_box(mask)
+        provider = LocalSAM2SegmentationProvider(
+            source_video=getattr(video, "path", ""),
+            checkpoint=self.checkpoint,
+            model_config=self.model_config,
+            device=str(config.get("sam2Device") or config.get("sam2_device") or self.device or "cpu"),
+            prompt_frame_index=frame_index,
+            object_id=object_id,
+            prompt_box=prompt_box,
+            predictor_factory=self.predictor_factory,
+        )
+        provider.prepare(video.info)
+        masks: list[np.ndarray] = []
+        try:
+            for frame in video.frames:
+                frame_bgr = np.ascontiguousarray(frame.rgb[:, :, ::-1])
+                masks.append(provider.segment(int(getattr(frame, "index", 0)), frame_bgr))
+        finally:
+            provider.close()
+        return masks
+
+    def _ensure_generator(self) -> Any:
+        if self.generator is not None:
+            return self.generator
+        if self._generator is not None:
+            return self._generator
+        if self.generator_factory is None:
+            self.generator_factory = self._default_generator_factory()
+        self._generator = self.generator_factory()
+        return self._generator
+
+    def _default_generator_factory(self) -> Any:
+        checkpoint = str(self.checkpoint or os.environ.get("SAM2_LOCAL_CHECKPOINT") or "")
+        model_config = str(self.model_config or os.environ.get("SAM2_LOCAL_CONFIG") or "")
+        if not checkpoint or not model_config:
+            raise ProviderConfigError(
+                "sam2-local automatic proposals require SAM2_LOCAL_CHECKPOINT and SAM2_LOCAL_CONFIG "
+                "or discovery.config.sam2Checkpoint/sam2ModelConfig. Heavy SAM2 dependencies remain optional."
+            )
+        if not Path(checkpoint).exists():
+            raise ProviderConfigError("Configured SAM2 checkpoint path does not point to an existing file.")
+        if not Path(model_config).exists():
+            raise ProviderConfigError("Configured SAM2 model config path does not point to an existing file.")
+        try:
+            from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator  # type: ignore
+            from sam2.build_sam import build_sam2  # type: ignore
+        except ImportError as exc:
+            raise ProviderConfigError(
+                "SAM2 automatic proposals require the optional sam2 package with automatic mask generation support. "
+                "Install SAM2/torch separately or use discovery.config.mock=true."
+            ) from exc
+
+        def factory() -> Any:
+            model = build_sam2(model_config, checkpoint, device=self.device)
+            return SAM2AutomaticMaskGenerator(model)
+
+        return factory
+
+    @staticmethod
+    def _normalize_records(records: Any) -> list[Mapping[str, Any]]:
+        if records is None:
+            return []
+        if isinstance(records, Mapping):
+            nested = records.get("masks")
+            if nested is None:
+                nested = records.get("proposals")
+            if nested is None:
+                return [dict(records)]
+            records = nested
+        if isinstance(records, np.ndarray):
+            return [{"segmentation": records}]
+        if not isinstance(records, Sequence) or isinstance(records, (str, bytes, bytearray)):
+            raise ProviderExecutionError("SAM2 automatic mask generator returned an unsupported response shape.")
+        normalized: list[Mapping[str, Any]] = []
+        for item in records:
+            if isinstance(item, Mapping):
+                normalized.append(dict(item))
+            elif isinstance(item, np.ndarray):
+                normalized.append({"segmentation": item})
+            else:
+                raise ProviderExecutionError("SAM2 automatic mask records must be mappings or mask arrays.")
+        return normalized
+
+
+@dataclass
 class LocalSAM2SegmentationProvider:
     """SAM2-compatible local video segmentation provider with optional imports."""
 
@@ -540,6 +686,19 @@ class _UrlLibJsonTransport:
             return json.loads(response.read().decode("utf-8"))
 
 
+def _mask_box(mask: np.ndarray) -> tuple[int, int, int, int]:
+    normalized = normalize_binary_mask(mask)
+    ys, xs = np.where(normalized > 0)
+    if not len(xs) or not len(ys):
+        height, width = normalized.shape[:2]
+        return 0, 0, max(1, width), max(1, height)
+    x0 = int(xs.min())
+    y0 = int(ys.min())
+    x1 = int(xs.max()) + 1
+    y1 = int(ys.max()) + 1
+    return x0, y0, max(1, x1 - x0), max(1, y1 - y0)
+
+
 def _to_numpy(value: Any) -> np.ndarray:
     if hasattr(value, "detach"):
         value = value.detach()
@@ -552,3 +711,4 @@ def _to_numpy(value: Any) -> np.ndarray:
 
 SAM2LocalSegmentationProvider = LocalSAM2SegmentationProvider
 SAM2HostedSegmentationProvider = HostedSAM2SegmentationProvider
+SAM2LocalAutomaticMaskProposalBackend = LocalSAM2AutomaticMaskProposalBackend

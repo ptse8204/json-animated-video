@@ -15,17 +15,16 @@ provider receives boxes or masks.
   boxes, or mask references. No model is required.
 - `auto_object_proposals`: default API-first object discovery mode. It uses
   typed quality presets so a clean run can propose fewer reviewable candidates
-  before users select objects for tracking. Current execution remains
-  capability-gated and mock-only until real automatic proposal adapters are
-  wired.
+  before users select objects for tracking. It remains mock/no-model by
+  default, with an optional `sam2-local` automatic proposal path when SAM2,
+  torch, checkpoint, and model config are configured.
 - `motion_foreground`: use for simple footage where moving objects separate
   from a mostly stable background. This CPU mode writes generated mask
   sequences under `discovery/motion_foreground/`.
 - `external_masks`: use when masks or boxes already exist from another local
   tool. It imports one candidate per object mask directory or manifest entry.
-- `sam_auto_masks`: scaffold for automatic keyframe mask proposals. It is
-  capability-gated behind optional SAM2/torch/model configuration and has a
-  mock mode for tests.
+- `sam_auto_masks`: automatic keyframe mask proposals. It is capability-gated
+  behind optional SAM2/torch/model configuration and has a mock mode for tests.
 - `text_detector`: scaffold for open-vocabulary detection. Missing detector
   packages or model paths are capability warnings; mock mode can produce local
   boxes for UI smoke checks.
@@ -50,12 +49,12 @@ provider receives boxes or masks.
 | Workflow | CLI support | Local UI job support |
 | --- | --- | --- |
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
-| `auto_object_proposals` | Runnable when `discovery.config.mock` is `true`, with clean, balanced, and maximum-recall presets. It writes deterministic masks, candidate thumbnails, mask previews, rejected candidates, and API review metadata. Real SAM2/SAM3 execution remains capability-gated until adapter phases. | Runnable in mock mode through the local worker when `discovery.config.mock` is `true`; review shows API candidates, preview artifact IDs, rejection reasons, tracks for accepted mock candidates, diagnostics, and export state. |
+| `auto_object_proposals` | Runnable when `discovery.config.mock` is `true`, with clean, balanced, and maximum-recall presets. With `providerPreference: "sam2-local"` or `"auto"`, it can use configured local SAM2 automatic masks for keyframe proposals and SAM2 propagation for accepted candidate mask sequences. SAM3 remains a later optional provider family. | Runnable in mock mode through the local worker when `discovery.config.mock` is `true`; with local SAM2 configured, the worker can run API-backed SAM2 proposals and return the same review candidate shape. |
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
-| `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks need a SAM2-style backend. | Runnable in mock mode through the local worker; review shows candidate proposals, track filtering, fallback diagnostics, and merge suggestions. |
+| `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks use the same optional local SAM2 automatic proposal adapter. | Runnable in mock mode through the local worker; with local SAM2 configured, review shows SAM2 proposal candidates, track filtering, fallback diagnostics, and merge suggestions. |
 
 Candidate-producing workflows write `candidates.json`, which is registered as a
 `candidate_summary` artifact. `/api/jobs/JOB_ID/review` and
@@ -167,6 +166,30 @@ started from `--mock`: keyframe settings and proposal filters are recorded in
 `candidates.json`, generated masks feed the shared tracker, and
 `tracks.json` carries filter/dedupe summaries for review.
 
+Local SAM2 automatic proposal run:
+
+```bash
+SAM2_LOCAL_CHECKPOINT=/path/to/sam2.pt \
+SAM2_LOCAL_CONFIG=/path/to/sam2.yaml \
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam2_auto_objects \
+  --discovery-provider auto_object_proposals \
+  --discovery-config '{"providerPreference":"sam2-local","qualityPreset":"clean"}' \
+  --mask-provider mock \
+  --max-frames 12 \
+  --min-area 1
+```
+
+The SAM2 adapter samples keyframes according to the selected preset, calls
+SAM2 automatic mask generation, filters by area/stability/duplicate overlap,
+writes accepted and rejected candidate artifacts, and uses SAM2 video
+propagation for accepted candidate mask sequences when the local predictor is
+available. If propagation is not exposed by an injected test backend, the
+candidate warning explains that selected tracking will use the keyframe seed
+mask sequence. Missing `sam2`, `torch`, checkpoint, config, or device support
+is surfaced in diagnostics and job failure logs; MotionJSON does not silently
+fall back to pretending SAM2 ran.
+
 API-first clean object proposal config:
 
 ```json
@@ -230,9 +253,10 @@ python3 -m motionjson.cli backend diagnostics --json
 ```
 
 `manual_prompt`, `motion_foreground`, and `external_masks` are no-model local
-providers when base dependencies are installed. `auto_object_proposals`,
-`sam_auto_masks`, `text_detector`, and `class_detector` are scaffolded
-heavy-provider surfaces: they report `missing_dependency`, `missing_model`, or
-`not_configured` until a real backend adapter is wired and configured. Those
+providers when base dependencies are installed. `auto_object_proposals` and
+`sam_auto_masks` report runnable only when the optional SAM2 automatic mask
+generator, torch, checkpoint, and model config are present; otherwise they
+report `missing_dependency`, `missing_model`, or `not_configured`. `text_detector`
+and `class_detector` remain scaffolded until detector adapters are wired. Those
 warnings do not break the base CLI, and mock mode remains available for local
 smoke checks.

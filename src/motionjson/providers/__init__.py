@@ -32,6 +32,7 @@ from .discovery import (
     ManualPromptDiscoveryProvider,
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
+    SAM2AutomaticProposalDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     class_detector_presets,
@@ -61,7 +62,14 @@ from .pipeline_adapters import (
     ObjectSpecInitialMaskProvider,
     PerFrameMaskVideoTracker,
 )
-from .sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider, SAM2HostedSegmentationProvider, SAM2LocalSegmentationProvider
+from .sam2 import (
+    HostedSAM2SegmentationProvider,
+    LocalSAM2AutomaticMaskProposalBackend,
+    LocalSAM2SegmentationProvider,
+    SAM2HostedSegmentationProvider,
+    SAM2LocalAutomaticMaskProposalBackend,
+    SAM2LocalSegmentationProvider,
+)
 from .segmentation import FallbackSegmentationProvider, MaskProviderSegmentationAdapter, SegmentationMaskProvider, as_segmentation_provider
 
 __all__ = [
@@ -80,6 +88,7 @@ __all__ = [
     "IdentityTrackLinker",
     "LLMProvider",
     "LocalSAM2SegmentationProvider",
+    "LocalSAM2AutomaticMaskProposalBackend",
     "LocalStorageProvider",
     "MaskCache",
     "MaskProvider",
@@ -114,6 +123,8 @@ __all__ = [
     "ProviderAttempt",
     "RenderProvider",
     "SAM2HostedSegmentationProvider",
+    "SAM2LocalAutomaticMaskProposalBackend",
+    "SAM2AutomaticProposalDiscoveryProvider",
     "SAM2LocalSegmentationProvider",
     "SamAutoMasksDiscoveryProvider",
     "SegmentationMaskProvider",

@@ -96,10 +96,10 @@ or detector model before the real backend can run.
 | `manual_prompt` | Yes | No | No | No | One known object marked by a point, box, or imported mask. | Loose prompts can select a wall, floor, or whole-frame region. |
 | `motion_foreground` | Yes | No | No | No | Discovering moving regions before tracking. | Static objects are missed and camera movement can create false candidates. |
 | `external_masks` | Yes | No | No | No | Multi-object extraction from prepared mask folders or manifests. | Frame-count mismatches and path mistakes can leave tracks incomplete. |
-| `auto_object_proposals` | Mock/no-model path today; future real adapters gated | Future backend dependent | Yes for real backend | No | Default clean candidate gallery before selected-object tracking. | Clean misses small objects; recall/Trace Everything can be noisy and review-heavy. |
+| `auto_object_proposals` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Default clean candidate gallery before selected-object tracking. | Clean misses small objects; recall/Trace Everything can be noisy; missing SAM2 package/checkpoint/config blocks real proposals. |
 | `sam2-local` | Local once installed | Recommended for real use | Yes | No | Promptable local segmentation/tracking with SAM2-style models. | Missing SAM2 package, checkpoint, config, CUDA, or an overly broad prompt. |
 | `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
-| `sam_auto_masks` | Mock only today | Future backend dependent | Yes for real backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
+| `sam_auto_masks` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
 | `text_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Text-guided candidate boxes before segmentation. | Missing detector package/model or semantically wrong boxes. |
 | `class_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Known classes such as people, vehicles, or custom local labels. | Missing YOLO-style backend, too many candidates, or wrong class selection. |
 | `openrouter` | No | No local GPU | No local weights | Yes | Optional LLM/VLM reasoning or label help. | Missing key/base URL, hosted cost/privacy concerns, and no pixel segmentation capability. |
@@ -123,6 +123,11 @@ Optional SAM2/hosted providers:
   `HOSTED_SEGMENTATION_API_KEY`, and extraction still requires explicit network
   opt-in. Diagnostics may show `configured: true` while `runnable: false` until
   that opt-in/client path is provided.
+- `auto_object_proposals` and `sam_auto_masks`: local SAM2 automatic proposal
+  diagnostics require the `sam2.automatic_mask_generator` module, torch, and
+  existing `SAM2_LOCAL_CHECKPOINT` / `SAM2_LOCAL_CONFIG` paths. They report
+  `available_cpu_only` when configured without CUDA, because CPU execution is
+  possible but expected to be slower.
 
 Reasoning provider:
 
@@ -151,11 +156,12 @@ Discovery providers:
 
 - `manual_prompt`: no-model user point/box/mask candidate input.
 - `auto_object_proposals`: API-first automatic object proposals with clean,
-  balanced, maximum-recall, and Trace Everything presets. Real model execution
-  is capability-gated; mock proposal routing remains for smoke checks.
+  balanced, maximum-recall, and Trace Everything presets. Mock proposal routing
+  remains for smoke checks; local SAM2 automatic proposals become runnable only
+  when optional SAM2 diagnostics pass.
 - `motion_foreground`: no-model CPU frame-difference moving-region discovery.
 - `external_masks`: no-model import of mask directories or manifests.
-- `sam_auto_masks`: optional automatic-mask scaffold; unavailable until SAM2
+- `sam_auto_masks`: optional automatic-mask proposals; unavailable until SAM2
   automatic-mask dependencies and model paths are configured.
 - `text_detector`: optional open-vocabulary detector scaffold. Text prompts
   become detector candidates first and are not routed directly to SAM2.

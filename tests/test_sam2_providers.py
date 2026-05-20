@@ -1,10 +1,12 @@
+import builtins
+
 import numpy as np
 import pytest
 
 from motionjson.cli import build_parser, build_provider
 from motionjson.providers.base import BatchSegmentationRequest, ProviderConfigError, ProviderExecutionError
 from motionjson.providers.mask_cache import MaskCache
-from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
+from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2AutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
 from motionjson.video import VideoInfo
 
 
@@ -139,6 +141,50 @@ def test_local_sam2_provider_lazy_import_failure_is_config_error():
 
     with pytest.raises(ProviderConfigError, match="sam2-local requires"):
         provider.prepare(VideoInfo(width=8, height=6, source_fps=12, sample_fps=12, total_source_frames=3))
+
+
+def test_local_sam2_auto_proposal_backend_uses_injected_generator_without_checkpoint():
+    class FakeGenerator:
+        def generate(self, frame_rgb):
+            mask = np.zeros(frame_rgb.shape[:2], dtype=np.uint8)
+            mask[1:3, 2:4] = 255
+            return [{"segmentation": mask, "bbox": [2, 1, 2, 2], "predicted_iou": 0.9}]
+
+    backend = LocalSAM2AutomaticMaskProposalBackend(generator=FakeGenerator())
+
+    records = backend.propose_masks(np.zeros((4, 5, 3), dtype=np.uint8), frame_index=0, config={})
+
+    assert len(records) == 1
+    assert records[0]["bbox"] == [2, 1, 2, 2]
+
+
+def test_local_sam2_auto_proposal_backend_validates_missing_model_paths(tmp_path):
+    backend = LocalSAM2AutomaticMaskProposalBackend(
+        checkpoint=tmp_path / "missing-checkpoint.pt",
+        model_config=tmp_path / "missing-config.yaml",
+    )
+
+    with pytest.raises(ProviderConfigError, match="checkpoint path"):
+        backend.propose_masks(np.zeros((4, 5, 3), dtype=np.uint8), frame_index=0, config={})
+
+
+def test_local_sam2_auto_proposal_backend_lazy_import_failure_after_valid_paths(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam2.pt"
+    model_config = tmp_path / "sam2.yaml"
+    checkpoint.write_text("checkpoint")
+    model_config.write_text("config")
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("sam2"):
+            raise ImportError("test missing sam2")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    backend = LocalSAM2AutomaticMaskProposalBackend(checkpoint=checkpoint, model_config=model_config)
+
+    with pytest.raises(ProviderConfigError, match="optional sam2 package"):
+        backend.propose_masks(np.zeros((4, 5, 3), dtype=np.uint8), frame_index=0, config={})
 
 
 class FakeHostedClient:

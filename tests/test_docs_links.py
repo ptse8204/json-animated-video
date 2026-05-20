@@ -122,6 +122,23 @@ def test_readme_links_to_core_docs_spine():
         assert link in readme
 
 
+def test_od06_sam2_automatic_proposal_docs_are_truthful():
+    discovery = read("docs/discovery_providers.md")
+    sam2 = read("docs/sam2_segmentation.md")
+    capabilities_doc = read("docs/provider_capabilities.md")
+
+    for text in (discovery, sam2):
+        assert "SAM2_LOCAL_CHECKPOINT" in text
+        assert "SAM2_LOCAL_CONFIG" in text
+        lowered = text.lower()
+        assert "automatic mask" in lowered or "automatic-mask" in lowered
+        assert "propagation" in text.lower()
+
+    assert "LocalSAM2AutomaticMaskProposalBackend" in sam2
+    assert "sam2.automatic_mask_generator" in capabilities_doc
+    assert "does not silently" in discovery
+
+
 def test_important_markdown_local_links_resolve():
     failures: list[str] = []
     for relative in IMPORTANT_DOCS:

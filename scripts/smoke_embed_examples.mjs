@@ -165,6 +165,10 @@ function connectCdp(webSocketDebuggerUrl, onEvent = null) {
   };
 }
 
+function isIgnorableBrowserLog(text) {
+  return text.includes("Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true.");
+}
+
 async function waitForEmbed(cdp) {
   const deadline = Date.now() + 12000;
   let last = null;
@@ -265,7 +269,10 @@ async function run() {
         browserErrors.push(event.params?.exceptionDetails?.text || "Runtime exception");
       }
       if (event.method === "Log.entryAdded" && ["error", "warning"].includes(event.params?.entry?.level)) {
-        browserErrors.push(event.params.entry.text || `Log ${event.params.entry.level}`);
+        const text = event.params.entry.text || `Log ${event.params.entry.level}`;
+        if (!isIgnorableBrowserLog(text)) {
+          browserErrors.push(text);
+        }
       }
     });
     await cdp.send("Runtime.enable");

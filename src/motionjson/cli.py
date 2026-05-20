@@ -27,6 +27,7 @@ from .providers.discovery import (
     ManualPromptDiscoveryProvider,
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
+    SAM2AutomaticProposalDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     object_specs_from_candidates,
@@ -363,6 +364,12 @@ def build_discovery_provider(args: argparse.Namespace):
         config["max_candidates"] = args.discovery_max_candidates
     if args.discovery_min_area is not None:
         config["min_area"] = args.discovery_min_area
+    if getattr(args, "sam2_checkpoint", None) and not any(key in config for key in ("sam2Checkpoint", "sam2_checkpoint", "checkpoint")):
+        config["sam2Checkpoint"] = args.sam2_checkpoint
+    if getattr(args, "sam2_model_config", None) and not any(key in config for key in ("sam2ModelConfig", "sam2_model_config", "model_config")):
+        config["sam2ModelConfig"] = args.sam2_model_config
+    if getattr(args, "sam2_device", None) and not any(key in config for key in ("sam2Device", "sam2_device", "device")):
+        config["sam2Device"] = args.sam2_device
     if mode == "manual_prompt":
         prompts = list(config.get("prompts", []) or [])
         if args.prompt_point is not None:
@@ -400,7 +407,10 @@ def build_discovery_provider(args: argparse.Namespace):
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), config
     if mode == "auto_object_proposals":
-        return MockObjectDiscoveryProvider(), config
+        provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "auto")
+        if config.get("mock") or provider_preference == "mock":
+            return MockObjectDiscoveryProvider(), config
+        return SAM2AutomaticProposalDiscoveryProvider(), config
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), config
     if mode == "class_detector":

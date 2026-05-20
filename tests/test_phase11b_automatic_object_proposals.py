@@ -165,5 +165,5 @@ def test_phase11b_local_ui_sam_auto_real_path_surfaces_failure_diagnostics(tmp_p
     kinds = {artifact["kind"] for artifact in artifact_payload["artifacts"]}
     assert {"failure_diagnostics", "job_logs", "provider_diagnostics"}.issubset(kinds)
     assert artifact_payload["review"]["failure"]["reasonCode"] == "provider_unavailable"
-    assert "real discovery adapters remain capability-gated" in artifact_body
+    assert "SAM2_LOCAL_CHECKPOINT" in artifact_body
     assert "storage_key" not in artifact_body

@@ -280,6 +280,7 @@ generate a Remotion component today.
 | `threshold` | Yes | Simple color demos | Good for the red-ball example. |
 | `motion` / `motion_foreground` | Yes | Moving objects on simple backgrounds | CPU-friendly, rough by design. |
 | `external` / `external_masks` | Yes | Masks from another tool | Import mask PNG/JPG/WebP sequences. |
+| `auto_object_proposals` | Mock or optional SAM2 | Clean candidate gallery before selected tracking | Mock mode is no-model; real local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
 | `sam2-local` | Optional | Promptable segmentation/tracking | Requires SAM2 package, torch, checkpoint, and config. |
 | `sam2-hosted` | Optional | Explicit hosted segmentation experiments | Requires endpoint/auth and opt-in network use. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
@@ -296,9 +297,9 @@ python3 -m motionjson.cli backend diagnostics --json
 Diagnostics now separate `installed`, `configured`, and `runnable`. A provider
 can be configured but not runnable, for example hosted segmentation with
 credentials present but no explicit network opt-in. The local UI worker starts
-`mock`, `threshold`, `motion`, and `external` jobs, plus mock `text_detector`,
-`class_detector`, and `sam_auto_masks` discovery jobs that feed generated mask
-handoffs through the shared review/export path.
+`mock`, `threshold`, `motion`, and `external` jobs, plus mock discovery jobs
+and configured local SAM2 automatic proposals that feed generated mask handoffs
+through the shared review/export path.
 
 The Local UI Provider settings panel lets users bring their own hosted keys and
 choose provider models without editing shell files. Raw keys are stored only in

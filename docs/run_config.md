@@ -118,6 +118,13 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   model files, GPU, credentials, or network access. The mock provider writes
   deterministic accepted and rejected candidates plus mask/preview artifacts so
   API and UI review flows can be tested in CI.
+- With `discovery.config.providerPreference: "sam2-local"` or `"auto"` and no
+  mock flag, `auto_object_proposals` uses the optional local SAM2 automatic
+  proposal adapter. The adapter reads `SAM2_LOCAL_CHECKPOINT`,
+  `SAM2_LOCAL_CONFIG`, and optional `SAM2_LOCAL_DEVICE`, or the additive config
+  keys `sam2Checkpoint`, `sam2ModelConfig`, and `sam2Device`. Missing SAM2,
+  torch, checkpoint, config, or automatic-mask support fails clearly in
+  diagnostics and job logs.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use

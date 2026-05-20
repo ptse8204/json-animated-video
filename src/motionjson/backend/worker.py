@@ -25,11 +25,12 @@ from motionjson.exporters.website_package import export_website_package
 from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
 from motionjson.masks import ExternalMaskProvider, MotionMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
-from motionjson.providers.base import StorageProvider
+from motionjson.providers.base import ProviderConfigError, StorageProvider
 from motionjson.providers.discovery import (
     ClassDetectorDiscoveryProvider,
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
+    SAM2AutomaticProposalDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     object_specs_from_candidates,
@@ -247,13 +248,19 @@ def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payl
     }
 
 
-def _ui_discovery_provider(mode: str) -> tuple[Any, str, bool] | None:
+def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> tuple[Any, str, bool] | None:
+    discovery_config = dict(config or {})
     if mode == "auto_object_proposals":
-        return MockObjectDiscoveryProvider(), "automatic object proposal mock discovery configured", True
+        provider_preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or "auto")
+        if discovery_config.get("mock") or provider_preference == "mock":
+            return MockObjectDiscoveryProvider(), "automatic object proposal mock discovery configured", True
+        return SAM2AutomaticProposalDiscoveryProvider(), "SAM2 automatic object proposals configured", False
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), "text detector mock discovery configured", True
     if mode == "sam_auto_masks":
-        return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
+        if discovery_config.get("mock"):
+            return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
+        return SamAutoMasksDiscoveryProvider(), "SAM2 automatic mask proposals configured", False
     if mode == "class_detector":
         return ClassDetectorDiscoveryProvider(), "class detector mock discovery configured", True
     if mode == "motion_foreground":
@@ -309,10 +316,18 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
 
         try:
             discovery_mode = run_config.discovery.mode if run_config is not None else None
-            discovery_provider = _ui_discovery_provider(discovery_mode or "")
+            discovery_config = dict(run_config.discovery.config) if run_config is not None else {}
+            if run_config is not None:
+                sam2_config = run_config.provider.sam2
+                if sam2_config.checkpoint and not any(key in discovery_config for key in ("sam2Checkpoint", "sam2_checkpoint", "checkpoint")):
+                    discovery_config["sam2Checkpoint"] = sam2_config.checkpoint
+                if sam2_config.model_config and not any(key in discovery_config for key in ("sam2ModelConfig", "sam2_model_config", "model_config")):
+                    discovery_config["sam2ModelConfig"] = sam2_config.model_config
+                if sam2_config.device and not any(key in discovery_config for key in ("sam2Device", "sam2_device", "device")):
+                    discovery_config["sam2Device"] = sam2_config.device
+            discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
             if discovery_provider is not None:
                 provider, message, requires_mock = discovery_provider
-                discovery_config = dict(run_config.discovery.config)
                 if requires_mock and not discovery_config.get("mock"):
                     raise RuntimeError(
                         f"local UI {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
@@ -385,6 +400,10 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                 )
         except JobCanceled as exc:
             job_run.cancel(str(exc))
+            _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
+            raise
+        except ProviderConfigError as exc:
+            job_run.fail(exc, reason_code="provider_unavailable", user_message=str(exc))
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise
         except Exception as exc:

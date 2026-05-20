@@ -117,6 +117,12 @@ def test_capability_report_marks_explicit_missing_sam2_model_paths(tmp_path, mon
     assert sam2_local["status"] == "missing_model"
     assert "Configured sam2 checkpoint path does not point to an existing file." in sam2_local["reasons"]
     assert "Configured sam2 model config path does not point to an existing file." in sam2_local["reasons"]
+    for name in ("auto_object_proposals", "sam_auto_masks"):
+        provider = _provider(report, name)
+        assert provider["available"] is False
+        assert provider["status"] == "missing_model"
+        assert "Configured sam2 checkpoint path does not point to an existing file." in provider["reasons"]
+        assert "Configured sam2 model config path does not point to an existing file." in provider["reasons"]
 
 
 def test_backend_diagnostics_capability_cli_outputs_json_without_initializing_backend(tmp_path, monkeypatch, capsys) -> None:
@@ -277,7 +283,7 @@ def test_discovery_heavy_providers_report_missing_optional_deps_without_cuda(mon
     assert _provider(report, "class_detector")["status"] == "missing_dependency"
 
 
-def test_scaffolded_heavy_discovery_modes_do_not_report_runnable_until_backend_wired(tmp_path, monkeypatch) -> None:
+def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(tmp_path, monkeypatch) -> None:
     text_model = tmp_path / "text-detector.bin"
     class_model = tmp_path / "class-detector.pt"
     sam2_checkpoint = tmp_path / "sam2.pt"
@@ -303,7 +309,17 @@ def test_scaffolded_heavy_discovery_modes_do_not_report_runnable_until_backend_w
 
     report = capabilities.build_capability_report()
 
-    for name in ("auto_object_proposals", "sam_auto_masks", "text_detector", "class_detector"):
+    for name in ("auto_object_proposals", "sam_auto_masks"):
+        provider = _provider(report, name)
+        assert provider["available"] is True
+        assert provider["runnable"] is True
+        assert provider["status"] == "ready"
+        assert provider["needsModelPath"] is True
+        assert provider["modelPaths"]
+        assert "sam2_automatic_mask_generation" in provider["supports"]
+        assert provider["metadata"]["sam2AutomaticProposals"] is True
+
+    for name in ("text_detector", "class_detector"):
         provider = _provider(report, name)
         assert provider["available"] is False
         assert provider["runnable"] is False

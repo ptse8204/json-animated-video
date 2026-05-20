@@ -14,8 +14,9 @@ from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, lis
 from motionjson.backend.projects import create_project
 from motionjson.backend.queue import mark_failed
 from motionjson.backend.usage import summarize_usage
-from motionjson.backend.worker import validate_extract_provider_policy, worker_once
+from motionjson.backend.worker import _ui_discovery_provider, validate_extract_provider_policy, worker_once
 from motionjson.backend.models import ProviderPolicyError
+from motionjson.providers.discovery import MockObjectDiscoveryProvider, SAM2AutomaticProposalDiscoveryProvider, SamAutoMasksDiscoveryProvider
 from motionjson.providers.local_storage import LocalStorageProvider
 
 
@@ -31,6 +32,26 @@ def backend(tmp_path):
 
 def demo_video() -> Path:
     return Path(__file__).resolve().parents[1] / "examples" / "demo_red_ball.mp4"
+
+
+def test_worker_routes_non_mock_auto_discovery_to_sam2_adapter():
+    provider, message, requires_mock = _ui_discovery_provider(
+        "auto_object_proposals",
+        {"providerPreference": "sam2-local"},
+    )
+    mock_provider, _mock_message, mock_requires = _ui_discovery_provider(
+        "auto_object_proposals",
+        {"mock": True},
+    )
+    sam_auto_provider, _sam_message, sam_requires = _ui_discovery_provider("sam_auto_masks", {})
+
+    assert isinstance(provider, SAM2AutomaticProposalDiscoveryProvider)
+    assert "SAM2 automatic" in message
+    assert requires_mock is False
+    assert isinstance(mock_provider, MockObjectDiscoveryProvider)
+    assert mock_requires is True
+    assert isinstance(sam_auto_provider, SamAutoMasksDiscoveryProvider)
+    assert sam_requires is False
 
 
 def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):

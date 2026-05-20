@@ -52,8 +52,10 @@ Phase 5 adds discovery providers that can feed this same pipeline:
 - `motion_foreground` and `external_masks` can produce candidates with
   generated or imported mask directories, so they run through the existing
   mask-tracking/vectorization/export path without GPU dependencies.
-- `text_detector`, `class_detector`, and `sam_auto_masks` are scaffolded behind
-  capability checks and expose mock modes for local UI/test runs.
+- `sam_auto_masks` can use the optional local SAM2 automatic-mask adapter when
+  SAM2/torch/model paths are configured, and still exposes mock mode for local
+  UI/test runs. `text_detector` and `class_detector` remain scaffolded behind
+  capability checks.
 - `manual_prompt` generalizes point/box/mask references for one or more
   user-created objects.
 

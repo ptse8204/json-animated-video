@@ -17,6 +17,7 @@ from motionjson.providers import (
     ManualPromptDiscoveryProvider,
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
+    SAM2AutomaticProposalDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     discovery_provider_schemas,
@@ -62,6 +63,80 @@ def write_mask_dir(path: Path, *, x: int, y: int, w: int, h: int, count: int = 3
         mask = np.zeros((32, 40), dtype=np.uint8)
         mask[y : y + h, x : x + w] = 255
         Image.fromarray(mask).save(path / f"mask_{index + 1:06d}.png")
+
+
+class FakeSAM2AutomaticBackend:
+    provider_name = "sam2-local"
+
+    def __init__(self, *, duplicate: bool = False) -> None:
+        self.proposed: list[int] = []
+        self.tracked: list[str] = []
+        self.duplicate = duplicate
+
+    def propose_masks(self, frame_rgb, *, frame_index, config):
+        self.proposed.append(frame_index)
+        x = 5 if self.duplicate else 5 + frame_index * 8
+        accepted = np.zeros(frame_rgb.shape[:2], dtype=np.uint8)
+        accepted[8:18, x : x + 10] = 255
+        tiny = np.zeros(frame_rgb.shape[:2], dtype=np.uint8)
+        tiny[0:1, 0:1] = 255
+        return [
+            {
+                "segmentation": accepted,
+                "bbox": [x, 8, 10, 10],
+                "predicted_iou": 0.91,
+                "stability_score": 0.94,
+            },
+            {
+                "segmentation": tiny,
+                "bbox": [0, 0, 1, 1],
+                "predicted_iou": 0.82,
+                "stability_score": 0.91,
+            },
+        ]
+
+    def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
+        self.tracked.append(object_id)
+        x, y, w, h = box
+        masks = []
+        for offset, _frame in enumerate(video.frames):
+            tracked = np.zeros(mask.shape, dtype=np.uint8)
+            tracked[y : y + h, min(mask.shape[1] - w, x + offset) : min(mask.shape[1], x + offset + w)] = 255
+            masks.append(tracked)
+        return masks
+
+
+class FakeSAM2RecordsBackend:
+    provider_name = "sam2-local"
+
+    def __init__(self, records_by_frame, *, track_result=None) -> None:
+        self.records_by_frame = records_by_frame
+        self.track_result = track_result
+        self.proposed: list[int] = []
+
+    def propose_masks(self, frame_rgb, *, frame_index, config):
+        self.proposed.append(frame_index)
+        return self.records_by_frame.get(frame_index, [])
+
+    def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
+        if self.track_result is not None:
+            return self.track_result
+        return [mask.copy() for _frame in video.frames]
+
+
+class FakeSAM2ProposalOnlyBackend:
+    provider_name = "sam2-local"
+
+    def propose_masks(self, frame_rgb, *, frame_index, config):
+        mask = np.zeros(frame_rgb.shape[:2], dtype=np.uint8)
+        mask[8:18, 5:15] = 255
+        return [{"segmentation": mask, "bbox": [5, 8, 10, 10], "predicted_iou": 0.91, "stability_score": 0.94}]
+
+
+def proposal_mask(*, x: int, y: int, w: int, h: int, width: int = 40, height: int = 32) -> np.ndarray:
+    mask = np.zeros((height, width), dtype=np.uint8)
+    mask[y : y + h, x : x + w] = 255
+    return mask
 
 
 def test_discovery_provider_schemas_cover_phase5_modes():
@@ -226,8 +301,229 @@ def test_class_detector_injected_detector_receives_normalized_preset_config():
 def test_sam_auto_masks_discovery_missing_deps_returns_capability_warning_not_crash():
     provider = SamAutoMasksDiscoveryProvider()
 
-    with pytest.raises(ProviderConfigError, match="sam_auto_masks discovery requires"):
+    with pytest.raises(ProviderConfigError, match="sam2-local automatic proposals require"):
         provider.propose(video_source(), {}, RunContext())
+
+
+def test_sam2_auto_object_proposals_fake_backend_writes_artifacts_and_tracks_masks(tmp_path):
+    backend = FakeSAM2AutomaticBackend()
+    provider = SAM2AutomaticProposalDiscoveryProvider(backend=backend)
+
+    candidates = provider.propose(
+        video_source(count=3),
+        {
+            "providerPreference": "sam2-local",
+            "qualityPreset": "clean",
+            "keyframePolicy": "uniform_interval",
+            "frameInterval": 1,
+            "maxKeyframes": 2,
+            "maxCandidatesPerKeyframe": 2,
+            "maxObjects": 2,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+            "dedupeIou": 0.9,
+            "writeRejectedCandidates": True,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+    accepted = [candidate for candidate in candidates if not candidate.metadata.get("rejectionReason")]
+    rejected = [candidate for candidate in candidates if candidate.metadata.get("rejectionReason")]
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert backend.proposed == [0, 1]
+    assert backend.tracked == [candidate.id for candidate in accepted]
+    assert len(accepted) == 2
+    assert len(rejected) == 2
+    assert rejected[0].metadata["rejectionReason"] == "too_small"
+    assert accepted[0].metadata["providerName"] == "sam2-local"
+    assert accepted[0].metadata["mock"] is False
+    assert accepted[0].metadata["trackingProvider"] == "sam2-local"
+    assert accepted[0].metadata["filters"]["maxKeyframes"] == 2
+    assert (tmp_path / accepted[0].metadata["maskDir"] / "mask_000003.png").exists()
+    assert (tmp_path / accepted[0].metadata["thumbnailArtifactPath"]).exists()
+    assert (tmp_path / accepted[0].metadata["maskPreviewArtifactPath"]).exists()
+    assert [spec.object_id for spec in specs] == [candidate.id for candidate in accepted]
+
+
+def test_sam2_auto_object_proposals_filters_duplicate_masks(tmp_path):
+    backend = FakeSAM2AutomaticBackend(duplicate=True)
+    provider = SAM2AutomaticProposalDiscoveryProvider(backend=backend)
+
+    candidates = provider.propose(
+        video_source(count=2),
+        {
+            "providerPreference": "sam2-local",
+            "frameInterval": 1,
+            "maxKeyframes": 2,
+            "maxCandidatesPerKeyframe": 1,
+            "maxObjects": 4,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+            "dedupeIou": 0.5,
+            "writeRejectedCandidates": True,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert sum(1 for candidate in candidates if not candidate.metadata.get("rejectionReason")) == 1
+    assert any(candidate.metadata.get("rejectionReason") == "duplicate_mask" for candidate in candidates)
+
+
+def test_sam2_auto_object_proposals_explicit_keyframes_are_deduped_and_capped(tmp_path):
+    backend = FakeSAM2AutomaticBackend()
+
+    SAM2AutomaticProposalDiscoveryProvider(backend=backend).propose(
+        video_source(count=4),
+        {
+            "providerPreference": "sam2-local",
+            "keyframes": [0, 0, 3, 1],
+            "maxKeyframes": 2,
+            "maxCandidatesPerKeyframe": 1,
+            "maxObjects": 4,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert backend.proposed == [0, 3]
+
+
+def test_sam2_auto_object_proposals_filters_rejection_reasons_and_caps(tmp_path):
+    stable = {"segmentation": proposal_mask(x=5, y=8, w=10, h=10), "bbox": [5, 8, 10, 10], "score": 0.95, "stability_score": 0.95}
+    unstable = {"segmentation": proposal_mask(x=20, y=8, w=8, h=8), "bbox": [20, 8, 8, 8], "score": 0.94, "stability_score": 0.2}
+    whole = {"segmentation": proposal_mask(x=0, y=0, w=40, h=32), "bbox": [0, 0, 40, 32], "score": 0.93, "stability_score": 0.95}
+    background = {"segmentation": proposal_mask(x=0, y=16, w=40, h=16), "bbox": [0, 16, 40, 16], "score": 0.92, "stability_score": 0.95}
+    over_cap = {"segmentation": proposal_mask(x=28, y=2, w=8, h=8), "bbox": [28, 2, 8, 8], "score": 0.91, "stability_score": 0.95}
+    backend = FakeSAM2RecordsBackend({0: [stable, unstable, whole, background, over_cap]})
+
+    candidates = SAM2AutomaticProposalDiscoveryProvider(backend=backend).propose(
+        video_source(count=1),
+        {
+            "providerPreference": "sam2-local",
+            "keyframes": [0],
+            "maxCandidatesPerKeyframe": 5,
+            "maxObjects": 1,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.8,
+            "stabilityThreshold": 0.7,
+            "dedupeIou": 0.9,
+            "rejectBackgroundLike": True,
+            "writeRejectedCandidates": True,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    reasons = {candidate.metadata.get("rejectionReason") for candidate in candidates}
+    assert None in reasons
+    assert {"unstable_mask", "whole_frame", "background_like", "max_objects"}.issubset(reasons)
+
+
+def test_sam2_auto_object_proposals_write_rejected_false_omits_rejected_records(tmp_path):
+    records = [
+        {"segmentation": proposal_mask(x=5, y=8, w=10, h=10), "bbox": [5, 8, 10, 10], "score": 0.9, "stability_score": 0.9},
+        {"segmentation": proposal_mask(x=0, y=0, w=1, h=1), "bbox": [0, 0, 1, 1], "score": 0.8, "stability_score": 0.9},
+    ]
+    backend = FakeSAM2RecordsBackend({0: records})
+
+    candidates = SAM2AutomaticProposalDiscoveryProvider(backend=backend).propose(
+        video_source(count=1),
+        {
+            "providerPreference": "sam2-local",
+            "keyframes": [0],
+            "maxCandidatesPerKeyframe": 2,
+            "maxObjects": 2,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+            "writeRejectedCandidates": False,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].metadata["rejectionReason"] is None
+
+
+def test_sam2_auto_object_proposals_sorts_before_per_keyframe_cap(tmp_path):
+    low = {"segmentation": proposal_mask(x=5, y=8, w=10, h=10), "bbox": [5, 8, 10, 10], "score": 0.1, "stability_score": 0.9}
+    high = {"segmentation": proposal_mask(x=22, y=8, w=10, h=10), "bbox": [22, 8, 10, 10], "score": 0.95, "stability_score": 0.9}
+    backend = FakeSAM2RecordsBackend({0: [low, high]})
+
+    candidates = SAM2AutomaticProposalDiscoveryProvider(backend=backend).propose(
+        video_source(count=1),
+        {
+            "providerPreference": "sam2-local",
+            "keyframes": [0],
+            "maxCandidatesPerKeyframe": 1,
+            "maxObjects": 2,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].box.to_dict() == {"x": 22, "y": 8, "w": 10, "h": 10}
+
+
+def test_sam2_auto_object_proposals_uses_keyframe_sequence_when_propagation_absent(tmp_path):
+    candidates = SAM2AutomaticProposalDiscoveryProvider(backend=FakeSAM2ProposalOnlyBackend()).propose(
+        video_source(count=2),
+        {
+            "providerPreference": "sam2-local",
+            "keyframes": [0],
+            "maxCandidatesPerKeyframe": 1,
+            "maxObjects": 1,
+            "minMaskArea": 4,
+            "maxMaskAreaRatio": 0.6,
+            "stabilityThreshold": 0.7,
+        },
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert candidates[0].metadata["trackingProvider"] == "keyframe_seed_sequence"
+    assert "keyframe proposal mask sequence" in candidates[0].metadata["warnings"][0]
+    assert (tmp_path / candidates[0].metadata["maskDir"] / "mask_000002.png").exists()
+
+
+def test_sam2_auto_object_proposals_validates_wrong_length_propagation(tmp_path):
+    mask = proposal_mask(x=5, y=8, w=10, h=10)
+    backend = FakeSAM2RecordsBackend(
+        {0: [{"segmentation": mask, "bbox": [5, 8, 10, 10], "score": 0.9, "stability_score": 0.9}]},
+        track_result=[mask],
+    )
+
+    with pytest.raises(ProviderConfigError, match="wrong number of masks"):
+        SAM2AutomaticProposalDiscoveryProvider(backend=backend).propose(
+            video_source(count=2),
+            {
+                "providerPreference": "sam2-local",
+                "keyframes": [0],
+                "maxCandidatesPerKeyframe": 1,
+                "maxObjects": 1,
+                "minMaskArea": 4,
+                "maxMaskAreaRatio": 0.6,
+                "stabilityThreshold": 0.7,
+            },
+            RunContext(out_dir=tmp_path),
+        )
+
+
+def test_sam2_auto_object_proposals_missing_backend_config_is_clear(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM2_LOCAL_CHECKPOINT", raising=False)
+    monkeypatch.delenv("SAM2_LOCAL_CONFIG", raising=False)
+
+    with pytest.raises(ProviderConfigError, match="SAM2_LOCAL_CHECKPOINT"):
+        SAM2AutomaticProposalDiscoveryProvider().propose(
+            video_source(),
+            {"providerPreference": "sam2-local"},
+            RunContext(out_dir=tmp_path),
+        )
 
 
 def test_heavy_detector_missing_deps_are_capability_warnings_not_import_errors():
@@ -464,12 +760,14 @@ def test_auto_object_proposals_mock_cli_writes_candidate_review_artifacts(tmp_pa
     assert validate_output_dir(out, object_id="auto_object_proposals_cand_001").ok
 
 
-def test_auto_object_proposals_cli_requires_explicit_mock_until_real_adapter(tmp_path):
+def test_auto_object_proposals_cli_surfaces_sam2_setup_error_without_mock(tmp_path, monkeypatch):
     video = tmp_path / "tiny.mp4"
     out = tmp_path / "out"
     make_tiny_video(video)
+    monkeypatch.delenv("SAM2_LOCAL_CHECKPOINT", raising=False)
+    monkeypatch.delenv("SAM2_LOCAL_CONFIG", raising=False)
 
-    with pytest.raises(SystemExit, match="mock=true"):
+    with pytest.raises(SystemExit, match="SAM2_LOCAL_CHECKPOINT"):
         cli.main(
             [
                 "extract",
@@ -486,6 +784,33 @@ def test_auto_object_proposals_cli_requires_explicit_mock_until_real_adapter(tmp
                 "1",
             ]
         )
+
+
+def test_auto_object_proposals_cli_passes_sam2_flags_to_discovery_config():
+    parser = cli.build_parser()
+    args = parser.parse_args(
+        [
+            "extract",
+            "input.mp4",
+            "--discovery-provider",
+            "auto_object_proposals",
+            "--discovery-config",
+            '{"providerPreference":"sam2-local"}',
+            "--sam2-checkpoint",
+            "/models/sam2.pt",
+            "--sam2-config",
+            "/models/sam2.yaml",
+            "--sam2-device",
+            "mps",
+        ]
+    )
+
+    _provider, config = cli.build_discovery_provider(args)
+
+    assert isinstance(_provider, SAM2AutomaticProposalDiscoveryProvider)
+    assert config["sam2Checkpoint"] == "/models/sam2.pt"
+    assert config["sam2ModelConfig"] == "/models/sam2.yaml"
+    assert config["sam2Device"] == "mps"
 
 
 def test_initial_mask_adapter_skips_only_rejected_candidates(tmp_path):
