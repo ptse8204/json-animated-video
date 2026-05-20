@@ -13,7 +13,7 @@ dependencies = ["numpy", "opencv-python", "Pillow", "tqdm", "jsonschema>=4.22", 
 [project.optional-dependencies]
 ui = []
 sam2 = ["torch>=2.1", "sam2"]
-sam3 = ["torch>=2.1"]
+sam3 = ["torch>=2.7"]
 detectors = ["groundingdino-py>=0.4"]
 yolo = ["ultralytics>=8"]
 hosted-segmentation = ["requests>=2.31"]

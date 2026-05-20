@@ -16,7 +16,12 @@ from motionjson.backend.queue import mark_failed
 from motionjson.backend.usage import summarize_usage
 from motionjson.backend.worker import _ui_discovery_provider, validate_extract_provider_policy, worker_once
 from motionjson.backend.models import ProviderPolicyError
-from motionjson.providers.discovery import MockObjectDiscoveryProvider, SAM2AutomaticProposalDiscoveryProvider, SamAutoMasksDiscoveryProvider
+from motionjson.providers.discovery import (
+    MockObjectDiscoveryProvider,
+    SAM2AutomaticProposalDiscoveryProvider,
+    SAM3ConceptDiscoveryProvider,
+    SamAutoMasksDiscoveryProvider,
+)
 from motionjson.providers.local_storage import LocalStorageProvider
 
 
@@ -52,6 +57,17 @@ def test_worker_routes_non_mock_auto_discovery_to_sam2_adapter():
     assert mock_requires is True
     assert isinstance(sam_auto_provider, SamAutoMasksDiscoveryProvider)
     assert sam_requires is False
+
+
+def test_worker_routes_non_mock_sam3_discovery_to_local_adapter():
+    provider, message, requires_mock = _ui_discovery_provider("sam3_concept", {"concept": "red ball"})
+    mock_provider, _mock_message, mock_requires = _ui_discovery_provider("sam3_concept", {"mock": True, "concept": "red ball"})
+
+    assert isinstance(provider, SAM3ConceptDiscoveryProvider)
+    assert "SAM3 local concept" in message
+    assert requires_mock is False
+    assert isinstance(mock_provider, SAM3ConceptDiscoveryProvider)
+    assert mock_requires is True
 
 
 def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):

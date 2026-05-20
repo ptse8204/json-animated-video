@@ -73,6 +73,7 @@ from .sam2 import (
     SAM2LocalAutomaticMaskProposalBackend,
     SAM2LocalSegmentationProvider,
 )
+from .sam3 import LocalSAM3DiscoveryBackend, SAM3LocalDiscoveryBackend
 from .segmentation import FallbackSegmentationProvider, MaskProviderSegmentationAdapter, SegmentationMaskProvider, as_segmentation_provider
 
 __all__ = [
@@ -92,6 +93,7 @@ __all__ = [
     "LLMProvider",
     "LocalSAM2SegmentationProvider",
     "LocalSAM2AutomaticMaskProposalBackend",
+    "LocalSAM3DiscoveryBackend",
     "LocalStorageProvider",
     "MaskCache",
     "MaskProvider",
@@ -131,6 +133,7 @@ __all__ = [
     "SAM3AutoMasksDiscoveryProvider",
     "SAM3ConceptDiscoveryProvider",
     "SAM3ExemplarDiscoveryProvider",
+    "SAM3LocalDiscoveryBackend",
     "SAM2LocalSegmentationProvider",
     "SamAutoMasksDiscoveryProvider",
     "SegmentationMaskProvider",

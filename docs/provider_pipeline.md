@@ -55,9 +55,9 @@ Phase 5 adds discovery providers that can feed this same pipeline:
 - `sam_auto_masks` can use the optional local SAM2 automatic-mask adapter when
   SAM2/torch/model paths are configured, and still exposes mock mode for local
   UI/test runs. `sam3_concept`, `sam3_exemplar`, and `sam3_auto_masks` expose
-  mock modes for concept/exemplar/high-recall review flows while real SAM3
-  remains capability-gated. `text_detector` and `class_detector` remain
-  scaffolded behind capability checks.
+  mock modes for concept/exemplar/high-recall review flows, and can use the
+  optional local SAM3 adapter when SAM3 Python/CUDA/model diagnostics pass.
+  `text_detector` and `class_detector` remain scaffolded behind capability checks.
 - `manual_prompt` generalizes point/box/mask references for one or more
   user-created objects.
 

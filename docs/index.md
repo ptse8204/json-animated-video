@@ -90,6 +90,8 @@ vectorization, or export providers:
   `Vectorizer`, and `Exporter` boundaries.
 - [SAM2 segmentation providers](sam2_segmentation.md) documents optional local
   and hosted SAM2 paths, cache behavior, fallback routing, and tests.
+- [SAM3 local discovery](sam3_local.md) documents optional local SAM3 concept,
+  exemplar, and higher-recall discovery behind capability gates.
 - [AI provider architecture](ai_provider_architecture.md) explains provider
   interfaces and local-first boundaries for optional AI integrations.
 - [Benchmark fixtures](benchmark_fixtures.md) and

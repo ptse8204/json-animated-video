@@ -168,9 +168,10 @@ python3 -m pip install -e ".[hosted-sam3]"
 python3 -m pip install -e ".[openrouter]"
 ```
 
-The `sam3` extra prepares the Python environment for local SAM3-style
-diagnostics; real SAM3 execution still requires a compatible SAM3 package/model
-installed separately and a configured `SAM3_LOCAL_MODEL`.
+The `sam3` extra prepares MotionJSON-side local SAM3 diagnostics and adapter
+code. Real SAM3 execution still requires the official SAM3 package installed
+separately, Python 3.12+, CUDA-capable torch, model access, and a configured
+`SAM3_LOCAL_MODEL`.
 
 Then rerun:
 

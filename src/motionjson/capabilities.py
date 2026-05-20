@@ -212,6 +212,17 @@ def cuda_status() -> dict[str, Any]:
     }
 
 
+def sam3_runtime_status() -> dict[str, Any]:
+    minimum = (3, 12)
+    current = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    return {
+        "pythonVersion": current,
+        "requiresPython": ">=3.12",
+        "pythonSupported": sys.version_info >= minimum,
+        "reasons": [] if sys.version_info >= minimum else [f"SAM3 local execution expects Python >=3.12; current Python is {current}."],
+    }
+
+
 def ffmpeg_status() -> dict[str, Any]:
     path = shutil.which("ffmpeg")
     return {
@@ -295,6 +306,7 @@ def provider_capabilities(
     sam2_auto_installed = bool(sam2_installed and _module_available("sam2.automatic_mask_generator"))
     sam3_installed = deps.get("sam3", False)
     torch_info = cuda_status()
+    sam3_runtime = sam3_runtime_status()
     checkpoint = _path_config_status("SAM2_LOCAL_CHECKPOINT", sam2_checkpoint)
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
     hosted_settings = dict((provider_settings or {}).get("sam2-hosted", {}))
@@ -362,12 +374,22 @@ def provider_capabilities(
             None if sam3_installed else "Python module 'sam3' is not importable.",
             *_model_path_reasons(sam3_model, "SAM3 local model", "SAM3_LOCAL_MODEL"),
             None if torch_info["torchInstalled"] else "torch is not installed.",
+            None if sam3_runtime["pythonSupported"] else sam3_runtime["reasons"][0],
+            None if torch_info["available"] else "SAM3 local execution expects a CUDA-compatible GPU; CUDA is not available.",
         )
         if reason
     ]
-    sam3_local_ready = bool(sam3_installed and sam3_model["exists"] and torch_info["torchInstalled"])
+    sam3_local_ready = bool(
+        sam3_installed
+        and sam3_model["exists"]
+        and torch_info["torchInstalled"]
+        and sam3_runtime["pythonSupported"]
+        and torch_info["available"]
+    )
     if not sam3_installed or not torch_info["torchInstalled"]:
         sam3_local_status = "missing_dependency"
+    elif not sam3_runtime["pythonSupported"]:
+        sam3_local_status = "unsupported_runtime"
     elif sam3_model["configured"] and not sam3_model["exists"]:
         sam3_local_status = "missing_model"
     elif not sam3_model["configured"]:
@@ -628,6 +650,7 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_gpu=True,
             needs_model_path=True,
             model_paths=[sam3_model],
             mock_available=True,
@@ -635,10 +658,18 @@ def provider_capabilities(
             checks=[
                 _check("sam3_import", "ok" if sam3_installed else "missing", None if sam3_installed else "sam3 package is not importable"),
                 _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
+                _check(
+                    "python_runtime",
+                    "ok" if sam3_runtime["pythonSupported"] else "unsupported",
+                    f"Python {sam3_runtime['pythonVersion']} detected; SAM3 local expects {sam3_runtime['requiresPython']}.",
+                    sam3_runtime["pythonSupported"],
+                ),
+                _check("cuda", "ok" if torch_info["available"] else "missing", "SAM3 local execution expects CUDA.", torch_info["available"]),
                 _check("model", "ok" if sam3_model["exists"] else "missing", sam3_model["env"], sam3_model["exists"]),
             ],
             metadata={
                 "model": sam3_model,
+                "runtime": sam3_runtime,
                 "uiDescription": "Optional local SAM3 family for concept, exemplar, and higher-recall discovery.",
                 "whenToUse": "Use when a compatible SAM3 environment and model are configured.",
                 "semanticDiscovery": True,
@@ -704,6 +735,7 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_gpu=True,
             needs_model_path=True,
             model_paths=[sam3_model],
             mock_available=True,
@@ -729,6 +761,7 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_gpu=True,
             needs_model_path=True,
             model_paths=[sam3_model],
             mock_available=True,
@@ -754,6 +787,7 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
+            needs_gpu=True,
             needs_model_path=True,
             model_paths=[sam3_model],
             mock_available=True,

@@ -128,7 +128,11 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 - `sam3_concept`, `sam3_exemplar`, and `sam3_auto_masks` are optional SAM3
   discovery modes. With `discovery.config.mock: true`, they run without SAM3,
   GPU, hosted credentials, or network access and write normal candidate review
-  artifacts. Real SAM3 execution remains capability-gated behind SAM3 setup.
+  artifacts. Real local SAM3 execution remains capability-gated behind SAM3
+  setup and accepts additive config keys such as `sam3ModelPath`,
+  `sam3Device`, `useVideoSession`, `concept`, `exemplars`, and `box`.
+  Diagnostics should show missing SAM3, Python/CUDA runtime, or model setup
+  instead of falling back silently.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use

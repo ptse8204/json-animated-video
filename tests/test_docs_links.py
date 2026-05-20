@@ -22,6 +22,7 @@ IMPORTANT_DOCS = [
     "docs/provider_capabilities.md",
     "docs/security/api_keys.md",
     "docs/discovery_providers.md",
+    "docs/sam3_local.md",
     "docs/track_filtering.md",
     "docs/multi_object_extraction.md",
     "docs/mask_correction.md",
@@ -151,6 +152,18 @@ def test_od07_sam3_mock_and_hosted_docs_are_truthful():
     assert "SAM3_HOSTED_URL" in security
     assert "SAM3_HOSTED_API_KEY" in security
     assert "do not send frames or make network calls" in security
+
+
+def test_od08_sam3_local_adapter_docs_are_truthful():
+    sam3 = read("docs/sam3_local.md")
+    capabilities_doc = read("docs/provider_capabilities.md")
+    run_config = read("docs/run_config.md")
+
+    for phrase in ("Python 3.12", "CUDA", "SAM3_LOCAL_MODEL", "MOTIONJSON_RUN_REAL_SAM3_TESTS"):
+        assert phrase in sam3
+    assert "unsupported_runtime" in capabilities_doc
+    assert "sam3ModelPath" in run_config
+    assert "not install SAM3" in sam3
 
 
 def test_important_markdown_local_links_resolve():

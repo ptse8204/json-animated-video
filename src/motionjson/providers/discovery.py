@@ -15,6 +15,7 @@ from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
 from .sam2 import LocalSAM2AutomaticMaskProposalBackend
+from .sam3 import LocalSAM3DiscoveryBackend
 
 
 DISCOVERY_MODES = {
@@ -1055,9 +1056,227 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
     return round(visible / len(masks), 4)
 
 
+def _sam3_backend(current: Any | None, factory: Callable[[Mapping[str, Any]], Any] | None, config: Mapping[str, Any]) -> Any:
+    if current is not None:
+        return current
+    if factory is not None:
+        return factory(config)
+    return LocalSAM3DiscoveryBackend.from_config(config)
+
+
+def _sam3_record_mask_sequence(
+    record: Mapping[str, Any],
+    video: VideoSource,
+    *,
+    width: int,
+    height: int,
+) -> list[np.ndarray] | None:
+    raw = record.get("mask_sequence") or record.get("maskSequence") or record.get("masks")
+    if raw is None:
+        return None
+    if isinstance(raw, np.ndarray):
+        items = [raw[index] for index in range(raw.shape[0])] if raw.ndim >= 3 else [raw]
+    elif isinstance(raw, Sequence) and not isinstance(raw, (str, bytes, bytearray)):
+        items = list(raw)
+    else:
+        return None
+    if len(items) != len(video.frames):
+        return None
+    masks = [normalize_binary_mask(np.asarray(item)) for item in items]
+    for mask in masks:
+        if mask.shape[:2] != (height, width):
+            raise ProviderConfigError(f"SAM3 mask sequence shape {mask.shape[:2]} does not match video frame {(height, width)}")
+    return masks
+
+
+def _sam3_track_or_seed_sequence(
+    backend: Any,
+    video: VideoSource,
+    *,
+    record: Mapping[str, Any],
+    frame_index: int,
+    object_id: str,
+    box: Box,
+    mask: np.ndarray,
+    config: Mapping[str, Any],
+) -> tuple[list[np.ndarray], str | None, str]:
+    width = int(getattr(video.info, "width", 0))
+    height = int(getattr(video.info, "height", 0))
+    record_sequence = _sam3_record_mask_sequence(record, video, width=width, height=height)
+    if record_sequence is not None:
+        return record_sequence, None, "sam3-local"
+    if hasattr(backend, "track_candidate"):
+        masks = list(
+            backend.track_candidate(
+                video,
+                frame_index=frame_index,
+                object_id=object_id,
+                box=(box.x, box.y, box.w, box.h),
+                mask=mask,
+                config=config,
+            )
+        )
+        if len(masks) != len(video.frames):
+            raise ProviderConfigError("SAM3 video tracking returned the wrong number of masks.")
+        return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None, getattr(backend, "provider_name", "sam3-local")
+    return [mask.copy() for _frame in video.frames], (
+        "SAM3 video tracking backend was not available; review uses the prompt-frame mask sequence."
+    ), "keyframe_seed_sequence"
+
+
+def _sam3_records_to_candidates(
+    backend: Any,
+    video: VideoSource,
+    config: Mapping[str, Any],
+    ctx: RunContext,
+    records: Sequence[Mapping[str, Any]],
+    *,
+    source: str,
+    prompt_type: str,
+    prompt_value: str | None,
+) -> Sequence[ObjectCandidate]:
+    width = int(getattr(video.info, "width", 0))
+    height = int(getattr(video.info, "height", 0))
+    if width <= 0 or height <= 0:
+        raise ProviderConfigError(f"{source} discovery needs video dimensions for SAM3 proposals")
+    max_candidates = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), len(records) or 1))
+    max_objects = max(1, _int_config_any(config, ("maxObjects", "max_objects"), max_candidates))
+    min_area = max(1, _int_config_any(config, ("minMaskArea", "min_area"), 32))
+    max_area_ratio = _ratio_config_any(config, ("maxMaskAreaRatio", "max_area_ratio"), 0.9)
+    write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
+    quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
+    provider_name = str(getattr(backend, "provider_name", "sam3-local") or "sam3-local")
+    frame_area = max(1, width * height)
+    accepted_count = 0
+    rejected_count = 0
+    candidates: list[ObjectCandidate] = []
+    sorted_records = sorted([dict(record) for record in records], key=lambda record: _proposal_score(record), reverse=True)[:max_candidates]
+    for record_index, record in enumerate(sorted_records):
+        frame_index = int(record.get("frame_index", record.get("frameIndex", config.get("frameIndex", 0))) or 0)
+        frame_index = min(max(0, frame_index), max(0, len(video.frames) - 1))
+        record_sequence = _sam3_record_mask_sequence(record, video, width=width, height=height)
+        if record_sequence is not None:
+            mask = record_sequence[frame_index]
+        else:
+            mask = _proposal_mask(record, width=width, height=height)
+        box = _proposal_box(_record_value(record, ("bbox", "box")), width=width, height=height)
+        if box.w == width and box.h == height and "bbox" not in record and "box" not in record:
+            box = _box_from_mask(mask)
+        area = int(np.count_nonzero(mask))
+        area_ratio = area / frame_area
+        rejection_reason: str | None = None
+        warnings: list[str] = []
+        if area < min_area:
+            rejection_reason = "too_small"
+        elif area_ratio > max_area_ratio:
+            rejection_reason = "whole_frame"
+        elif accepted_count >= max_objects:
+            rejection_reason = "max_objects"
+        accepted = rejection_reason is None
+        if accepted:
+            accepted_count += 1
+            index_for_id = accepted_count
+        else:
+            rejected_count += 1
+            index_for_id = rejected_count
+            warnings.append(f"SAM3 proposal rejected: {rejection_reason}")
+            if not write_rejected:
+                continue
+        object_id = str(record.get("object_id") or record.get("objectId") or f"{source}_{'cand' if accepted else 'rejected'}_{index_for_id:03d}")
+        if accepted:
+            mask_sequence, tracking_warning, tracking_provider = _sam3_track_or_seed_sequence(
+                backend,
+                video,
+                record=record,
+                frame_index=frame_index,
+                object_id=object_id,
+                box=box,
+                mask=mask,
+                config=config,
+            )
+        else:
+            mask_sequence = [mask.copy() for _frame in video.frames]
+            tracking_warning = None
+            tracking_provider = "not_tracked_rejected_candidate"
+        if tracking_warning:
+            warnings.append(tracking_warning)
+        mask_dir, mask_dir_rel = _relative_mask_dir(ctx, source, object_id)
+        _write_mask_sequence(video, mask_dir, mask_sequence)
+        confidence = round(_proposal_score(record), 4)
+        label = str(record.get("label") or record.get("phrase") or record.get("text") or f"SAM3 {prompt_type} {index_for_id}")
+        if not accepted:
+            label = f"Rejected {label}"
+        candidate = ObjectCandidate(
+            id=object_id,
+            label=label,
+            source=source,
+            frame_index=frame_index,
+            box=box,
+            score=confidence,
+            z_index=10 + (accepted_count * 10 if accepted else 1000 + rejected_count),
+            metadata=_candidate_metadata(
+                source,
+                "SAM3 local discovery proposal",
+                {
+                    "providerName": provider_name,
+                    "qualityPreset": quality_preset,
+                    "mock": False,
+                    "aiUsage": "local_optional_sam3",
+                    "promptType": prompt_type,
+                    "prompt": prompt_value,
+                    "keyframeIndex": frame_index,
+                    "proposalIndex": record_index,
+                    "filters": {
+                        "maxCandidates": max_candidates,
+                        "maxObjects": max_objects,
+                        "minMaskArea": min_area,
+                        "maxMaskAreaRatio": max_area_ratio,
+                        "writeRejectedCandidates": write_rejected,
+                    },
+                    "areaRatio": round(area_ratio, 6),
+                    "stabilityScore": _proposal_stability(record),
+                    "motionScore": None,
+                    "confidence": confidence,
+                    "frameCoverageEstimate": _mask_sequence_coverage(mask_sequence),
+                    "defaultSelected": accepted,
+                    "reviewStatus": "pending" if accepted else "rejected",
+                    "warnings": warnings,
+                    "rejectionReason": rejection_reason,
+                    "maskDir": mask_dir_rel,
+                    "maskFiles": len(mask_sequence),
+                    "trackingProvider": tracking_provider,
+                },
+            ),
+        )
+        artifact_paths = _write_candidate_previews(video, candidate, mask_dir, mask=mask)
+        candidates.append(
+            ObjectCandidate(
+                id=candidate.id,
+                label=candidate.label,
+                source=candidate.source,
+                frame_index=candidate.frame_index,
+                box=candidate.box,
+                score=candidate.score,
+                z_index=candidate.z_index,
+                metadata={**candidate.metadata, **artifact_paths},
+            )
+        )
+        ctx.emit(
+            "candidate_discovery",
+            "running",
+            f"SAM3 object candidate {object_id} generated",
+            metadata={"objectId": object_id, "keyframeIndex": frame_index, "rejectionReason": rejection_reason},
+        )
+    if not candidates:
+        raise ProviderConfigError("SAM3 discovery produced no candidates.")
+    return candidates
+
+
 @dataclass
 class SAM3ConceptDiscoveryProvider:
     detector: Any | None = None
+    backend: Any | None = None
+    backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
     name: str = "sam3_concept"
     provider_name: str = "sam3-mock"
 
@@ -1065,7 +1284,18 @@ class SAM3ConceptDiscoveryProvider:
         if self.detector is not None:
             return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config))]
         if not config.get("mock"):
-            raise ProviderConfigError("sam3_concept discovery requires configured SAM3 support or discovery.config.mock=true.")
+            backend = _sam3_backend(self.backend, self.backend_factory, config)
+            records = backend.discover_concept(video, config, ctx)
+            return _sam3_records_to_candidates(
+                backend,
+                video,
+                config,
+                ctx,
+                records,
+                source=self.name,
+                prompt_type="concept",
+                prompt_value=str(config.get("concept") or config.get("text") or config.get("prompt") or ""),
+            )
         concept = str(config.get("concept") or config.get("text") or config.get("prompt") or "object")
         labels = [f"SAM3 concept: {label}" for label in _split_labels(concept)]
         return _mock_box_candidates(
@@ -1092,6 +1322,8 @@ class SAM3ConceptDiscoveryProvider:
 @dataclass
 class SAM3ExemplarDiscoveryProvider:
     detector: Any | None = None
+    backend: Any | None = None
+    backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
     name: str = "sam3_exemplar"
     provider_name: str = "sam3-mock"
 
@@ -1099,7 +1331,18 @@ class SAM3ExemplarDiscoveryProvider:
         if self.detector is not None:
             return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config))]
         if not config.get("mock"):
-            raise ProviderConfigError("sam3_exemplar discovery requires configured SAM3 support or discovery.config.mock=true.")
+            backend = _sam3_backend(self.backend, self.backend_factory, config)
+            records = backend.discover_exemplar(video, config, ctx)
+            return _sam3_records_to_candidates(
+                backend,
+                video,
+                config,
+                ctx,
+                records,
+                source=self.name,
+                prompt_type="exemplar",
+                prompt_value=str(config.get("exemplars") or config.get("exemplarRefs") or config.get("box") or ""),
+            )
         exemplars = _label_list(config.get("exemplars") or config.get("exemplarRefs") or config.get("exemplar_refs") or ["selected exemplar"])
         labels = [f"SAM3 exemplar match {index + 1}" for index, _item in enumerate(exemplars)] or ["SAM3 exemplar match 1"]
         return _mock_box_candidates(
@@ -1126,12 +1369,25 @@ class SAM3ExemplarDiscoveryProvider:
 
 @dataclass
 class SAM3AutoMasksDiscoveryProvider:
+    backend: Any | None = None
+    backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
     name: str = "sam3_auto_masks"
     provider_name: str = "sam3-mock"
 
     def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
         if not config.get("mock"):
-            raise ProviderConfigError("sam3_auto_masks discovery requires configured SAM3 support or discovery.config.mock=true.")
+            backend = _sam3_backend(self.backend, self.backend_factory, config)
+            records = backend.discover_auto_masks(video, config, ctx)
+            return _sam3_records_to_candidates(
+                backend,
+                video,
+                config,
+                ctx,
+                records,
+                source=self.name,
+                prompt_type="auto_masks",
+                prompt_value=str(config.get("concept") or config.get("text") or "object"),
+            )
         return MockObjectDiscoveryProvider(name=self.name, provider_name=self.provider_name).propose(video, {**dict(config), "mock": True}, ctx)
 
 

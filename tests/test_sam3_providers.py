@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+import builtins
+import os
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from motionjson.providers.discovery import (
+    SAM3AutoMasksDiscoveryProvider,
+    SAM3ConceptDiscoveryProvider,
+    SAM3ExemplarDiscoveryProvider,
+    object_specs_from_candidates,
+)
+from motionjson.providers.base import ProviderConfigError
+from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend, normalize_sam3_output
+from motionjson.tracks import RunContext, VideoSource
+from motionjson.video import Frame, VideoInfo
+
+
+def frames(count: int = 3) -> list[Frame]:
+    output: list[Frame] = []
+    for index in range(count):
+        rgb = np.full((12, 16, 3), 245, dtype=np.uint8)
+        rgb[2:7, 3 + index : 8 + index] = (220, 20, 20)
+        output.append(Frame(index=index, out_index=index, time_sec=index / 12, rgb=rgb))
+    return output
+
+
+def video_source(count: int = 3) -> VideoSource:
+    return VideoSource(
+        path=Path("tiny.mp4"),
+        info=VideoInfo(width=16, height=12, source_fps=12, sample_fps=12, total_source_frames=count),
+        frames=frames(count),
+    )
+
+
+def mask_at(x: int, *, width: int = 16, height: int = 12) -> np.ndarray:
+    mask = np.zeros((height, width), dtype=np.uint8)
+    mask[2:7, x : x + 5] = 255
+    return mask
+
+
+class FakeSAM3Processor:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def set_image(self, image):
+        return {"size": image.size}
+
+    def set_text_prompt(self, *, state, prompt):
+        self.prompts.append(prompt)
+        return {"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.91], "labels": [prompt]}
+
+
+class FakeSAM3VideoPredictor:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def handle_request(self, *, request):
+        self.requests.append(request)
+        if request["type"] == "start_session":
+            return {"session_id": "session_001"}
+        masks = [mask_at(3 + index) for index in range(3)]
+        return {
+            "outputs": [
+                {
+                    "object_id": "sam3_track_001",
+                    "label": request.get("text") or "exemplar match",
+                    "masks": masks,
+                    "bbox": [3, 2, 5, 5],
+                    "score": 0.92,
+                }
+            ]
+        }
+
+
+class FakeSAM3TrackingBackend:
+    provider_name = "sam3-local"
+
+    def __init__(self) -> None:
+        self.tracked: list[str] = []
+
+    def discover_concept(self, video, config, ctx=None):
+        return [{"object_id": "sam3_concept_red_ball", "label": "red ball", "segmentation": mask_at(3), "bbox": [3, 2, 5, 5], "score": 0.93}]
+
+    def discover_exemplar(self, video, config, ctx=None):
+        return [{"object_id": "sam3_exemplar_001", "label": "exemplar match", "masks": [mask_at(3 + index) for index in range(3)], "bbox": [3, 2, 5, 5], "score": 0.89}]
+
+    def discover_auto_masks(self, video, config, ctx=None):
+        whole = np.full((12, 16), 255, dtype=np.uint8)
+        return [
+            {"object_id": "sam3_auto_001", "label": "semantic object", "segmentation": mask_at(3), "bbox": [3, 2, 5, 5], "score": 0.91},
+            {"object_id": "sam3_auto_whole", "label": "whole frame", "segmentation": whole, "bbox": [0, 0, 16, 12], "score": 0.9},
+        ]
+
+    def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
+        self.tracked.append(object_id)
+        return [mask_at(3 + index) for index, _frame in enumerate(video.frames)]
+
+
+def test_normalize_sam3_output_maps_official_image_shape():
+    records = normalize_sam3_output({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.91], "labels": ["red ball"]})
+
+    assert records[0]["label"] == "red ball"
+    assert records[0]["bbox"] == [3, 2, 5, 5]
+    assert records[0]["score"] == 0.91
+
+
+def test_local_sam3_image_backend_uses_injected_processor_without_model():
+    processor = FakeSAM3Processor()
+    backend = LocalSAM3DiscoveryBackend(image_processor=processor)
+
+    records = backend.discover_concept(video_source(), {"concept": "red ball", "useVideoSession": False}, RunContext())
+    smoke = backend.smoke_test(prompt="blue cup")
+
+    assert processor.prompts == ["red ball", "blue cup"]
+    assert len(records) == 1
+    assert records[0]["label"] == "red ball"
+    assert smoke["recordCount"] == 1
+
+
+def test_local_sam3_video_backend_returns_track_sequence():
+    predictor = FakeSAM3VideoPredictor()
+    backend = LocalSAM3DiscoveryBackend(video_predictor=predictor)
+
+    records = backend.discover_concept(video_source(), {"concept": "red ball"}, RunContext())
+
+    assert predictor.requests[0]["type"] == "start_session"
+    assert predictor.requests[1]["text"] == "red ball"
+    assert records[0]["object_id"] == "sam3_track_001"
+    assert len(records[0]["mask_sequence"]) == 3
+
+
+def test_sam3_concept_provider_writes_api_candidates_and_tracks(tmp_path):
+    backend = FakeSAM3TrackingBackend()
+    candidates = SAM3ConceptDiscoveryProvider(backend=backend).propose(
+        video_source(),
+        {"concept": "red ball", "minMaskArea": 1},
+        RunContext(out_dir=tmp_path),
+    )
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert backend.tracked == ["sam3_concept_red_ball"]
+    assert candidates[0].metadata["providerName"] == "sam3-local"
+    assert candidates[0].metadata["aiUsage"] == "local_optional_sam3"
+    assert candidates[0].metadata["trackingProvider"] == "sam3-local"
+    assert candidates[0].metadata["maskDir"].startswith("discovery/sam3_concept/")
+    assert (tmp_path / candidates[0].metadata["maskDir"] / "mask_000003.png").exists()
+    assert (tmp_path / candidates[0].metadata["thumbnailArtifactPath"]).exists()
+    assert [spec.object_id for spec in specs] == ["sam3_concept_red_ball"]
+
+
+def test_sam3_exemplar_provider_accepts_backend_mask_sequences(tmp_path):
+    candidates = SAM3ExemplarDiscoveryProvider(backend=FakeSAM3TrackingBackend()).propose(
+        video_source(),
+        {"exemplars": ["crop_001"], "minMaskArea": 1},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert candidates[0].id == "sam3_exemplar_001"
+    assert candidates[0].metadata["promptType"] == "exemplar"
+    assert candidates[0].metadata["frameCoverageEstimate"] == 1.0
+
+
+def test_sam3_auto_masks_provider_filters_and_records_rejected_candidates(tmp_path):
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=FakeSAM3TrackingBackend()).propose(
+        video_source(),
+        {"concept": "object", "minMaskArea": 1, "maxObjects": 1, "maxMaskAreaRatio": 0.75, "writeRejectedCandidates": True},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert [candidate.metadata["rejectionReason"] for candidate in candidates] == [None, "whole_frame"]
+    assert candidates[1].metadata["reviewStatus"] == "rejected"
+
+
+def test_local_sam3_backend_validates_missing_model_path():
+    with pytest.raises(ProviderConfigError, match="SAM3 local adapter requires"):
+        LocalSAM3DiscoveryBackend().discover_concept(video_source(), {"concept": "object", "useVideoSession": False}, RunContext())
+
+
+def test_local_sam3_backend_lazy_import_failure_after_valid_model_path(tmp_path, monkeypatch):
+    model_path = tmp_path / "sam3-model"
+    model_path.write_text("placeholder")
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("sam3"):
+            raise ImportError("test missing sam3")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with pytest.raises(ProviderConfigError, match="optional sam3 package"):
+        LocalSAM3DiscoveryBackend(model_path=model_path).discover_concept(
+            video_source(),
+            {"concept": "object", "useVideoSession": False},
+            RunContext(),
+        )
+
+
+@pytest.mark.skipif(
+    not os.environ.get("MOTIONJSON_RUN_REAL_SAM3_TESTS") or not os.environ.get("SAM3_LOCAL_MODEL"),
+    reason="real SAM3 local tests require explicit opt-in and SAM3_LOCAL_MODEL",
+)
+def test_real_local_sam3_smoke_optional():
+    result = LocalSAM3DiscoveryBackend.from_config({}).smoke_test(prompt="object")
+
+    assert result["status"] == "ok"

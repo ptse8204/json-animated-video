@@ -28,7 +28,7 @@ python3 -m motionjson.cli backend diagnostics --json \
 
 The command emits JSON with schema `motionjson.provider_diagnostics.v0.1`. CLI
 diagnostics do not initialize the backend SQLite database, create storage
-directories, download models, import SAM2, call hosted providers, or read
+directories, download models, import SAM2/SAM3, call hosted providers, or read
 secret values. They only report whether relevant secret environment variables
 are present. For SAM2 model paths, explicit `--sam2-checkpoint` and
 `--sam2-config` values take precedence over `SAM2_LOCAL_CHECKPOINT` and
@@ -73,6 +73,8 @@ fields, then adds clearer first-run fields:
   not explicitly enabled.
 - `invalid_configuration`: a saved URL, model, or credential setting is
   malformed.
+- `unsupported_runtime`: optional provider dependencies may be installed, but
+  the current Python/runtime version is incompatible with that provider.
 - `not_implemented`: planned provider surface exists in the diagnostics model,
   but execution is intentionally deferred to a later phase.
 - `unavailable`: retained legacy or unsupported path that should not be chosen
@@ -99,9 +101,9 @@ or detector model before the real backend can run.
 | `auto_object_proposals` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Default clean candidate gallery before selected-object tracking. | Clean misses small objects; recall/Trace Everything can be noisy; missing SAM2 package/checkpoint/config blocks real proposals. |
 | `sam2-local` | Local once installed | Recommended for real use | Yes | No | Promptable local segmentation/tracking with SAM2-style models. | Missing SAM2 package, checkpoint, config, CUDA, or an overly broad prompt. |
 | `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
-| `sam3-local` | Local once installed | Recommended for real SAM3 use | Yes | No | Concept, exemplar, and higher-recall semantic discovery. | Missing SAM3 package, local model path, torch/CUDA, or incompatible runtime. |
+| `sam3-local` | Local once installed | Yes, CUDA expected | Yes | No | Concept, exemplar, and higher-recall semantic discovery. | Missing SAM3 package, Python 3.12+ runtime, local model path, torch/CUDA, or incompatible runtime. |
 | `sam3-hosted` | No | No local GPU | No local weights | Yes | Hosted SAM3-compatible discovery experiments. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
-| `sam3-concept` / `sam3-exemplar` / `sam3-auto-masks` | Mock/no-model path, or SAM3 when configured | Recommended for real SAM3 use | Yes for real backend | No | Concept prompts, exemplar search, and higher-recall proposal review. | Mock output is deterministic; real execution remains optional and capability-gated. |
+| `sam3-concept` / `sam3-exemplar` / `sam3-auto-masks` | Mock/no-model path, or SAM3 when configured | Yes, CUDA expected for real SAM3 | Yes for real backend | No | Concept prompts, exemplar search, and higher-recall proposal review. | Mock output is deterministic; real execution remains optional and capability-gated. |
 | `sam_auto_masks` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
 | `text_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Text-guided candidate boxes before segmentation. | Missing detector package/model or semantically wrong boxes. |
 | `class_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Known classes such as people, vehicles, or custom local labels. | Missing YOLO-style backend, too many candidates, or wrong class selection. |
@@ -132,7 +134,9 @@ Optional SAM2/hosted providers:
   `available_cpu_only` when configured without CUDA, because CPU execution is
   possible but expected to be slower.
 - `sam3-local`: local SAM3 family diagnostics require the optional `sam3`
-  package, torch, and an existing `SAM3_LOCAL_MODEL` path.
+  package, Python 3.12+, torch with CUDA available, and an existing
+  `SAM3_LOCAL_MODEL` path. The base install and mock modes do not require any
+  of those.
 - `sam3-hosted`: hosted SAM3-compatible discovery requires
   `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`, and explicit network opt-in.
 
@@ -171,12 +175,14 @@ Discovery providers:
 - `sam_auto_masks`: optional automatic-mask proposals; unavailable until SAM2
   automatic-mask dependencies and model paths are configured.
 - `sam3_concept`: SAM3-style text/concept discovery. Mock mode works without
-  model setup; real execution remains optional and capability-gated.
+  model setup; real local execution uses the optional SAM3 adapter when
+  diagnostics pass.
 - `sam3_exemplar`: SAM3-style exemplar/crop discovery. Mock mode works without
-  model setup; real execution remains optional and capability-gated.
+  model setup; real local execution uses the optional SAM3 adapter when
+  diagnostics pass.
 - `sam3_auto_masks`: SAM3-style high-recall automatic proposals. Mock mode
-  works without model setup; real execution remains optional and
-  capability-gated.
+  works without model setup; real local execution uses the optional SAM3
+  adapter with caps and review metadata when diagnostics pass.
 - `text_detector`: optional open-vocabulary detector scaffold. Text prompts
   become detector candidates first and are not routed directly to SAM2.
 - `class_detector`: optional known-class detector scaffold. Mock mode supports

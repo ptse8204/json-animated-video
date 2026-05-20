@@ -63,7 +63,7 @@ provider receives boxes or masks.
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks use the same optional local SAM2 automatic proposal adapter. | Runnable in mock mode through the local worker; with local SAM2 configured, review shows SAM2 proposal candidates, track filtering, fallback diagnostics, and merge suggestions. |
-| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real SAM3 remains optional and capability-gated. | Runnable in mock mode through the local worker; diagnostics show missing local/hosted SAM3 setup without claiming SAM3 is installed. |
+| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real local SAM3 uses the optional adapter only when SAM3, Python 3.12+, CUDA, and `SAM3_LOCAL_MODEL` are configured. | Runnable in mock mode through the local worker; non-mock runs fail clearly unless diagnostics pass. |
 
 Candidate-producing workflows write `candidates.json`, which is registered as a
 `candidate_summary` artifact. `/api/jobs/JOB_ID/review` and
@@ -211,6 +211,19 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --min-area 1
 ```
 
+Local SAM3 concept run, only after diagnostics report `sam3-local` ready:
+
+```bash
+SAM3_LOCAL_MODEL=/path/to/sam3-model \
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam3_concept \
+  --discovery-provider sam3_concept \
+  --discovery-config '{"concept":"red ball","useVideoSession":true}' \
+  --mask-provider mock \
+  --max-frames 24 \
+  --min-area 1
+```
+
 Local SAM2 automatic proposal run:
 
 ```bash
@@ -302,8 +315,10 @@ providers when base dependencies are installed. `auto_object_proposals` and
 `sam_auto_masks` report runnable only when the optional SAM2 automatic mask
 generator, torch, checkpoint, and model config are present; otherwise they
 report `missing_dependency`, `missing_model`, or `not_configured`. `sam3_concept`,
-`sam3_exemplar`, and `sam3_auto_masks` expose mock modes for UI/API testing and
-report missing SAM3 dependency/model setup for real execution. `text_detector`
+`sam3_exemplar`, and `sam3_auto_masks` expose mock modes for UI/API testing.
+Real local SAM3 execution uses the optional local adapter and reports missing
+SAM3 package, Python/CUDA runtime, or model setup instead of falling back
+silently. `text_detector`
 and `class_detector` remain scaffolded until detector adapters are wired. Those
 warnings do not break the base CLI, and mock mode remains available for local
 smoke checks.

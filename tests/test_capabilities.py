@@ -341,7 +341,36 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
         assert provider["runnable"] is True
         assert provider["status"] == "ready"
         assert provider["needsModelPath"] is True
+        assert provider["needsGpu"] is True
         assert provider["mockAvailable"] is True
+    assert _provider(report, "sam3-local")["metadata"]["runtime"]["pythonSupported"] is True
+
+
+def test_sam3_local_requires_cuda_for_real_execution(tmp_path, monkeypatch) -> None:
+    sam3_model = tmp_path / "sam3.pt"
+    sam3_model.write_text("placeholder")
+    monkeypatch.setenv("SAM3_LOCAL_MODEL", str(sam3_model))
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: module in {"cv2", "numpy", "PIL", "jsonschema", "tqdm", "torch", "sam3"})
+    monkeypatch.setattr(
+        capabilities,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": True,
+            "available": False,
+            "device": "cpu",
+            "reasons": ["CUDA is not available."],
+            "devices": [{"name": "cpu", "available": True}],
+        },
+    )
+
+    report = capabilities.build_capability_report()
+    provider = _provider(report, "sam3-local")
+
+    assert provider["available"] is False
+    assert provider["runnable"] is False
+    assert provider["status"] == "available_cpu_only"
+    assert provider["needsGpu"] is True
+    assert "CUDA-compatible GPU" in " ".join(provider["reasons"])
 
 
 def test_sam3_hosted_credentials_are_redacted_and_need_network_opt_in(monkeypatch) -> None:

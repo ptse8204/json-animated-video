@@ -265,11 +265,17 @@ def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> t
             return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
         return SamAutoMasksDiscoveryProvider(), "SAM2 automatic mask proposals configured", False
     if mode == "sam3_concept":
-        return SAM3ConceptDiscoveryProvider(), "SAM3 concept mock discovery configured", True
+        if discovery_config.get("mock"):
+            return SAM3ConceptDiscoveryProvider(), "SAM3 concept mock discovery configured", True
+        return SAM3ConceptDiscoveryProvider(), "SAM3 local concept discovery configured", False
     if mode == "sam3_exemplar":
-        return SAM3ExemplarDiscoveryProvider(), "SAM3 exemplar mock discovery configured", True
+        if discovery_config.get("mock"):
+            return SAM3ExemplarDiscoveryProvider(), "SAM3 exemplar mock discovery configured", True
+        return SAM3ExemplarDiscoveryProvider(), "SAM3 local exemplar discovery configured", False
     if mode == "sam3_auto_masks":
-        return SAM3AutoMasksDiscoveryProvider(), "SAM3 auto-mask mock discovery configured", True
+        if discovery_config.get("mock"):
+            return SAM3AutoMasksDiscoveryProvider(), "SAM3 auto-mask mock discovery configured", True
+        return SAM3AutoMasksDiscoveryProvider(), "SAM3 local auto-mask discovery configured", False
     if mode == "class_detector":
         return ClassDetectorDiscoveryProvider(), "class detector mock discovery configured", True
     if mode == "motion_foreground":
