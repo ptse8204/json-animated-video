@@ -283,8 +283,32 @@ def test_trace_everything_requires_explicit_cost_warning_acknowledgement():
 @pytest.mark.parametrize(
     ("config", "message"),
     [
+        ({"requireReview": False}, "requireReview"),
+        ({"writeRejectedCandidates": False}, "writeRejectedCandidates"),
+    ],
+)
+def test_trace_everything_forces_review_and_rejected_candidate_records(config, message):
+    with pytest.raises(ConfigValidationError, match=message):
+        ExtractionRunConfig.from_dict(
+            auto_discovery_payload(
+                {
+                    "qualityPreset": "trace_everything",
+                    "costWarningAcknowledged": True,
+                    **config,
+                }
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
         ({"maxCandidatesPerKeyframe": 0}, "maxCandidatesPerKeyframe"),
+        ({"maxCandidatesPerKeyframe": 999}, "maxCandidatesPerKeyframe"),
         ({"maxObjects": 0}, "maxObjects"),
+        ({"maxObjects": 999}, "maxObjects"),
+        ({"maxKeyframes": 99}, "maxKeyframes"),
+        ({"frameInterval": 9999}, "frameInterval"),
         ({"maxMaskAreaRatio": 1.5}, "maxMaskAreaRatio"),
         ({"stabilityThreshold": -0.1}, "stabilityThreshold"),
         ({"providerPreference": "openrouter"}, "providerPreference"),

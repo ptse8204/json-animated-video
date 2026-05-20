@@ -113,6 +113,37 @@ def _fallback_payload(*, diagnostics: list[dict[str, Any]], summary: dict[str, A
     }
 
 
+def _trace_everything_export_gate(provider_name: str, config: dict[str, Any]) -> dict[str, Any] | None:
+    if provider_name != "auto_object_proposals":
+        return None
+    if str(config.get("qualityPreset") or config.get("quality_preset") or "") != "trace_everything":
+        return None
+    return {
+        "reason": "trace_everything_requires_review",
+        "qualityPreset": "trace_everything",
+        "reviewRequired": True,
+    }
+
+
+def _mark_trace_everything_review_pending(
+    *,
+    objects: list[dict[str, Any]],
+    layers: list[dict[str, Any]],
+    tracks: list[ObjectTrack],
+    gate: dict[str, Any],
+) -> None:
+    for obj in objects:
+        quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
+        obj["quality"] = {**quality, "reviewRequired": True, "exportReviewGate": dict(gate)}
+    for layer in layers:
+        controls = layer.get("controls") if isinstance(layer.get("controls"), dict) else {}
+        layer["controls"] = {**controls, "reviewRequired": True, "exportReviewGate": dict(gate)}
+    for track in tracks:
+        if str(track.export_status or "accepted") == "accepted":
+            track.export_status = "review_pending"
+        track.metadata = {**track.metadata, "reviewRequired": True, "exportReviewGate": dict(gate)}
+
+
 def _job_emit(
     job_context: Any | None,
     stage: str,
@@ -656,6 +687,15 @@ def run_multi_object_pipeline(
         config=TrackFilterConfig(min_area=min_area),
     )
     track_filter_payload = track_filter_report.to_dict()
+    trace_export_gate = _trace_everything_export_gate(active_candidate_provider.name, active_candidate_config)
+    if trace_export_gate is not None:
+        _mark_trace_everything_review_pending(
+            objects=objects,
+            layers=layers,
+            tracks=linked_tracks,
+            gate=trace_export_gate,
+        )
+        track_filter_payload["exportReviewGate"] = dict(trace_export_gate)
     fallback_diagnostics = [
         decision["fallback"]
         for decision in track_filter_payload["decisions"]

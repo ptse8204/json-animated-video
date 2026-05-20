@@ -44,6 +44,13 @@ DISCOVERY_PROVIDER_PREFERENCES = {
 OUTPUT_MODES = {"authoring", "production", "both"}
 SPRITE_FORMATS = {"webp", "png"}
 
+OBJECT_DISCOVERY_CAP_LIMITS = {
+    "maxKeyframes": 24,
+    "frameInterval": 600,
+    "maxCandidatesPerKeyframe": 256,
+    "maxObjects": 128,
+}
+
 OBJECT_DISCOVERY_PRESET_DEFAULTS: dict[str, dict[str, Any]] = {
     "clean": {
         "qualityPreset": "clean",
@@ -602,6 +609,13 @@ def _positive_int_config(value: Any, path: str) -> int:
     return number
 
 
+def _capped_positive_int_config(value: Any, path: str, *, max_value: int) -> int:
+    number = _positive_int_config(value, path)
+    if number > max_value:
+        raise ConfigValidationError(f"{path}: expected <= {max_value}")
+    return number
+
+
 def _ratio_config_value(value: Any, path: str) -> float:
     number = _float_value(value, path)
     if not 0 <= number <= 1:
@@ -641,19 +655,26 @@ def normalize_discovery_config(mode: str | None, config: Mapping[str, Any]) -> d
     normalized["intent"] = intent
     normalized["providerPreference"] = provider_preference
     normalized["keyframePolicy"] = keyframe_policy
-    normalized["maxKeyframes"] = _positive_int_config(
+    normalized["maxKeyframes"] = _capped_positive_int_config(
         _config_value(payload, "maxKeyframes", defaults["maxKeyframes"], consumed),
         "discovery.config.maxKeyframes",
+        max_value=OBJECT_DISCOVERY_CAP_LIMITS["maxKeyframes"],
     )
     frame_interval = _config_value(payload, "frameInterval", defaults["frameInterval"], consumed)
-    normalized["frameInterval"] = None if frame_interval is None else _positive_int_config(frame_interval, "discovery.config.frameInterval")
-    normalized["maxCandidatesPerKeyframe"] = _positive_int_config(
+    normalized["frameInterval"] = None if frame_interval is None else _capped_positive_int_config(
+        frame_interval,
+        "discovery.config.frameInterval",
+        max_value=OBJECT_DISCOVERY_CAP_LIMITS["frameInterval"],
+    )
+    normalized["maxCandidatesPerKeyframe"] = _capped_positive_int_config(
         _config_value(payload, "maxCandidatesPerKeyframe", defaults["maxCandidatesPerKeyframe"], consumed),
         "discovery.config.maxCandidatesPerKeyframe",
+        max_value=OBJECT_DISCOVERY_CAP_LIMITS["maxCandidatesPerKeyframe"],
     )
-    normalized["maxObjects"] = _positive_int_config(
+    normalized["maxObjects"] = _capped_positive_int_config(
         _config_value(payload, "maxObjects", defaults["maxObjects"], consumed),
         "discovery.config.maxObjects",
+        max_value=OBJECT_DISCOVERY_CAP_LIMITS["maxObjects"],
     )
     normalized["minMaskArea"] = _positive_int_config(
         _config_value(payload, "minMaskArea", defaults["minMaskArea"], consumed),
@@ -689,6 +710,11 @@ def normalize_discovery_config(mode: str | None, config: Mapping[str, Any]) -> d
             _config_value(payload, field_name, defaults[field_name], consumed),
             f"discovery.config.{field_name}",
         )
+
+    if quality_preset == "trace_everything" and normalized["requireReview"] is not True:
+        raise ConfigValidationError("discovery.config.requireReview: must be true when qualityPreset is trace_everything")
+    if quality_preset == "trace_everything" and normalized["writeRejectedCandidates"] is not True:
+        raise ConfigValidationError("discovery.config.writeRejectedCandidates: must be true when qualityPreset is trace_everything")
 
     warning_acknowledged = _strict_bool_value(
         _config_value(payload, "costWarningAcknowledged", False, consumed),

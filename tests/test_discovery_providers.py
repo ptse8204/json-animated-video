@@ -827,6 +827,46 @@ def test_auto_object_proposals_mock_cli_writes_candidate_review_artifacts(tmp_pa
     assert validate_output_dir(out, object_id="auto_object_proposals_cand_001").ok
 
 
+def test_trace_everything_mock_cli_is_review_gated_and_writes_rejections(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+
+    cli.main(
+        [
+            "extract",
+            str(video),
+            "--out",
+            str(out),
+            "--discovery-provider",
+            "auto_object_proposals",
+            "--discovery-config",
+            (
+                '{"mock": true, "qualityPreset": "trace_everything", '
+                '"costWarningAcknowledged": true, "maxCandidatesPerKeyframe": 5, "maxObjects": 2}'
+            ),
+            "--mask-provider",
+            "mock",
+            "--max-frames",
+            "2",
+            "--min-area",
+            "1",
+        ]
+    )
+
+    candidates_payload = json.loads((out / "candidates.json").read_text())
+    scene = json.loads((out / "scene_graph.json").read_text())
+    tracks = json.loads((out / "tracks.json").read_text())
+
+    assert candidates_payload["config"]["qualityPreset"] == "trace_everything"
+    assert len(candidates_payload["candidates"]) == 5
+    assert sum(1 for candidate in candidates_payload["candidates"] if candidate["metadata"].get("rejectionReason")) == 3
+    assert all(obj["quality"]["reviewRequired"] is True for obj in scene["objects"])
+    assert tracks["filterReport"]["exportReviewGate"]["reason"] == "trace_everything_requires_review"
+    assert all(track["exportStatus"] == "review_pending" for track in tracks["tracks"])
+    assert validate_output_dir(out, object_id="auto_object_proposals_cand_001").ok
+
+
 def test_auto_object_proposals_cli_surfaces_sam2_setup_error_without_mock(tmp_path, monkeypatch):
     video = tmp_path / "tiny.mp4"
     out = tmp_path / "out"

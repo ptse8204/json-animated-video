@@ -177,7 +177,8 @@ for selected/stable/moving/non-background/non-duplicate candidates, a minimum
 coverage threshold, and a Track selected action that posts selected candidate
 IDs back to the backend. The Trace Everything control is isolated in an
 advanced disclosure and requires explicit acknowledgement before its config can
-validate.
+validate. Trace Everything output is intentionally review-pending and blocked
+from export until the user reviews selected objects.
 
 `POST /api/jobs/JOB_ID/track-selected` accepts `candidateIds`,
 `trackMode: "selected_only"`, and `exportReviewRequired`. The backend validates

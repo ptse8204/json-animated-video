@@ -113,7 +113,9 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   `trace_everything`. Clean, balanced, and maximum recall default
   `trackSelectedOnly` to `true`; Trace Everything sets `trackSelectedOnly` to
   `false`, `trackTopCandidates` to `true`, keeps `requireReview` enabled, and
-  requires `costWarningAcknowledged: true`.
+  requires `costWarningAcknowledged: true`. Trace Everything remains bounded:
+  `maxKeyframes <= 24`, `frameInterval <= 600`,
+  `maxCandidatesPerKeyframe <= 256`, and `maxObjects <= 128`.
 - With `discovery.config.mock: true`, `auto_object_proposals` runs without
   model files, GPU, credentials, or network access. The mock provider writes
   deterministic accepted and rejected candidates plus mask/preview artifacts so

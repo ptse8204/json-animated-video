@@ -290,7 +290,9 @@ Maximum recall is explicit and remains review-gated:
 ```
 
 Trace Everything is expert/experimental and must acknowledge cost/noise before
-the typed config validates:
+the typed config validates. It stays capped, writes rejected candidates for
+review, and marks generated tracks as review-pending so export workflows block
+until a user reviews the result:
 
 ```json
 {

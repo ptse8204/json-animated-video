@@ -107,6 +107,23 @@ def test_phase11e_delivery_fallback_chooses_smallest_ready_production_asset():
     assert delivery["bytes"] == 80
 
 
+def test_review_required_quality_blocks_export_selection():
+    included, excluded, diagnostics = export_workflows._included_object_ids(
+        {"objects": [{"id": "trace_object", "quality": {"reviewRequired": True}}]},
+        {},
+    )
+
+    assert included == []
+    assert excluded == ["trace_object"]
+    assert diagnostics == [
+        {
+            "code": "track_excluded_from_export",
+            "objectId": "trace_object",
+            "reason": "review_required",
+        }
+    ]
+
+
 def test_phase11e_mp4_preview_dry_run_and_error_cleanup(tmp_path, monkeypatch):
     scene = {"source": {"width": 4, "height": 4, "sampleFps": 12, "sampledFrameCount": 1}, "objects": []}
     export_dir = tmp_path / "export"

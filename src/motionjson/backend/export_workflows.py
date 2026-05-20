@@ -167,17 +167,21 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
             include = False
         if edit.get("exportIncluded") is False:
             include = False
-        if obj.get("exportIncluded") is False or _status_excludes(obj.get("exportStatus")):
+        quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
+        if obj.get("exportIncluded") is False or _status_excludes(obj.get("exportStatus")) or quality.get("reviewRequired") is True:
             include = False
         if include:
             included.append(object_id)
         else:
+            reason = edit.get("exportStatus") or obj.get("exportStatus")
+            if not reason:
+                reason = "review_required" if quality.get("reviewRequired") is True else "correction_state"
             excluded.append(object_id)
             diagnostics.append(
                 {
                     "code": "track_excluded_from_export",
                     "objectId": object_id,
-                    "reason": edit.get("exportStatus") or obj.get("exportStatus") or "correction_state",
+                    "reason": reason,
                 }
             )
     for entry in history:

@@ -880,7 +880,7 @@ const MotionJSONUI = (() => {
       if (!config.discovery.config.costWarningAcknowledged) {
         warnings.push("Trace Everything requires explicit cost and noise acknowledgement.");
       } else {
-        warnings.push("Trace Everything is expert mode; expect slower, noisier review-required output.");
+        warnings.push("Trace Everything is expert mode; expect slower, noisier output that is blocked from export until reviewed.");
       }
     }
 
