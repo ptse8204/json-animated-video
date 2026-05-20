@@ -52,7 +52,7 @@ it on a page:
 - [Runtime guide](runtime.md) shows plain JavaScript, Canvas2D, optional Pixi,
   React, timeline editing, website templates, and website ZIP export.
 - [Final export](final_export.md) explains validated handoffs, export presets,
-  and MP4/website-package outputs.
+  selected-object website packages, object-layer packs, and MP4 outputs.
 - [Schemas](schemas.md) explains scene graphs, object manifests, resource
   profiles, rights metadata, and production export metadata.
 - [Rights and lineage](rights_and_lineage.md) explains source rights, generated

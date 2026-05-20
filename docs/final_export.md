@@ -47,19 +47,26 @@ This is an object-layer export, not a full-scene render.
 - `resource_profile.json`
 - `objects/<object_id>/object_manifest.json`
 - spritesheets, poster/cutout sequence fallback, and ready production assets
+- `object_layer_pack.json` with selected object ids, relative artifact paths,
+  runtime snippets, and handoff templates
 - `package_manifest.json` with file bytes and rights metadata
 
 The package excludes `.env*`, caches, `node_modules`, debug frames, masks, and object debug/layer scratch directories by default.
 
+Headless API asset-package jobs can pass `objectIds` to package only selected
+object layers. The package `scene_graph.json`, `package_manifest.json`, and
+`object_layer_pack.json` then list the selected and excluded object ids, while
+all paths remain relative.
+
 ## Remotion Plan
 
-`--format remotion-plan` writes an adapter plan only. It does not add a Remotion dependency, run npm, call the network, or invoke APIs. The plan status is `plan_ready` and contains the composition, scene/assets, and component contract an application can wire into its own Remotion project.
+`--format remotion-plan` writes an adapter plan only. It does not add a Remotion dependency, run npm, call the network, or invoke APIs. The plan status is `plan_ready` and contains the composition, scene/assets, selected object ids, object review/export metadata, and component contract an application can wire into its own Remotion project.
 
 ## Manifest
 
 `final_export_manifest.json` uses schema id `motionjson.final_export_manifest.v0.1`. It records export type, format, status, output path, bytes, fps, frame count, source scene, object id, `aiUsage: none`, and rights passthrough. The manifest uses `source.directory: "."` to avoid embedding machine-specific local paths.
 
-Phase 11 adds optional manifest blocks for validated local UI exports:
+Validated local UI exports add optional manifest blocks:
 
 - `provenance`: app/version, source job id, source asset id when known, export
   id, preset, correction event count, included/excluded object ids, diagnostics,
@@ -72,9 +79,29 @@ Phase 11 adds optional manifest blocks for validated local UI exports:
   plus preview route status. It records whether the handoff selected raster
   alpha, optional vector silhouettes, sprite atlas/WebM delivery, and MP4
   preview availability without rerunning providers.
+- `objectLayerPack`: location and selected/excluded object summary for
+  `object_layer_pack.json`.
+- `exportValidationMessages`: user-visible export messages, including
+  unreviewed auto-discovered objects that are blocked from selected-object
+  handoff until review accepts them.
 - `exportWarnings`: user-visible rights/lineage warnings, such as unverified
   commercial-use rights, missing creator approval, unverified licenses, or
   attribution requirements.
+
+## Object Layer Pack
+
+Validated exports and website packages write `object_layer_pack.json` using
+format `motionjson.object_layer_pack.v0.1`. It is a compact handoff manifest
+for selected reusable motion layers. It includes:
+
+- `selectedObjectIds` and `excludedObjectIds`.
+- Per-object relative paths to `object_manifest.json`, `object_motion.json`,
+  and `web_asset_manifest.json`.
+- Review, discovery, delivery, quality, and rights summaries for the selected
+  objects.
+- Copyable plain JavaScript, single-object, React, and Remotion snippets.
+- Website canvas, single-object embed, and Remotion composition templates.
+- Export validation messages that explain review gates before publishing.
 
 ## Export Quality Routing
 
@@ -128,10 +155,11 @@ Example payload:
 
 The response includes a validated corrected `scene_graph.json`,
 `final_export_manifest.json`, `validation_report.json`, `quality_routing.json`,
-an SVG overlay preview, optional MP4 preview, and a ZIP bundle. The `debug`
-preset also copies cached mask PNGs and writes contour/box JSON. Export does not
-run SAM2, detectors, matting, LLMs, hosted providers, or network calls; it
-packages cached artifacts and saved correction state only.
+`object_layer_pack.json`, a selected-object `website_package.zip`, an SVG
+overlay preview, optional MP4 preview, and a ZIP bundle. The `debug` preset also
+copies cached mask PNGs and writes contour/box JSON. Export does not run SAM2,
+detectors, matting, LLMs, hosted providers, or network calls; it packages cached
+artifacts and saved correction state only.
 
 Preflight validation reports the MP4 preview route as `plan_ready` when FFmpeg
 is available, but it does not encode the MP4 until the final export request.

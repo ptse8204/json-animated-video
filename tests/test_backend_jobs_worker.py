@@ -119,7 +119,14 @@ def test_export_worker_packages_existing_extraction_with_no_ai_usage(tmp_path):
     upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
     extract = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="threshold", max_frames=2)
     assert worker_once(conn, storage=storage)["status"] == "succeeded"
-    export = enqueue_export_job(conn, user_id=user["id"], project_id=project["id"], source_job_id=extract["id"], format="website-zip")
+    export = enqueue_export_job(
+        conn,
+        user_id=user["id"],
+        project_id=project["id"],
+        source_job_id=extract["id"],
+        format="website-zip",
+        object_ids=["object_0"],
+    )
 
     result = worker_once(conn, storage=storage)
     package_assets = [asset for asset in list_assets_for_job(conn, project_id=project["id"], source_job_id=export["id"]) if asset["kind"] == "website_package"]
@@ -130,7 +137,10 @@ def test_export_worker_packages_existing_extraction_with_no_ai_usage(tmp_path):
         manifest = json.loads(archive.read("package_manifest.json"))
 
     assert result["status"] == "succeeded"
+    assert json.loads(result["result_json"])["selectedObjectIds"] == ["object_0"]
     assert manifest["aiUsage"] == "none"
+    assert manifest["selectedObjectIds"] == ["object_0"]
+    assert manifest["objectLayerPack"] == "object_layer_pack.json"
     assert summarize_usage(conn, project_id=project["id"])["totals"]["exports_produced"]["export"] == 1.0
 
 

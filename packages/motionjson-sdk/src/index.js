@@ -238,10 +238,10 @@ export class MotionJSONClient {
     return this.enqueueExtraction(projectId, options);
   }
 
-  enqueueAssetPackage(projectId, { sourceJobId, format = "website-zip" }) {
+  enqueueAssetPackage(projectId, { sourceJobId, format = "website-zip", objectIds } = {}) {
     return this.request(`/v1/projects/${encodeURIComponent(projectId)}/asset-packages`, {
       method: "POST",
-      body: { sourceJobId, format }
+      body: { sourceJobId, format, objectIds }
     });
   }
 

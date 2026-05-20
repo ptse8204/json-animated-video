@@ -254,6 +254,8 @@ for (const affordance of [
   "createCreatorPackFromCollection",
   "motion_sticker",
   "Creator-approved packs",
+  "object_layer_pack",
+  "exportValidationMessageRows",
 ]) {
   if (!combined.includes(affordance)) {
     throw new Error(`UI shell is missing ${affordance}`);

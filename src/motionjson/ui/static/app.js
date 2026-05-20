@@ -48,6 +48,7 @@ const MotionJSONUI = (() => {
     "final_render_mp4",
     "lottie_silhouette",
     "motionjson_export_zip",
+    "object_layer_pack",
     "object_manifest",
     "remotion_plan",
     "scene_graph",
@@ -2856,6 +2857,16 @@ const MotionJSONUI = (() => {
         .join("");
     }
 
+    function exportValidationMessageRows(messages) {
+      return asArray(messages)
+        .slice(0, 5)
+        .map((message) => {
+          const severity = message.severity === "bad" || message.severity === "error" ? "bad" : "warn";
+          return `<div class="diagnostic-row is-${severity}"><strong>${escapeHtml(message.code || "export message")}</strong><span class="row-meta">${escapeHtml(message.message || message.suggestedAction || "review export state")}</span></div>`;
+        })
+        .join("");
+    }
+
     function exportRouteLabel(value) {
       return String(value || "")
         .replace(/[_-]+/g, " ")
@@ -2944,6 +2955,8 @@ const MotionJSONUI = (() => {
         "preview_overlay",
         "mp4_preview",
         "contours_boxes",
+        "object_layer_pack",
+        "website_package",
         "motionjson_export_zip",
       ];
       const storedExportArtifacts = state.jobArtifacts.filter((artifact) =>
@@ -2979,6 +2992,7 @@ const MotionJSONUI = (() => {
         .filter(Boolean)
         .join("");
       const issueRows = exportIssueRows(status?.issues);
+      const validationMessageRows = exportValidationMessageRows(exportState.exportValidationMessages);
       const candidateRouting = exportState.qualityRouting || storedValidationArtifact?.metadata?.qualityRouting;
       const routingRows = qualityRoutingMatchesControls(candidateRouting)
         ? qualityRoutingRows(candidateRouting)
@@ -3003,6 +3017,7 @@ const MotionJSONUI = (() => {
                 : ""
             }
             ${issueRows}
+            ${validationMessageRows}
             ${rightsRows}
             ${routingRows}
             ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta">${artifactLinks}</span></div>` : ""}

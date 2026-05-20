@@ -167,6 +167,7 @@ def enqueue_export_job(
     project_id: str,
     source_job_id: str,
     format: str = "website-zip",
+    object_ids: list[str] | None = None,
     priority: int = 0,
 ) -> dict:
     get_project(conn, user_id=user_id, project_id=project_id)
@@ -174,6 +175,8 @@ def enqueue_export_job(
     if source["project_id"] != project_id:
         raise NotFoundError("source job not found in project")
     payload = {"source_job_id": source_job_id, "format": format}
+    if object_ids:
+        payload["object_ids"] = [str(object_id) for object_id in object_ids if str(object_id).strip()]
     return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="export", payload=payload, priority=priority)
 
 
@@ -184,6 +187,7 @@ def enqueue_asset_package_job(
     project_id: str,
     source_job_id: str,
     format: str = "website-zip",
+    object_ids: list[str] | None = None,
     priority: int = 0,
 ) -> dict:
     return enqueue_export_job(
@@ -192,6 +196,7 @@ def enqueue_asset_package_job(
         project_id=project_id,
         source_job_id=source_job_id,
         format=format,
+        object_ids=object_ids,
         priority=priority,
     )
 

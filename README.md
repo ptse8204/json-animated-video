@@ -276,9 +276,12 @@ python3 -m motionjson.cli export out/demo_red_ball \
 
 `website-zip` packages the runtime source, HTML previews, snippets, manifests,
 cached object media, rights metadata, and production assets for static hosting
-or handoff review. `remotion-plan` is intentionally honest: it writes a JSON
-integration plan for a future Remotion adapter and does not install Remotion or
-generate a Remotion component today.
+or handoff review. Validated UI exports also write `object_layer_pack.json` and
+a selected-object website package so downstream users receive only reviewed
+object layers plus copyable JavaScript, React, and Remotion handoff snippets.
+`remotion-plan` is intentionally honest: it writes a JSON integration plan for
+an application-owned Remotion adapter and does not install Remotion or generate
+a component today.
 
 ## Provider options
 

@@ -53,7 +53,7 @@ test("SDK upload helper accepts bytes and render/package helpers use API routes"
 
   await client.uploadAsset("p1", { filename: "clip.mp4", data: new Uint8Array([1, 2, 3]) });
   await client.createExtraction("p1", { assetId: "a1", maxFrames: 12 });
-  await client.createAssetPackage("p1", { sourceJobId: "j1" });
+  await client.createAssetPackage("p1", { sourceJobId: "j1", objectIds: ["object_0"] });
   await client.createRender("p1", { sourceJobId: "j1", format: "remotion-plan" });
 
   assert.deepEqual(paths.map((call) => call.path), [
@@ -64,6 +64,7 @@ test("SDK upload helper accepts bytes and render/package helpers use API routes"
   ]);
   assert.equal(paths[0].body.dataBase64, "AQID");
   assert.equal(paths[1].body.assetId, "a1");
+  assert.deepEqual(paths[2].body.objectIds, ["object_0"]);
   assert.equal(paths[3].body.format, "remotion-plan");
 });
 

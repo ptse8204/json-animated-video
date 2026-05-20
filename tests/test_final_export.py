@@ -1,3 +1,4 @@
+import copy
 import json
 import shutil
 import zipfile
@@ -42,6 +43,32 @@ def make_extraction(tmp_path: Path) -> Path:
         output_mode="both",
     )
     return out
+
+
+def add_second_scene_object(out: Path, object_id: str = "object_1") -> None:
+    source_dir = out / "objects" / "object_0"
+    target_dir = out / "objects" / object_id
+    if target_dir.exists():
+        shutil.rmtree(target_dir)
+    shutil.copytree(source_dir, target_dir)
+    for path in target_dir.rglob("*.json"):
+        path.write_text(path.read_text(encoding="utf-8").replace("object_0", object_id), encoding="utf-8")
+    scene_path = out / "scene_graph.json"
+    scene = json.loads(scene_path.read_text(encoding="utf-8"))
+    obj = copy.deepcopy(scene["objects"][0])
+    obj = json.loads(json.dumps(obj).replace("object_0", object_id))
+    obj["id"] = object_id
+    obj["label"] = "Second object"
+    obj["zIndex"] = 20
+    scene["objects"].append(obj)
+    if scene.get("layers"):
+        layer = copy.deepcopy(scene["layers"][0])
+        layer = json.loads(json.dumps(layer).replace("object_0", object_id))
+        layer["id"] = f"{object_id}_layer"
+        layer["object_id"] = object_id
+        layer["z_index"] = 20
+        scene["layers"].append(layer)
+    scene_path.write_text(json.dumps(scene), encoding="utf-8")
 
 
 def test_mp4_final_render_reports_cached_no_ai_manifest(tmp_path):
@@ -236,6 +263,57 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
             "snippets/react-embed.jsx",
             "snippets/webflow-style.html",
         ]
+        assert package_manifest["objectLayerPack"] == "object_layer_pack.json"
+        object_layer_pack = json.loads(archive.read("object_layer_pack.json").decode("utf-8"))
+        assert object_layer_pack["format"] == "motionjson.object_layer_pack.v0.1"
+        assert object_layer_pack["selectedObjectIds"] == ["object_0"]
+        assert "plainJs" in object_layer_pack["snippets"]
+
+
+def test_website_package_can_filter_to_selected_object_layers(tmp_path):
+    out = make_extraction(tmp_path)
+    add_second_scene_object(out)
+    package = out / "exports" / "selected_website_package.zip"
+
+    entry = export_website_package(
+        out_dir=out,
+        output_path=package,
+        object_ids=["object_1"],
+        excluded_object_ids=["object_0"],
+        validation_messages=[
+            {
+                "code": "auto_discovered_object_review_required",
+                "severity": "warn",
+                "objectId": "object_0",
+                "message": "object_0 requires review before export.",
+            }
+        ],
+    )
+
+    assert entry["status"] == "ready"
+    assert entry["selectedObjectIds"] == ["object_1"]
+    assert entry["excludedObjectIds"] == ["object_0"]
+    with zipfile.ZipFile(package) as archive:
+        names = archive.namelist()
+        scene = json.loads(archive.read("scene_graph.json").decode("utf-8"))
+        package_manifest = json.loads(archive.read("package_manifest.json").decode("utf-8"))
+        object_layer_pack = json.loads(archive.read("object_layer_pack.json").decode("utf-8"))
+
+    assert [obj["id"] for obj in scene["objects"]] == ["object_1"]
+    assert "objects/object_1/object_manifest.json" in names
+    assert "objects/object_0/object_manifest.json" not in names
+    assert package_manifest["selectedObjectIds"] == ["object_1"]
+    assert package_manifest["excludedObjectIds"] == ["object_0"]
+    assert object_layer_pack["selectedObjectIds"] == ["object_1"]
+    assert object_layer_pack["excludedObjectIds"] == ["object_0"]
+    assert object_layer_pack["validationMessages"][0]["code"] == "auto_discovered_object_review_required"
+
+
+def test_website_package_rejects_unknown_selected_object_ids(tmp_path):
+    out = make_extraction(tmp_path)
+
+    with pytest.raises(ValueError, match="objectIds not found"):
+        export_website_package(out_dir=out, output_path=out / "exports" / "missing.zip", object_ids=["missing_object"])
 
 
 def test_website_package_ignores_unsafe_scene_asset_paths(tmp_path):
@@ -273,6 +351,8 @@ def test_remotion_adapter_writes_plan_without_dependency_or_network(tmp_path):
     assert plan["status"] == "plan_ready"
     assert plan["dependencyPolicy"]["remotionDependencyAdded"] is False
     assert plan["composition"]["componentContract"]["component"] == "MotionJSONComposition"
+    assert plan["composition"]["componentContract"]["props"]["objectIds"] == ["object_0"]
+    assert plan["objectLayerPack"]["format"] == "motionjson.object_layer_pack.v0.1"
 
 
 def test_cli_all_writes_every_export_and_validates_output_dir_when_ffmpeg_available(tmp_path):

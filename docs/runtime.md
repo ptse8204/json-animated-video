@@ -209,12 +209,18 @@ output:
 python3 -m motionjson.cli export out/demo --format website-zip --out out/demo/exports/website_package.zip
 ```
 
-The ZIP includes relative runtime paths, previews, template pages, style-compatible embed snippets, `web_asset_manifest.json`, scene/object/resource JSON, rights metadata, cached cutouts and spritesheets needed by the runtime, and ready production assets. It excludes `.env*`, caches, `node_modules`, masks, and debug frames by default. The package manifest records `aiUsage: "none"` because packaging uses cached raster/alpha assets and JSON transforms only.
+The ZIP includes relative runtime paths, previews, template pages, style-compatible embed snippets, `web_asset_manifest.json`, scene/object/resource JSON, rights metadata, cached cutouts and spritesheets needed by the runtime, ready production assets, and `object_layer_pack.json`. It excludes `.env*`, caches, `node_modules`, masks, and debug frames by default. The package manifest records `aiUsage: "none"` because packaging uses cached raster/alpha assets and JSON transforms only.
 
 Inside the ZIP, `runtime/` is a copy of the local runtime source and the preview
 HTML files import it with relative paths. This makes the package useful for a
 static server or handoff review without npm, CDN scripts, provider keys, or
 model downloads.
+
+`object_layer_pack.json` lists selected object ids, excluded ids, per-object
+relative artifact paths, review/export messages, and copyable snippets for
+plain JavaScript, single-object embeds, React, and Remotion. Local UI validated
+exports also write a selected-object `website_package.zip` so downstream users
+do not need to filter noisy or unreviewed discovery tracks themselves.
 
 ## SDK Usage
 
@@ -244,7 +250,8 @@ const extraction = await client.createExtraction(project.id, {
 });
 await client.createAssetPackage(project.id, {
   sourceJobId: extraction.id,
-  format: "website-zip"
+  format: "website-zip",
+  objectIds: ["object_0"]
 });
 await client.createRender(project.id, {
   sourceJobId: extraction.id,

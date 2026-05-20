@@ -62,6 +62,38 @@
         "preview": { "type": "object" }
       }
     },
+    "objectLayerPack": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "format": { "const": "motionjson.object_layer_pack.v0.1" },
+        "path": { "type": "string" },
+        "selectedObjectIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "excludedObjectIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "objectCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "exportValidationMessages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string" },
+          "objectId": { "type": ["string", "null"] },
+          "message": { "type": "string" },
+          "suggestedAction": { "type": ["string", "null"] },
+          "source": { "type": "string" }
+        }
+      }
+    },
     "exportWarnings": {
       "type": "array",
       "items": {

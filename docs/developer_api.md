@@ -339,7 +339,9 @@ const extraction = await client.createExtraction(project.id, {
   maxFrames: 12
 });
 const packageJob = await client.createAssetPackage(project.id, {
-  sourceJobId: extraction.id
+  sourceJobId: extraction.id,
+  format: "website-zip",
+  objectIds: ["object_0"]
 });
 const renderJob = await client.createRender(project.id, {
   sourceJobId: extraction.id,

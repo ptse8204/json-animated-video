@@ -91,9 +91,11 @@ PUBLIC_DOWNLOAD_ARTIFACT_KINDS = {
     "final_export_manifest",
     "mp4_preview",
     "motionjson_export_zip",
+    "object_layer_pack",
     "preview_overlay",
     "review_state_manifest",
     "validated_motionjson_scene",
+    "website_package",
 }
 REVIEW_JSON_ARTIFACT_KINDS = {
     "candidate_summary",

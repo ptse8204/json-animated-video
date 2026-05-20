@@ -20,6 +20,11 @@ def build_remotion_plan(*, out_dir: str | Path, scene: dict[str, Any]) -> dict[s
                 "renderMode": obj.get("renderMode"),
                 "zIndex": obj.get("zIndex", 0),
                 "motionFrames": len(obj.get("motion", [])),
+                "discovery": obj.get("discovery", {}),
+                "review": {
+                    "status": (obj.get("discovery") or {}).get("reviewStatus") if isinstance(obj.get("discovery"), dict) else obj.get("exportStatus", "accepted"),
+                    "exportStatus": obj.get("exportStatus") or ((obj.get("discovery") or {}).get("exportStatus") if isinstance(obj.get("discovery"), dict) else "accepted"),
+                },
                 "assets": {
                     "spritesheet": (obj.get("assets", {}).get("spritesheet") or {}).get("path"),
                     "cutoutPattern": obj.get("assets", {}).get("cutoutPattern"),
@@ -52,10 +57,18 @@ def build_remotion_plan(*, out_dir: str | Path, scene: dict[str, Any]) -> dict[s
                 "props": {
                     "sceneGraphPath": "scene_graph.json",
                     "assetBasePath": ".",
+                    "objectIds": [item["objectId"] for item in objects if item.get("objectId")],
                     "backgroundColor": "#fbfaf6",
                 },
                 "rendering": "Composite cached raster/alpha cutouts according to JSON transforms.",
             },
+        },
+        "objectLayerPack": {
+            "format": "motionjson.object_layer_pack.v0.1",
+            "path": "object_layer_pack.json",
+            "component": "MotionJSONObjectLayers",
+            "objectIds": [item["objectId"] for item in objects if item.get("objectId")],
+            "dependencyPolicy": "application_owned",
         },
         "assets": {
             "baseDirectory": str(out_dir),

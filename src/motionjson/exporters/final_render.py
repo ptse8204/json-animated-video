@@ -304,6 +304,8 @@ def build_final_export_manifest(
     config: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
     quality_routing: dict[str, Any] | None = None,
+    object_layer_pack: dict[str, Any] | None = None,
+    export_validation_messages: list[dict[str, Any]] | None = None,
     export_warnings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     canvas = _canvas(scene)
@@ -334,6 +336,10 @@ def build_final_export_manifest(
         manifest["config"] = config
     if quality_routing is not None:
         manifest["qualityRouting"] = quality_routing
+    if object_layer_pack is not None:
+        manifest["objectLayerPack"] = object_layer_pack
+    if export_validation_messages is not None:
+        manifest["exportValidationMessages"] = export_validation_messages
     if export_warnings is not None:
         manifest["exportWarnings"] = export_warnings
     if validation is not None:
@@ -352,6 +358,8 @@ def write_final_export_manifest(
     config: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
     quality_routing: dict[str, Any] | None = None,
+    object_layer_pack: dict[str, Any] | None = None,
+    export_validation_messages: list[dict[str, Any]] | None = None,
     export_warnings: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     manifest = build_final_export_manifest(
@@ -363,6 +371,8 @@ def write_final_export_manifest(
         config=config,
         validation=validation,
         quality_routing=quality_routing,
+        object_layer_pack=object_layer_pack,
+        export_validation_messages=export_validation_messages,
         export_warnings=export_warnings,
     )
     write_json(manifest_path, manifest)

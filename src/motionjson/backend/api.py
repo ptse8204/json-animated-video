@@ -379,6 +379,7 @@ class MotionJSONAPI:
                 project_id=parts[2],
                 source_job_id=str(payload["sourceJobId"]),
                 format=str(payload.get("format") or "website-zip"),
+                object_ids=[str(item) for item in payload.get("objectIds", [])] if isinstance(payload.get("objectIds"), list) else None,
             )
             return HTTPStatus.ACCEPTED, "application/json", json.dumps(_public_job(job), sort_keys=True).encode("utf-8")
         if len(parts) == 4 and parts[:2] == ["v1", "projects"] and parts[3] == "renders" and method == "POST":

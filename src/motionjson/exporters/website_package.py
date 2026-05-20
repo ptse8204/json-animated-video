@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import copy
 import fnmatch
 import json
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .final_render import final_export_entry, load_scene
+from .object_layer_pack import build_object_layer_pack
 from .scene_graph import write_json
 
 EXCLUDE_PATTERNS = (
@@ -53,6 +55,37 @@ def _load_json(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return data
+
+
+def _unique_ids(values: Sequence[str] | None) -> list[str]:
+    seen: set[str] = set()
+    ids: list[str] = []
+    for value in values or []:
+        object_id = str(value).strip()
+        if object_id and object_id not in seen:
+            ids.append(object_id)
+            seen.add(object_id)
+    return ids
+
+
+def _object_id(value: dict[str, Any], fallback: str = "") -> str:
+    return str(value.get("id") or value.get("objectId") or value.get("object_id") or fallback)
+
+
+def _filter_scene(scene: dict[str, Any], object_ids: Sequence[str] | None) -> dict[str, Any]:
+    selected_ids = _unique_ids(object_ids)
+    if not selected_ids:
+        return copy.deepcopy(scene)
+    selected = set(selected_ids)
+    filtered = copy.deepcopy(scene)
+    filtered["objects"] = [obj for obj in filtered.get("objects", []) if isinstance(obj, dict) and _object_id(obj) in selected]
+    if isinstance(filtered.get("layers"), list):
+        filtered["layers"] = [
+            layer
+            for layer in filtered["layers"]
+            if isinstance(layer, dict) and str(layer.get("object_id") or layer.get("objectId") or "") in selected
+        ]
+    return filtered
 
 
 def _write_index(path: Path) -> None:
@@ -106,11 +139,55 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def _include_scene_assets(out_dir: Path, package_root: Path, scene: dict[str, Any], files: dict[str, int]) -> None:
-    for required in ("scene_graph.json", "object_motion.json", "web_asset_manifest.json", "resource_profile.json", "rights_manifest.json"):
+def _write_json_file(package_root: Path, rel_path: str, document: dict[str, Any], files: dict[str, int]) -> None:
+    path = package_root / rel_path
+    write_json(path, document)
+    files[rel_path] = path.stat().st_size
+
+
+def _include_root_documents(
+    out_dir: Path,
+    package_root: Path,
+    *,
+    package_scene: dict[str, Any],
+    selected_object_ids: Sequence[str] | None,
+    files: dict[str, int],
+) -> None:
+    selected_ids = _unique_ids(selected_object_ids)
+    if selected_ids:
+        _write_json_file(package_root, "scene_graph.json", package_scene, files)
+        if len(selected_ids) == 1:
+            object_id = selected_ids[0]
+            _copy_file(out_dir / "objects" / object_id / "object_motion.json", package_root, "object_motion.json", files)
+            _copy_file(out_dir / "objects" / object_id / "web_asset_manifest.json", package_root, "web_asset_manifest.json", files)
+    else:
+        for required in ("scene_graph.json", "object_motion.json", "web_asset_manifest.json"):
+            _copy_file(out_dir / required, package_root, required, files)
+
+    for required in ("resource_profile.json", "rights_manifest.json"):
         _copy_file(out_dir / required, package_root, required, files)
 
-    for obj in scene.get("objects", []):
+
+def _include_scene_assets(
+    out_dir: Path,
+    package_root: Path,
+    package_scene: dict[str, Any],
+    files: dict[str, int],
+    *,
+    selected_object_ids: Sequence[str] | None = None,
+    excluded_object_ids: Sequence[str] | None = None,
+    quality_routing: dict[str, Any] | None = None,
+    validation_messages: list[dict[str, Any]] | None = None,
+) -> None:
+    _include_root_documents(
+        out_dir,
+        package_root,
+        package_scene=package_scene,
+        selected_object_ids=selected_object_ids,
+        files=files,
+    )
+
+    for obj in package_scene.get("objects", []):
         object_id = obj.get("id")
         if not object_id:
             continue
@@ -140,8 +217,26 @@ def _include_scene_assets(out_dir: Path, package_root: Path, scene: dict[str, An
             if isinstance(asset, dict) and asset.get("status") == "ready" and asset.get("path"):
                 _copy_file(out_dir / asset["path"], package_root, asset["path"], files)
 
+    object_layer_pack = build_object_layer_pack(
+        package_scene,
+        selected_object_ids=selected_object_ids,
+        excluded_object_ids=excluded_object_ids,
+        quality_routing=quality_routing,
+        validation_messages=validation_messages,
+        source_scene_graph="scene_graph.json",
+        website_package_path=".",
+    )
+    _write_json_file(package_root, "object_layer_pack.json", object_layer_pack, files)
 
-def _write_package_manifest(package_root: Path, scene: dict[str, Any], files: dict[str, int]) -> dict[str, Any]:
+
+def _write_package_manifest(
+    package_root: Path,
+    scene: dict[str, Any],
+    files: dict[str, int],
+    *,
+    selected_object_ids: Sequence[str] | None = None,
+    excluded_object_ids: Sequence[str] | None = None,
+) -> dict[str, Any]:
     rights = {}
     for obj in scene.get("objects", []):
         if obj.get("id") and obj.get("rights"):
@@ -160,6 +255,9 @@ def _write_package_manifest(package_root: Path, scene: dict[str, Any], files: di
         "snippets": sorted(path for path in files if path.startswith("snippets/")),
         "rightsManifest": "rights_manifest.json",
         "rightsSummary": rights_manifest.get("summary", {}),
+        "objectLayerPack": "object_layer_pack.json",
+        "selectedObjectIds": _unique_ids(selected_object_ids) or sorted(rights),
+        "excludedObjectIds": _unique_ids(excluded_object_ids),
         "files": [{"path": path, "bytes": size} for path, size in sorted(files.items())],
         "totalBytes": sum(files.values()),
         "rights": rights,
@@ -178,18 +276,44 @@ def _write_package_manifest(package_root: Path, scene: dict[str, Any], files: di
     return manifest
 
 
-def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> dict[str, Any]:
+def export_website_package(
+    *,
+    out_dir: str | Path,
+    output_path: str | Path,
+    object_ids: Sequence[str] | None = None,
+    excluded_object_ids: Sequence[str] | None = None,
+    scene_override: dict[str, Any] | None = None,
+    quality_routing: dict[str, Any] | None = None,
+    validation_messages: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     out_dir = Path(out_dir)
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    scene = load_scene(out_dir)
+    source_scene = load_scene(out_dir)
+    requested_ids = _unique_ids(object_ids)
+    base_scene = scene_override if isinstance(scene_override, dict) else source_scene
+    available_ids = {_object_id(obj) for obj in base_scene.get("objects", []) if isinstance(obj, dict)}
+    missing_ids = [object_id for object_id in requested_ids if object_id not in available_ids]
+    if missing_ids:
+        raise ValueError(f"objectIds not found in scene_graph.json: {', '.join(missing_ids)}")
+    package_scene = _filter_scene(base_scene, requested_ids or None)
+    selected_ids = requested_ids or [_object_id(obj) for obj in package_scene.get("objects", []) if isinstance(obj, dict)]
 
     with tempfile.TemporaryDirectory(prefix="motionjson_website_package_") as tmp:
         package_root = Path(tmp) / "package"
         package_root.mkdir(parents=True)
         files: dict[str, int] = {}
 
-        _include_scene_assets(out_dir, package_root, scene, files)
+        _include_scene_assets(
+            out_dir,
+            package_root,
+            package_scene,
+            files,
+            selected_object_ids=requested_ids or None,
+            excluded_object_ids=excluded_object_ids,
+            quality_routing=quality_routing,
+            validation_messages=validation_messages,
+        )
         _copy_tree(out_dir / "preview" / "runtime", package_root, "runtime", files)
         _copy_tree(out_dir / "preview", package_root, "preview", files)
         examples_dir = _repo_root() / "examples"
@@ -199,7 +323,13 @@ def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> d
         files["index.html"] = (package_root / "index.html").stat().st_size
         _write_index(package_root / "preview" / "index.html")
         files["preview/index.html"] = (package_root / "preview" / "index.html").stat().st_size
-        _write_package_manifest(package_root, scene, files)
+        _write_package_manifest(
+            package_root,
+            package_scene,
+            files,
+            selected_object_ids=selected_ids,
+            excluded_object_ids=excluded_object_ids,
+        )
 
         with zipfile.ZipFile(output_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             for path in sorted(package_root.rglob("*")):
@@ -210,7 +340,7 @@ def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> d
                     raise ValueError(f"Unsafe package path: {rel_path}")
                 archive.write(path, rel_path)
 
-    return final_export_entry(
+    entry = final_export_entry(
         export_type="website_package_zip",
         format_name="zip",
         output_path=output_path,
@@ -218,10 +348,18 @@ def export_website_package(*, out_dir: str | Path, output_path: str | Path) -> d
         status="ready" if output_path.exists() and output_path.stat().st_size > 0 else "error",
         mime_type="application/zip",
         extra={
-            "cachedSources": ["scene_graph.json", "web_asset_manifest.json", "object_motion.json", "resource_profile.json", "rights_manifest.json", "objects/*"],
+            "cachedSources": ["scene_graph.json", "web_asset_manifest.json", "object_motion.json", "resource_profile.json", "rights_manifest.json", "objects/*", "object_layer_pack.json"],
             "packageManifest": "package_manifest.json",
+            "objectLayerPack": "object_layer_pack.json",
+            "selectedObjectIds": selected_ids,
+            "excludedObjectIds": _unique_ids(excluded_object_ids),
             "rightsManifest": "rights_manifest.json",
             "excludes": list(EXCLUDE_PATTERNS),
             "bytes": _safe_size(output_path),
         },
     )
+    try:
+        output_path.relative_to(out_dir)
+    except ValueError:
+        entry["path"] = output_path.name
+    return entry

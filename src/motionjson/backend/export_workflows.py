@@ -22,6 +22,8 @@ from motionjson.backend.corrections import build_track_correction_state, list_tr
 from motionjson.backend.jobs import create_completed_job, get_job, record_job_event
 from motionjson.backend.rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from motionjson.exporters.final_render import build_final_export_manifest, final_export_entry, render_frames
+from motionjson.exporters.object_layer_pack import OBJECT_LAYER_PACK_FORMAT, write_object_layer_pack
+from motionjson.exporters.website_package import export_website_package
 from motionjson.providers.base import StorageProvider
 from motionjson.rights import build_rights_review_report
 from motionjson.validation import validate_document, validate_file, validate_output_dir
@@ -266,6 +268,51 @@ def _validate_export_documents(documents: list[tuple[str, dict[str, Any]]]) -> d
         "issues": issues,
         "aiUsage": "none",
     }
+
+
+def _export_validation_messages(
+    diagnostics: list[dict[str, Any]],
+    export_warnings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    messages: list[dict[str, Any]] = []
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, dict):
+            continue
+        reason = str(diagnostic.get("reason") or "")
+        object_id = str(diagnostic.get("objectId") or "")
+        review_required = reason in {"review_required", "review_pending"}
+        messages.append(
+            {
+                "code": "auto_discovered_object_review_required" if review_required else str(diagnostic.get("code") or "export_diagnostic"),
+                "severity": "warn",
+                "objectId": object_id,
+                "message": (
+                    f"{object_id} was not included because auto-discovered objects require review before export."
+                    if review_required and object_id
+                    else str(diagnostic.get("reason") or diagnostic.get("message") or "object was not included in export")
+                ),
+                "suggestedAction": (
+                    "Review and accept the object track, then validate export again."
+                    if review_required
+                    else "Review track corrections and export inclusion before publishing."
+                ),
+                "source": "export_validation",
+            }
+        )
+    for warning in export_warnings:
+        if not isinstance(warning, dict):
+            continue
+        messages.append(
+            {
+                "code": str(warning.get("code") or "export_warning"),
+                "severity": str(warning.get("severity") or "warn"),
+                "objectId": warning.get("objectId"),
+                "message": str(warning.get("message") or warning.get("suggestedAction") or "export warning"),
+                "suggestedAction": warning.get("suggestedAction"),
+                "source": "rights_and_lineage",
+            }
+        )
+    return _sanitize_value(messages)
 
 
 def _canvas(scene: dict[str, Any]) -> dict[str, Any]:
@@ -841,6 +888,7 @@ def _build_export_tree(
     source_asset_id = _source_asset_id(conn, job_id)
     rights_report = _sanitize_value(build_rights_review_report(scene=exported_scene, source_asset_id=source_asset_id))
     export_warnings = rights_report["warnings"]
+    export_validation_messages = _export_validation_messages(diagnostics, export_warnings)
     provenance = {
         "app": "motionjson",
         "version": __version__,
@@ -864,6 +912,50 @@ def _build_export_tree(
         "sourceJob": _sanitize_value({"type": job.get("type"), "payload": payload}),
         "correctionState": _sanitize_value(correction_state),
     }
+    object_layer_pack_path = export_dir / "object_layer_pack.json"
+    object_layer_pack = write_object_layer_pack(
+        object_layer_pack_path,
+        exported_scene,
+        selected_object_ids=included_ids,
+        excluded_object_ids=excluded_ids,
+        quality_routing=quality_routing,
+        validation_messages=export_validation_messages,
+        source_scene_graph="scene_graph.json",
+        website_package_path="website_package.zip",
+    )
+    exports.append(
+        final_export_entry(
+            export_type="object_layer_pack",
+            format_name="json",
+            output_path=object_layer_pack_path,
+            out_dir=export_dir,
+            status="ready",
+            mime_type="application/json",
+            extra={
+                "preset": preset,
+                "packFormat": OBJECT_LAYER_PACK_FORMAT,
+                "selectedObjectIds": included_ids,
+                "excludedObjectIds": excluded_ids,
+                "objectCount": object_layer_pack["objectCount"],
+            },
+        )
+    )
+    website_package_path = export_dir / "website_package.zip"
+    website_package_entry = export_website_package(
+        out_dir=source_dir,
+        output_path=website_package_path,
+        object_ids=included_ids,
+        excluded_object_ids=excluded_ids,
+        scene_override=exported_scene,
+        quality_routing=quality_routing,
+        validation_messages=export_validation_messages,
+    )
+    website_package_entry["path"] = "website_package.zip"
+    website_package_entry["bytes"] = website_package_path.stat().st_size if website_package_path.exists() else 0
+    website_package_entry["includedObjectIds"] = included_ids
+    website_package_entry["excludedObjectIds"] = excluded_ids
+    website_package_entry["preset"] = preset
+    exports.append(website_package_entry)
     validation = _validate_export_documents([("scene_graph.json", exported_scene)])
     manifest = build_final_export_manifest(
         out_dir=export_dir,
@@ -872,6 +964,14 @@ def _build_export_tree(
         provenance=provenance,
         config=config,
         quality_routing=quality_routing,
+        object_layer_pack={
+            "format": object_layer_pack["format"],
+            "path": "object_layer_pack.json",
+            "selectedObjectIds": included_ids,
+            "excludedObjectIds": excluded_ids,
+            "objectCount": object_layer_pack["objectCount"],
+        },
+        export_validation_messages=export_validation_messages,
         export_warnings=export_warnings,
         validation={key: value for key, value in validation.items() if key != "issues"},
     )
@@ -888,7 +988,15 @@ def _build_export_tree(
         "includedObjectIds": included_ids,
         "excludedObjectIds": excluded_ids,
         "diagnostics": diagnostics,
+        "exportValidationMessages": export_validation_messages,
         "qualityRouting": quality_routing,
+        "objectLayerPack": {
+            "format": object_layer_pack["format"],
+            "path": "object_layer_pack.json",
+            "selectedObjectIds": included_ids,
+            "excludedObjectIds": excluded_ids,
+            "objectCount": object_layer_pack["objectCount"],
+        },
         "rightsSummary": rights_report,
         "exportWarnings": export_warnings,
         "aiUsage": "none",
@@ -918,6 +1026,8 @@ def _build_export_tree(
         "preview": preview,
         "contours": contour_document,
         "qualityRouting": quality_routing,
+        "objectLayerPack": object_layer_pack,
+        "exportValidationMessages": export_validation_messages,
         "rightsSummary": rights_report,
         "exportWarnings": export_warnings,
         "maskPaths": mask_paths,
@@ -961,7 +1071,14 @@ def validate_motionjson_export_job(
             "includedObjectIds": result["includedObjectIds"],
             "excludedObjectIds": result["excludedObjectIds"],
             "diagnostics": result["diagnostics"],
+            "exportValidationMessages": result["exportValidationMessages"],
             "qualityRouting": result["qualityRouting"],
+            "objectLayerPack": {
+                "format": result["objectLayerPack"]["format"],
+                "selectedObjectIds": result["objectLayerPack"]["selectedObjectIds"],
+                "excludedObjectIds": result["objectLayerPack"]["excludedObjectIds"],
+                "objectCount": result["objectLayerPack"]["objectCount"],
+            },
             "rightsSummary": result["rightsSummary"],
             "exportWarnings": result["exportWarnings"],
             "provenance": result["provenance"],
@@ -1076,6 +1193,11 @@ def _export_asset_specs(export_dir: Path) -> list[tuple[Path, str, str]]:
             kind = "export_validation_report"
         elif name == "quality_routing.json":
             kind = "export_quality_routing"
+        elif name == "object_layer_pack.json":
+            kind = "object_layer_pack"
+        elif name == "website_package.zip":
+            kind = "website_package"
+            content_type = "application/zip"
         elif name == "preview/overlay_preview.svg":
             kind = "preview_overlay"
         elif name == "preview/preview.mp4":

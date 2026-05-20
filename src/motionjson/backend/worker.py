@@ -534,13 +534,14 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
     if payload.get("format") != "website-zip":
         raise ValueError("backend export currently supports website-zip")
     source_job_id = str(payload["source_job_id"])
+    object_ids = [str(item) for item in payload.get("object_ids", [])] if isinstance(payload.get("object_ids"), list) else None
     with tempfile.TemporaryDirectory(prefix="motionjson_backend_export_") as tmp:
         tmp_dir = Path(tmp)
         extraction_dir = tmp_dir / "extraction"
         extraction_dir.mkdir()
         _materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=source_job_id, out_dir=extraction_dir)
         output_path = tmp_dir / "website_package.zip"
-        entry = export_website_package(out_dir=extraction_dir, output_path=output_path)
+        entry = export_website_package(out_dir=extraction_dir, output_path=output_path, object_ids=object_ids)
         source_asset_id = _source_asset_for_extraction(conn, source_job_id=source_job_id)
         asset = register_generated_asset(
             conn,
@@ -551,7 +552,7 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
             path=output_path,
             rel_path="exports/website_package.zip",
             content_type="application/zip",
-            metadata={"aiUsage": "none", "exportEntry": entry},
+            metadata={"aiUsage": "none", "exportEntry": entry, "selectedObjectIds": entry.get("selectedObjectIds", [])},
         )
         record_asset_lineage(
             conn,
@@ -560,7 +561,7 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
             derived_asset_id=asset["id"],
             job_id=job["id"],
             operation="export_website_package",
-            metadata={"format": "website-zip", "sourceJobId": source_job_id},
+            metadata={"format": "website-zip", "sourceJobId": source_job_id, "selectedObjectIds": entry.get("selectedObjectIds", [])},
         )
         with zipfile.ZipFile(output_path) as archive:
             rights_manifest = json.loads(archive.read("rights_manifest.json").decode("utf-8"))
@@ -574,10 +575,10 @@ def _run_export(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict
             job_id=job["id"],
             asset_id=asset["id"],
             event_type="website_package_exported",
-            metadata={"format": "website-zip", "aiUsage": "none"},
+            metadata={"format": "website-zip", "aiUsage": "none", "selectedObjectIds": entry.get("selectedObjectIds", [])},
         )
-    record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="exports_produced", quantity=1, unit="export", metadata={"format": "website-zip", "assetId": asset["id"]})
-    return {"assetId": asset["id"], "format": "website-zip", "aiUsage": "none"}
+    record_usage_event(conn, user_id=job["created_by_user_id"], project_id=job["project_id"], job_id=job["id"], event_type="exports_produced", quantity=1, unit="export", metadata={"format": "website-zip", "assetId": asset["id"], "selectedObjectIds": entry.get("selectedObjectIds", [])})
+    return {"assetId": asset["id"], "format": "website-zip", "selectedObjectIds": entry.get("selectedObjectIds", []), "aiUsage": "none"}
 
 
 def _first_scene_object(scene: dict[str, Any], object_id: str | None = None) -> dict[str, Any]:

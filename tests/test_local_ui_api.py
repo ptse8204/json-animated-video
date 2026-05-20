@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import copy
 import json
 import sqlite3
 import time
@@ -1048,6 +1049,45 @@ def test_local_ui_track_selected_validates_candidates_and_gates_export(tmp_path)
     assert "No exportable object tracks" in decode(body)["error"]
 
 
+def test_local_ui_export_validation_messages_explain_unreviewed_auto_discovery(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Unreviewed Discovery Export")
+    scene_asset = scene_asset_for_job(app, job)
+    storage = app.storage()
+    scene = json.loads(storage.load_bytes(scene_asset["storage_key"]).decode("utf-8"))
+    pending = copy.deepcopy(scene["objects"][0])
+    pending["id"] = "auto_pending"
+    pending["label"] = "Auto pending"
+    pending["discovery"] = {
+        "source": "auto_object_proposals",
+        "qualityPreset": "clean",
+        "reviewStatus": "pending",
+        "reviewRequired": True,
+        "exportStatus": "review_pending",
+    }
+    scene["objects"].append(pending)
+    storage.save_bytes(scene_asset["storage_key"], json.dumps(scene).encode("utf-8"), content_type="application/json")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "compact", "includePreview": False}).encode("utf-8"),
+    )
+    validation = decode(body)
+
+    assert status == 200
+    assert validation["includedObjectIds"] == ["object_0"]
+    assert validation["excludedObjectIds"] == ["auto_pending"]
+    assert validation["objectLayerPack"]["selectedObjectIds"] == ["object_0"]
+    assert validation["objectLayerPack"]["excludedObjectIds"] == ["auto_pending"]
+    assert any(
+        message["code"] == "auto_discovered_object_review_required" and message["objectId"] == "auto_pending"
+        for message in validation["exportValidationMessages"]
+    )
+    assert str(tmp_path) not in body.decode("utf-8")
+    assert "projects/" not in body.decode("utf-8")
+
+
 def test_local_ui_cancel_pending_job_records_public_status_and_event(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
@@ -1290,12 +1330,35 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
         "final_export_manifest",
         "export_validation_report",
         "export_quality_routing",
+        "object_layer_pack",
         "preview_overlay",
         "contours_boxes",
+        "website_package",
         "motionjson_export_zip",
     }.issubset(kinds)
     if exported["qualityRouting"]["preview"]["mp4Preview"]["status"] == "ready":
         assert "mp4_preview" in kinds
+
+    layer_pack_asset = next(asset for asset in exported["assets"] if asset["kind"] == "object_layer_pack")
+    status, _headers, pack_body = app.handle("GET", layer_pack_asset["contentUrl"])
+    object_layer_pack = decode(pack_body)
+    assert status == 200
+    assert object_layer_pack["format"] == "motionjson.object_layer_pack.v0.1"
+    assert object_layer_pack["selectedObjectIds"] == ["object_0"]
+    assert object_layer_pack["objectCount"] == 1
+    assert "plainJs" in object_layer_pack["snippets"]
+
+    website_asset = next(asset for asset in exported["assets"] if asset["kind"] == "website_package")
+    status, headers, website_body = app.handle("GET", website_asset["contentUrl"])
+    assert status == 200
+    assert headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(website_body)) as archive:
+        website_names = archive.namelist()
+        website_manifest = json.loads(archive.read("package_manifest.json").decode("utf-8"))
+        website_pack = json.loads(archive.read("object_layer_pack.json").decode("utf-8"))
+    assert "scene_graph.json" in website_names
+    assert website_manifest["selectedObjectIds"] == ["object_0"]
+    assert website_pack["selectedObjectIds"] == ["object_0"]
 
     zip_asset = next(asset for asset in exported["assets"] if asset["kind"] == "motionjson_export_zip")
     status, headers, zip_body = app.handle("GET", zip_asset["contentUrl"])
@@ -1303,7 +1366,7 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(zip_body)) as archive:
         names = archive.namelist()
-    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json", "quality_routing.json"}.issubset(set(names))
+    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json", "quality_routing.json", "object_layer_pack.json", "website_package.zip"}.issubset(set(names))
     if exported["qualityRouting"]["preview"]["mp4Preview"]["status"] == "ready":
         assert "preview/preview.mp4" in names
     assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)
@@ -1329,6 +1392,8 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert manifest["validation"]["ok"] is True
     assert manifest["provenance"]["aiUsage"] == "none"
     assert manifest["qualityRouting"]["format"] == "motionjson.export_quality_routing.v0.1"
+    assert manifest["objectLayerPack"]["format"] == "motionjson.object_layer_pack.v0.1"
+    assert manifest["objectLayerPack"]["selectedObjectIds"] == ["object_0"]
     assert manifest["qualityRouting"]["objects"][0]["selectedOutput"] in {
         "raster_alpha_sequence",
         "hybrid_vector_silhouette_plus_raster",
