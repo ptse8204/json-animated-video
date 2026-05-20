@@ -92,6 +92,8 @@ vectorization, or export providers:
   and hosted SAM2 paths, cache behavior, fallback routing, and tests.
 - [SAM3 local discovery](sam3_local.md) documents optional local SAM3 concept,
   exemplar, and higher-recall discovery behind capability gates.
+- [SAM3 hosted discovery](sam3_hosted.md) documents the hosted endpoint
+  contract, setup-only checks, explicit smoke-test opt-in, and redaction rules.
 - [AI provider architecture](ai_provider_architecture.md) explains provider
   interfaces and local-first boundaries for optional AI integrations.
 - [Benchmark fixtures](benchmark_fixtures.md) and

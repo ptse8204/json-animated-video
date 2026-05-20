@@ -13,8 +13,8 @@ from motionjson.providers.discovery import (
     SAM3ExemplarDiscoveryProvider,
     object_specs_from_candidates,
 )
-from motionjson.providers.base import ProviderConfigError
-from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend, normalize_sam3_output
+from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
+from motionjson.providers.sam3 import HostedSAM3DiscoveryBackend, LocalSAM3DiscoveryBackend, normalize_sam3_output
 from motionjson.tracks import RunContext, VideoSource
 from motionjson.video import Frame, VideoInfo
 
@@ -100,12 +100,131 @@ class FakeSAM3TrackingBackend:
         return [mask_at(3 + index) for index, _frame in enumerate(video.frames)]
 
 
+class FakeHostedSAM3Transport:
+    def __init__(self, response):
+        self.response = response
+        self.calls = []
+
+    def post_json(self, url, payload, *, headers=None, timeout_seconds=None):
+        self.calls.append({"url": url, "payload": payload, "headers": headers or {}, "timeoutSeconds": timeout_seconds})
+        if callable(self.response):
+            return self.response(payload)
+        return self.response
+
+
 def test_normalize_sam3_output_maps_official_image_shape():
     records = normalize_sam3_output({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.91], "labels": ["red ball"]})
 
     assert records[0]["label"] == "red ball"
     assert records[0]["bbox"] == [3, 2, 5, 5]
     assert records[0]["score"] == 0.91
+
+
+def test_hosted_sam3_smoke_requires_explicit_network_opt_in():
+    transport = FakeHostedSAM3Transport({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.9]})
+    backend = HostedSAM3DiscoveryBackend(
+        endpoint="https://provider.example.test/sam3",
+        api_key="hosted-sam3-secret-abcdef",
+        transport=transport,
+    )
+
+    with pytest.raises(ProviderConfigError, match="allowNetwork=true"):
+        backend.smoke_test(prompt="object")
+
+    assert transport.calls == []
+
+
+def test_hosted_sam3_smoke_posts_one_frame_and_validates_response():
+    secret = "hosted-sam3-secret-abcdef"
+    transport = FakeHostedSAM3Transport({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.9], "labels": ["object"]})
+    backend = HostedSAM3DiscoveryBackend(
+        endpoint="https://provider.example.test/sam3",
+        api_key=secret,
+        model="sam3/default",
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        transport=transport,
+        timeout_seconds=12,
+    )
+
+    result = backend.smoke_test(prompt="red ball")
+
+    assert result["status"] == "ok"
+    assert result["networkAttempted"] is True
+    assert result["recordCount"] == 1
+    assert secret not in str(result)
+    call = transport.calls[0]
+    assert call["url"] == "https://provider.example.test/sam3"
+    assert call["headers"]["Authorization"] == f"Bearer {secret}"
+    assert call["timeoutSeconds"] == 12
+    assert call["payload"]["model"] == "sam3/default"
+    assert call["payload"]["prompt"] == "red ball"
+    assert call["payload"]["frame"]["format"] == "png_base64"
+
+
+def test_hosted_sam3_smoke_rejects_empty_candidate_response():
+    transport = FakeHostedSAM3Transport({"outputs": []})
+    backend = HostedSAM3DiscoveryBackend(
+        endpoint="https://provider.example.test/sam3",
+        api_key="hosted-sam3-secret-abcdef",
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        transport=transport,
+    )
+
+    with pytest.raises(ProviderExecutionError, match="did not include any candidate"):
+        backend.smoke_test(prompt="object")
+
+
+def test_hosted_sam3_from_config_does_not_read_api_keys_from_run_config(monkeypatch):
+    monkeypatch.delenv("SAM3_HOSTED_API_KEY", raising=False)
+    backend = HostedSAM3DiscoveryBackend.from_config(
+        {
+            "endpoint": "https://provider.example.test/sam3",
+            "apiKey": "hosted-sam3-secret-should-not-be-read",
+            "allowNetwork": True,
+            "acknowledgeCostPrivacy": True,
+        }
+    )
+
+    with pytest.raises(ProviderConfigError, match="requires auth"):
+        backend.smoke_test(prompt="object")
+
+
+def test_sam3_concept_can_use_hosted_backend_when_explicitly_configured(tmp_path):
+    def hosted_response(payload):
+        if payload["task"] == "sam3_track_candidate":
+            return {
+                "outputs": [
+                    {
+                        "object_id": "sam3_hosted_track_001",
+                        "masks": [mask_at(3 + index) for index in range(3)],
+                        "bbox": [3, 2, 5, 5],
+                        "score": 0.9,
+                    }
+                ]
+            }
+        return {"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.9], "labels": ["red ball"]}
+
+    transport = FakeHostedSAM3Transport(hosted_response)
+    candidates = SAM3ConceptDiscoveryProvider(
+        backend_factory=lambda _config: HostedSAM3DiscoveryBackend(
+            endpoint="https://provider.example.test/sam3",
+            api_key="hosted-sam3-secret-abcdef",
+            allow_network=True,
+            acknowledge_cost_privacy=True,
+            transport=transport,
+        )
+    ).propose(
+        video_source(),
+        {"concept": "red ball", "minMaskArea": 1, "maxObjects": 1},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert candidates[0].metadata["providerName"] == "sam3-hosted"
+    assert candidates[0].metadata["aiUsage"] == "hosted_optional_sam3"
+    assert candidates[0].metadata["networkRequired"] is True
+    assert transport.calls[0]["payload"]["task"] == "sam3_concept"
 
 
 def test_local_sam3_image_backend_uses_injected_processor_without_model():

@@ -31,6 +31,8 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "providerSettingsById",
         "saveProviderSettingsFromRow",
         "/api/provider-settings/${encodeURIComponent(providerId)}/test",
+        "/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test",
+        "Run hosted smoke",
     ]:
         assert expected in js
 

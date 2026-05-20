@@ -691,7 +691,7 @@ def provider_capabilities(
                     None if sam3_hosted_endpoint["configured"] else "SAM3_HOSTED_URL is not set.",
                     None if sam3_hosted_auth["configured"] else "SAM3_HOSTED_API_KEY is not set.",
                     None if sam3_hosted_endpoint_valid else "Hosted SAM3 endpoint must be an http:// or https:// URL.",
-                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are settings-only; export them to environment variables or wire an execution adapter before treating the provider as runnable.",
+                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are used for setup and smoke tests only; export them to environment variables or pass explicit runtime config before treating extraction jobs as runnable.",
                     None if sam3_hosted_allow_network_effective or not sam3_hosted_configured else "Hosted SAM3 requires explicit network opt-in.",
                 )
                 if reason
@@ -707,7 +707,7 @@ def provider_capabilities(
                 _check("endpoint_env", "ok" if sam3_hosted_endpoint["configured"] else "missing", sam3_hosted_endpoint["env"], sam3_hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if sam3_hosted_auth["configured"] else "missing", sam3_hosted_auth["env"], sam3_hosted_auth["configured"]),
                 _check("network_opt_in", "ok" if sam3_hosted_allow_network_effective else "required", "Hosted SAM3 requires explicit network opt-in.", sam3_hosted_allow_network_effective),
-                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are not passed to runtime providers.", sam3_hosted_settings_only),
+                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are only passed to explicit setup/smoke test routes.", sam3_hosted_settings_only),
             ],
             metadata={
                 "endpointEnv": sam3_hosted_endpoint,

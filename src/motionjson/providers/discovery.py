@@ -15,7 +15,7 @@ from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
 from .sam2 import LocalSAM2AutomaticMaskProposalBackend
-from .sam3 import LocalSAM3DiscoveryBackend
+from .sam3 import HostedSAM3DiscoveryBackend, LocalSAM3DiscoveryBackend
 
 
 DISCOVERY_MODES = {
@@ -1061,6 +1061,15 @@ def _sam3_backend(current: Any | None, factory: Callable[[Mapping[str, Any]], An
         return current
     if factory is not None:
         return factory(config)
+    provider_preference = str(
+        config.get("providerPreference")
+        or config.get("provider_preference")
+        or config.get("sam3Provider")
+        or config.get("sam3_provider")
+        or ""
+    )
+    if provider_preference == "sam3-hosted" or _bool_config_any(config, ("hosted", "useHosted", "use_hosted"), False):
+        return HostedSAM3DiscoveryBackend.from_config(config)
     return LocalSAM3DiscoveryBackend.from_config(config)
 
 
@@ -1146,6 +1155,7 @@ def _sam3_records_to_candidates(
     write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
     quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
     provider_name = str(getattr(backend, "provider_name", "sam3-local") or "sam3-local")
+    hosted_backend = provider_name.startswith("sam3-hosted")
     frame_area = max(1, width * height)
     accepted_count = 0
     rejected_count = 0
@@ -1216,12 +1226,13 @@ def _sam3_records_to_candidates(
             z_index=10 + (accepted_count * 10 if accepted else 1000 + rejected_count),
             metadata=_candidate_metadata(
                 source,
-                "SAM3 local discovery proposal",
+                "SAM3 hosted discovery proposal" if hosted_backend else "SAM3 local discovery proposal",
                 {
                     "providerName": provider_name,
                     "qualityPreset": quality_preset,
                     "mock": False,
-                    "aiUsage": "local_optional_sam3",
+                    "aiUsage": "hosted_optional_sam3" if hosted_backend else "local_optional_sam3",
+                    "networkRequired": hosted_backend,
                     "promptType": prompt_type,
                     "prompt": prompt_value,
                     "keyframeIndex": frame_index,

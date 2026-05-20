@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
-from motionjson.provider_settings import redact_secret_payload, redact_secret_text
+import pytest
+
+from motionjson.backend.api import MotionJSONAPI
+from motionjson.backend.api_keys import create_api_key
+from motionjson.backend.auth import register_user
+from motionjson.backend.db import initialize_database
+from motionjson.provider_settings import hosted_sam3_smoke_test, redact_secret_payload, redact_secret_text
 from motionjson.ui.server import LocalUIApp
 
 
@@ -16,6 +23,20 @@ def provider_by_id(payload: dict, provider_id: str) -> dict:
 
 def capability_by_name(payload: dict, name: str) -> dict:
     return next(provider for provider in payload["providers"] if provider["name"] == name)
+
+
+class FakeHostedSAM3Transport:
+    def __init__(self):
+        self.calls = []
+
+    def post_json(self, url, payload, *, headers=None, timeout_seconds=None):
+        self.calls.append({"url": url, "payload": payload, "headers": headers or {}, "timeoutSeconds": timeout_seconds})
+        return {
+            "masks": [[[0, 0, 0], [0, 255, 0], [0, 0, 0]]],
+            "boxes": [[1, 1, 1, 1]],
+            "scores": [0.88],
+            "labels": ["object"],
+        }
 
 
 def test_secret_redaction_helpers_cover_common_provider_shapes():
@@ -242,3 +263,127 @@ def test_hosted_sam3_settings_are_redacted_and_never_test_network(tmp_path):
     assert capability["metadata"]["credentialSource"] == "local_settings"
     assert capability["metadata"]["settingsOnly"] is True
     assert secret not in body.decode("utf-8")
+
+
+def test_hosted_sam3_smoke_requires_per_request_network_ack(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "hosted-sam3-secret-abcdef123456"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam3-hosted",
+                "apiKey": secret,
+                "endpoint": "https://provider.example.test/sam3",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/sam3-hosted/smoke-test", body=b"{}")
+
+    assert status == 400
+    text = body.decode("utf-8")
+    assert "allowNetwork=true" in text
+    assert secret not in text
+
+
+def test_hosted_sam3_smoke_uses_server_saved_secret_and_redacts_response(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "hosted-sam3-secret-abcdef123456"
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam3-hosted",
+                "apiKey": secret,
+                "endpoint": "https://provider.example.test/sam3",
+                "selectedModel": "sam3/default",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        transport = FakeHostedSAM3Transport()
+        result = hosted_sam3_smoke_test(
+            conn,
+            user_id=user["id"],
+            payload={"allowNetwork": True, "acknowledgeCostPrivacy": True, "prompt": "object"},
+            transport=transport,
+        )
+    finally:
+        conn.close()
+
+    encoded = json.dumps(result, sort_keys=True)
+    assert result["status"] == "ok"
+    assert result["networkAttempted"] is True
+    assert result["credentials"]["display"].startswith("hos...")
+    assert result["model"] == "sam3/default"
+    assert secret not in encoded
+    assert transport.calls[0]["headers"]["Authorization"] == f"Bearer {secret}"
+    assert transport.calls[0]["payload"]["model"] == "sam3/default"
+
+
+def test_hosted_sam3_smoke_rejects_invalid_endpoint_before_network(tmp_path):
+    conn = sqlite3.connect(tmp_path / "backend.sqlite")
+    conn.row_factory = sqlite3.Row
+    initialize_database(conn)
+    user = register_user(conn, email="smoke@example.com", password="pw")
+    transport = FakeHostedSAM3Transport()
+    try:
+        with pytest.raises(ValueError, match="invalid configuration"):
+            hosted_sam3_smoke_test(
+                conn,
+                user_id=user["id"],
+                payload={"allowNetwork": True, "allowHosted": True, "acknowledgeCostPrivacy": True},
+                environ={"SAM3_HOSTED_URL": "file:///tmp/sam3", "SAM3_HOSTED_API_KEY": "hosted-sam3-secret-abcdef"},
+                transport=transport,
+            )
+    finally:
+        conn.close()
+
+    assert transport.calls == []
+
+
+def test_authenticated_api_exposes_hosted_sam3_smoke_route_without_client_secret(tmp_path, monkeypatch):
+    conn = sqlite3.connect(tmp_path / "backend.sqlite")
+    conn.row_factory = sqlite3.Row
+    initialize_database(conn)
+    user = register_user(conn, email="api-smoke@example.com", password="pw")
+    api_key = create_api_key(conn, user_id=user["id"], name="API")["apiKey"]
+    conn.close()
+
+    def fake_smoke(conn, *, user_id, payload, environ=None, transport=None):
+        assert payload["providerId"] == "sam3-hosted"
+        assert payload["allowNetwork"] is True
+        assert payload["acknowledgeCostPrivacy"] is True
+        return {
+            "format": "motionjson.provider_network_smoke_test.v0.1",
+            "providerId": "sam3-hosted",
+            "status": "ok",
+            "networkAttempted": True,
+            "message": "ok",
+        }
+
+    monkeypatch.setattr("motionjson.backend.api.hosted_sam3_smoke_test", fake_smoke)
+    api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+
+    status, _headers, body = api.handle(
+        "POST",
+        "/v1/providers/sam3-hosted/smoke-test",
+        {"authorization": f"Bearer {api_key}"},
+        json.dumps({"allowNetwork": True, "acknowledgeCostPrivacy": True}).encode("utf-8"),
+    )
+
+    assert status == 200
+    payload = decode(body)
+    assert payload["status"] == "ok"
+    assert "apiKey" not in body.decode("utf-8")

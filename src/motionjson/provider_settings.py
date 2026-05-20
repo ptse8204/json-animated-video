@@ -192,7 +192,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "capabilityName": "sam3-hosted",
         "kind": "discovery_provider",
         "locality": "hosted",
-        "implemented": False,
+        "implemented": True,
         "runsInLocalWorker": False,
         "credentialRequired": True,
         "credentialFields": [
@@ -531,6 +531,109 @@ def test_provider_settings(
     }
 
 
+def hosted_sam3_smoke_test(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    payload: Mapping[str, Any],
+    environ: Mapping[str, str] | None = None,
+    transport: Any | None = None,
+) -> dict[str, Any]:
+    """Run an explicit hosted SAM3 one-frame smoke test without exposing secrets."""
+
+    from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
+    from motionjson.providers.sam3 import HostedSAM3DiscoveryBackend
+
+    environ = environ or os.environ
+    provider_id = str(payload.get("providerId") or payload.get("provider_id") or "sam3-hosted")
+    if provider_id != "sam3-hosted":
+        raise ValueError("Hosted SAM3 smoke tests are only available for providerId sam3-hosted.")
+    definition = _definition(provider_id)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+
+    endpoint_env = str(definition.get("endpointField", {}).get("env") or "SAM3_HOSTED_URL")
+    endpoint = str(environ.get(endpoint_env) or settings.get("endpoint") or "").strip()
+    endpoint_source = "environment" if environ.get(endpoint_env) else "local_settings" if endpoint else "unset"
+    token_env = str(definition.get("credentialFields", [{}])[0].get("env") or "SAM3_HOSTED_API_KEY")
+    api_key = str(environ.get(token_env) or secrets.get("api_key") or "").strip()
+    credential_source = "environment" if environ.get(token_env) else "local_settings" if api_key else "unset"
+    model = str(environ.get("SAM3_HOSTED_MODEL") or _effective_model(definition, settings) or "auto").strip() or "auto"
+
+    missing: list[str] = []
+    invalid: list[str] = []
+    if not endpoint:
+        missing.append(endpoint_env)
+    elif not _valid_http_url(endpoint):
+        invalid.append(endpoint_env)
+    if not api_key:
+        missing.append(token_env)
+    elif not _api_key_plausible(api_key):
+        invalid.append(token_env)
+
+    if invalid:
+        raise ValueError(f"Hosted SAM3 smoke test has invalid configuration: {', '.join(invalid)}.")
+    if missing:
+        raise ValueError(f"Hosted SAM3 smoke test needs setup: {', '.join(missing)}.")
+
+    allow_network = _truthy(payload.get("allowNetwork", payload.get("allow_network")))
+    acknowledge_cost_privacy = _truthy(
+        payload.get(
+            "acknowledgeCostPrivacy",
+            payload.get("acknowledge_cost_privacy", payload.get("costPrivacyAcknowledged")),
+        )
+    )
+    hosted_ack = bool(settings.get("allow_hosted")) or _truthy(payload.get("allowHosted", payload.get("allow_hosted")))
+    if not allow_network or not acknowledge_cost_privacy:
+        raise ValueError(
+            "Hosted SAM3 smoke test requires allowNetwork=true and acknowledgeCostPrivacy=true before sending a frame."
+        )
+    if not hosted_ack:
+        raise ValueError("Hosted SAM3 smoke test requires the hosted cost/privacy opt-in in settings or allowHosted=true.")
+
+    timeout_seconds = min(max(_float_payload(payload, "timeoutSeconds", 60.0), 1.0), 300.0)
+    retries = min(max(int(_float_payload(payload, "retries", 1.0)), 0), 3)
+    prompt = str(payload.get("prompt") or "object").strip() or "object"
+    client = HostedSAM3DiscoveryBackend(
+        endpoint=endpoint,
+        api_key=api_key,
+        model=model,
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        timeout_seconds=timeout_seconds,
+        retries=retries,
+        transport=transport,
+    )
+    try:
+        smoke = client.smoke_test(prompt=prompt)
+    except (ProviderConfigError, ProviderExecutionError) as exc:
+        raise ValueError(redact_secret_text(str(exc))) from exc
+
+    return {
+        "format": "motionjson.provider_network_smoke_test.v0.1",
+        "providerId": provider_id,
+        "status": "ok",
+        "ready": True,
+        "networkAttempted": True,
+        "message": "Hosted SAM3 one-frame smoke test completed. Review provider billing and privacy terms before real runs.",
+        "costPrivacyAcknowledged": True,
+        "endpoint": {
+            "configured": True,
+            "source": endpoint_source,
+            "host": urlparse(endpoint).netloc,
+        },
+        "credentials": {
+            "configured": True,
+            "source": credential_source,
+            "display": redact_secret_value(api_key, provider_id=provider_id),
+        },
+        "model": model,
+        "timeoutSeconds": timeout_seconds,
+        "retries": retries,
+        "smokeTest": redact_secret_payload(smoke),
+    }
+
+
 def _definition(provider_id: str) -> dict[str, Any]:
     if provider_id not in PROVIDER_BY_ID:
         raise ValueError(f"Unknown provider settings id: {provider_id}")
@@ -650,6 +753,8 @@ def _capability_override(
     selected_model = _effective_model(definition, settings)
     if provider_id == "openrouter" and not settings.get("selected_model") and environ.get("OPENROUTER_DEFAULT_MODEL"):
         selected_model = str(environ["OPENROUTER_DEFAULT_MODEL"])
+    if provider_id == "sam3-hosted" and not settings.get("selected_model") and environ.get("SAM3_HOSTED_MODEL"):
+        selected_model = str(environ["SAM3_HOSTED_MODEL"])
     return {
         "configured": _readiness(definition, settings, secrets, environ)["configured"],
         "api_key_configured": bool(api_credential and api_credential.get("configured")),
@@ -783,6 +888,20 @@ def _optional_url(value: Any, field_name: str) -> str | None:
 def _valid_http_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _float_payload(payload: Mapping[str, Any], key: str, default: float) -> float:
+    snake = "".join([f"_{char.lower()}" if char.isupper() else char for char in key]).lstrip("_")
+    try:
+        return float(payload.get(key, payload.get(snake, default)))
+    except (TypeError, ValueError):
+        return default
 
 
 def _ensure_accepts_credentials(definition: Mapping[str, Any]) -> None:

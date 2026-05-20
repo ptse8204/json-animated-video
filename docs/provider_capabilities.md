@@ -138,7 +138,9 @@ Optional SAM2/hosted providers:
   `SAM3_LOCAL_MODEL` path. The base install and mock modes do not require any
   of those.
 - `sam3-hosted`: hosted SAM3-compatible discovery requires
-  `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`, and explicit network opt-in.
+  `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`, and explicit network opt-in. Its
+  setup check is no-network; the one-frame smoke test is a separate API call
+  that requires a cost/privacy acknowledgement before any frame is sent.
 
 Reasoning provider:
 
@@ -156,6 +158,12 @@ Provider settings:
 - `POST /api/provider-settings/PROVIDER_ID/test` runs a no-network readiness
   check. Hosted providers are checked for required fields and plausible key
   format, but the smoke test does not call the remote provider.
+- `POST /api/provider-settings/sam3-hosted/smoke-test` runs the hosted SAM3
+  one-frame network smoke test. It requires `allowNetwork: true`,
+  `allowHosted: true`, and `acknowledgeCostPrivacy: true`, uses server-side
+  settings or environment credentials, and redacts secrets in all responses.
+- `POST /v1/providers/sam3-hosted/smoke-test` exposes the same explicit smoke
+  test for authenticated/headless API clients.
 
 Environment variables override Local UI settings. This keeps CLI/headless use
 predictable and avoids surprising hosted calls in shared environments. For

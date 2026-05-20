@@ -21,7 +21,7 @@ The Local UI Provider settings panel currently covers:
   scaffolded detector workflows.
 - `sam3-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
   Hosted SAM3-compatible discovery uses `SAM3_HOSTED_URL` and
-  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally and do not send frames or make network calls without explicit opt-in.
+  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally, do not send frames or make network calls, and require a separate explicit opt-in for hosted smoke tests.
 
 ![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
 
@@ -37,6 +37,7 @@ HOSTED_SEGMENTATION_URL=
 HOSTED_SEGMENTATION_API_KEY=
 SAM3_HOSTED_URL=
 SAM3_HOSTED_API_KEY=
+SAM3_HOSTED_MODEL=auto
 ```
 
 The Local UI can also save a provider key in the selected SQLite database,
@@ -54,6 +55,13 @@ surface. They are not passed into runtime provider constructors yet. Diagnostics
 mark these providers as configured but `configured_settings_only`; use
 environment variables for actual provider execution until per-user runtime
 provider routing is wired in a later phase.
+
+Phase OD-09 adds a narrow exception for `sam3-hosted`: the Local UI can run an
+explicit one-frame smoke test from server-side saved settings. The browser never
+receives the raw key and does not send the key back to the API. The request must
+include both `allowNetwork: true` and `acknowledgeCostPrivacy: true`, and the
+provider must have the hosted-call opt-in enabled in settings or in the
+headless API request.
 
 ## What Is Redacted
 
@@ -97,6 +105,31 @@ hosted credentials remain settings-only and do not make backend jobs runnable.
 `POST /api/provider-settings/PROVIDER_ID/test` is a no-network setup check. It
 verifies required fields and basic key shape, but it does not call OpenRouter
 or a hosted segmentation service.
+
+`POST /api/provider-settings/sam3-hosted/smoke-test` is the hosted SAM3
+network smoke route. It sends one generated test frame to the configured
+endpoint only after the explicit request acknowledgement. The authenticated
+backend equivalent is:
+
+```text
+POST /v1/providers/sam3-hosted/smoke-test
+```
+
+The smoke-test payload is:
+
+```json
+{
+  "allowNetwork": true,
+  "allowHosted": true,
+  "acknowledgeCostPrivacy": true,
+  "prompt": "object",
+  "timeoutSeconds": 60,
+  "retries": 1
+}
+```
+
+Responses redact secrets and include `networkAttempted`. Failed setup or
+missing acknowledgement returns before any hosted request is attempted.
 
 OpenRouter remains reasoning-only. It can help with labels or VLM/LLM
 reasoning in future workflows, but it is not a pixel segmentation engine and

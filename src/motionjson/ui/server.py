@@ -59,6 +59,7 @@ from motionjson.capabilities import build_capability_report
 from motionjson.candidate_review import candidate_review_payload
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
 from motionjson.provider_settings import (
+    hosted_sam3_smoke_test,
     provider_settings_for_capabilities,
     provider_settings_response,
     redact_secret_text,
@@ -464,6 +465,7 @@ class LocalUIApp:
                     "/api/provider-settings",
                     "/api/provider-settings/{providerId}",
                     "/api/provider-settings/{providerId}/test",
+                    "/api/provider-settings/{providerId}/smoke-test",
                     "/api/projects",
                     "/api/videos",
                     "/api/videos/{videoId}/content",
@@ -511,6 +513,8 @@ class LocalUIApp:
                 return self._reset_provider_settings(parts[2])
             if len(parts) == 4 and parts[3] == "test" and method == "POST":
                 return self._test_provider_settings(parts[2])
+            if len(parts) == 4 and parts[3] == "smoke-test" and method == "POST":
+                return self._smoke_test_provider_settings(parts[2], payload)
         if path == "/api/run-config/defaults" and method == "GET":
             return {
                 "format": "motionjson.local_ui_run_config_defaults.v0.1",
@@ -1156,6 +1160,20 @@ class LocalUIApp:
         try:
             user = self._local_user(conn)
             return _public_value(test_provider_settings(conn, user_id=user["id"], provider_id=provider_id))
+        finally:
+            conn.close()
+
+    def _smoke_test_provider_settings(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(
+                hosted_sam3_smoke_test(
+                    conn,
+                    user_id=user["id"],
+                    payload={**payload, "providerId": provider_id},
+                )
+            )
         finally:
             conn.close()
 

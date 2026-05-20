@@ -12,6 +12,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from motionjson.candidate_review import candidate_review_payload, public_review_value
+from motionjson.provider_settings import hosted_sam3_smoke_test
 from motionjson.providers.local_storage import LocalStorageProvider
 
 from .api_keys import require_api_key
@@ -171,6 +172,12 @@ class MotionJSONAPI:
             return list_plan_catalog()
         if parts == ["v1", "billing", "status"] and method == "GET":
             return get_billing_status(user_id=user_id)
+        if len(parts) == 4 and parts[:2] == ["v1", "providers"] and parts[3] == "smoke-test" and method == "POST":
+            return hosted_sam3_smoke_test(
+                conn,
+                user_id=user_id,
+                payload={**payload, "providerId": parts[2]},
+            )
 
         if parts == ["v1", "beta", "status"] and method == "GET":
             return get_beta_status(conn, user_id=user_id)

@@ -8,6 +8,7 @@ const MotionJSONUI = (() => {
     "/api/provider-settings",
     "/api/provider-settings/{providerId}",
     "/api/provider-settings/{providerId}/test",
+    "/api/provider-settings/{providerId}/smoke-test",
     "/api/projects",
     "/api/run-config/defaults",
     "/api/run-config/validate",
@@ -1902,6 +1903,10 @@ const MotionJSONUI = (() => {
             <input data-provider-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(provider.name)} API key" />
           </label>`
         : "";
+      const hostedSmokeButton =
+        provider.id === "sam3-hosted"
+          ? `<button type="button" data-provider-action="smoke-test">Run hosted smoke</button>`
+          : "";
       return `
         <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}">
           <div class="provider-settings-header">
@@ -1945,6 +1950,7 @@ const MotionJSONUI = (() => {
           <div class="provider-actions">
             <button type="button" data-provider-action="save">Save</button>
             <button type="button" data-provider-action="test">Test setup</button>
+            ${hostedSmokeButton}
             <button type="button" data-provider-action="reset">Reset</button>
           </div>
           <div class="provider-test-result" role="status">${escapeHtml(readiness.message || "Review provider settings before use.")}</div>
@@ -4868,6 +4874,21 @@ const MotionJSONUI = (() => {
         } else if (action === "test") {
           const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/test`, { method: "POST", body: JSON.stringify({}) });
           if (result) result.textContent = payload.message || payload.status || "Provider setup checked.";
+        } else if (action === "smoke-test") {
+          if (!window.confirm("Run a hosted SAM3 one-frame smoke test? This can send a generated frame to the configured endpoint and may incur provider cost.")) {
+            if (result) result.textContent = "Hosted smoke test canceled.";
+            return;
+          }
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test`, {
+            method: "POST",
+            body: JSON.stringify({
+              allowNetwork: true,
+              allowHosted: true,
+              acknowledgeCostPrivacy: true,
+              prompt: "object",
+            }),
+          });
+          if (result) result.textContent = payload.message || "Hosted SAM3 smoke test completed.";
         } else if (action === "reset") {
           await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
           await refreshAll();

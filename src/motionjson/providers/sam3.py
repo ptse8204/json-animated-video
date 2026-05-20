@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import base64
+import io
+import json
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image
@@ -370,6 +375,292 @@ class LocalSAM3DiscoveryBackend:
         )
 
 
+@dataclass
+class HostedSAM3DiscoveryBackend:
+    """SAM3-compatible hosted backend gated behind explicit network opt-in."""
+
+    endpoint: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    allow_network: bool = False
+    acknowledge_cost_privacy: bool = False
+    timeout_seconds: float = 60.0
+    retries: int = 1
+    transport: Any | None = None
+    endpoint_env: str = "SAM3_HOSTED_URL"
+    api_key_env: str = "SAM3_HOSTED_API_KEY"
+    model_env: str = "SAM3_HOSTED_MODEL"
+    provider_name: str = "sam3-hosted"
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any]) -> "HostedSAM3DiscoveryBackend":
+        model = (
+            config.get("sam3HostedModel")
+            or config.get("sam3_hosted_model")
+            or config.get("model")
+            or config.get("modelName")
+            or os.environ.get("SAM3_HOSTED_MODEL")
+            or "auto"
+        )
+        timeout = config.get("timeoutSeconds", config.get("timeout_seconds", 60.0))
+        retries = config.get("retries", config.get("retry_count", 1))
+        return cls(
+            endpoint=config.get("sam3HostedEndpoint") or config.get("sam3_hosted_endpoint") or config.get("endpoint"),
+            api_key=None,
+            model=str(model or "auto"),
+            allow_network=_bool_config(config, "allowNetwork", False)
+            or _bool_config(config, "allowHostedNetwork", False)
+            or _bool_config(config, "hostedAllowNetwork", False),
+            acknowledge_cost_privacy=_bool_config(config, "acknowledgeCostPrivacy", False)
+            or _bool_config(config, "costPrivacyAcknowledged", False)
+            or _bool_config(config, "hostedCostPrivacyAcknowledged", False),
+            timeout_seconds=_float_or_default(timeout, 60.0),
+            retries=max(0, int(_float_or_default(retries, 1.0))),
+        )
+
+    def setup_status(self) -> dict[str, Any]:
+        endpoint = self._resolve_endpoint()
+        token = self._resolve_api_key()
+        endpoint_valid = _valid_http_url(endpoint)
+        return {
+            "format": "motionjson.sam3_hosted_setup.v0.1",
+            "providerName": self.provider_name,
+            "networkAttempted": False,
+            "configured": bool(endpoint and token and endpoint_valid),
+            "endpointConfigured": bool(endpoint),
+            "endpointValid": endpoint_valid,
+            "apiKeyConfigured": bool(token),
+            "model": self._resolve_model(),
+        }
+
+    def smoke_test(self, *, prompt: str = "object", frame_rgb: np.ndarray | None = None) -> dict[str, Any]:
+        response = self._call_hosted(
+            {
+                "task": "sam3_smoke_test",
+                "prompt": prompt or "object",
+                "maxCandidates": 1,
+                "frame": _encoded_frame(frame_rgb if frame_rgb is not None else _synthetic_smoke_frame()),
+            }
+        )
+        records = normalize_sam3_output(response)
+        if not records:
+            raise ProviderExecutionError("Hosted SAM3 smoke test response did not include any candidate records.")
+        return {
+            "format": "motionjson.sam3_hosted_smoke.v0.1",
+            "status": "ok",
+            "providerName": self.provider_name,
+            "networkAttempted": True,
+            "recordCount": len(records),
+            "model": self._resolve_model(),
+            "responseSchema": "sam3-compatible",
+        }
+
+    def discover_concept(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
+        prompt = str(config.get("concept") or config.get("text") or config.get("prompt") or "").strip()
+        if not prompt:
+            raise ProviderConfigError("sam3_concept hosted discovery requires discovery.config.concept or discovery.config.text.")
+        frame_index = _frame_index(config)
+        return self._discover_from_frame(video, config, task="sam3_concept", frame_index=frame_index, prompt=prompt)
+
+    def discover_exemplar(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
+        frame_index = _frame_index(config)
+        exemplars = config.get("exemplars") or config.get("exemplarRefs") or config.get("exemplar_refs")
+        box = _config_box(config)
+        if not exemplars and box is None:
+            raise ProviderConfigError("sam3_exemplar hosted discovery requires discovery.config.exemplars or discovery.config.box.")
+        return self._discover_from_frame(
+            video,
+            config,
+            task="sam3_exemplar",
+            frame_index=frame_index,
+            exemplars=exemplars,
+            box=box,
+        )
+
+    def discover_auto_masks(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
+        frame_index = _frame_index(config)
+        prompt = str(config.get("concept") or config.get("text") or "object")
+        return self._discover_from_frame(video, config, task="sam3_auto_masks", frame_index=frame_index, prompt=prompt)
+
+    def track_candidate(
+        self,
+        video: Any,
+        *,
+        frame_index: int,
+        object_id: str,
+        box: tuple[int, int, int, int] | None,
+        mask: np.ndarray,
+        config: Mapping[str, Any],
+    ) -> Sequence[np.ndarray]:
+        payload = {
+            "task": "sam3_track_candidate",
+            "sourceVideo": str(getattr(video, "path", "")),
+            "frameIndex": int(frame_index),
+            "objectId": object_id,
+            "box": list(box) if box else None,
+            "mask": _encoded_mask(mask),
+            "video": _video_metadata(video),
+        }
+        response = self._call_hosted(payload)
+        records = normalize_sam3_output(response)
+        masks = _first_mask_sequence(records)
+        if not masks:
+            raise ProviderExecutionError("Hosted SAM3 tracking response did not include a mask sequence.")
+        return masks
+
+    def _discover_from_frame(
+        self,
+        video: Any,
+        config: Mapping[str, Any],
+        *,
+        task: str,
+        frame_index: int,
+        prompt: str | None = None,
+        exemplars: Any | None = None,
+        box: tuple[int, int, int, int] | None = None,
+    ) -> list[dict[str, Any]]:
+        frame_index = min(max(0, frame_index), max(0, len(video.frames) - 1))
+        frame = video.frames[frame_index]
+        payload = {
+            "task": task,
+            "prompt": prompt,
+            "exemplars": exemplars,
+            "box": list(box) if box else None,
+            "frameIndex": frame_index,
+            "frame": _encoded_frame(frame.rgb),
+            "video": _video_metadata(video),
+            "maxCandidates": config.get("maxCandidates") or config.get("max_candidates") or config.get("maxCandidatesPerKeyframe"),
+        }
+        response = self._call_hosted(payload)
+        records = normalize_sam3_output(response)
+        if not records:
+            raise ProviderExecutionError(f"Hosted SAM3 {task} response did not include any candidate records.")
+        return records
+
+    def _call_hosted(self, payload: Mapping[str, Any]) -> Mapping[str, Any] | Sequence[Any]:
+        self._ensure_network_allowed()
+        endpoint = self._resolve_endpoint()
+        token = self._resolve_api_key()
+        if not endpoint or not _valid_http_url(endpoint):
+            raise ProviderConfigError("sam3-hosted requires a valid http:// or https:// endpoint.")
+        if not token:
+            raise ProviderConfigError(f"sam3-hosted requires auth in {self.api_key_env}; no token was read.")
+        request_payload = {
+            "model": self._resolve_model(),
+            "provider": self.provider_name,
+            **dict(payload),
+        }
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        transport = self.transport or _UrlLibJsonTransport(timeout_seconds=self.timeout_seconds)
+        last_error: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                return _post_json(transport, endpoint, request_payload, headers=headers, timeout_seconds=self.timeout_seconds)
+            except Exception as exc:  # pragma: no cover - exact transport errors vary.
+                last_error = exc
+                if attempt >= self.retries:
+                    break
+                time.sleep(min(0.25 * (attempt + 1), 1.0))
+        raise ProviderExecutionError(f"Hosted SAM3 request failed: {last_error}") from last_error
+
+    def _ensure_network_allowed(self) -> None:
+        if not self.allow_network or not self.acknowledge_cost_privacy:
+            raise ProviderConfigError(
+                "sam3-hosted requires explicit allowNetwork=true and acknowledgeCostPrivacy=true before sending frames."
+            )
+
+    def _resolve_endpoint(self) -> str:
+        return str(self.endpoint or os.environ.get(self.endpoint_env) or "").strip()
+
+    def _resolve_api_key(self) -> str:
+        return str(self.api_key or os.environ.get(self.api_key_env) or "").strip()
+
+    def _resolve_model(self) -> str:
+        return str(self.model or os.environ.get(self.model_env) or "auto").strip() or "auto"
+
+
+class _UrlLibJsonTransport:
+    def __init__(self, *, timeout_seconds: float = 60.0) -> None:
+        self.timeout_seconds = timeout_seconds
+
+    def post_json(
+        self,
+        url: str,
+        payload: Mapping[str, Any],
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout_seconds: float | None = None,
+    ) -> Mapping[str, Any] | Sequence[Any]:
+        from urllib import request
+
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(url, data=data, headers=dict(headers or {}), method="POST")
+        with request.urlopen(req, timeout=timeout_seconds or self.timeout_seconds) as response:  # noqa: S310 - explicit opt-in path.
+            parsed = json.loads(response.read().decode("utf-8"))
+        if not isinstance(parsed, (Mapping, list, tuple)):
+            raise ProviderExecutionError("Hosted SAM3 response must be a JSON object or list.")
+        return parsed
+
+
+def _post_json(
+    transport: Any,
+    endpoint: str,
+    payload: Mapping[str, Any],
+    *,
+    headers: Mapping[str, str],
+    timeout_seconds: float,
+) -> Mapping[str, Any] | Sequence[Any]:
+    try:
+        return transport.post_json(endpoint, payload, headers=headers, timeout_seconds=timeout_seconds)
+    except TypeError:
+        return transport.post_json(endpoint, payload, headers=headers)
+
+
+def _encoded_frame(frame_rgb: np.ndarray) -> dict[str, Any]:
+    image = Image.fromarray(np.asarray(frame_rgb, dtype=np.uint8)).convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return {"format": "png_base64", "data": base64.b64encode(buffer.getvalue()).decode("ascii")}
+
+
+def _encoded_mask(mask: np.ndarray) -> dict[str, Any]:
+    image = Image.fromarray(normalize_binary_mask(np.asarray(mask))).convert("L")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return {"format": "png_base64", "data": base64.b64encode(buffer.getvalue()).decode("ascii")}
+
+
+def _synthetic_smoke_frame() -> np.ndarray:
+    frame = np.zeros((16, 16, 3), dtype=np.uint8)
+    frame[5:11, 5:11] = (230, 40, 40)
+    return frame
+
+
+def _video_metadata(video: Any) -> dict[str, Any]:
+    info = getattr(video, "info", None)
+    if info is None:
+        return {}
+    return {
+        "width": getattr(info, "width", None),
+        "height": getattr(info, "height", None),
+        "sourceFps": getattr(info, "source_fps", None),
+        "sampleFps": getattr(info, "sample_fps", None),
+        "totalSourceFrames": getattr(info, "total_source_frames", None),
+    }
+
+
+def _valid_http_url(value: str) -> bool:
+    parsed = urlparse(str(value or ""))
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _float_or_default(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _call_first(attempts: Sequence[Any], message: str) -> Any:
     last_error: TypeError | None = None
     for attempt in attempts:
@@ -446,3 +737,4 @@ def _scalar(value: Any) -> float:
 
 
 SAM3LocalDiscoveryBackend = LocalSAM3DiscoveryBackend
+SAM3HostedDiscoveryBackend = HostedSAM3DiscoveryBackend

@@ -63,7 +63,7 @@ provider receives boxes or masks.
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks use the same optional local SAM2 automatic proposal adapter. | Runnable in mock mode through the local worker; with local SAM2 configured, review shows SAM2 proposal candidates, track filtering, fallback diagnostics, and merge suggestions. |
-| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real local SAM3 uses the optional adapter only when SAM3, Python 3.12+, CUDA, and `SAM3_LOCAL_MODEL` are configured. | Runnable in mock mode through the local worker; non-mock runs fail clearly unless diagnostics pass. |
+| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real local SAM3 uses the optional adapter only when SAM3, Python 3.12+, CUDA, and `SAM3_LOCAL_MODEL` are configured. Hosted SAM3 can be selected with `providerPreference: "sam3-hosted"` only with explicit network and cost/privacy acknowledgement. | Runnable in mock mode through the local worker; non-mock runs fail clearly unless diagnostics pass or hosted network use is explicitly acknowledged. |
 
 Candidate-producing workflows write `candidates.json`, which is registered as a
 `candidate_summary` artifact. `/api/jobs/JOB_ID/review` and
@@ -224,6 +224,21 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --min-area 1
 ```
 
+Hosted SAM3 concept smoke run, only after endpoint/auth are configured and the
+user accepts provider cost/privacy terms:
+
+```bash
+SAM3_HOSTED_URL=https://provider.example.test/sam3 \
+SAM3_HOSTED_API_KEY=... \
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam3_hosted_concept \
+  --discovery-provider sam3_concept \
+  --discovery-config '{"providerPreference":"sam3-hosted","concept":"red ball","allowNetwork":true,"acknowledgeCostPrivacy":true}' \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
 Local SAM2 automatic proposal run:
 
 ```bash
@@ -318,7 +333,8 @@ report `missing_dependency`, `missing_model`, or `not_configured`. `sam3_concept
 `sam3_exemplar`, and `sam3_auto_masks` expose mock modes for UI/API testing.
 Real local SAM3 execution uses the optional local adapter and reports missing
 SAM3 package, Python/CUDA runtime, or model setup instead of falling back
-silently. `text_detector`
-and `class_detector` remain scaffolded until detector adapters are wired. Those
-warnings do not break the base CLI, and mock mode remains available for local
-smoke checks.
+silently. Hosted SAM3 remains network-required, provider-billed, and blocked
+until the request explicitly includes `allowNetwork` and
+`acknowledgeCostPrivacy`. `text_detector` and `class_detector` remain
+scaffolded until detector adapters are wired. Those warnings do not break the
+base CLI, and mock mode remains available for local smoke checks.

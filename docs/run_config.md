@@ -131,8 +131,13 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   artifacts. Real local SAM3 execution remains capability-gated behind SAM3
   setup and accepts additive config keys such as `sam3ModelPath`,
   `sam3Device`, `useVideoSession`, `concept`, `exemplars`, and `box`.
-  Diagnostics should show missing SAM3, Python/CUDA runtime, or model setup
-  instead of falling back silently.
+  Hosted SAM3 can be requested with `providerPreference: "sam3-hosted"` or
+  `hosted: true`; it requires `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`,
+  `allowNetwork: true`, and `acknowledgeCostPrivacy: true`. Diagnostics should
+  show missing SAM3, Python/CUDA runtime, model setup, endpoint/auth, or hosted
+  opt-in instead of falling back silently. Do not put hosted API keys in run
+  configs; the hosted adapter reads credentials from server-side settings or
+  environment variables.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use
