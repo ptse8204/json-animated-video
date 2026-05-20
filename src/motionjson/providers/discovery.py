@@ -17,6 +17,7 @@ from .base import ProviderConfigError
 
 DISCOVERY_MODES = {
     "manual_prompt",
+    "auto_object_proposals",
     "sam_auto_masks",
     "text_detector",
     "class_detector",
@@ -47,6 +48,36 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "noModelSafe": True,
         "mockAvailable": True,
+    },
+    "auto_object_proposals": {
+        "mode": "auto_object_proposals",
+        "title": "Discover objects",
+        "description": "API-first automatic object proposals with low-cost default presets and review gates.",
+        "whenToUse": "Use as the default discovery workflow when users should choose from API-returned candidates before tracking.",
+        "inputs": ["quality preset", "keyframe policy", "candidate caps", "filter controls", "optional mock"],
+        "configSchema": {
+            "qualityPreset": "one of clean, balanced, maximum_recall, trace_everything",
+            "intent": "discover_objects_clean, discover_objects_balanced, discover_objects_maximum_recall, or trace_everything",
+            "providerPreference": "auto, mock, sam2-local, sam2-hosted, sam3-local, or sam3-hosted",
+            "keyframePolicy": "scene_changes, uniform_interval, or manual",
+            "maxKeyframes": "integer >= 1",
+            "frameInterval": "integer >= 1 or null",
+            "maxCandidatesPerKeyframe": "integer >= 1",
+            "maxObjects": "integer >= 1",
+            "minMaskArea": "integer >= 1",
+            "maxMaskAreaRatio": "number 0..1",
+            "dedupeIou": "number 0..1",
+            "stabilityThreshold": "number 0..1",
+            "trackSelectedOnly": "boolean",
+            "requireReview": "boolean",
+            "writeRejectedCandidates": "boolean",
+            "costWarningAcknowledged": "required true for trace_everything",
+        },
+        "qualityPresets": ["clean", "balanced", "maximum_recall", "trace_everything"],
+        "defaultQualityPreset": "clean",
+        "noModelSafe": False,
+        "mockAvailable": True,
+        "requiresReview": True,
     },
     "sam_auto_masks": {
         "mode": "sam_auto_masks",
@@ -141,7 +172,7 @@ def class_detector_presets() -> dict[str, list[str]]:
 
 
 def _int_config(config: Mapping[str, Any], name: str, default: int) -> int:
-    value = config.get(name, default)
+    value = config.get(name, config.get("maxCandidatesPerKeyframe", default) if name == "max_candidates" else default)
     if isinstance(value, bool):
         raise ProviderConfigError(f"discovery.{name}: expected integer")
     try:

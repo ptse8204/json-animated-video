@@ -142,6 +142,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "mock" in defaults["maskProviders"]
     assert {
         "manual_prompt",
+        "auto_object_proposals",
         "sam_auto_masks",
         "text_detector",
         "class_detector",

@@ -16,9 +16,148 @@ SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"}
 FALLBACK_MASK_PROVIDERS = {"threshold", "motion"}
 PROMPT_KINDS = {"point", "positive_point", "negative_point", "box", "mask"}
-DISCOVERY_MODES = {"manual_prompt", "sam_auto_masks", "text_detector", "class_detector", "motion_foreground", "external_masks"}
+DISCOVERY_MODES = {
+    "manual_prompt",
+    "auto_object_proposals",
+    "sam_auto_masks",
+    "text_detector",
+    "class_detector",
+    "motion_foreground",
+    "external_masks",
+}
+DISCOVERY_QUALITY_PRESETS = {"clean", "balanced", "maximum_recall", "trace_everything"}
+DISCOVERY_KEYFRAME_POLICIES = {"scene_changes", "uniform_interval", "manual"}
+DISCOVERY_PROVIDER_PREFERENCES = {
+    "auto",
+    "mock",
+    "sam2-local",
+    "sam2-hosted",
+    "sam3-local",
+    "sam3-hosted",
+    "sam_auto_masks",
+    "text_detector",
+    "class_detector",
+}
 OUTPUT_MODES = {"authoring", "production", "both"}
 SPRITE_FORMATS = {"webp", "png"}
+
+OBJECT_DISCOVERY_PRESET_DEFAULTS: dict[str, dict[str, Any]] = {
+    "clean": {
+        "qualityPreset": "clean",
+        "intent": "discover_objects_clean",
+        "providerPreference": "auto",
+        "keyframePolicy": "scene_changes",
+        "maxKeyframes": 3,
+        "frameInterval": None,
+        "maxCandidatesPerKeyframe": 32,
+        "maxObjects": 12,
+        "minMaskArea": 96,
+        "maxMaskAreaRatio": 0.45,
+        "dedupeIou": 0.78,
+        "stabilityThreshold": 0.86,
+        "motionScoreWeight": 0.35,
+        "rejectWholeFrame": True,
+        "rejectBackgroundLike": True,
+        "trackSelectedOnly": True,
+        "trackTopCandidates": False,
+        "requireReview": True,
+        "writeRejectedCandidates": True,
+        "requireExplicitCostWarning": False,
+    },
+    "balanced": {
+        "qualityPreset": "balanced",
+        "intent": "discover_objects_balanced",
+        "providerPreference": "auto",
+        "keyframePolicy": "scene_changes",
+        "maxKeyframes": 5,
+        "frameInterval": None,
+        "maxCandidatesPerKeyframe": 64,
+        "maxObjects": 24,
+        "minMaskArea": 64,
+        "maxMaskAreaRatio": 0.6,
+        "dedupeIou": 0.84,
+        "stabilityThreshold": 0.78,
+        "motionScoreWeight": 0.35,
+        "rejectWholeFrame": True,
+        "rejectBackgroundLike": True,
+        "trackSelectedOnly": True,
+        "trackTopCandidates": False,
+        "requireReview": True,
+        "writeRejectedCandidates": True,
+        "requireExplicitCostWarning": False,
+    },
+    "maximum_recall": {
+        "qualityPreset": "maximum_recall",
+        "intent": "discover_objects_maximum_recall",
+        "providerPreference": "auto",
+        "keyframePolicy": "scene_changes",
+        "maxKeyframes": 8,
+        "frameInterval": 24,
+        "maxCandidatesPerKeyframe": 128,
+        "maxObjects": 64,
+        "minMaskArea": 32,
+        "maxMaskAreaRatio": 0.75,
+        "dedupeIou": 0.9,
+        "stabilityThreshold": 0.7,
+        "motionScoreWeight": 0.35,
+        "rejectWholeFrame": True,
+        "rejectBackgroundLike": True,
+        "trackSelectedOnly": True,
+        "trackTopCandidates": False,
+        "requireReview": True,
+        "writeRejectedCandidates": True,
+        "requireExplicitCostWarning": False,
+    },
+    "trace_everything": {
+        "qualityPreset": "trace_everything",
+        "intent": "trace_everything",
+        "providerPreference": "auto",
+        "keyframePolicy": "uniform_interval",
+        "maxKeyframes": 8,
+        "frameInterval": 24,
+        "maxCandidatesPerKeyframe": 128,
+        "maxObjects": 64,
+        "minMaskArea": 32,
+        "maxMaskAreaRatio": 0.75,
+        "dedupeIou": 0.9,
+        "stabilityThreshold": 0.7,
+        "motionScoreWeight": 0.35,
+        "rejectWholeFrame": True,
+        "rejectBackgroundLike": True,
+        "trackSelectedOnly": False,
+        "trackTopCandidates": True,
+        "requireReview": True,
+        "writeRejectedCandidates": True,
+        "requireExplicitCostWarning": True,
+    },
+}
+
+DISCOVERY_CONFIG_ALIASES: dict[str, tuple[str, ...]] = {
+    "qualityPreset": ("quality_preset",),
+    "providerPreference": ("provider_preference",),
+    "keyframePolicy": ("keyframe_policy",),
+    "maxKeyframes": ("max_keyframes",),
+    "frameInterval": ("frame_interval",),
+    "maxCandidatesPerKeyframe": ("max_candidates_per_keyframe", "max_candidates"),
+    "maxObjects": ("max_objects",),
+    "minMaskArea": ("min_mask_area", "min_area"),
+    "maxMaskAreaRatio": ("max_mask_area_ratio", "max_area_ratio"),
+    "dedupeIou": ("dedupe_iou", "overlap_threshold"),
+    "stabilityThreshold": ("stability_threshold",),
+    "motionScoreWeight": ("motion_score_weight",),
+    "rejectWholeFrame": ("reject_whole_frame",),
+    "rejectBackgroundLike": ("reject_background_like", "reject_background"),
+    "trackSelectedOnly": ("track_selected_only",),
+    "trackTopCandidates": ("track_top_candidates",),
+    "requireReview": ("require_review",),
+    "writeRejectedCandidates": ("write_rejected_candidates",),
+    "requireExplicitCostWarning": ("require_explicit_cost_warning",),
+    "costWarningAcknowledged": (
+        "cost_warning_acknowledged",
+        "explicit_cost_warning_acknowledged",
+        "trace_everything_acknowledged",
+    ),
+}
 
 
 class ConfigValidationError(ValueError):
@@ -427,6 +566,144 @@ class ProviderConfig:
         )
 
 
+def _config_value(
+    payload: Mapping[str, Any],
+    canonical_key: str,
+    default: Any,
+    consumed: set[str],
+) -> Any:
+    keys = (canonical_key, *DISCOVERY_CONFIG_ALIASES.get(canonical_key, ()))
+    for key in keys:
+        if key in payload:
+            consumed.add(key)
+            return payload[key]
+    return default
+
+
+def _strict_bool_value(value: Any, path: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    raise ConfigValidationError(f"{path}: expected boolean")
+
+
+def _positive_int_config(value: Any, path: str) -> int:
+    number = _int_value(value, path)
+    if number < 1:
+        raise ConfigValidationError(f"{path}: expected >= 1")
+    return number
+
+
+def _ratio_config_value(value: Any, path: str) -> float:
+    number = _float_value(value, path)
+    if not 0 <= number <= 1:
+        raise ConfigValidationError(f"{path}: expected 0..1")
+    return number
+
+
+def normalize_discovery_config(mode: str | None, config: Mapping[str, Any]) -> dict[str, Any]:
+    if mode != "auto_object_proposals":
+        return dict(config)
+
+    payload = dict(config)
+    consumed: set[str] = set()
+    quality_preset = _str_value(
+        _config_value(payload, "qualityPreset", "clean", consumed),
+        "discovery.config.qualityPreset",
+    )
+    _choice(quality_preset, "discovery.config.qualityPreset", DISCOVERY_QUALITY_PRESETS)
+    defaults = dict(OBJECT_DISCOVERY_PRESET_DEFAULTS[quality_preset])
+    normalized: dict[str, Any] = {"qualityPreset": quality_preset}
+
+    intent = _str_value(
+        _config_value(payload, "intent", defaults["intent"], consumed),
+        "discovery.config.intent",
+    )
+    provider_preference = _str_value(
+        _config_value(payload, "providerPreference", defaults["providerPreference"], consumed),
+        "discovery.config.providerPreference",
+    )
+    _choice(provider_preference, "discovery.config.providerPreference", DISCOVERY_PROVIDER_PREFERENCES)
+    keyframe_policy = _str_value(
+        _config_value(payload, "keyframePolicy", defaults["keyframePolicy"], consumed),
+        "discovery.config.keyframePolicy",
+    )
+    _choice(keyframe_policy, "discovery.config.keyframePolicy", DISCOVERY_KEYFRAME_POLICIES)
+
+    normalized["intent"] = intent
+    normalized["providerPreference"] = provider_preference
+    normalized["keyframePolicy"] = keyframe_policy
+    normalized["maxKeyframes"] = _positive_int_config(
+        _config_value(payload, "maxKeyframes", defaults["maxKeyframes"], consumed),
+        "discovery.config.maxKeyframes",
+    )
+    frame_interval = _config_value(payload, "frameInterval", defaults["frameInterval"], consumed)
+    normalized["frameInterval"] = None if frame_interval is None else _positive_int_config(frame_interval, "discovery.config.frameInterval")
+    normalized["maxCandidatesPerKeyframe"] = _positive_int_config(
+        _config_value(payload, "maxCandidatesPerKeyframe", defaults["maxCandidatesPerKeyframe"], consumed),
+        "discovery.config.maxCandidatesPerKeyframe",
+    )
+    normalized["maxObjects"] = _positive_int_config(
+        _config_value(payload, "maxObjects", defaults["maxObjects"], consumed),
+        "discovery.config.maxObjects",
+    )
+    normalized["minMaskArea"] = _positive_int_config(
+        _config_value(payload, "minMaskArea", defaults["minMaskArea"], consumed),
+        "discovery.config.minMaskArea",
+    )
+    normalized["maxMaskAreaRatio"] = _ratio_config_value(
+        _config_value(payload, "maxMaskAreaRatio", defaults["maxMaskAreaRatio"], consumed),
+        "discovery.config.maxMaskAreaRatio",
+    )
+    normalized["dedupeIou"] = _ratio_config_value(
+        _config_value(payload, "dedupeIou", defaults["dedupeIou"], consumed),
+        "discovery.config.dedupeIou",
+    )
+    normalized["stabilityThreshold"] = _ratio_config_value(
+        _config_value(payload, "stabilityThreshold", defaults["stabilityThreshold"], consumed),
+        "discovery.config.stabilityThreshold",
+    )
+    normalized["motionScoreWeight"] = _ratio_config_value(
+        _config_value(payload, "motionScoreWeight", defaults["motionScoreWeight"], consumed),
+        "discovery.config.motionScoreWeight",
+    )
+
+    for field_name in (
+        "rejectWholeFrame",
+        "rejectBackgroundLike",
+        "trackSelectedOnly",
+        "trackTopCandidates",
+        "requireReview",
+        "writeRejectedCandidates",
+        "requireExplicitCostWarning",
+    ):
+        normalized[field_name] = _strict_bool_value(
+            _config_value(payload, field_name, defaults[field_name], consumed),
+            f"discovery.config.{field_name}",
+        )
+
+    warning_acknowledged = _strict_bool_value(
+        _config_value(payload, "costWarningAcknowledged", False, consumed),
+        "discovery.config.costWarningAcknowledged",
+    )
+    if normalized["requireExplicitCostWarning"] and not warning_acknowledged:
+        raise ConfigValidationError(
+            "discovery.config.costWarningAcknowledged: required when qualityPreset is trace_everything"
+        )
+    if warning_acknowledged:
+        normalized["costWarningAcknowledged"] = True
+
+    for key, value in payload.items():
+        if key not in consumed:
+            normalized[key] = value
+    return normalized
+
+
 @dataclass(frozen=True)
 class DiscoveryConfig:
     mode: str | None = None
@@ -436,6 +713,7 @@ class DiscoveryConfig:
         _choice(self.mode, "discovery.mode", DISCOVERY_MODES)
         if not isinstance(self.config, Mapping):
             raise ConfigValidationError("discovery.config: expected object")
+        object.__setattr__(self, "config", normalize_discovery_config(self.mode, self.config))
 
     def to_dict(self) -> dict[str, Any]:
         return {"mode": self.mode, "config": dict(self.config)}

@@ -247,6 +247,8 @@ def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payl
 
 
 def _ui_discovery_provider(mode: str) -> tuple[Any, str, bool] | None:
+    if mode == "auto_object_proposals":
+        return SamAutoMasksDiscoveryProvider(name="auto_object_proposals"), "automatic object proposal mock discovery configured", True
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), "text detector mock discovery configured", True
     if mode == "sam_auto_masks":

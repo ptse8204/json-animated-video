@@ -68,12 +68,14 @@ def test_discovery_provider_schemas_cover_phase5_modes():
 
     assert modes == {
         "manual_prompt",
+        "auto_object_proposals",
         "sam_auto_masks",
         "text_detector",
         "class_detector",
         "motion_foreground",
         "external_masks",
     }
+    assert DISCOVERY_PROVIDER_SCHEMAS["auto_object_proposals"]["defaultQualityPreset"] == "clean"
     assert DISCOVERY_PROVIDER_SCHEMAS["text_detector"]["configSchema"]["text"]
     assert DISCOVERY_PROVIDER_SCHEMAS["class_detector"]["presets"]["vehicles"]
     assert DISCOVERY_PROVIDER_SCHEMAS["motion_foreground"]["noModelSafe"] is True

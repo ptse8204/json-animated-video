@@ -13,6 +13,11 @@ provider receives boxes or masks.
 
 - `manual_prompt`: use when a user marks one or more objects with points,
   boxes, or mask references. No model is required.
+- `auto_object_proposals`: default API-first object discovery mode. It uses
+  typed quality presets so a clean run can propose fewer reviewable candidates
+  before users select objects for tracking. Current execution remains
+  capability-gated and mock-only until real automatic proposal adapters are
+  wired.
 - `motion_foreground`: use for simple footage where moving objects separate
   from a mostly stable background. This CPU mode writes generated mask
   sequences under `discovery/motion_foreground/`.
@@ -33,6 +38,7 @@ provider receives boxes or masks.
 | Mode | Use When | Common Failure Mode | Safer Fallback |
 | --- | --- | --- | --- |
 | `manual_prompt` | One known object needs a point, box, or mask prompt. | Prompt is too loose and returns background or whole-frame masks. | Add a tighter box or use external masks. |
+| `auto_object_proposals` | Users should click Discover objects and choose from API-returned candidates. | Clean presets may miss small/occluded objects; recall presets can be noisy. | Start with `clean`, retry with `maximum_recall`, and keep review required. |
 | `motion_foreground` | The camera is mostly still and objects move. | Camera motion or shadows become candidates. | Use `external_masks` or review/delete extra tracks. |
 | `external_masks` | Masks or boxes already exist from another local tool. | Mask sequence is missing frames or points at the wrong object. | Validate each object ID and inspect `fallback_diagnostics.json`. |
 | `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, mock mode, or a detector-first workflow. |
@@ -44,6 +50,7 @@ provider receives boxes or masks.
 | Workflow | CLI support | Local UI job support |
 | --- | --- | --- |
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
+| `auto_object_proposals` | Typed config, CLI choice, and mock proposal routing exist. Real execution is capability-gated until the provider adapter phase. | API validation lists the mode; local worker requires mock config until real adapters are wired. |
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
@@ -139,6 +146,47 @@ started from `--mock`: keyframe settings and proposal filters are recorded in
 `candidates.json`, generated masks feed the shared tracker, and
 `tracks.json` carries filter/dedupe summaries for review.
 
+API-first clean object proposal config:
+
+```json
+{
+  "discovery": {
+    "mode": "auto_object_proposals",
+    "config": {
+      "qualityPreset": "clean"
+    }
+  }
+}
+```
+
+Maximum recall is explicit and remains review-gated:
+
+```json
+{
+  "discovery": {
+    "mode": "auto_object_proposals",
+    "config": {
+      "qualityPreset": "maximum_recall"
+    }
+  }
+}
+```
+
+Trace Everything is expert/experimental and must acknowledge cost/noise before
+the typed config validates:
+
+```json
+{
+  "discovery": {
+    "mode": "auto_object_proposals",
+    "config": {
+      "qualityPreset": "trace_everything",
+      "costWarningAcknowledged": true
+    }
+  }
+}
+```
+
 ## Candidate Shape
 
 `candidates.json` records:
@@ -161,8 +209,9 @@ python3 -m motionjson.cli backend diagnostics --json
 ```
 
 `manual_prompt`, `motion_foreground`, and `external_masks` are no-model local
-providers when base dependencies are installed. `sam_auto_masks`,
-`text_detector`, and `class_detector` are scaffolded heavy-provider surfaces:
-they report `missing_dependency`, `missing_model`, or `not_configured` until a
-real backend adapter is wired and configured. Those warnings do not break the
-base CLI, and mock mode remains available for local smoke checks.
+providers when base dependencies are installed. `auto_object_proposals`,
+`sam_auto_masks`, `text_detector`, and `class_detector` are scaffolded
+heavy-provider surfaces: they report `missing_dependency`, `missing_model`, or
+`not_configured` until a real backend adapter is wired and configured. Those
+warnings do not break the base CLI, and mock mode remains available for local
+smoke checks.

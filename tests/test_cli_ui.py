@@ -28,6 +28,7 @@ def test_extract_help_documents_discovery_modes_and_flags(capsys):
     output = capsys.readouterr().out
     for expected in [
         "--discovery-provider",
+        "auto_object_proposals",
         "sam_auto_masks",
         "text_detector",
         "class_detector",

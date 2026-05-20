@@ -113,7 +113,20 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
     p.add_argument("--object-mask-dir", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=/path/to/masks for deterministic multi-object extraction")
     p.add_argument("--object-label", action="append", type=parse_object_assignment, default=[], help="Repeatable object_id=Label for multi-object extraction")
-    p.add_argument("--discovery-provider", choices=["manual_prompt", "sam_auto_masks", "text_detector", "class_detector", "motion_foreground", "external_masks"], default=None, help="Optional Phase 5 object-candidate discovery mode")
+    p.add_argument(
+        "--discovery-provider",
+        choices=[
+            "manual_prompt",
+            "auto_object_proposals",
+            "sam_auto_masks",
+            "text_detector",
+            "class_detector",
+            "motion_foreground",
+            "external_masks",
+        ],
+        default=None,
+        help="Optional object-candidate discovery mode",
+    )
     p.add_argument("--discovery-config", type=parse_json_object, default={}, help='Discovery provider JSON config, e.g. {"mock":true,"text":"red ball"}')
     p.add_argument("--discovery-text", type=str, default=None, help="Text prompt for --discovery-provider text_detector")
     p.add_argument("--discovery-class", action="append", default=[], help="Repeatable class label for --discovery-provider class_detector")
@@ -385,6 +398,8 @@ def build_discovery_provider(args: argparse.Namespace):
         return MotionForegroundDiscoveryProvider(), config
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), config
+    if mode == "auto_object_proposals":
+        return SamAutoMasksDiscoveryProvider(name="auto_object_proposals"), config
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), config
     if mode == "class_detector":

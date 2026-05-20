@@ -74,10 +74,46 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 
 ## Validation Notes
 
-- Provider names are the current CLI providers: `external`, `threshold`, `motion`, `sam2`, `sam2-local`, and `sam2-hosted`.
+- Provider names are the current CLI providers: `external`, `threshold`,
+  `motion`, `mock`, `sam2`, `sam2-local`, and `sam2-hosted`.
 - Discovery modes are separate from mask providers: `manual_prompt`,
-  `sam_auto_masks`, `text_detector`, `class_detector`, `motion_foreground`, and
-  `external_masks`.
+  `auto_object_proposals`, `sam_auto_masks`, `text_detector`,
+  `class_detector`, `motion_foreground`, and `external_masks`.
+- `auto_object_proposals` is the API-first default discovery mode for object
+  galleries. Its `discovery.config` is normalized into camelCase fields and
+  accepts snake_case aliases for API and CLI compatibility. The default clean
+  preset is low-cost and review-gated:
+
+```json
+{
+  "discovery": {
+    "mode": "auto_object_proposals",
+    "config": {
+      "qualityPreset": "clean",
+      "intent": "discover_objects_clean",
+      "providerPreference": "auto",
+      "keyframePolicy": "scene_changes",
+      "maxKeyframes": 3,
+      "frameInterval": null,
+      "maxCandidatesPerKeyframe": 32,
+      "maxObjects": 12,
+      "minMaskArea": 96,
+      "maxMaskAreaRatio": 0.45,
+      "dedupeIou": 0.78,
+      "stabilityThreshold": 0.86,
+      "trackSelectedOnly": true,
+      "requireReview": true,
+      "writeRejectedCandidates": true
+    }
+  }
+}
+```
+
+- `qualityPreset` accepts `clean`, `balanced`, `maximum_recall`, or
+  `trace_everything`. Clean, balanced, and maximum recall default
+  `trackSelectedOnly` to `true`; Trace Everything sets `trackSelectedOnly` to
+  `false`, `trackTopCandidates` to `true`, keeps `requireReview` enabled, and
+  requires `costWarningAcknowledged: true`.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use

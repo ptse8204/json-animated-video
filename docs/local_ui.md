@@ -88,8 +88,9 @@ detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
 claiming those providers are available in mock mode.
 
 The local UI worker starts `mock`, `threshold`, `motion`, and `external`
-extraction jobs, plus mock `text_detector`, `class_detector`, and
-`sam_auto_masks` discovery jobs that use generated mask handoffs.
+extraction jobs, plus mock `auto_object_proposals`, `text_detector`,
+`class_detector`, and `sam_auto_masks` discovery jobs that use generated mask
+handoffs.
 `motion_foreground` is CPU/no-model and runs from the `Find moving objects`
 preset.
 

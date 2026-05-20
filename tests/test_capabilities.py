@@ -249,6 +249,7 @@ def test_capability_report_includes_phase5_discovery_provider_modes(monkeypatch)
     assert _provider(report, "external_masks")["status"] == "ready"
     assert _provider(report, "motion_foreground")["kind"] == "discovery_provider"
     assert _provider(report, "external_masks")["noModelSafe"] is True
+    assert _provider(report, "auto_object_proposals")["metadata"]["defaultQualityPreset"] == "clean"
     assert _provider(report, "text_detector")["metadata"]["sam2DirectText"] is False
 
 
@@ -268,6 +269,8 @@ def test_discovery_heavy_providers_report_missing_optional_deps_without_cuda(mon
 
     report = capabilities.build_capability_report()
 
+    assert _provider(report, "auto_object_proposals")["status"] == "missing_dependency"
+    assert _provider(report, "auto_object_proposals")["mockAvailable"] is True
     assert _provider(report, "sam_auto_masks")["status"] == "missing_dependency"
     assert _provider(report, "sam_auto_masks")["mockAvailable"] is True
     assert _provider(report, "text_detector")["status"] == "missing_dependency"
@@ -300,7 +303,7 @@ def test_scaffolded_heavy_discovery_modes_do_not_report_runnable_until_backend_w
 
     report = capabilities.build_capability_report()
 
-    for name in ("sam_auto_masks", "text_detector", "class_detector"):
+    for name in ("auto_object_proposals", "sam_auto_masks", "text_detector", "class_detector"):
         provider = _provider(report, name)
         assert provider["available"] is False
         assert provider["runnable"] is False

@@ -167,6 +167,143 @@ def test_discovery_config_round_trips_class_detector_preset_and_classes(tmp_path
     }
 
 
+def auto_discovery_payload(config):
+    return {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "input.mp4"},
+        "output": {"directory": "out/auto"},
+        "discovery": {"mode": "auto_object_proposals", "config": config},
+    }
+
+
+def test_auto_object_proposals_clean_preset_defaults_are_low_cost():
+    config = ExtractionRunConfig.from_dict(auto_discovery_payload({}))
+
+    discovery = config.discovery.config
+    assert discovery["qualityPreset"] == "clean"
+    assert discovery["intent"] == "discover_objects_clean"
+    assert discovery["providerPreference"] == "auto"
+    assert discovery["keyframePolicy"] == "scene_changes"
+    assert discovery["maxKeyframes"] == 3
+    assert discovery["frameInterval"] is None
+    assert discovery["maxCandidatesPerKeyframe"] == 32
+    assert discovery["maxObjects"] == 12
+    assert discovery["minMaskArea"] == 96
+    assert discovery["maxMaskAreaRatio"] == 0.45
+    assert discovery["dedupeIou"] == 0.78
+    assert discovery["stabilityThreshold"] == 0.86
+    assert discovery["trackSelectedOnly"] is True
+    assert discovery["requireReview"] is True
+    assert discovery["writeRejectedCandidates"] is True
+
+
+def test_auto_object_proposals_maximum_recall_defaults_are_review_gated():
+    config = ExtractionRunConfig.from_dict(
+        auto_discovery_payload({"qualityPreset": "maximum_recall"})
+    )
+
+    discovery = config.discovery.config
+    assert discovery["qualityPreset"] == "maximum_recall"
+    assert discovery["maxKeyframes"] == 8
+    assert discovery["frameInterval"] == 24
+    assert discovery["maxCandidatesPerKeyframe"] == 128
+    assert discovery["maxObjects"] == 64
+    assert discovery["minMaskArea"] == 32
+    assert discovery["maxMaskAreaRatio"] == 0.75
+    assert discovery["dedupeIou"] == 0.9
+    assert discovery["stabilityThreshold"] == 0.7
+    assert discovery["trackSelectedOnly"] is True
+    assert discovery["requireReview"] is True
+    assert discovery["writeRejectedCandidates"] is True
+
+
+def test_auto_object_proposals_accepts_snake_case_api_aliases():
+    config = ExtractionRunConfig.from_dict(
+        auto_discovery_payload(
+            {
+                "quality_preset": "maximum_recall",
+                "max_candidates": 99,
+                "max_objects": 32,
+                "track_selected_only": True,
+                "mock": True,
+            }
+        )
+    )
+
+    discovery = config.discovery.config
+    assert discovery["qualityPreset"] == "maximum_recall"
+    assert discovery["maxCandidatesPerKeyframe"] == 99
+    assert discovery["maxObjects"] == 32
+    assert discovery["trackSelectedOnly"] is True
+    assert discovery["mock"] is True
+    assert "max_candidates" not in discovery
+
+
+def test_cli_args_build_auto_object_proposals_preset_config():
+    args = parse_extract_args(
+        "input.mp4",
+        "--discovery-provider",
+        "auto_object_proposals",
+        "--discovery-config",
+        '{"quality_preset":"balanced","mock":true}',
+        "--discovery-max-candidates",
+        "40",
+    )
+
+    config = build_extraction_run_config_from_args(args)
+
+    assert config.discovery.mode == "auto_object_proposals"
+    assert config.discovery.config["qualityPreset"] == "balanced"
+    assert config.discovery.config["maxCandidatesPerKeyframe"] == 40
+    assert config.discovery.config["trackSelectedOnly"] is True
+    assert config.discovery.config["mock"] is True
+
+
+def test_trace_everything_requires_explicit_cost_warning_acknowledgement():
+    with pytest.raises(ConfigValidationError, match="costWarningAcknowledged"):
+        ExtractionRunConfig.from_dict(
+            auto_discovery_payload({"qualityPreset": "trace_everything"})
+        )
+
+    config = ExtractionRunConfig.from_dict(
+        auto_discovery_payload(
+            {"qualityPreset": "trace_everything", "costWarningAcknowledged": True}
+        )
+    )
+
+    discovery = config.discovery.config
+    assert discovery["qualityPreset"] == "trace_everything"
+    assert discovery["requireExplicitCostWarning"] is True
+    assert discovery["costWarningAcknowledged"] is True
+    assert discovery["trackSelectedOnly"] is False
+    assert discovery["trackTopCandidates"] is True
+    assert discovery["requireReview"] is True
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ({"maxCandidatesPerKeyframe": 0}, "maxCandidatesPerKeyframe"),
+        ({"maxObjects": 0}, "maxObjects"),
+        ({"maxMaskAreaRatio": 1.5}, "maxMaskAreaRatio"),
+        ({"stabilityThreshold": -0.1}, "stabilityThreshold"),
+        ({"providerPreference": "openrouter"}, "providerPreference"),
+    ],
+)
+def test_auto_object_proposals_invalid_caps_fail_clearly(config, message):
+    with pytest.raises(ConfigValidationError, match=message):
+        ExtractionRunConfig.from_dict(auto_discovery_payload(config))
+
+
+@pytest.mark.parametrize("quality_preset", ["clean", "balanced", "maximum_recall"])
+def test_auto_object_proposals_selected_only_defaults_true_for_non_expert_presets(quality_preset):
+    config = ExtractionRunConfig.from_dict(
+        auto_discovery_payload({"qualityPreset": quality_preset})
+    )
+
+    assert config.discovery.config["trackSelectedOnly"] is True
+
+
 @pytest.mark.parametrize(
     ("payload", "message"),
     [
