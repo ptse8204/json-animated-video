@@ -191,6 +191,110 @@ def test_rest_api_track_edits_persist_corrections_and_update_artifacts(tmp_path)
     assert any(artifact["kind"] == "review_state_manifest" for artifact in artifacts)
 
 
+def test_rest_api_job_review_returns_api_first_candidate_payload(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    key = create_api_key(conn, user_id=user["id"], name="API")["apiKey"]
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="mock", max_frames=1)
+    candidates_payload = {
+        "format": "motionjson.candidates.v0.1",
+        "provider": "mock",
+        "config": {"qualityPreset": "clean", "requireReview": True},
+        "video": {"width": 200, "height": 100, "sampledFrameCount": 10},
+        "candidates": [
+            {
+                "id": "cand_001",
+                "label": "object",
+                "source": "auto_object_proposals",
+                "frameIndex": 0,
+                "box": {"x": 10, "y": 10, "w": 50, "h": 20},
+                "score": 0.75,
+                "metadata": {
+                    "providerName": "mock",
+                    "stabilityScore": 0.8,
+                    "maskFiles": 5,
+                    "storageKey": "projects/private/candidate-mask.png",
+                    "warnings": ["projects/private/log.txt", "api_key=sk-1234567890"],
+                },
+            },
+            {
+                "id": "cand_002",
+                "label": "duplicate",
+                "source": "auto_object_proposals",
+                "frameIndex": 0,
+                "box": {"x": 12, "y": 12, "w": 50, "h": 20},
+                "score": 0.7,
+                "metadata": {"rejectionReason": "duplicate_mask"},
+            },
+        ],
+    }
+    register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        source_job_id=job["id"],
+        kind="candidate_summary",
+        data=json.dumps(candidates_payload).encode("utf-8"),
+        rel_path="candidates.json",
+        content_type="application/json",
+        metadata={"storage_key": "projects/private/candidates.json"},
+    )
+    conn.close()
+
+    api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    headers = {"authorization": f"Bearer {key}"}
+    status, _headers, body = api.handle("GET", f"/v1/jobs/{job['id']}/review", headers, b"")
+    review = json.loads(body)["review"]
+
+    assert status == 200
+    assert review["format"] == "motionjson.api_review.v0.1"
+    assert review["artifactCountsByKind"]["candidate_summary"] == 1
+    assert review["candidates"][0]["candidateId"] == "cand_001"
+    assert review["candidates"][0]["confidence"] == 0.75
+    assert review["candidates"][0]["frameCoverageEstimate"] == 0.5
+    assert review["candidates"][1]["reviewStatus"] == "rejected"
+    assert review["candidateSummary"]["candidateCount"] == 2
+    assert review["candidateSummary"]["acceptedCandidateCount"] == 1
+    assert review["candidateSummary"]["rejectionReasons"] == {"duplicate_mask": 1}
+    public_body = body.decode("utf-8")
+    assert "storage_key" not in public_body
+    assert "storageKey" not in public_body
+    assert "projects/private" not in public_body
+    assert "1234567890" not in public_body
+
+
+def test_rest_api_job_review_redacts_unavailable_candidate_artifact_diagnostics(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    key = create_api_key(conn, user_id=user["id"], name="API")["apiKey"]
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="mock", max_frames=1)
+    asset = register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        source_job_id=job["id"],
+        kind="candidate_summary",
+        data=json.dumps({"format": "motionjson.candidates.v0.1", "candidates": []}).encode("utf-8"),
+        rel_path="candidates.json",
+        content_type="application/json",
+    )
+    (storage.root / asset["storage_key"]).unlink()
+    conn.close()
+
+    api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    headers = {"authorization": f"Bearer {key}"}
+    status, _headers, body = api.handle("GET", f"/v1/jobs/{job['id']}/review", headers, b"")
+    review = json.loads(body)["review"]
+    public_body = body.decode("utf-8")
+
+    assert status == 200
+    assert review["diagnostics"][0]["code"] == "artifact_review_unavailable"
+    assert "storage_key" not in public_body
+    assert "storageKey" not in public_body
+    assert "projects/" not in public_body
+    assert asset["storage_key"] not in public_body
+
+
 def test_worker_render_job_registers_remotion_plan_and_manifest_with_no_ai_usage(tmp_path):
     conn, storage, user, project = backend(tmp_path)
     upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")

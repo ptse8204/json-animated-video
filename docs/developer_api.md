@@ -91,6 +91,13 @@ queued. `POST /api/jobs` enqueues a local extract job and defaults to `mock`
 when the UI is launched with `--mock`. See [Local UI](local_ui.md) for route
 details and the static build smoke command.
 
+The authenticated API exposes `GET /v1/jobs/{jobId}/review` for headless
+review clients. When a `candidate_summary` artifact exists, the response
+contains normalized `review.candidates` records plus a `review.candidateSummary`
+aggregate with quality preset, provider, review requirement, candidate counts,
+and rejection reason counts. The route omits internal storage keys and raw
+local paths.
+
 ## Endpoints
 
 - `POST /v1/projects`
@@ -115,6 +122,7 @@ details and the static build smoke command.
 - `GET /v1/jobs/{jobId}/events`
 - `POST /v1/jobs/{jobId}/cancel`
 - `GET /v1/jobs/{jobId}/artifacts`
+- `GET /v1/jobs/{jobId}/review`
 - `GET /v1/jobs/{jobId}/corrections`
 - `POST /v1/jobs/{jobId}/track-edits`
 - `POST /v1/projects/{projectId}/asset-packages`

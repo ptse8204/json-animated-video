@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from motionjson.candidate_review import candidate_review_payload, public_review_value
 from motionjson.providers.local_storage import LocalStorageProvider
 
 from .api_keys import require_api_key
@@ -80,6 +81,14 @@ def _public_event(row: dict[str, Any]) -> dict[str, Any]:
     data = dict(row)
     _parse_json_field(data, "metadata_json")
     return data
+
+
+def _artifact_counts(assets: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for asset in assets:
+        kind = str(asset.get("kind") or "")
+        counts[kind] = int(counts.get(kind, 0)) + 1
+    return counts
 
 
 class MotionJSONAPI:
@@ -304,6 +313,10 @@ class MotionJSONAPI:
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "artifacts" and method == "GET":
             job = get_job(conn, user_id=user_id, job_id=parts[2])
             return {"artifacts": [_public_asset(asset) for asset in list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])]}
+        if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "review" and method == "GET":
+            job = get_job(conn, user_id=user_id, job_id=parts[2])
+            assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
+            return {"review": self._review_payload(assets)}
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "corrections" and method == "GET":
             return {"corrections": list_track_corrections(conn, user_id=user_id, job_id=parts[2])}
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "track-edits" and method == "POST":
@@ -382,6 +395,57 @@ class MotionJSONAPI:
                 metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
             )
         return HTTPStatus.CREATED, "application/json", json.dumps(_public_asset(asset), sort_keys=True).encode("utf-8")
+
+    def _review_payload(self, assets: list[dict[str, Any]]) -> dict[str, Any]:
+        review: dict[str, Any] = {
+            "format": "motionjson.api_review.v0.1",
+            "artifactCountsByKind": _artifact_counts(assets),
+            "candidates": [],
+        }
+        diagnostics: list[dict[str, Any]] = []
+        storage = self.storage()
+        for asset in assets:
+            if str(asset.get("kind") or "") != "candidate_summary":
+                continue
+            if int(asset.get("byte_size") or 0) > 5_000_000:
+                diagnostics.append(
+                    {
+                        "code": "artifact_review_too_large",
+                        "artifactId": asset.get("id"),
+                        "kind": asset.get("kind"),
+                        "message": "artifact is too large to inline for API review",
+                    }
+                )
+                continue
+            try:
+                document = json.loads(storage.load_bytes(asset["storage_key"]).decode("utf-8"))
+            except Exception as exc:
+                diagnostics.append(
+                    {
+                        "code": "artifact_review_unavailable",
+                        "artifactId": asset.get("id"),
+                        "kind": asset.get("kind"),
+                        "message": str(exc) or type(exc).__name__,
+                        "errorType": type(exc).__name__,
+                    }
+                )
+                continue
+            if not isinstance(document, dict):
+                diagnostics.append(
+                    {
+                        "code": "artifact_review_invalid_json",
+                        "artifactId": asset.get("id"),
+                        "kind": asset.get("kind"),
+                        "message": "artifact JSON must be an object",
+                    }
+                )
+                continue
+            candidate_review = candidate_review_payload(document)
+            review["candidates"] = candidate_review["candidates"]
+            review["candidateSummary"] = candidate_review["candidateSummary"]
+        if diagnostics:
+            review["diagnostics"] = diagnostics
+        return public_review_value(review)
 
     def _error(self, status: HTTPStatus, message: str) -> tuple[int, dict[str, str], bytes]:
         return status, {"content-type": "application/json"}, json.dumps({"error": message}, sort_keys=True).encode("utf-8")

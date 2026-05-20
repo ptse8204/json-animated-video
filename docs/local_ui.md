@@ -145,6 +145,27 @@ JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
 
+## Candidate Review Payloads
+
+`GET /api/jobs/JOB_ID/review` is the source of truth for object candidates.
+When a job writes `candidates.json`, the review payload includes
+`review.candidates` with normalized API records:
+
+- `candidateId`, `objectId`, `label`, `source`, `providerName`, and
+  `frameIndex`;
+- optional `thumbnailArtifactId` and `maskPreviewArtifactId`;
+- `box`, `areaRatio`, `stabilityScore`, `motionScore`, `confidence`, and
+  `frameCoverageEstimate`;
+- `warnings`, `rejectionReason`, `defaultSelected`, and `reviewStatus`.
+
+The same response includes `review.candidateSummary` with aggregate counts:
+`candidateCount`, accepted/rejected/default-selected counts, rejection reason
+counts, `qualityPreset`, `providerName`, and `requiresReview`. The older
+`candidateSummary.provider`, `candidateSummary.config`,
+`candidateSummary.video`, and `candidateSummary.candidates` fields remain for
+current UI compatibility, but new UI code should render `review.candidates`
+and the aggregate summary instead of inventing candidate or track state.
+
 ## Provider And Model Settings
 
 The right inspector includes a Provider settings panel for choosing providers,

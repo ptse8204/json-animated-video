@@ -759,6 +759,145 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
     assert "file://" not in body.decode("utf-8")
 
 
+def test_local_ui_review_returns_api_first_candidates_and_redacts_private_fields(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Candidate Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    candidates_payload = {
+        "format": "motionjson.candidates.v0.1",
+        "provider": "mock",
+        "config": {"qualityPreset": "clean", "requireReview": True, "writeRejectedCandidates": True},
+        "video": {"width": 200, "height": 100, "sampledFrameCount": 10},
+        "candidates": [
+            {
+                "id": "cand_001",
+                "label": "unlabeled object",
+                "source": "auto_object_proposals",
+                "frameIndex": 0,
+                "box": {"x": 120, "y": 80, "w": 40, "h": 20},
+                "score": 0.83,
+                "metadata": {
+                    "providerName": "mock",
+                    "motionScore": 0.64,
+                    "stabilityScore": 0.88,
+                    "maskFiles": 7,
+                    "maskDir": "discovery/mock/cand_001",
+                    "storageKey": "projects/private/candidate-mask.png",
+                },
+            },
+            {
+                "id": "cand_002",
+                "label": "background fragment",
+                "source": "auto_object_proposals",
+                "frameIndex": 0,
+                "box": {"x": 0, "y": 0, "w": 200, "h": 90},
+                "score": 0.4,
+                "metadata": {
+                    "rejectionReason": "background_like",
+                    "warnings": [f"file://{tmp_path}/private.png", "api_key=sk-1234567890"],
+                },
+            },
+        ],
+    }
+    conn = app.connection()
+    try:
+        register_generated_asset(
+            conn,
+            storage=app.storage(),
+            project_id=project["id"],
+            source_job_id=job["id"],
+            kind="candidate_summary",
+            data=json.dumps(candidates_payload).encode("utf-8"),
+            rel_path="candidates.json",
+            content_type="application/json",
+            metadata={"storage_key": "projects/private/candidates.json"},
+        )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    review = decode(body)["review"]
+
+    assert status == 200
+    assert review["candidates"][0]["candidateId"] == "cand_001"
+    assert review["candidates"][0]["providerName"] == "mock"
+    assert review["candidates"][0]["areaRatio"] == 0.04
+    assert review["candidates"][0]["frameCoverageEstimate"] == 0.7
+    assert review["candidates"][1]["rejectionReason"] == "background_like"
+    assert review["candidateSummary"]["candidateCount"] == 2
+    assert review["candidateSummary"]["acceptedCandidateCount"] == 1
+    assert review["candidateSummary"]["rejectedCandidateCount"] == 1
+    assert review["candidateSummary"]["defaultSelectedCount"] == 1
+    assert review["candidateSummary"]["rejectionReasons"] == {"background_like": 1}
+    assert review["candidateSummary"]["provider"] == "mock"
+    assert review["candidateSummary"]["providerName"] == "mock"
+    assert len(review["candidateSummary"]["candidates"]) == 2
+    public_body = body.decode("utf-8")
+    assert "storage_key" not in public_body
+    assert "storageKey" not in public_body
+    assert "projects/private" not in public_body
+    assert "file://" not in public_body
+    assert "1234567890" not in public_body
+
+
+def test_local_ui_review_redacts_unavailable_candidate_artifact_diagnostics(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Missing Candidate Artifact"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    conn = app.connection()
+    try:
+        asset = register_generated_asset(
+            conn,
+            storage=app.storage(),
+            project_id=project["id"],
+            source_job_id=job["id"],
+            kind="candidate_summary",
+            data=json.dumps({"format": "motionjson.candidates.v0.1", "candidates": []}).encode("utf-8"),
+            rel_path="candidates.json",
+            content_type="application/json",
+        )
+    finally:
+        conn.close()
+    (app.storage().root / asset["storage_key"]).unlink()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    review = decode(body)["review"]
+    public_body = body.decode("utf-8")
+
+    assert status == 200
+    assert review["diagnostics"][0]["code"] == "artifact_review_unavailable"
+    assert "storage_key" not in public_body
+    assert "storageKey" not in public_body
+    assert "projects/" not in public_body
+    assert asset["storage_key"] not in public_body
+
+
 def test_local_ui_cancel_pending_job_records_public_status_and_event(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 

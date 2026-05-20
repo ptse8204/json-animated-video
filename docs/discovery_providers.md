@@ -57,6 +57,14 @@ provider receives boxes or masks.
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks need a SAM2-style backend. | Runnable in mock mode through the local worker; review shows candidate proposals, track filtering, fallback diagnostics, and merge suggestions. |
 
+Candidate-producing workflows write `candidates.json`, which is registered as a
+`candidate_summary` artifact. `/api/jobs/JOB_ID/review` and
+`/v1/jobs/JOB_ID/review` convert that artifact into API-first
+`review.candidates` records with candidate IDs, boxes, scores, review status,
+warnings, rejection reasons, artifact preview IDs when available, and an
+aggregate `candidateSummary`. UI code should render these API records instead
+of fabricating final candidates or tracks.
+
 ## CLI Examples
 
 CPU moving-region discovery:

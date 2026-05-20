@@ -55,6 +55,7 @@ from motionjson.backend.workspace import (
 )
 from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
+from motionjson.candidate_review import candidate_review_payload
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
 from motionjson.provider_settings import (
     provider_settings_for_capabilities,
@@ -1235,7 +1236,7 @@ class LocalUIApp:
             elif kind == "job_metrics":
                 review["metrics"] = _public_review_value(document)
             elif kind == "candidate_summary":
-                review["candidateSummary"] = _public_review_value(document)
+                self._apply_candidate_review(review, document)
             elif kind == "review_state_manifest":
                 manifest_review = document.get("review") if isinstance(document.get("review"), dict) else {}
                 review["reviewStateManifest"] = _public_review_value(
@@ -1297,6 +1298,20 @@ class LocalUIApp:
                 "message": "artifact JSON must be an object",
             }
         return document, None
+
+    @staticmethod
+    def _apply_candidate_review(review: dict[str, Any], document: dict[str, Any]) -> None:
+        candidate_review = candidate_review_payload(document)
+        legacy_summary = _public_review_value(document)
+        shaped_summary = _public_review_value(candidate_review["candidateSummary"])
+        review["candidates"] = _public_review_value(candidate_review["candidates"])
+        review["candidateSummary"] = {
+            **shaped_summary,
+            "provider": legacy_summary.get("provider"),
+            "config": legacy_summary.get("config", {}),
+            "video": legacy_summary.get("video", {}),
+            "candidates": legacy_summary.get("candidates", []),
+        }
 
     @staticmethod
     def _apply_track_review(review: dict[str, Any], document: dict[str, Any], seen_fallback: set[str]) -> None:
