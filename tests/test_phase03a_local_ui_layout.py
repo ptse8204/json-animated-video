@@ -56,10 +56,12 @@ def test_phase03a_layout_check_reports_viewport_matrix():
 
     assert payload["canRun"] is True
     assert {item["name"] for item in payload["viewports"]} == {
+        "mobile-390",
+        "tablet-768",
+        "tablet-1024",
         "laptop-1366",
         "desktop-1440",
         "desktop-1920",
-        "tablet-1024",
     }
     assert {
         "real-empty-shell",
@@ -68,7 +70,9 @@ def test_phase03a_layout_check_reports_viewport_matrix():
         "first-run",
         "new-project",
         "extraction-wizard",
+        "advanced-config",
         "provider-diagnostics",
+        "provider-settings",
         "job-review",
     } <= set(payload["states"])
 

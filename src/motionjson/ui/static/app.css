@@ -1806,6 +1806,208 @@ button,
   border-radius: var(--radius-sm);
 }
 
+.guided-start {
+  display: grid;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  background: #fbfdfb;
+}
+
+.guided-start-header,
+.run-plan-intro {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.guided-start h2,
+.run-plan-intro h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.22;
+}
+
+.guided-start-header .status-chip,
+.run-plan-intro .status-chip {
+  flex: 0 0 auto;
+  max-width: 180px;
+  white-space: normal;
+}
+
+.goal-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--space-xs);
+}
+
+.goal-card {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-height: 118px;
+  padding: 13px;
+  color: #223036;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  background: #ffffff;
+}
+
+.goal-card.is-active {
+  border-color: #087a70;
+  background: #e2f4f1;
+  box-shadow: inset 3px 0 0 #087a70;
+}
+
+.goal-card-title {
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.goal-card-copy {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.guided-start-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-xs);
+  align-items: stretch;
+}
+
+.guided-file-control {
+  display: grid;
+  gap: 4px;
+  min-height: 54px;
+  padding: 11px 12px;
+  border: 1px dashed #77aaa3;
+  border-radius: var(--radius-sm);
+  color: #536168;
+  background: #f4fbfa;
+  cursor: pointer;
+  text-align: left;
+  white-space: normal;
+}
+
+.guided-file-control span {
+  color: #223036;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.guided-file-control strong {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.form-hint {
+  margin: -2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.advanced-stack {
+  display: grid;
+  gap: var(--space-xs);
+  padding: 0 var(--space-sm) var(--space-sm);
+}
+
+.run-plan-summary {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.run-plan-intro {
+  padding: 12px;
+  border: 1px solid #d6e6e3;
+  border-radius: var(--radius-sm);
+  background: #f7fbfa;
+}
+
+.run-plan-intro p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.run-plan-list {
+  display: grid;
+  gap: var(--space-xs);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-plan-step {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.34fr) minmax(130px, 0.66fr);
+  gap: 4px 12px;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.run-plan-step strong,
+.run-plan-step span {
+  min-width: 0;
+}
+
+.run-plan-step > span:last-child {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.run-plan-step-label {
+  color: #4e5d64;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.run-plan-step.is-ready {
+  border-left-color: var(--ready);
+}
+
+.run-plan-step.is-warning,
+.run-plan-step.is-needs-action {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.run-plan-next {
+  display: grid;
+  gap: 6px;
+  padding: 11px 12px;
+  border: 1px solid #dbe6e4;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.run-plan-next ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.raw-config-panel .config-preview {
+  max-height: 280px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 .rail-section {
   display: block;
   overflow: clip;
@@ -2042,9 +2244,32 @@ button,
   .advanced-grid,
   .inline-form,
   .timeline-controls,
+  .guided-start-actions,
   .config-actions,
   .export-actions {
     grid-template-columns: 1fr;
+  }
+
+  .guided-start-header,
+  .run-plan-intro,
+  .panel-heading {
+    display: grid;
+  }
+
+  .goal-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .goal-card {
+    min-height: 0;
+  }
+
+  .run-plan-step {
+    grid-template-columns: 1fr;
+  }
+
+  .run-plan-step > span:last-child {
+    grid-column: 1;
   }
 
   .config-actions {

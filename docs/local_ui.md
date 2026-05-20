@@ -36,6 +36,27 @@ shows local account/team placeholders, usage and cost policy, provider run
 history, export history, privacy notices, and rights reminders so commercial
 review work has an audit trail before team accounts or paid plans exist.
 
+## Guided First Run
+
+The default workspace now starts with a goal-first wizard for nontechnical
+users. The main canvas offers plain-language choices:
+
+- Cut out one object.
+- Find moving things.
+- Find by description.
+- Import masks.
+- Review previous result.
+
+The browser preview control is shown before backend path registration so users
+can load a local file and draw prompts without understanding storage routes.
+Backend extraction still requires a registered local path, which stays in an
+Advanced disclosure with the registered video selector.
+
+The Run preview panel shows a readable plan by default: goal, source status,
+model/provider mode, prompt needs, review gate, and next steps. The generated
+`ExtractionRunConfig` JSON remains available under Advanced for CLI and
+developer users, but it is no longer the default explanation of what will run.
+
 ## Launch
 
 Use the packaged console command for normal local UI sessions:

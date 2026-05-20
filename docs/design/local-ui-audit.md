@@ -172,3 +172,45 @@ Known compromise:
 - The right rail remains intentionally dense in expanded review/export states.
   This phase improves hierarchy and validation coverage without redesigning the
   review model or export handoff; those are covered by later UI-MODEL phases.
+
+## UI-MODEL-01 Evidence
+
+UI-MODEL-01 added a nontechnical first-run path on top of the UI-LAYOUT-01 shell.
+The browser evidence now includes a dedicated `advanced-config` capture state so
+the human-readable run plan and raw JSON disclosure are checked separately from
+the fully expanded stress state.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-01-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-01
+```
+
+Representative captures:
+
+![UI-MODEL-01 mobile first-run wizard](screenshots/ui-model-01/mobile-390-first-run.png)
+
+![UI-MODEL-01 desktop first-run wizard](screenshots/ui-model-01/desktop-1440-first-run.png)
+
+![UI-MODEL-01 mobile advanced config full page](screenshots/ui-model-01/mobile-390-advanced-config-full.png)
+
+![UI-MODEL-01 desktop advanced config](screenshots/ui-model-01/desktop-1440-advanced-config.png)
+
+Findings and changes:
+
+- The old default path still led with the sidebar goal list and local backend
+  path fields. The new main-canvas wizard starts with plain-language goal cards.
+- Browser preview is presented before backend path registration; local path
+  registration remains available under Advanced for extraction jobs.
+- The Run preview now explains goal, source readiness, provider mode, prompt
+  needs, review gate, and next steps before showing raw JSON.
+- Raw `ExtractionRunConfig` remains available under Advanced and is covered by
+  the layout gate across the required viewport matrix.
+- The mobile `advanced-config` state also writes a full-page screenshot so the
+  raw JSON disclosure and backend local path disclosure are visible at 390px.

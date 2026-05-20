@@ -76,6 +76,15 @@ assert.equal(manualConfig.provider.sam2.prompt_frame, 7);
 assert.equal(manualConfig.prompts.length, 3);
 assert.equal(manualConfig.prompts[0].data.x, 960);
 
+const manualPlan = ui.buildRunPlan(manualConfig, {
+  preset: "trace_one_object",
+  videoId: "asset_1",
+  previewName: "demo_red_ball.mp4",
+});
+assert.equal(manualPlan.title, "Cut out one object");
+assert.equal(manualPlan.privacy, "Frames stay local for this plan");
+assert.ok(manualPlan.steps.some((step) => step.label === "Review gate" && step.status === "ready"));
+
 const autoObjectConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",
   discoveryMode: "auto_object_proposals",
@@ -106,6 +115,11 @@ assert.equal(autoObjectConfig.discovery.config.maxObjects, 5);
 assert.equal(autoObjectConfig.discovery.config.trackSelectedOnly, true);
 assert.equal(autoObjectConfig.discovery.config.requireReview, true);
 assert.equal(autoObjectConfig.provider.name, "mock");
+
+const firstRunPlan = ui.buildRunPlan(autoObjectConfig, { preset: "auto_object_proposals" });
+assert.equal(firstRunPlan.title, "Discover objects");
+assert.ok(firstRunPlan.steps.some((step) => step.label === "Source" && step.status === "needs-action"));
+assert.ok(firstRunPlan.nextSteps.some((step) => step.includes("Choose a video preview")));
 
 const maximumRecallConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",

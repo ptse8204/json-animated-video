@@ -72,7 +72,7 @@ const MotionJSONUI = (() => {
       outputMode: "authoring",
     },
     trace_one_object: {
-      label: "Trace one object",
+      label: "Cut out one object",
       discoveryMode: "manual_prompt",
       maskProvider: null,
       outputMode: "authoring",
@@ -112,6 +112,41 @@ const MotionJSONUI = (() => {
       discoveryMode: "manual_prompt",
       maskProvider: "mock",
       outputMode: "authoring",
+    },
+  };
+
+  const RUN_PLAN_GOALS = {
+    trace_one_object: {
+      title: "Cut out one object",
+      summary: "Use a point, box, or brush prompt to follow one subject through the video.",
+    },
+    auto_object_proposals: {
+      title: "Discover objects",
+      summary: "Propose object candidates first, then keep only the tracks worth exporting.",
+    },
+    text_detector: {
+      title: "Find by description",
+      summary: "Use text labels to propose candidates, then review them before tracking.",
+    },
+    class_detector: {
+      title: "Find known classes",
+      summary: "Search for configured object classes and review the proposed candidates.",
+    },
+    sam_auto_masks: {
+      title: "Propose all visible segments",
+      summary: "Create broad mask proposals for inspection; export stays review-gated.",
+    },
+    motion_foreground: {
+      title: "Find moving things",
+      summary: "Use CPU motion cues to find objects that change across frames.",
+    },
+    external_masks: {
+      title: "Import masks",
+      summary: "Turn prepared mask frames into object tracks and MotionJSON exports.",
+    },
+    review_existing: {
+      title: "Review previous result",
+      summary: "Open an existing result and check tracks before exporting assets.",
     },
   };
 
@@ -179,7 +214,7 @@ const MotionJSONUI = (() => {
     lastRunConfig: null,
     polling: false,
     errors: {},
-    selectedPreset: "auto_object_proposals",
+    selectedPreset: "trace_one_object",
     activeTool: "point",
     pointKind: "positive_point",
     prompts: [],
@@ -646,6 +681,98 @@ const MotionJSONUI = (() => {
         commercial_use: false,
         commercial_use_status: null,
       },
+    };
+  }
+
+  function presetNameForRunPlan(config, input = {}) {
+    if (input.preset && PRESETS[input.preset]) return input.preset;
+    const discoveryMode = config?.discovery?.mode;
+    const providerName = config?.provider?.name;
+    if (discoveryMode === "motion_foreground") return "motion_foreground";
+    if (discoveryMode === "text_detector") return "text_detector";
+    if (discoveryMode === "class_detector") return "class_detector";
+    if (discoveryMode === "sam_auto_masks") return "sam_auto_masks";
+    if (discoveryMode === "external_masks" || providerName === "external") return "external_masks";
+    if (discoveryMode === "manual_prompt") return "trace_one_object";
+    return "auto_object_proposals";
+  }
+
+  function buildRunPlan(config, input = {}, validation = null) {
+    const presetName = presetNameForRunPlan(config, input);
+    const goal = RUN_PLAN_GOALS[presetName] || RUN_PLAN_GOALS.auto_object_proposals;
+    const providerName = config?.provider?.name || "mock";
+    const discoveryMode = config?.discovery?.mode || PRESETS[presetName]?.discoveryMode || "manual_prompt";
+    const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network);
+    const localOrMock = LOCAL_JOB_PROVIDERS.has(providerName) || providerName === "threshold";
+    const hasRegisteredVideo = Boolean(input.videoId || config?.rights?.source_asset_id);
+    const hasBrowserPreview = Boolean(input.previewName);
+    const hasPrompts = asArray(config?.prompts).length > 0;
+    const errors = asArray(validation?.errors).map((item) => item.message || String(item));
+    const warnings = asArray(validation?.warnings).map((item) => item.message || String(item));
+
+    const sourceDetail = hasRegisteredVideo
+      ? "The backend can run against the registered local asset."
+      : hasBrowserPreview
+        ? "The browser preview is ready for drawing. Register a local path before starting a backend job."
+        : "Use Choose video preview for drawing, or register a local path under Advanced before running.";
+
+    const steps = [
+      {
+        label: "Goal",
+        value: goal.title,
+        detail: goal.summary,
+        status: "ready",
+      },
+      {
+        label: "Source",
+        value: hasRegisteredVideo ? "Registered local video" : hasBrowserPreview ? "Browser preview loaded" : "Video still needed",
+        detail: sourceDetail,
+        status: hasRegisteredVideo ? "ready" : "needs-action",
+      },
+      {
+        label: "Model mode",
+        value: localOrMock ? `${providerName} provider` : `${providerName} provider needs diagnostics`,
+        detail: hostedAllowed
+          ? "Hosted calls are allowed for this provider. Confirm privacy and cost before running."
+          : "No hosted calls are enabled by this plan; provider diagnostics still decide what can run.",
+        status: hostedAllowed || !localOrMock ? "warning" : "ready",
+      },
+      {
+        label: "Review gate",
+        value: "Review before export",
+        detail: "Candidates and tracks must be reviewed so raster-only or background-like output is explained before export.",
+        status: "ready",
+      },
+    ];
+
+    if (discoveryMode === "manual_prompt" && !hasPrompts) {
+      steps.splice(2, 0, {
+        label: "Prompt",
+        value: "Add a point or box",
+        detail: "Place a positive point or draw a box on the preview to tell the extractor which object matters.",
+        status: "needs-action",
+      });
+    }
+
+    const nextSteps = [];
+    if (!hasBrowserPreview && !hasRegisteredVideo) nextSteps.push("Choose a video preview or register a local video path.");
+    if (!hasRegisteredVideo) nextSteps.push("Register a local path under Advanced before starting a backend run.");
+    if (discoveryMode === "manual_prompt" && !hasPrompts) nextSteps.push("Add a point, box, or brush prompt for the object.");
+    if (warnings.length) nextSteps.push("Review backend warnings before running.");
+    if (errors.length) nextSteps.push("Fix validation errors before starting extraction.");
+    if (!nextSteps.length) nextSteps.push("Start a mock job or validate again before a real extraction run.");
+
+    return {
+      preset: presetName,
+      title: goal.title,
+      summary: goal.summary,
+      privacy: hostedAllowed ? "Hosted calls allowed after confirmation" : "Frames stay local for this plan",
+      providerName,
+      discoveryMode,
+      errors,
+      warnings,
+      steps,
+      nextSteps,
     };
   }
 
@@ -3369,14 +3496,69 @@ const MotionJSONUI = (() => {
       });
     }
 
+    function renderRunPlanSummary(plan) {
+      const container = $("#runPlanSummary");
+      if (!container) return;
+      const statusLabel = plan.errors.length
+        ? `${plan.errors.length} validation error${plan.errors.length === 1 ? "" : "s"}`
+        : plan.warnings.length
+          ? `${plan.warnings.length} warning${plan.warnings.length === 1 ? "" : "s"}`
+          : plan.privacy;
+      const statusClassName = plan.errors.length ? "is-bad" : plan.warnings.length ? "is-warn" : "is-ready";
+      const stepRows = plan.steps
+        .map(
+          (step) => `
+            <li class="run-plan-step is-${escapeAttribute(step.status)}">
+              <span class="run-plan-step-label">${escapeHtml(step.label)}</span>
+              <strong>${escapeHtml(step.value)}</strong>
+              <span>${escapeHtml(step.detail)}</span>
+            </li>
+          `,
+        )
+        .join("");
+      const nextRows = plan.nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+      container.innerHTML = `
+        <div class="run-plan-intro">
+          <div>
+            <p class="section-kicker">Reviewable plan</p>
+            <h3>${escapeHtml(plan.title)}</h3>
+            <p>${escapeHtml(plan.summary)}</p>
+          </div>
+          <span class="status-chip ${statusClassName}">${escapeHtml(statusLabel)}</span>
+        </div>
+        <ol class="run-plan-list">${stepRows}</ol>
+        <div class="run-plan-next">
+          <strong>Next</strong>
+          <ul>${nextRows}</ul>
+        </div>
+      `;
+    }
+
+    function renderRunPlanError(message) {
+      const container = $("#runPlanSummary");
+      if (!container) return;
+      container.innerHTML = `
+        <div class="run-plan-intro">
+          <div>
+            <p class="section-kicker">Reviewable plan</p>
+            <h3>Plan needs attention</h3>
+            <p>${escapeHtml(message)}</p>
+          </div>
+          <span class="status-chip is-bad">Invalid</span>
+        </div>
+      `;
+    }
+
     function renderConfigPreview() {
+      const formState = collectFormState($);
       let config;
       try {
-        config = buildRunConfig(collectFormState($));
+        config = buildRunConfig(formState);
       } catch (error) {
         $("#configStatus").textContent = "Invalid";
         $("#configStatus").className = "status-chip is-bad";
         $("#configPreview").textContent = error.message;
+        renderRunPlanError(error.message);
         return;
       }
 
@@ -3398,6 +3580,12 @@ const MotionJSONUI = (() => {
       $("#configStatus").textContent = configWarnings.length ? "Needs prompt" : warnings.length ? "Warn" : "Valid";
       $("#configStatus").className = `status-chip ${configWarnings.length || warnings.length ? "is-warn" : "is-ready"}`;
       $("#configPreview").textContent = JSON.stringify(config, null, 2);
+      renderRunPlanSummary(
+        buildRunPlan(config, formState, {
+          errors: [],
+          warnings: [...warnings.map((message) => ({ message })), ...configWarnings.map((message) => ({ message }))],
+        }),
+      );
       renderPromptList();
       renderCorrectionPanel();
       scheduleDrawOverlay();
@@ -3422,17 +3610,21 @@ const MotionJSONUI = (() => {
         $("#providerWarning").className = "warning-box is-ready";
       }
 
-      $("#configPreview").textContent = JSON.stringify(validation.runConfig || buildRunConfig(collectFormState($)), null, 2);
+      const config = validation.runConfig || buildRunConfig(collectFormState($));
+      $("#configPreview").textContent = JSON.stringify(config, null, 2);
+      renderRunPlanSummary(buildRunPlan(config, collectFormState($), validation));
     }
 
     async function validateConfigWithBackend() {
+      const formState = collectFormState($);
       let config;
       try {
-        config = buildRunConfig(collectFormState($));
+        config = buildRunConfig(formState);
       } catch (error) {
         $("#configStatus").textContent = "Invalid";
         $("#configStatus").className = "status-chip is-bad";
         $("#configPreview").textContent = error.message;
+        renderRunPlanError(error.message);
         return;
       }
 
@@ -3606,7 +3798,7 @@ const MotionJSONUI = (() => {
 
     function applyPreset(presetName, options = {}) {
       state.selectedPreset = PRESETS[presetName] ? presetName : "auto_object_proposals";
-      document.querySelectorAll(".goal").forEach((button) => {
+      document.querySelectorAll(".goal, .goal-card").forEach((button) => {
         const active = button.dataset.preset === state.selectedPreset;
         button.classList.toggle("is-active", active);
         button.setAttribute("aria-pressed", String(active));
@@ -4087,8 +4279,22 @@ const MotionJSONUI = (() => {
       const goalList = document.querySelector(".goal-list");
       const firstRunPanel = document.querySelector("#firstRunChecklist")?.closest(".compact-panel");
       const wizardPanel = document.querySelector(".wizard-panel");
+      const guidedStart = document.querySelector(".guided-start");
+      const workflowSteps = document.querySelector(".workflow-steps");
+      const workspaceGrid = document.querySelector(".workspace-grid");
+      const viewerPanel = document.querySelector(".viewer-panel");
+      const configPanel = document.querySelector(".config-panel");
+      const localPathDisclosure = document.querySelector("#localPathDisclosure");
+      const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
 
-      if (capture === "extraction-wizard") {
+      if (capture === "first-run") {
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (rightRail) rightRail.style.display = "none";
+      } else if (capture === "extraction-wizard") {
         applyPreset("text_detector");
       } else if (capture === "provider-diagnostics") {
         applyPreset("motion_foreground");
@@ -4113,6 +4319,24 @@ const MotionJSONUI = (() => {
         if (shell && window.innerWidth > 860) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
         if (rightRail) rightRail.style.display = "none";
         if (wizardPanel) wizardPanel.style.display = "none";
+      } else if (capture === "advanced-config") {
+        applyPreset("text_detector");
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (rightRail) rightRail.style.display = "none";
+        if (guidedStart) guidedStart.style.display = "none";
+        if (workflowSteps) workflowSteps.style.display = "none";
+        if (viewerPanel) viewerPanel.style.display = "none";
+        if (workspaceGrid) {
+          workspaceGrid.style.gridTemplateColumns = "minmax(0, 1fr)";
+          workspaceGrid.style.gridTemplateAreas = '"config" "setup" "wizard"';
+        }
+        if (configPanel) configPanel.style.order = "-1";
+        if (localPathDisclosure) localPathDisclosure.open = true;
+        if (rawConfigDisclosure) rawConfigDisclosure.open = true;
       } else if (capture === "job-review") {
         if (shell) {
           shell.style.display = "block";
@@ -4865,7 +5089,7 @@ const MotionJSONUI = (() => {
       renderCorrectionPanel();
     });
 
-    document.querySelectorAll(".goal").forEach((button) => {
+    document.querySelectorAll(".goal, .goal-card").forEach((button) => {
       button.addEventListener("click", () => applyPreset(button.dataset.preset));
     });
 
@@ -5139,6 +5363,8 @@ const MotionJSONUI = (() => {
     });
 
     $("#validateConfigButton").addEventListener("click", validateConfigWithBackend);
+    $("#guidedPreviewButton").addEventListener("click", () => $("#videoFileInput").click());
+    $("#guidedValidateButton").addEventListener("click", validateConfigWithBackend);
 
     $("#loadConfigInput").addEventListener("change", async () => {
       const file = $("#loadConfigInput").files?.[0];
@@ -5172,6 +5398,7 @@ const MotionJSONUI = (() => {
     buildCorrectionRequestFromPrompts,
     buildExportPanelSummary,
     buildRunConfig,
+    buildRunPlan,
     buildReviewTracks,
     containedVideoRect,
     correctionDiagnosticMessages,

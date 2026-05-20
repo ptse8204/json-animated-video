@@ -16,7 +16,15 @@ const VIEWPORTS = [
   { name: "desktop-1920", width: 1920, height: 1080 },
 ];
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
-const CAPTURE_STATES = ["first-run", "new-project", "extraction-wizard", "provider-diagnostics", "provider-settings", "job-review"];
+const CAPTURE_STATES = [
+  "first-run",
+  "new-project",
+  "extraction-wizard",
+  "advanced-config",
+  "provider-diagnostics",
+  "provider-settings",
+  "job-review",
+];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
 
 function parseArgs(argv) {
@@ -359,8 +367,8 @@ async function evaluateLayout(cdp) {
   return result.result.value;
 }
 
-async function captureScreenshot(cdp, path) {
-  const result = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+async function captureScreenshot(cdp, path, { captureBeyondViewport = false } = {}) {
+  const result = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport });
   await writeFile(path, Buffer.from(result.data, "base64"));
 }
 
@@ -389,6 +397,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     const layout = await evaluateLayout(cdp);
     if (screenshotDir) {
       await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`));
+      if (state === "advanced-config" && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
     }
     for (const failure of layout.failures) {
       failures.push(`${viewport.name}/${state}: ${failure}`);

@@ -22,8 +22,8 @@
         <section class="sidebar-section">
           <p class="section-kicker">Choose a goal</p>
           <nav class="goal-list" aria-label="Extraction wizard presets">
-            <button class="goal is-active" type="button" data-preset="auto_object_proposals" aria-pressed="true" aria-current="step">Discover objects</button>
-            <button class="goal" type="button" data-preset="trace_one_object" aria-pressed="false">Trace one object</button>
+            <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
+            <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
             <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
             <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
             <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
@@ -41,8 +41,8 @@
             <label>
               <span>Default goal</span>
               <select id="preferenceDefaultGoal">
+                <option value="trace_one_object">Cut out one object</option>
                 <option value="auto_object_proposals">Discover objects</option>
-                <option value="trace_one_object">Trace one object</option>
                 <option value="text_detector">Find objects from text</option>
                 <option value="class_detector">Find known classes</option>
                 <option value="motion_foreground">Find moving objects</option>
@@ -86,13 +86,53 @@
           <div>
             <p class="eyebrow">Local release candidate</p>
             <h1>Object tracing workspace</h1>
-            <p class="topbar-copy">Start in no-model mode, confirm provider readiness, then review tracks before export.</p>
+            <p class="topbar-copy">Choose what to trace, confirm the local plan, then review tracks before export.</p>
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
           </div>
         </header>
+
+        <section class="guided-start panel" aria-label="Guided first run">
+          <div class="guided-start-header">
+            <div>
+              <p class="section-kicker">Guided first run</p>
+              <h2>What do you want to trace?</h2>
+              <p class="panel-note">Start with a plain-language goal. The app keeps the generated run plan readable and waits for review before export.</p>
+            </div>
+            <span class="status-chip is-neutral">Mock/local first</span>
+          </div>
+          <div class="goal-card-grid" aria-label="Object tracing goals">
+            <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
+              <span class="goal-card-title">Cut out one object</span>
+              <span class="goal-card-copy">Load a preview, place a point or box, and track the selected subject.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
+              <span class="goal-card-title">Find moving things</span>
+              <span class="goal-card-copy">Use CPU motion cues to propose objects that change over time.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="text_detector" aria-pressed="false">
+              <span class="goal-card-title">Find by description</span>
+              <span class="goal-card-copy">Describe labels such as red ball, hand, or cup, then review candidates.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="external_masks" aria-pressed="false">
+              <span class="goal-card-title">Import masks</span>
+              <span class="goal-card-copy">Bring in prepared mask frames and turn them into reviewed object tracks.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="review_existing" aria-pressed="false">
+              <span class="goal-card-title">Review previous result</span>
+              <span class="goal-card-copy">Open a prior MotionJSON output and check tracks before exporting assets.</span>
+            </button>
+          </div>
+          <div class="guided-start-actions">
+            <button id="guidedPreviewButton" class="guided-file-control" type="button">
+              <span>Choose video preview</span>
+              <strong>Use a local file to draw prompts in the browser.</strong>
+            </button>
+            <button id="guidedValidateButton" class="primary-action" type="button">Validate plan</button>
+          </div>
+        </section>
 
         <ol class="workflow-steps" aria-label="Local workflow">
           <li><span>1</span>Create or open</li>
@@ -185,18 +225,24 @@
               <h3>Source Video</h3>
               <span id="videoCount" class="subtle-chip">0 videos</span>
             </div>
-            <form id="videoForm" class="inline-form">
-              <label>
-                <span>Register local path</span>
-                <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
-              </label>
-              <button type="submit">Add video</button>
-            </form>
-            <select id="videoSelect" aria-label="Registered video"></select>
             <label class="file-control">
               <span>Browser preview</span>
               <input id="videoFileInput" type="file" accept="video/*" />
             </label>
+            <p class="form-hint">Browser previews are local to this tab. Register a local path when you are ready to run backend extraction.</p>
+            <details id="localPathDisclosure" class="advanced-panel">
+              <summary>Advanced: register a local path for backend jobs</summary>
+              <div class="advanced-stack">
+                <form id="videoForm" class="inline-form">
+                  <label>
+                    <span>Local video path</span>
+                    <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
+                  </label>
+                  <button type="submit">Add video</button>
+                </form>
+                <select id="videoSelect" aria-label="Registered video"></select>
+              </div>
+            </details>
             <div id="videoList" class="artifact-list"></div>
 
             <details class="advanced-panel">
@@ -366,12 +412,12 @@
             <div class="panel-heading">
               <div>
                 <h2>Run preview</h2>
-                <p class="panel-note">Validate before running. The generated config is the same shape the backend receives.</p>
+                <p class="panel-note">Validate the plain-language plan before running. Technical users can inspect the raw JSON under Advanced.</p>
               </div>
               <span id="configStatus" class="status-chip is-neutral">Ready</span>
             </div>
             <div class="config-actions">
-              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate config</button>
+              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate plan</button>
               <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start run</button>
               <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job" data-tooltip="Start no-model smoke job">Start mock job</button>
               <button id="saveConfigButton" type="button" data-tooltip="Save the current config JSON">Save config</button>
@@ -380,7 +426,11 @@
                 <input id="loadConfigInput" type="file" accept="application/json,.json" />
               </label>
             </div>
-            <pre id="configPreview" class="config-preview" aria-live="polite"></pre>
+            <div id="runPlanSummary" class="run-plan-summary" aria-live="polite"></div>
+            <details id="rawConfigDisclosure" class="advanced-panel raw-config-panel">
+              <summary>Advanced: raw config JSON</summary>
+              <pre id="configPreview" class="config-preview" aria-live="polite"></pre>
+            </details>
           </article>
         </section>
       </section>
