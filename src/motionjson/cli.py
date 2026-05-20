@@ -25,6 +25,7 @@ from .providers.discovery import (
     ClassDetectorDiscoveryProvider,
     ExternalMasksDiscoveryProvider,
     ManualPromptDiscoveryProvider,
+    MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
@@ -399,7 +400,7 @@ def build_discovery_provider(args: argparse.Namespace):
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), config
     if mode == "auto_object_proposals":
-        return SamAutoMasksDiscoveryProvider(name="auto_object_proposals"), config
+        return MockObjectDiscoveryProvider(), config
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), config
     if mode == "class_detector":

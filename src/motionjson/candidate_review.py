@@ -17,11 +17,16 @@ _LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:Users|private|var|tmp|Volum
 _WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
 
 
-def candidate_review_payload(document: Mapping[str, Any]) -> dict[str, Any]:
+def candidate_review_payload(
+    document: Mapping[str, Any],
+    *,
+    artifact_ids_by_rel_path: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     """Return the public API-first candidate records and aggregate summary."""
 
+    artifact_ids = artifact_ids_by_rel_path or {}
     candidates = [
-        _candidate_review_record(candidate, index, document)
+        _candidate_review_record(candidate, index, document, artifact_ids)
         for index, candidate in enumerate(_candidate_documents(document))
     ]
     summary = _candidate_summary(document, candidates)
@@ -35,7 +40,12 @@ def _candidate_documents(document: Mapping[str, Any]) -> list[Mapping[str, Any]]
     return [candidate for candidate in candidates if isinstance(candidate, Mapping)]
 
 
-def _candidate_review_record(candidate: Mapping[str, Any], index: int, document: Mapping[str, Any]) -> dict[str, Any]:
+def _candidate_review_record(
+    candidate: Mapping[str, Any],
+    index: int,
+    document: Mapping[str, Any],
+    artifact_ids_by_rel_path: Mapping[str, str],
+) -> dict[str, Any]:
     metadata = _mapping(candidate.get("metadata"))
     provider_name = _text(
         _first_present(
@@ -65,8 +75,20 @@ def _candidate_review_record(candidate: Mapping[str, Any], index: int, document:
         "source": source,
         "providerName": provider_name,
         "frameIndex": _int(candidate.get("frameIndex", candidate.get("frame_index")), default=0),
-        "thumbnailArtifactId": _artifact_id(_first_present(candidate, metadata, ("thumbnailArtifactId", "thumbnail_artifact_id"))),
-        "maskPreviewArtifactId": _artifact_id(_first_present(candidate, metadata, ("maskPreviewArtifactId", "mask_preview_artifact_id"))),
+        "thumbnailArtifactId": _artifact_id_from_record(
+            candidate,
+            metadata,
+            ("thumbnailArtifactId", "thumbnail_artifact_id"),
+            ("thumbnailArtifactPath", "thumbnail_artifact_path"),
+            artifact_ids_by_rel_path,
+        ),
+        "maskPreviewArtifactId": _artifact_id_from_record(
+            candidate,
+            metadata,
+            ("maskPreviewArtifactId", "mask_preview_artifact_id"),
+            ("maskPreviewArtifactPath", "mask_preview_artifact_path"),
+            artifact_ids_by_rel_path,
+        ),
         "box": box,
         "areaRatio": _area_ratio(candidate, metadata, box, _mapping(document.get("video"))),
         "stabilityScore": _score(candidate, metadata, ("stabilityScore", "stability_score"), default=confidence),
@@ -83,6 +105,7 @@ def _candidate_review_record(candidate: Mapping[str, Any], index: int, document:
 
 def _candidate_summary(document: Mapping[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
     config = _mapping(document.get("config"))
+    first_candidate_provider = candidates[0].get("providerName") if candidates else None
     rejection_reasons = Counter(
         _candidate_rejection_reason(candidate)
         for candidate in candidates
@@ -99,7 +122,7 @@ def _candidate_summary(document: Mapping[str, Any], candidates: list[dict[str, A
             "defaultSelectedCount": sum(1 for candidate in candidates if candidate.get("defaultSelected") is True),
             "rejectionReasons": dict(sorted(rejection_reasons.items())),
             "qualityPreset": _text(config.get("qualityPreset") or config.get("quality_preset") or "unknown"),
-            "providerName": _text(document.get("provider") or config.get("providerName") or config.get("provider_name") or "unknown"),
+            "providerName": _text(config.get("providerName") or config.get("provider_name") or first_candidate_provider or document.get("provider") or "unknown"),
             "requiresReview": _bool_or_default(config.get("requireReview", config.get("require_review")), default=True),
         }
     )
@@ -246,6 +269,24 @@ def _artifact_id(value: Any) -> str | None:
     if not text or "/" in text or "\\" in text or text.lower().startswith("file:"):
         return None
     return text
+
+
+def _artifact_id_from_record(
+    candidate: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    id_keys: tuple[str, ...],
+    path_keys: tuple[str, ...],
+    artifact_ids_by_rel_path: Mapping[str, str],
+) -> str | None:
+    direct = _artifact_id(_first_present(candidate, metadata, id_keys))
+    if direct:
+        return direct
+    rel_path = _first_present(candidate, metadata, path_keys)
+    if isinstance(rel_path, str):
+        artifact_id = artifact_ids_by_rel_path.get(rel_path.replace("\\", "/"))
+        if artifact_id:
+            return _artifact_id(artifact_id)
+    return None
 
 
 def _public_text(value: str) -> str:

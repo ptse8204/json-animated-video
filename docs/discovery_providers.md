@@ -50,7 +50,7 @@ provider receives boxes or masks.
 | Workflow | CLI support | Local UI job support |
 | --- | --- | --- |
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
-| `auto_object_proposals` | Typed config, CLI choice, and mock proposal routing exist. Real execution is capability-gated until the provider adapter phase. | API validation lists the mode; local worker requires mock config until real adapters are wired. |
+| `auto_object_proposals` | Runnable when `discovery.config.mock` is `true`, with clean, balanced, and maximum-recall presets. It writes deterministic masks, candidate thumbnails, mask previews, rejected candidates, and API review metadata. Real SAM2/SAM3 execution remains capability-gated until adapter phases. | Runnable in mock mode through the local worker when `discovery.config.mock` is `true`; review shows API candidates, preview artifact IDs, rejection reasons, tracks for accepted mock candidates, diagnostics, and export state. |
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |

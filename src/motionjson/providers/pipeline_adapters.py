@@ -101,7 +101,13 @@ class ObjectSpecInitialMaskProvider:
         specs_by_id = {str(spec.object_id): spec for spec in self.object_specs}
         initial: list[InitialMask] = []
         for candidate in candidates:
-            spec = specs_by_id[candidate.id]
+            spec = specs_by_id.get(candidate.id)
+            if spec is None:
+                metadata = candidate.metadata if isinstance(candidate.metadata, dict) else {}
+                review_status = str(metadata.get("reviewStatus") or "").strip().lower()
+                if metadata.get("rejectionReason") or review_status in {"rejected", "ignored", "excluded"}:
+                    continue
+                raise KeyError(candidate.id)
             initial.append(
                 InitialMask(
                     object_id=candidate.id,

@@ -898,6 +898,63 @@ def test_local_ui_review_redacts_unavailable_candidate_artifact_diagnostics(tmp_
     assert asset["storage_key"] not in public_body
 
 
+def test_local_ui_auto_object_proposals_mock_review_uses_artifact_backed_candidates(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Auto Object Proposals"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": f"local-ui://assets/{video['id']}"},
+        "output": {"directory": str(tmp_path / "private-output")},
+        "objects": [{"object_id": "object_0", "label": "Discovered objects"}],
+        "sampling": {"sample_fps": 12.0, "max_frames": 2},
+        "provider": {"name": "mock"},
+        "discovery": {
+            "mode": "auto_object_proposals",
+            "config": {
+                "mock": True,
+                "qualityPreset": "clean",
+                "maxCandidatesPerKeyframe": 4,
+                "maxObjects": 2,
+                "writeRejectedCandidates": True,
+            },
+        },
+        "prompts": [],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    job = wait_for_job(app, decode(body)["job"]["id"])
+    artifact_payload = decode(app.handle("GET", f"/api/jobs/{job['id']}/artifacts")[2])
+    review = artifact_payload["review"]
+    artifact_ids = {artifact["id"] for artifact in artifact_payload["artifacts"]}
+
+    assert status == 200
+    assert job["status"] == "succeeded"
+    assert review["candidateSummary"]["provider"] == "auto_object_proposals"
+    assert review["candidateSummary"]["providerName"] == "mock"
+    assert review["candidateSummary"]["qualityPreset"] == "clean"
+    assert review["candidateSummary"]["candidateCount"] == 4
+    assert review["candidateSummary"]["acceptedCandidateCount"] == 2
+    assert review["candidateSummary"]["rejectedCandidateCount"] == 2
+    assert len(review["tracks"]) == 2
+    assert review["candidates"][0]["thumbnailArtifactId"] in artifact_ids
+    assert review["candidates"][0]["maskPreviewArtifactId"] in artifact_ids
+    assert review["candidates"][2]["reviewStatus"] == "rejected"
+    assert review["candidates"][2]["rejectionReason"] in {"too_small", "duplicate_mask"}
+    assert "storage_key" not in json.dumps(artifact_payload)
+
+
 def test_local_ui_cancel_pending_job_records_public_status_and_event(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 

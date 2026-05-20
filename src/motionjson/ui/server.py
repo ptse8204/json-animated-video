@@ -381,6 +381,21 @@ def _append_unique_fallback(review: dict[str, Any], item: Any, seen: set[str]) -
     review["fallbackDiagnostics"].append(public_item)
 
 
+def _artifact_ids_by_rel_path(assets: list[dict[str, Any]]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for asset in assets:
+        try:
+            metadata = json.loads(asset.get("metadata_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        if not isinstance(metadata, dict):
+            continue
+        rel_path = metadata.get("rel_path")
+        if isinstance(rel_path, str) and rel_path:
+            result[rel_path.replace("\\", "/")] = str(asset.get("id") or "")
+    return {key: value for key, value in result.items() if value}
+
+
 class LocalUIApp:
     """Small local-only UI app over the existing SQLite backend."""
 
@@ -1213,6 +1228,7 @@ class LocalUIApp:
         }
         storage = self.storage()
         seen_fallback: set[str] = set()
+        artifact_ids_by_rel_path = _artifact_ids_by_rel_path(assets)
         for asset in assets:
             kind = str(asset.get("kind") or "")
             counts = review["artifactCountsByKind"]
@@ -1236,7 +1252,7 @@ class LocalUIApp:
             elif kind == "job_metrics":
                 review["metrics"] = _public_review_value(document)
             elif kind == "candidate_summary":
-                self._apply_candidate_review(review, document)
+                self._apply_candidate_review(review, document, artifact_ids_by_rel_path=artifact_ids_by_rel_path)
             elif kind == "review_state_manifest":
                 manifest_review = document.get("review") if isinstance(document.get("review"), dict) else {}
                 review["reviewStateManifest"] = _public_review_value(
@@ -1300,8 +1316,13 @@ class LocalUIApp:
         return document, None
 
     @staticmethod
-    def _apply_candidate_review(review: dict[str, Any], document: dict[str, Any]) -> None:
-        candidate_review = candidate_review_payload(document)
+    def _apply_candidate_review(
+        review: dict[str, Any],
+        document: dict[str, Any],
+        *,
+        artifact_ids_by_rel_path: dict[str, str],
+    ) -> None:
+        candidate_review = candidate_review_payload(document, artifact_ids_by_rel_path=artifact_ids_by_rel_path)
         legacy_summary = _public_review_value(document)
         shaped_summary = _public_review_value(candidate_review["candidateSummary"])
         review["candidates"] = _public_review_value(candidate_review["candidates"])

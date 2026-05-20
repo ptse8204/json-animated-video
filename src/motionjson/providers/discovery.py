@@ -35,6 +35,13 @@ CLASS_DETECTOR_PRESETS: dict[str, tuple[str, ...]] = {
     "custom": (),
 }
 
+MOCK_OBJECT_DISCOVERY_PRESETS: dict[str, dict[str, int]] = {
+    "clean": {"accepted": 4, "rejected": 2},
+    "balanced": {"accepted": 7, "rejected": 3},
+    "maximum_recall": {"accepted": 14, "rejected": 6},
+    "trace_everything": {"accepted": 18, "rejected": 10},
+}
+
 
 DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
     "manual_prompt": {
@@ -181,6 +188,30 @@ def _int_config(config: Mapping[str, Any], name: str, default: int) -> int:
         raise ProviderConfigError(f"discovery.{name}: expected integer") from exc
 
 
+def _int_config_any(config: Mapping[str, Any], names: Sequence[str], default: int) -> int:
+    for name in names:
+        if name in config and config[name] is not None:
+            return _int_config(config, name, default)
+    return int(default)
+
+
+def _bool_config_any(config: Mapping[str, Any], names: Sequence[str], default: bool) -> bool:
+    for name in names:
+        if name not in config or config[name] is None:
+            continue
+        value = config[name]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        raise ProviderConfigError(f"discovery.{name}: expected boolean")
+    return bool(default)
+
+
 def _float_config(config: Mapping[str, Any], name: str, default: float) -> float:
     value = config.get(name, default)
     if isinstance(value, bool):
@@ -266,6 +297,72 @@ def _write_box_mask_sequence(video: VideoSource, candidate: ObjectCandidate, mas
     _write_mask_sequence(video, mask_dir, [mask.copy() for _frame in video.frames])
 
 
+def _box_mask(video: VideoSource, candidate: ObjectCandidate) -> np.ndarray:
+    height = int(getattr(video.info, "height", 0))
+    width = int(getattr(video.info, "width", 0))
+    box = candidate.box or Box(width // 4, height // 4, max(1, width // 2), max(1, height // 2))
+    x0 = max(0, min(width, int(box.x)))
+    y0 = max(0, min(height, int(box.y)))
+    x1 = max(x0, min(width, int(box.x + box.w)))
+    y1 = max(y0, min(height, int(box.y + box.h)))
+    mask = np.zeros((height, width), dtype=np.uint8)
+    mask[y0:y1, x0:x1] = 255
+    return mask
+
+
+def _write_mock_candidate_previews(video: VideoSource, candidate: ObjectCandidate, mask_dir: Path) -> dict[str, str]:
+    if not video.frames:
+        return {}
+    frame_index = max(0, min(len(video.frames) - 1, int(candidate.frame_index or 0)))
+    frame = video.frames[frame_index].rgb
+    frame_image = Image.fromarray(frame)
+    box = candidate.box
+    thumb = frame_image.copy()
+    if box is not None:
+        width, height = frame_image.size
+        x0 = max(0, min(width, int(box.x)))
+        y0 = max(0, min(height, int(box.y)))
+        x1 = max(x0 + 1, min(width, int(box.x + box.w)))
+        y1 = max(y0 + 1, min(height, int(box.y + box.h)))
+        thumb = frame_image.crop((x0, y0, x1, y1))
+    thumb.thumbnail((160, 160))
+    thumbnail_path = mask_dir / "thumbnail.png"
+    thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+    thumb.save(thumbnail_path)
+
+    mask = _box_mask(video, candidate)
+    overlay = frame_image.convert("RGBA")
+    red = Image.new("RGBA", overlay.size, (235, 72, 72, 0))
+    alpha = Image.fromarray(np.where(mask > 0, 112, 0).astype(np.uint8))
+    red.putalpha(alpha)
+    preview = Image.alpha_composite(overlay, red)
+    preview.thumbnail((240, 240))
+    mask_preview_path = mask_dir / "mask_preview.png"
+    preview.save(mask_preview_path)
+    if mask_dir.parts:
+        rel_base = "/".join(mask_dir.parts[-3:])
+    else:
+        rel_base = str(mask_dir)
+    return {
+        "thumbnailArtifactPath": f"{rel_base}/thumbnail.png",
+        "maskPreviewArtifactPath": f"{rel_base}/mask_preview.png",
+    }
+
+
+def _mock_object_filter_metadata(config: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "maxKeyframes": config.get("maxKeyframes", config.get("max_keyframes")),
+        "maxCandidatesPerKeyframe": config.get("maxCandidatesPerKeyframe", config.get("max_candidates")),
+        "maxObjects": config.get("maxObjects", config.get("max_objects")),
+        "minMaskArea": config.get("minMaskArea", config.get("min_area")),
+        "maxMaskAreaRatio": config.get("maxMaskAreaRatio", config.get("max_area_ratio")),
+        "dedupeIou": config.get("dedupeIou", config.get("dedupe_iou")),
+        "stabilityThreshold": config.get("stabilityThreshold", config.get("stability_threshold")),
+        "trackSelectedOnly": config.get("trackSelectedOnly", config.get("track_selected_only", True)),
+        "writeRejectedCandidates": config.get("writeRejectedCandidates", config.get("write_rejected_candidates", True)),
+    }
+
+
 def _relative_mask_dir(ctx: RunContext, provider_name: str, object_id: str) -> tuple[Path, str]:
     if ctx.out_dir is None:
         raise ProviderConfigError(f"{provider_name} discovery needs RunContext.out_dir to write candidate masks")
@@ -279,6 +376,27 @@ def _mock_box(index: int, width: int, height: int) -> Box:
     x = min(max(0, width - w), 4 + index * max(2, width // 8))
     y = min(max(0, height - h), 4 + index * max(2, height // 10))
     return Box(x, y, w, h)
+
+
+def _mock_object_box(index: int, width: int, height: int) -> Box:
+    w = max(6, min(width - 1, width // 5 + (index % 3) * max(1, width // 18)))
+    h = max(6, min(height - 1, height // 5 + (index % 2) * max(1, height // 16)))
+    x_stride = max(2, width // 7)
+    y_stride = max(2, height // 6)
+    x = min(max(0, width - w), 3 + (index * x_stride) % max(1, width - w))
+    y = min(max(0, height - h), 3 + (index * y_stride) % max(1, height - h))
+    return Box(x, y, w, h)
+
+
+def _mock_rejected_box(index: int, width: int, height: int) -> tuple[str, Box]:
+    reason = ("too_small", "duplicate_mask", "whole_frame", "background_like")[index % 4]
+    if reason == "too_small":
+        return reason, Box(1 + index, 1 + index, max(1, width // 18), max(1, height // 18))
+    if reason == "duplicate_mask":
+        return reason, _mock_object_box(0, width, height)
+    if reason == "whole_frame":
+        return reason, Box(0, 0, max(1, width), max(1, height))
+    return reason, Box(0, max(0, height - max(2, height // 3)), max(1, width), max(2, height // 3))
 
 
 @dataclass
@@ -497,6 +615,118 @@ class SamAutoMasksDiscoveryProvider:
 
 
 @dataclass
+class MockObjectDiscoveryProvider:
+    name: str = "auto_object_proposals"
+    provider_name: str = "mock"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        if not config.get("mock"):
+            raise ProviderConfigError(
+                "auto_object_proposals mock discovery requires discovery.config.mock=true until real proposal adapters are configured."
+            )
+        quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "clean").strip() or "clean"
+        if quality_preset not in MOCK_OBJECT_DISCOVERY_PRESETS:
+            allowed = ", ".join(sorted(MOCK_OBJECT_DISCOVERY_PRESETS))
+            raise ProviderConfigError(f"auto_object_proposals unknown qualityPreset {quality_preset!r}; expected one of: {allowed}")
+        preset = MOCK_OBJECT_DISCOVERY_PRESETS[quality_preset]
+        candidate_cap = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), preset["accepted"] + preset["rejected"]))
+        object_cap = max(1, _int_config_any(config, ("maxObjects", "max_objects"), preset["accepted"]))
+        write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
+        accepted_count = min(preset["accepted"], object_cap, candidate_cap)
+        rejected_count = min(preset["rejected"], max(0, candidate_cap - accepted_count)) if write_rejected else 0
+        candidates: list[ObjectCandidate] = []
+        for index in range(accepted_count):
+            candidates.append(self._candidate(video, config, ctx, index=index, accepted=True, quality_preset=quality_preset))
+        for index in range(rejected_count):
+            candidates.append(self._candidate(video, config, ctx, index=index, accepted=False, quality_preset=quality_preset))
+        return candidates
+
+    def _candidate(
+        self,
+        video: VideoSource,
+        config: Mapping[str, Any],
+        ctx: RunContext,
+        *,
+        index: int,
+        accepted: bool,
+        quality_preset: str,
+    ) -> ObjectCandidate:
+        width = int(getattr(video.info, "width", 64))
+        height = int(getattr(video.info, "height", 64))
+        if accepted:
+            object_id = f"{self.name}_cand_{index + 1:03d}"
+            label = f"Mock object {index + 1}"
+            box = _mock_object_box(index, width, height)
+            rejection_reason = None
+            warnings: list[str] = []
+            stability = round(max(0.5, 0.94 - index * 0.021), 4)
+            motion = round(max(0.2, 0.72 - index * 0.017), 4)
+        else:
+            reason, box = _mock_rejected_box(index, width, height)
+            object_id = f"{self.name}_rejected_{index + 1:03d}"
+            label = f"Rejected {reason.replace('_', ' ')}"
+            rejection_reason = reason
+            warnings = [f"mock filter rejected candidate: {reason}"]
+            stability = round(max(0.1, 0.62 - index * 0.035), 4)
+            motion = round(max(0.05, 0.32 - index * 0.02), 4)
+        confidence = round((stability * 0.65) + (motion * 0.35), 4)
+        frame_count = max(1, len(video.frames))
+        mask_dir, mask_dir_rel = _relative_mask_dir(ctx, self.name, object_id)
+        candidate = ObjectCandidate(
+            id=object_id,
+            label=label,
+            source=self.name,
+            frame_index=0,
+            box=box,
+            score=confidence,
+            z_index=10 + (index * 10 if accepted else 1000 + index),
+            metadata=_candidate_metadata(
+                self.name,
+                "Deterministic no-model automatic object proposal",
+                {
+                    "providerName": self.provider_name,
+                    "qualityPreset": quality_preset,
+                    "mock": True,
+                    "aiUsage": "none",
+                    "filters": _mock_object_filter_metadata(config),
+                    "stabilityScore": stability,
+                    "motionScore": motion,
+                    "confidence": confidence,
+                    "frameCoverageEstimate": 1.0 if accepted else round(max(0.15, 0.35 - index * 0.03), 4),
+                    "defaultSelected": accepted,
+                    "reviewStatus": "pending" if accepted else "rejected",
+                    "warnings": warnings,
+                    "rejectionReason": rejection_reason,
+                    "maskDir": mask_dir_rel,
+                    "maskFiles": frame_count,
+                },
+            ),
+        )
+        _write_box_mask_sequence(video, candidate, mask_dir)
+        artifact_paths = _write_mock_candidate_previews(video, candidate, mask_dir)
+        metadata = {
+            **candidate.metadata,
+            **artifact_paths,
+        }
+        ctx.emit(
+            "candidate_discovery",
+            "running",
+            f"mock object candidate {object_id} generated",
+            metadata={"objectId": object_id, "qualityPreset": quality_preset, "rejectionReason": rejection_reason},
+        )
+        return ObjectCandidate(
+            id=candidate.id,
+            label=candidate.label,
+            source=candidate.source,
+            frame_index=candidate.frame_index,
+            box=candidate.box,
+            score=candidate.score,
+            z_index=candidate.z_index,
+            metadata=metadata,
+        )
+
+
+@dataclass
 class TextDetectorDiscoveryProvider:
     detector: Any | None = None
     name: str = "text_detector"
@@ -654,6 +884,9 @@ def object_specs_from_candidates(
 
     specs: list[Any] = []
     for index, candidate in enumerate(candidates):
+        review_status = str(candidate.metadata.get("reviewStatus") or "").strip().lower()
+        if candidate.metadata.get("rejectionReason") or review_status in {"rejected", "ignored", "excluded"}:
+            continue
         mask_dir = candidate.metadata.get("maskDir") or candidate.metadata.get("mask_dir")
         if mask_dir:
             path = Path(str(mask_dir))

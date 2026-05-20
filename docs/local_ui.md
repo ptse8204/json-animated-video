@@ -165,6 +165,10 @@ counts, `qualityPreset`, `providerName`, and `requiresReview`. The older
 `candidateSummary.video`, and `candidateSummary.candidates` fields remain for
 current UI compatibility, but new UI code should render `review.candidates`
 and the aggregate summary instead of inventing candidate or track state.
+Mock `auto_object_proposals` jobs write deterministic thumbnails and mask
+preview overlays under `discovery/`; once those files are registered as
+artifacts, the review route resolves their relative paths into
+`thumbnailArtifactId` and `maskPreviewArtifactId`.
 
 ## Provider And Model Settings
 

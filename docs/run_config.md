@@ -114,6 +114,10 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   `trackSelectedOnly` to `true`; Trace Everything sets `trackSelectedOnly` to
   `false`, `trackTopCandidates` to `true`, keeps `requireReview` enabled, and
   requires `costWarningAcknowledged: true`.
+- With `discovery.config.mock: true`, `auto_object_proposals` runs without
+  model files, GPU, credentials, or network access. The mock provider writes
+  deterministic accepted and rejected candidates plus mask/preview artifacts so
+  API and UI review flows can be tested in CI.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use

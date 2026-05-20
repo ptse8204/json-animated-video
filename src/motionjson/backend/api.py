@@ -91,6 +91,21 @@ def _artifact_counts(assets: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _artifact_ids_by_rel_path(assets: list[dict[str, Any]]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for asset in assets:
+        try:
+            metadata = json.loads(asset.get("metadata_json") or "{}")
+        except (TypeError, json.JSONDecodeError):
+            metadata = {}
+        if not isinstance(metadata, dict):
+            continue
+        rel_path = metadata.get("rel_path")
+        if isinstance(rel_path, str) and rel_path:
+            result[rel_path.replace("\\", "/")] = str(asset.get("id") or "")
+    return {key: value for key, value in result.items() if value}
+
+
 class MotionJSONAPI:
     def __init__(self, *, db_path: str | Path, storage_root: str | Path):
         self.db_path = Path(db_path)
@@ -404,6 +419,7 @@ class MotionJSONAPI:
         }
         diagnostics: list[dict[str, Any]] = []
         storage = self.storage()
+        artifact_ids_by_rel_path = _artifact_ids_by_rel_path(assets)
         for asset in assets:
             if str(asset.get("kind") or "") != "candidate_summary":
                 continue
@@ -440,7 +456,7 @@ class MotionJSONAPI:
                     }
                 )
                 continue
-            candidate_review = candidate_review_payload(document)
+            candidate_review = candidate_review_payload(document, artifact_ids_by_rel_path=artifact_ids_by_rel_path)
             review["candidates"] = candidate_review["candidates"]
             review["candidateSummary"] = candidate_review["candidateSummary"]
         if diagnostics:

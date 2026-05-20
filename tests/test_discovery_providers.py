@@ -15,6 +15,7 @@ from motionjson.providers import (
     ClassDetectorDiscoveryProvider,
     ExternalMasksDiscoveryProvider,
     ManualPromptDiscoveryProvider,
+    MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
@@ -23,7 +24,7 @@ from motionjson.providers import (
 )
 from motionjson.providers.base import ProviderConfigError
 from motionjson.providers.pipeline_adapters import ContourVectorizer, IdentityTrackLinker, ObjectSpecInitialMaskProvider, PerFrameMaskVideoTracker
-from motionjson.tracks import RunContext, VideoSource
+from motionjson.tracks import ObjectCandidate, RunContext, VideoSource
 from motionjson.validation import validate_output_dir
 from motionjson.video import Frame, VideoInfo
 
@@ -359,3 +360,149 @@ def test_discovery_candidate_summaries_include_ui_description_source_score_and_f
     assert summary["metadata"]["providerDescription"]
     assert summary["metadata"]["whenToUse"]
     assert "filters" in summary["metadata"]
+
+
+def test_auto_object_proposals_mock_preset_is_deterministic_and_writes_artifacts(tmp_path):
+    source = video_source()
+    first = MockObjectDiscoveryProvider().propose(
+        source,
+        {"mock": True, "qualityPreset": "clean", "maxCandidatesPerKeyframe": 6, "maxObjects": 4},
+        RunContext(out_dir=tmp_path / "first"),
+    )
+    second = MockObjectDiscoveryProvider().propose(
+        source,
+        {"mock": True, "qualityPreset": "clean", "maxCandidatesPerKeyframe": 6, "maxObjects": 4},
+        RunContext(out_dir=tmp_path / "second"),
+    )
+
+    def public_shape(candidates):
+        return [
+            {
+                "id": candidate.id,
+                "label": candidate.label,
+                "box": candidate.box.to_dict() if candidate.box else None,
+                "score": candidate.score,
+                "rejectionReason": candidate.metadata.get("rejectionReason"),
+                "thumbnailArtifactPath": candidate.metadata.get("thumbnailArtifactPath"),
+                "maskPreviewArtifactPath": candidate.metadata.get("maskPreviewArtifactPath"),
+            }
+            for candidate in candidates
+        ]
+
+    assert public_shape(first) == public_shape(second)
+    assert len(first) == 6
+    assert sum(1 for candidate in first if candidate.metadata.get("rejectionReason")) == 2
+    assert first[0].metadata["providerName"] == "mock"
+    assert first[0].metadata["qualityPreset"] == "clean"
+    assert first[0].metadata["maskDir"].startswith("discovery/auto_object_proposals/")
+    assert (tmp_path / "first" / first[0].metadata["maskDir"] / "mask_000001.png").exists()
+    assert (tmp_path / "first" / first[0].metadata["thumbnailArtifactPath"]).exists()
+    assert (tmp_path / "first" / first[0].metadata["maskPreviewArtifactPath"]).exists()
+    assert [spec.object_id for spec in object_specs_from_candidates(first, base_dir=tmp_path / "first")] == [
+        "auto_object_proposals_cand_001",
+        "auto_object_proposals_cand_002",
+        "auto_object_proposals_cand_003",
+        "auto_object_proposals_cand_004",
+    ]
+
+
+def test_auto_object_proposals_mock_maximum_recall_is_larger_and_caps_are_honored(tmp_path):
+    source = video_source()
+    clean = MockObjectDiscoveryProvider().propose(
+        source,
+        {"mock": True, "qualityPreset": "clean"},
+        RunContext(out_dir=tmp_path / "clean"),
+    )
+    maximum = MockObjectDiscoveryProvider().propose(
+        source,
+        {"mock": True, "qualityPreset": "maximum_recall"},
+        RunContext(out_dir=tmp_path / "maximum"),
+    )
+    capped = MockObjectDiscoveryProvider().propose(
+        source,
+        {"mock": True, "qualityPreset": "maximum_recall", "maxCandidatesPerKeyframe": 3, "maxObjects": 2},
+        RunContext(out_dir=tmp_path / "capped"),
+    )
+
+    assert len(clean) < len(maximum)
+    assert len(capped) == 3
+    assert sum(1 for candidate in capped if not candidate.metadata.get("rejectionReason")) == 2
+    assert sum(1 for candidate in capped if candidate.metadata.get("rejectionReason")) == 1
+
+
+def test_auto_object_proposals_mock_cli_writes_candidate_review_artifacts(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+
+    cli.main(
+        [
+            "extract",
+            str(video),
+            "--out",
+            str(out),
+            "--discovery-provider",
+            "auto_object_proposals",
+            "--discovery-config",
+            '{"mock": true, "qualityPreset": "clean", "maxCandidatesPerKeyframe": 4, "maxObjects": 2}',
+            "--mask-provider",
+            "mock",
+            "--max-frames",
+            "2",
+            "--min-area",
+            "1",
+        ]
+    )
+
+    candidates_payload = json.loads((out / "candidates.json").read_text())
+    candidates = candidates_payload["candidates"]
+    assert candidates_payload["provider"] == "auto_object_proposals"
+    assert len(candidates) == 4
+    assert sum(1 for candidate in candidates if candidate["metadata"].get("rejectionReason")) == 2
+    assert (out / candidates[0]["metadata"]["thumbnailArtifactPath"]).exists()
+    assert (out / candidates[0]["metadata"]["maskPreviewArtifactPath"]).exists()
+    assert validate_output_dir(out, object_id="auto_object_proposals_cand_001").ok
+
+
+def test_auto_object_proposals_cli_requires_explicit_mock_until_real_adapter(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+
+    with pytest.raises(SystemExit, match="mock=true"):
+        cli.main(
+            [
+                "extract",
+                str(video),
+                "--out",
+                str(out),
+                "--discovery-provider",
+                "auto_object_proposals",
+                "--mask-provider",
+                "mock",
+                "--max-frames",
+                "2",
+                "--min-area",
+                "1",
+            ]
+        )
+
+
+def test_initial_mask_adapter_skips_only_rejected_candidates(tmp_path):
+    accepted = MockObjectDiscoveryProvider().propose(
+        video_source(),
+        {"mock": True, "qualityPreset": "clean", "maxCandidatesPerKeyframe": 2, "maxObjects": 1},
+        RunContext(out_dir=tmp_path),
+    )
+    specs = object_specs_from_candidates(accepted, base_dir=tmp_path)
+    initial = ObjectSpecInitialMaskProvider(specs).initialize_masks(video_source(), accepted, RunContext(out_dir=tmp_path))
+    unexpected = ObjectCandidate(
+        id="accepted_missing_spec",
+        label="Accepted missing spec",
+        source="auto_object_proposals",
+        metadata={"reviewStatus": "pending"},
+    )
+
+    assert [mask.object_id for mask in initial] == ["auto_object_proposals_cand_001"]
+    with pytest.raises(KeyError, match="accepted_missing_spec"):
+        ObjectSpecInitialMaskProvider(specs).initialize_masks(video_source(), [unexpected], RunContext(out_dir=tmp_path))

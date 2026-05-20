@@ -213,6 +213,8 @@ def test_rest_api_job_review_returns_api_first_candidate_payload(tmp_path):
                     "providerName": "mock",
                     "stabilityScore": 0.8,
                     "maskFiles": 5,
+                    "thumbnailArtifactPath": "discovery/auto_object_proposals/cand_001/thumbnail.png",
+                    "maskPreviewArtifactPath": "discovery/auto_object_proposals/cand_001/mask_preview.png",
                     "storageKey": "projects/private/candidate-mask.png",
                     "warnings": ["projects/private/log.txt", "api_key=sk-1234567890"],
                 },
@@ -239,6 +241,26 @@ def test_rest_api_job_review_returns_api_first_candidate_payload(tmp_path):
         content_type="application/json",
         metadata={"storage_key": "projects/private/candidates.json"},
     )
+    thumbnail = register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        source_job_id=job["id"],
+        kind="discovery_artifact",
+        data=b"thumb",
+        rel_path="discovery/auto_object_proposals/cand_001/thumbnail.png",
+        content_type="image/png",
+    )
+    preview = register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        source_job_id=job["id"],
+        kind="discovery_artifact",
+        data=b"preview",
+        rel_path="discovery/auto_object_proposals/cand_001/mask_preview.png",
+        content_type="image/png",
+    )
     conn.close()
 
     api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
@@ -250,6 +272,8 @@ def test_rest_api_job_review_returns_api_first_candidate_payload(tmp_path):
     assert review["format"] == "motionjson.api_review.v0.1"
     assert review["artifactCountsByKind"]["candidate_summary"] == 1
     assert review["candidates"][0]["candidateId"] == "cand_001"
+    assert review["candidates"][0]["thumbnailArtifactId"] == thumbnail["id"]
+    assert review["candidates"][0]["maskPreviewArtifactId"] == preview["id"]
     assert review["candidates"][0]["confidence"] == 0.75
     assert review["candidates"][0]["frameCoverageEstimate"] == 0.5
     assert review["candidates"][1]["reviewStatus"] == "rejected"
