@@ -542,18 +542,31 @@ class ExternalMasksDiscoveryProvider:
             if not files:
                 raise ProviderConfigError(f"external_masks found no mask images in {mask_dir}")
             object_id = _safe_id(str(record.get("object_id") or record.get("objectId") or record.get("id") or f"external_{index}"), f"external_{index}")
+            record_metadata = record.get("metadata") if isinstance(record.get("metadata"), Mapping) else {}
+            source = str(record.get("source") or record_metadata.get("source") or self.name)
+            score = record.get("score", record_metadata.get("confidence", record_metadata.get("score", 1.0)))
+            try:
+                score_value = float(score)
+            except (TypeError, ValueError):
+                score_value = 1.0
             candidates.append(
                 ObjectCandidate(
                     id=object_id,
                     label=str(record.get("label") or object_id),
-                    source=self.name,
+                    source=source,
                     frame_index=int(record.get("frame_index", record.get("frameIndex", 0)) or 0),
-                    score=1.0,
+                    score=score_value,
                     z_index=int(record.get("z_index", record.get("zIndex", 10 + index * 10)) or 10),
                     metadata=_candidate_metadata(
                         self.name,
                         "imported external mask sequence",
-                        {"maskDir": str(mask_dir), "maskFiles": len(files), "filters": {"validatedFiles": len(files)}},
+                        {
+                            **dict(record_metadata),
+                            "source": source,
+                            "maskDir": str(mask_dir),
+                            "maskFiles": len(files),
+                            "filters": {"validatedFiles": len(files), **dict(record_metadata.get("filters") if isinstance(record_metadata.get("filters"), Mapping) else {})},
+                        },
                     ),
                 )
             )
@@ -1693,6 +1706,11 @@ def object_specs_from_candidates(
                 label=candidate.label or candidate.id,
                 mask_provider=provider,
                 z_index=candidate.z_index if candidate.z_index is not None else 10 + index * 10,
+                metadata={
+                    "candidateId": candidate.id,
+                    "candidateMetadata": dict(candidate.metadata),
+                    "source": candidate.source,
+                },
             )
         )
     return specs

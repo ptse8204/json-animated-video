@@ -74,6 +74,31 @@ Each rights block contains source attribution, license details, creator approval
 
 See `docs/rights_and_lineage.md`.
 
+## Discovery Metadata Fields
+
+Discovered or selected objects now carry a stable optional `discovery` block in
+`scene_graph.json` objects and raster layers, `object_manifest.json`,
+`object_motion.json`, and `web_asset_manifest.json`. Older outputs without this
+block remain schema-valid.
+
+The block records candidate lineage and review state without requiring clients
+to parse auxiliary `candidates.json`:
+
+- candidate identity/source: `candidateId`, `source`, `providerName`,
+  `providerModel`, and `qualityPreset`;
+- scores: `candidateScore`, `stabilityScore`, `motionScore`,
+  `trackConfidence`, `frameCoverageEstimate`, and `motionCoverage`;
+- review/export state: `reviewStatus`, `rejectionReason`,
+  `selectedForTracking`, `defaultSelected`, `reviewRequired`, and
+  `exportStatus`;
+- operational context: provider `filters`, preview/mask `artifacts`,
+  `warnings`, `trackingProvider`, `correctionHistoryRef`, and rights/source
+  `lineage`.
+
+The `discovery` block allows additive future provider fields while keeping the
+core object/layer schemas strict. Runtime clients should read the known fields
+they need and ignore unknown fields.
+
 ## Production Asset Fields
 
 Production assets are additive and opt in through extraction flags such as `--output-mode production` or `--output-mode both`. The schemas accept optional production metadata under:

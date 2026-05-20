@@ -37,7 +37,10 @@
     },
     "quality": { "$ref": "#/$defs/quality" },
     "recommendedOutput": { "$ref": "#/$defs/recommendedOutput" },
-    "rights": { "$ref": "#/$defs/rightsBlockCompat" }
+    "rights": { "$ref": "#/$defs/rightsBlockCompat" },
+    "discovery": { "$ref": "#/$defs/discoveryMetadata" },
+    "exportStatus": { "$ref": "#/$defs/exportStatus" },
+    "exportIncluded": { "type": "boolean" }
   },
   "$defs": {
     "nonEmptyString": {
@@ -173,6 +176,62 @@
     "recommendedOutput": {
       "type": "string",
       "enum": ["raster_alpha_sequence", "hybrid_vector_silhouette_plus_raster"]
+    },
+    "exportStatus": {
+      "type": "string",
+      "enum": ["accepted", "review_pending", "rejected", "excluded", "deleted", "merged", "failed", "fallback_raster"]
+    },
+    "discoveryMetadata": {
+      "type": "object",
+      "required": ["candidateId", "source", "providerName", "reviewStatus", "selectedForTracking", "trackConfidence", "motionCoverage", "reviewRequired", "exportStatus"],
+      "additionalProperties": true,
+      "properties": {
+        "candidateId": { "type": ["string", "null"] },
+        "source": { "$ref": "#/$defs/nonEmptyString" },
+        "providerName": { "type": ["string", "null"] },
+        "providerModel": { "type": ["string", "null"] },
+        "qualityPreset": { "type": ["string", "null"] },
+        "candidateScore": { "anyOf": [{ "$ref": "#/$defs/zeroToOne" }, { "type": "null" }] },
+        "stabilityScore": { "anyOf": [{ "$ref": "#/$defs/zeroToOne" }, { "type": "null" }] },
+        "motionScore": { "anyOf": [{ "$ref": "#/$defs/zeroToOne" }, { "type": "null" }] },
+        "frameCoverageEstimate": { "anyOf": [{ "$ref": "#/$defs/zeroToOne" }, { "type": "null" }] },
+        "reviewStatus": {
+          "type": "string",
+          "enum": ["pending", "selected", "ignored", "rejected", "accepted", "excluded", "review_pending", "unknown"]
+        },
+        "rejectionReason": { "type": ["string", "null"] },
+        "selectedForTracking": { "type": "boolean" },
+        "defaultSelected": { "type": "boolean" },
+        "trackConfidence": { "anyOf": [{ "$ref": "#/$defs/zeroToOne" }, { "type": "null" }] },
+        "motionCoverage": { "$ref": "#/$defs/zeroToOne" },
+        "reviewRequired": { "type": "boolean" },
+        "exportStatus": { "$ref": "#/$defs/exportStatus" },
+        "trackingProvider": { "type": ["string", "null"] },
+        "correctionHistoryRef": { "type": ["string", "null"] },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "maskDir": { "type": "string" },
+            "thumbnailArtifactPath": { "type": "string" },
+            "maskPreviewArtifactPath": { "type": "string" },
+            "thumbnailArtifactId": { "type": "string" },
+            "maskPreviewArtifactId": { "type": "string" }
+          }
+        },
+        "lineage": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
     },
     "rightsBlockCompat": {
       "anyOf": [

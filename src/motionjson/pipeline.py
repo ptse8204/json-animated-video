@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 import shutil
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from PIL import Image
 from tqdm import tqdm
@@ -41,6 +41,7 @@ class ObjectExtractionSpec:
     label: str
     mask_provider: LegacyMaskProvider
     z_index: int = 10
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _validate_object_id(object_id: str) -> None:
@@ -110,6 +111,198 @@ def _fallback_payload(*, diagnostics: list[dict[str, Any]], summary: dict[str, A
         "format": "motionjson.raster_fallback_diagnostics.v0.1",
         "diagnostics": diagnostics,
         "summary": dict(summary or {}),
+    }
+
+
+AUTO_REVIEW_DISCOVERY_SOURCES = {
+    "auto_object_proposals",
+    "sam_auto_masks",
+    "sam3_concept",
+    "sam3_exemplar",
+    "sam3_auto_masks",
+    "text_detector",
+    "class_detector",
+    "motion_foreground",
+}
+
+
+def _text_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _number_or_none(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number in {float("inf"), float("-inf")}:
+        return None
+    return number
+
+
+def _score_or_none(value: Any) -> float | None:
+    number = _number_or_none(value)
+    if number is None:
+        return None
+    return round(max(0.0, min(1.0, number)), 4)
+
+
+def _bool_or_default(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    return default
+
+
+def _mapping_or_empty(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _motion_coverage(track: ObjectTrack, quality: Mapping[str, Any]) -> float:
+    explicit = _score_or_none(quality.get("visibleFrameRatio"))
+    if explicit is not None:
+        return explicit
+    if not track.frames:
+        return 0.0
+    visible = sum(1 for frame in track.frames if frame.visible)
+    return round(visible / len(track.frames), 4)
+
+
+def _discovery_artifacts(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    artifacts: dict[str, Any] = {}
+    for key in (
+        "maskDir",
+        "thumbnailArtifactPath",
+        "maskPreviewArtifactPath",
+        "thumbnailArtifactId",
+        "maskPreviewArtifactId",
+    ):
+        value = _text_or_none(metadata.get(key))
+        if value is not None:
+            artifacts[key] = value
+    return artifacts
+
+
+def _discovery_lineage(object_id: str, rights_context: Mapping[str, Any] | None) -> dict[str, Any]:
+    rights = _mapping_or_empty(rights_context)
+    return {
+        "objectId": object_id,
+        "rightsManifest": "rights_manifest.json",
+        "sourceType": _text_or_none(rights.get("source_type")),
+        "sourceAssetId": _text_or_none(rights.get("source_asset_id")),
+        "sourceUri": _text_or_none(rights.get("source_uri")),
+        "license": _text_or_none(rights.get("license")),
+        "assetLineage": {
+            "origin": "source_video",
+            "operations": ["object_discovery", "mask_tracking", "motionjson_export"],
+        },
+    }
+
+
+def _build_discovery_metadata(
+    *,
+    spec: ObjectExtractionSpec,
+    initial: InitialMask | None,
+    track: ObjectTrack,
+    quality: Mapping[str, Any],
+    rights_context: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    candidate = initial.candidate if initial is not None else None
+    candidate_doc = candidate.to_dict() if candidate is not None else {}
+    spec_metadata = _mapping_or_empty(spec.metadata)
+    candidate_metadata = {
+        **_mapping_or_empty(spec_metadata.get("candidateMetadata")),
+        **_mapping_or_empty(candidate.metadata if candidate is not None else None),
+    }
+    candidate_id = _text_or_none(
+        candidate_doc.get("candidateId")
+        or candidate_doc.get("id")
+        or candidate_metadata.get("candidateId")
+        or candidate_metadata.get("candidate_id")
+        or spec_metadata.get("candidateId")
+        or spec.object_id
+    )
+    source = _text_or_none(candidate_doc.get("source") or candidate_metadata.get("source") or spec_metadata.get("source")) or "manual_object_spec"
+    provider_name = _text_or_none(
+        candidate_metadata.get("providerName")
+        or candidate_metadata.get("provider_name")
+        or (initial.provider_name if initial is not None else None)
+        or track.provider_name
+    )
+    review_status = _text_or_none(candidate_metadata.get("reviewStatus") or candidate_metadata.get("review_status"))
+    rejection_reason = _text_or_none(candidate_metadata.get("rejectionReason") or candidate_metadata.get("rejection_reason"))
+    selected_for_tracking = _bool_or_default(
+        candidate_metadata.get("selectedForTracking"),
+        default=_bool_or_default(candidate_metadata.get("defaultSelected"), default=rejection_reason is None),
+    )
+    if review_status is None:
+        if rejection_reason is not None:
+            review_status = "rejected"
+        elif selected_for_tracking and source in AUTO_REVIEW_DISCOVERY_SOURCES:
+            review_status = "pending"
+        else:
+            review_status = "accepted"
+    review_status = review_status.strip().lower()
+    review_required = _bool_or_default(
+        candidate_metadata.get("reviewRequired"),
+        default=source in AUTO_REVIEW_DISCOVERY_SOURCES and review_status in {"pending", "selected", "review_pending"},
+    )
+    export_status = _text_or_none(track.export_status) or ("review_pending" if review_required else "accepted")
+    if review_required and export_status == "accepted":
+        export_status = "review_pending"
+    motion_coverage = _motion_coverage(track, quality)
+    candidate_score = _score_or_none(
+        candidate_doc.get("score")
+        if candidate_doc.get("score") is not None
+        else candidate_metadata.get("confidence", candidate_metadata.get("score"))
+    )
+    track_confidence = _score_or_none(track.confidence if track.confidence is not None else candidate_score)
+    warnings = candidate_metadata.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    return {
+        "candidateId": candidate_id,
+        "source": source,
+        "providerName": provider_name,
+        "providerModel": _text_or_none(
+            candidate_metadata.get("providerModel")
+            or candidate_metadata.get("provider_model")
+            or candidate_metadata.get("modelName")
+            or candidate_metadata.get("model")
+        ),
+        "qualityPreset": _text_or_none(candidate_metadata.get("qualityPreset") or candidate_metadata.get("quality_preset")),
+        "candidateScore": candidate_score,
+        "stabilityScore": _score_or_none(candidate_metadata.get("stabilityScore") or candidate_metadata.get("stability_score")),
+        "motionScore": _score_or_none(candidate_metadata.get("motionScore") or candidate_metadata.get("motion_score")),
+        "frameCoverageEstimate": _score_or_none(
+            candidate_metadata.get("frameCoverageEstimate") or candidate_metadata.get("frame_coverage_estimate")
+        ),
+        "reviewStatus": review_status,
+        "rejectionReason": rejection_reason,
+        "selectedForTracking": selected_for_tracking,
+        "defaultSelected": _bool_or_default(candidate_metadata.get("defaultSelected"), default=selected_for_tracking),
+        "trackConfidence": track_confidence,
+        "motionCoverage": motion_coverage,
+        "reviewRequired": review_required,
+        "exportStatus": export_status,
+        "trackingProvider": _text_or_none(candidate_metadata.get("trackingProvider") or candidate_metadata.get("tracking_provider")),
+        "correctionHistoryRef": _text_or_none(
+            candidate_metadata.get("correctionHistoryRef") or spec_metadata.get("correctionHistoryRef")
+        ),
+        "warnings": [str(item) for item in warnings],
+        "filters": _mapping_or_empty(candidate_metadata.get("filters")),
+        "artifacts": _discovery_artifacts(candidate_metadata),
+        "lineage": _discovery_lineage(spec.object_id, rights_context),
     }
 
 
@@ -299,10 +492,12 @@ def _extract_object(
     motion: list[dict[str, Any]] = []
     cutout_paths: list[Path] = []
 
+    object_initial_masks = [mask for mask in initial_masks if mask.object_id == object_id]
+    initial = object_initial_masks[0] if object_initial_masks else None
     tracker = PerFrameMaskVideoTracker([spec])
     track = tracker.track(
         video_source,
-        [mask for mask in initial_masks if mask.object_id == object_id],
+        object_initial_masks,
         {},
         run_context,
     )[0]
@@ -396,6 +591,13 @@ def _extract_object(
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
+    discovery = _build_discovery_metadata(
+        spec=spec,
+        initial=initial,
+        track=track,
+        quality=quality,
+        rights_context=rights_context,
+    )
     sprite_path = object_dir / f"spritesheet.{sprite_format}"
     sprite_meta = write_spritesheet(
         cutout_paths=cutout_paths,
@@ -429,6 +631,7 @@ def _extract_object(
         "quality": quality,
         "recommendedOutput": route,
         "rights": rights,
+        "discovery": discovery,
     }
     if output_mode in {"production", "both"}:
         production_assets = export_production_assets(
@@ -454,6 +657,7 @@ def _extract_object(
         "quality": quality,
         "recommendedOutput": route,
         "rights": rights,
+        "discovery": discovery,
     }
     if "production" in obj["assets"]:
         object_manifest["production"] = obj["assets"]["production"]
@@ -464,14 +668,17 @@ def _extract_object(
         "motion": motion,
         "quality": quality,
         "recommendedOutput": route,
+        "discovery": discovery,
     }
 
     write_json(object_dir / "object_manifest.json", object_manifest)
     _write_object_motion(out_dir, object_id, object_motion)
     layer = _build_layer_frames(object_id, info.sample_fps, motion, z_index=spec.z_index)
+    layer["discovery"] = discovery
     provider_performance.setdefault("objectId", object_id)
     provider_performance.setdefault("providerName", spec.mask_provider.__class__.__name__)
     provider_performance.setdefault("frames", len(frames))
+    track.metadata["discovery"] = discovery
     track.metadata["quality"] = quality
     track.metadata["recommendedOutput"] = route
     return obj, layer, object_motion, detailed_frames, provider_performance, track

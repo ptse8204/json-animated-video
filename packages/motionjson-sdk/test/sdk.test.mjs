@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import test from "node:test";
 
-import { MotionJSONClient, verifyWebhookSignature } from "../src/index.js";
+import {
+  MotionJSONClient,
+  discoveryMetadataFromCandidate,
+  discoveryMetadataFromMotionJSON,
+  normalizeDiscoveryMetadata,
+  verifyWebhookSignature
+} from "../src/index.js";
 
 function jsonResponse(body, status = 200) {
   return {
@@ -145,6 +151,48 @@ test("SDK exposes asset library, collection, and creator pack helpers", async ()
   assert.equal(calls[1].search, "?q=stick&tag=hero&licenseScope=commercial&creatorApproved=true");
   assert.equal(calls[5].body.libraryAssetId, "la1");
   assert.deepEqual(calls[7].body.libraryAssetIds, ["la1"]);
+});
+
+test("SDK parses candidate and MotionJSON discovery metadata", () => {
+  const candidate = discoveryMetadataFromCandidate({
+    id: "cand_001",
+    source: "auto_object_proposals",
+    confidence: 0.83,
+    reviewStatus: "selected",
+    selectedForTracking: true,
+    metadata: {
+      providerName: "mock",
+      qualityPreset: "clean",
+      motionScore: 0.64,
+      filters: { maxObjects: 12 },
+      artifacts: { maskDir: "discovery/auto_object_proposals/cand_001" }
+    }
+  });
+  assert.equal(candidate.candidateId, "cand_001");
+  assert.equal(candidate.providerName, "mock");
+  assert.equal(candidate.reviewStatus, "selected");
+  assert.equal(candidate.selectedForTracking, true);
+  assert.equal(candidate.filters.maxObjects, 12);
+
+  const discovery = normalizeDiscoveryMetadata({
+    candidateId: "cand_001",
+    source: "auto_object_proposals",
+    providerName: "mock",
+    reviewStatus: "selected",
+    selectedForTracking: true,
+    trackConfidence: 0.8,
+    motionCoverage: 0.75,
+    reviewRequired: true,
+    exportStatus: "review_pending",
+    futureProviderField: { kept: true }
+  });
+  assert.equal(discovery.raw.futureProviderField.kept, true);
+
+  const fromScene = discoveryMetadataFromMotionJSON({
+    schema: "motionjson.scene_graph.v0.1",
+    objects: [{ id: "object_0", discovery }]
+  }, "object_0");
+  assert.equal(fromScene.exportStatus, "review_pending");
 });
 
 test("verifyWebhookSignature validates MotionJSON HMAC signatures", async () => {

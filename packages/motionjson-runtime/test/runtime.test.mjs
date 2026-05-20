@@ -165,6 +165,30 @@ test("normalizes multi-object scene_graph without collapsing layers", () => {
   assert.deepEqual(sortVisibleLayers(editor).map((layer) => layer.id), ["object_0_layer", "shadow_layer"]);
 });
 
+test("normalizes discovery metadata while ignoring unknown future fields", () => {
+  const sceneGraph = sampleSceneGraph();
+  sceneGraph.objects[0].discovery = {
+    candidateId: "cand_001",
+    source: "auto_object_proposals",
+    providerName: "mock",
+    reviewStatus: "selected",
+    selectedForTracking: true,
+    trackConfidence: 0.83,
+    motionCoverage: 1,
+    reviewRequired: true,
+    exportStatus: "review_pending",
+    futureProviderField: { kept: true }
+  };
+  const scene = normalizeMotionJSON(sceneGraph);
+  assert.equal(scene.objects[0].discovery.candidateId, "cand_001");
+  assert.equal(scene.objects[0].discovery.futureProviderField.kept, true);
+
+  const manifest = sampleManifest();
+  manifest.discovery = sceneGraph.objects[0].discovery;
+  const webScene = normalizeMotionJSON(manifest);
+  assert.equal(webScene.objects[0].discovery.exportStatus, "review_pending");
+});
+
 test("frame math loops and clamps", () => {
   const scene = normalizeMotionJSON(sampleManifest());
 

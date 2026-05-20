@@ -28,6 +28,83 @@ function queryString(filters = {}) {
   return query ? `?${query}` : "";
 }
 
+function objectOrEmpty(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function stringOrNull(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function boolOr(value, fallback) {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function scoreOrNull(value) {
+  if (value === undefined || value === null || typeof value === "boolean") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.min(1, number));
+}
+
+export function normalizeDiscoveryMetadata(value = {}) {
+  const metadata = objectOrEmpty(value);
+  return {
+    candidateId: stringOrNull(metadata.candidateId ?? metadata.candidate_id ?? metadata.id),
+    source: stringOrNull(metadata.source) || "unknown",
+    providerName: stringOrNull(metadata.providerName ?? metadata.provider_name),
+    providerModel: stringOrNull(metadata.providerModel ?? metadata.provider_model ?? metadata.modelName ?? metadata.model),
+    qualityPreset: stringOrNull(metadata.qualityPreset ?? metadata.quality_preset),
+    candidateScore: scoreOrNull(metadata.candidateScore ?? metadata.candidate_score ?? metadata.confidence ?? metadata.score),
+    stabilityScore: scoreOrNull(metadata.stabilityScore ?? metadata.stability_score),
+    motionScore: scoreOrNull(metadata.motionScore ?? metadata.motion_score),
+    frameCoverageEstimate: scoreOrNull(metadata.frameCoverageEstimate ?? metadata.frame_coverage_estimate ?? metadata.frameCoverage),
+    reviewStatus: stringOrNull(metadata.reviewStatus ?? metadata.review_status) || "unknown",
+    rejectionReason: stringOrNull(metadata.rejectionReason ?? metadata.rejection_reason),
+    selectedForTracking: boolOr(metadata.selectedForTracking ?? metadata.selected_for_tracking, false),
+    defaultSelected: boolOr(metadata.defaultSelected ?? metadata.default_selected, false),
+    trackConfidence: scoreOrNull(metadata.trackConfidence ?? metadata.track_confidence),
+    motionCoverage: scoreOrNull(metadata.motionCoverage ?? metadata.motion_coverage),
+    reviewRequired: boolOr(metadata.reviewRequired ?? metadata.review_required, false),
+    exportStatus: stringOrNull(metadata.exportStatus ?? metadata.export_status) || "accepted",
+    trackingProvider: stringOrNull(metadata.trackingProvider ?? metadata.tracking_provider),
+    correctionHistoryRef: stringOrNull(metadata.correctionHistoryRef ?? metadata.correction_history_ref),
+    warnings: Array.isArray(metadata.warnings) ? metadata.warnings.map(String) : [],
+    filters: objectOrEmpty(metadata.filters),
+    artifacts: objectOrEmpty(metadata.artifacts),
+    lineage: objectOrEmpty(metadata.lineage),
+    raw: metadata
+  };
+}
+
+export function discoveryMetadataFromCandidate(candidate = {}) {
+  const record = objectOrEmpty(candidate);
+  const metadata = objectOrEmpty(record.metadata);
+  return normalizeDiscoveryMetadata({
+    ...metadata,
+    candidateId: record.candidateId ?? record.candidate_id ?? record.id ?? metadata.candidateId,
+    source: record.source ?? metadata.source,
+    providerName: record.providerName ?? record.provider_name ?? metadata.providerName,
+    candidateScore: record.confidence ?? record.score ?? metadata.confidence ?? metadata.score,
+    reviewStatus: record.reviewStatus ?? record.review_status ?? metadata.reviewStatus,
+    rejectionReason: record.rejectionReason ?? record.rejection_reason ?? metadata.rejectionReason,
+    defaultSelected: record.defaultSelected ?? record.default_selected ?? metadata.defaultSelected,
+    selectedForTracking: record.selectedForTracking ?? record.selected_for_tracking ?? metadata.selectedForTracking
+  });
+}
+
+export function discoveryMetadataFromMotionJSON(document = {}, objectId) {
+  const manifest = objectOrEmpty(document);
+  if (manifest.discovery) return normalizeDiscoveryMetadata(manifest.discovery);
+  const objects = Array.isArray(manifest.objects) ? manifest.objects : [];
+  const object = objectId
+    ? objects.find((item) => objectOrEmpty(item).id === objectId || objectOrEmpty(item).objectId === objectId)
+    : objects[0];
+  return normalizeDiscoveryMetadata(objectOrEmpty(object).discovery);
+}
+
 async function parseResponse(response) {
   const contentType = response.headers?.get?.("content-type") || "";
   if (!response.ok) {

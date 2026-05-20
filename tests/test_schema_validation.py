@@ -6,7 +6,8 @@ import numpy as np
 from jsonschema import Draft202012Validator
 
 from motionjson.masks import ThresholdMaskProvider
-from motionjson.pipeline import run_pipeline
+from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
+from motionjson.providers.discovery import MockObjectDiscoveryProvider, object_specs_from_candidates
 from motionjson.schemas import SCHEMA_IDS
 from motionjson.validation import load_schema, validate_document, validate_file, validate_output_dir
 
@@ -87,6 +88,92 @@ def test_validate_output_dir_accepts_legacy_placeholder_rights(tmp_path):
 
     assert result.ok, [issue.format() for issue in result.issues]
     assert out / "rights_manifest.json" not in result.checked
+
+
+def test_discovery_metadata_validates_across_motionjson_artifacts(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+
+    scene = run_multi_object_pipeline(
+        video_path=video,
+        out_dir=out,
+        object_specs=[],
+        candidate_provider=MockObjectDiscoveryProvider(),
+        candidate_config={
+            "mock": True,
+            "qualityPreset": "clean",
+            "maxObjects": 1,
+            "maxCandidatesPerKeyframe": 1,
+        },
+        candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out),
+        sample_fps=6,
+        max_frames=2,
+        min_area=1,
+    )
+
+    discovery = scene["objects"][0]["discovery"]
+    assert discovery["candidateId"] == "auto_object_proposals_cand_001"
+    assert discovery["source"] == "auto_object_proposals"
+    assert discovery["providerName"] == "mock"
+    assert discovery["qualityPreset"] == "clean"
+    assert discovery["candidateScore"] is not None
+    assert discovery["reviewStatus"] == "pending"
+    assert discovery["reviewRequired"] is True
+    assert discovery["exportStatus"] == "review_pending"
+    assert discovery["motionCoverage"] > 0
+    assert scene["layers"][0]["discovery"] == discovery
+
+    object_manifest = json.loads((out / "objects" / discovery["candidateId"] / "object_manifest.json").read_text(encoding="utf-8"))
+    object_motion = json.loads((out / "objects" / discovery["candidateId"] / "object_motion.json").read_text(encoding="utf-8"))
+    web_manifest = json.loads((out / "objects" / discovery["candidateId"] / "web_asset_manifest.json").read_text(encoding="utf-8"))
+    tracks = json.loads((out / "tracks.json").read_text(encoding="utf-8"))
+    assert object_manifest["discovery"] == discovery
+    assert object_motion["discovery"] == discovery
+    assert web_manifest["discovery"] == discovery
+    assert tracks["tracks"][0]["metadata"]["discovery"] == discovery
+
+    discovery["futureProviderField"] = {"acceptedBySchema": True}
+    scene_path = out / "scene_graph.json"
+    scene_path.write_text(json.dumps(scene), encoding="utf-8")
+
+    assert validate_document(scene) == []
+    assert validate_file(scene_path).ok
+    result = validate_output_dir(out, object_id=discovery["candidateId"])
+    assert result.ok, [issue.format() for issue in result.issues]
+
+
+def test_discovery_metadata_fields_are_backward_compatible(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video)
+    run_pipeline(
+        video_path=video,
+        out_dir=out,
+        mask_provider=ThresholdMaskProvider((0, 80, 80), (12, 255, 255)),
+        sample_fps=6,
+        max_frames=3,
+    )
+
+    for rel_path in (
+        "scene_graph.json",
+        "object_motion.json",
+        "web_asset_manifest.json",
+        "objects/object_0/object_manifest.json",
+        "objects/object_0/object_motion.json",
+        "objects/object_0/web_asset_manifest.json",
+    ):
+        path = out / rel_path
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document.pop("discovery", None)
+        for obj in document.get("objects", []) if isinstance(document.get("objects"), list) else []:
+            obj.pop("discovery", None)
+        for layer in document.get("layers", []) if isinstance(document.get("layers"), list) else []:
+            layer.pop("discovery", None)
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+    result = validate_output_dir(out)
+    assert result.ok, [issue.format() for issue in result.issues]
 
 
 def test_resource_profile_schema_accepts_pre_phase16_profiles(tmp_path):

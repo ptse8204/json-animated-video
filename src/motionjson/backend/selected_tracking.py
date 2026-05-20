@@ -187,12 +187,30 @@ def _selected_external_mask_objects(
         absolute_mask_dir = source_dir / mask_path
         if not absolute_mask_dir.exists():
             raise ValueError(f"candidate {candidate_id!r} maskDir artifact is unavailable")
+        score = candidate.get("confidence")
+        if score is None:
+            score = candidate.get("score")
+        if score is None:
+            score = metadata.get("confidence", metadata.get("score", 1.0))
+        candidate_metadata = {
+            **dict(metadata),
+            "candidateId": candidate_id,
+            "source": str(candidate.get("source") or metadata.get("source") or "track_selected"),
+            "providerName": str(candidate.get("providerName") or metadata.get("providerName") or "track_selected"),
+            "reviewStatus": "selected",
+            "selectedForTracking": True,
+            "defaultSelected": True,
+            "confidence": score,
+        }
         objects.append(
             {
                 "object_id": candidate_id,
                 "label": str(candidate.get("label") or candidate_id),
                 "mask_dir": str(absolute_mask_dir),
                 "z_index": int(candidate.get("zIndex") or candidate.get("z_index") or 10 + index * 10),
+                "source": candidate_metadata["source"],
+                "score": score,
+                "metadata": candidate_metadata,
             }
         )
     return objects
@@ -301,13 +319,61 @@ def _mark_export_review_pending(output_dir: Path, *, selected_ids: set[str]) -> 
                     obj["exportStatus"] = "review_pending"
                     quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
                     obj["quality"] = {**quality, "reviewRequired": True}
+                    discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
+                    obj["discovery"] = {
+                        **discovery,
+                        "reviewStatus": "selected",
+                        "selectedForTracking": True,
+                        "reviewRequired": True,
+                        "exportStatus": "review_pending",
+                    }
         else:
             for track in document.get("tracks", []):
                 if isinstance(track, dict) and str(track.get("objectId")) in selected_ids:
                     track["exportStatus"] = "review_pending"
                     metadata = track.get("metadata") if isinstance(track.get("metadata"), dict) else {}
-                    track["metadata"] = {**metadata, "reviewRequired": True}
+                    discovery = metadata.get("discovery") if isinstance(metadata.get("discovery"), dict) else {}
+                    track["metadata"] = {
+                        **metadata,
+                        "reviewRequired": True,
+                        "discovery": {
+                            **discovery,
+                            "reviewStatus": "selected",
+                            "selectedForTracking": True,
+                            "reviewRequired": True,
+                            "exportStatus": "review_pending",
+                        },
+                    }
         path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _mark_object_discovery_review_pending(output_dir, selected_ids=selected_ids)
+
+
+def _mark_object_discovery_review_pending(output_dir: Path, *, selected_ids: set[str]) -> None:
+    for object_id in selected_ids:
+        rel_paths = [
+            Path("objects") / object_id / "object_manifest.json",
+            Path("objects") / object_id / "object_motion.json",
+            Path("objects") / object_id / "web_asset_manifest.json",
+            Path("object_motion.json"),
+            Path("web_asset_manifest.json"),
+        ]
+        for rel_path in rel_paths:
+            path = output_dir / rel_path
+            if not path.exists():
+                continue
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document_id = str(document.get("objectId") or document.get("assetId") or object_id)
+            if rel_path.parts[0] != "objects" and document_id != object_id:
+                continue
+            discovery = document.get("discovery") if isinstance(document.get("discovery"), dict) else {}
+            document["discovery"] = {
+                **discovery,
+                "reviewStatus": "selected",
+                "selectedForTracking": True,
+                "reviewRequired": True,
+                "exportStatus": "review_pending",
+            }
+            path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _write_selection_manifest(

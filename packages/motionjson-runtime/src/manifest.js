@@ -63,6 +63,11 @@ function normalizeSpritesheet(spritesheet, baseUrl) {
   };
 }
 
+function normalizeDiscoveryMetadata(discovery) {
+  if (!discovery || typeof discovery !== "object" || Array.isArray(discovery)) return null;
+  return { ...discovery };
+}
+
 function normalizeWebManifest(document, options) {
   const baseUrl = options.baseUrl || "";
   const sequence = document.assets?.sequence || [];
@@ -71,6 +76,7 @@ function normalizeWebManifest(document, options) {
     id: document.assetId,
     label: document.label,
     renderMode: document.renderMode || "raster_alpha_sequence",
+    discovery: normalizeDiscoveryMetadata(document.discovery),
     states: document.states || {},
     assets: {
       posterUrl: resolveAssetUrl(document.assets?.poster, baseUrl),
@@ -141,6 +147,7 @@ function normalizeSceneObject(object, layer, baseUrl) {
     renderMode: object.renderMode || layer?.type || "raster_alpha_sequence",
     states: object.interactions || {},
     zIndex: numberOr(object.zIndex ?? layer?.z_index ?? layer?.zIndex, 10),
+    discovery: normalizeDiscoveryMetadata(object.discovery || layer?.discovery),
     assets: {
       posterUrl: resolveAssetUrl(firstAsset, baseUrl),
       spritesheet: normalizeSpritesheet(object.assets?.spritesheet, baseUrl),

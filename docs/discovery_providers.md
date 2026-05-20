@@ -319,6 +319,14 @@ Candidates with `metadata.maskDir` are adapted into `ObjectExtractionSpec`
 values backed by `ExternalMaskProvider`, then processed by the shared
 tracking/vectorization/export path.
 
+Accepted candidates also become first-class MotionJSON object metadata. The
+exporter writes a `discovery` block onto scene objects/layers, object manifests,
+object motion files, web manifests, and track metadata. That block carries the
+candidate ID, source/provider/model, preset, scores, review status, selected or
+ignored state, track confidence, motion coverage, artifact references,
+rights/source lineage, and optional correction-history reference. Runtime and
+SDK clients can read this block directly and ignore future additive fields.
+
 ## Capability Behavior
 
 Run diagnostics before presenting discovery choices:

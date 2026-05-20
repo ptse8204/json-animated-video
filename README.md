@@ -222,6 +222,11 @@ out/demo_red_ball/
 Use `scene_graph.json` or `web_asset_manifest.json` for playback. Use
 `tracks.json`, `provider_diagnostics.json`, and `fallback_diagnostics.json` to
 understand what was accepted, rejected, or unavailable before export.
+Discovered objects also carry a `discovery` block in scene/object/web
+manifests. It records candidate source, provider, preset, review status,
+selected tracking state, confidence/coverage scores, artifact lineage, and
+export review state so runtimes and SDK clients do not need to reverse-engineer
+`candidates.json`.
 
 ## Use MotionJSON on a website
 

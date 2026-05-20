@@ -138,6 +138,7 @@ def build_web_asset_manifest(
             "scroll": {"translate": [40, -24], "rotation": 0.35},
         },
         "quality": obj.get("quality", {}),
+        "discovery": obj.get("discovery", {}),
         "estimatedPackageSizes": {
             "websitePackageBytes": sizes.get("websitePackageBytes"),
             "websitePackageToSourceRatio": sizes.get("websitePackageToSourceRatio"),
