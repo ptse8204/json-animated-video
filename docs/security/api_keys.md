@@ -19,9 +19,14 @@ The Local UI Provider settings panel currently covers:
   a segmentation provider.
 - `text_detector` and `class_detector`: local model-choice surfaces for
   scaffolded detector workflows.
+- `auto_object_proposals`: no key in mock mode; optional local SAM2 automatic
+  proposals use local package/checkpoint/config/device diagnostics, not a
+  browser-supplied secret.
 - `sam3-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
   Hosted SAM3-compatible discovery uses `SAM3_HOSTED_URL` and
-  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally, do not send frames or make network calls, and require a separate explicit opt-in for hosted smoke tests.
+  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally, do not send
+  frames or make network calls, and require a separate explicit opt-in for
+  hosted smoke tests.
 
 ![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
 

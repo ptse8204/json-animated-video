@@ -141,6 +141,31 @@ Useful fixes:
 
 See [Track filtering and fallback diagnostics](track_filtering.md).
 
+## Object Discovery Finds Too Few Candidates
+
+Start with the default Clean preset. It is intentionally conservative: few
+keyframes, capped candidates, stricter filtering, and selected-candidate
+tracking. If the desired object is missing from the API candidate gallery,
+retry with Maximum Recall. Maximum Recall uses more keyframes, more candidates,
+and looser filters, so expect slower runs and more review work.
+
+SAM2 can help with automatic keyframe proposals when `sam2-local` diagnostics
+show the package, checkpoint, config, and device are available. SAM3 is the
+optional path for concept prompts, exemplars, and higher-recall semantic
+discovery. Missing SAM2/SAM3 should be shown in capabilities instead of hidden
+behind a generic "no candidates" message.
+
+## Object Discovery Finds Too Many Candidates
+
+Stay in Clean or Balanced when possible. Use the candidate browser filters for
+selected, stable, moving, non-background, non-duplicate, and minimum frame
+coverage. Track selected candidates only unless you are deliberately auditing a
+noisy discovery pass.
+
+Trace Everything is expert/experimental. It requires explicit cost/noise
+acknowledgement, remains capped, writes rejected candidates, and blocks export
+until review. Use it when you need an audit pass, not as the default workflow.
+
 ## Raster-Only Output
 
 Photoreal objects are expected to stay raster/alpha layers controlled by JSON.

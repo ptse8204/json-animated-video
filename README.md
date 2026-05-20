@@ -19,6 +19,9 @@ detectors, model weights, cloud APIs, or provider credentials.
 - Samples short videos with OpenCV.
 - Extracts object layers with local providers such as HSV thresholding, motion
   foreground, external mask imports, and deterministic mock providers.
+- Discovers object candidates through an API-first review flow: run a clean
+  proposal pass, inspect backend-returned candidates, select desired objects,
+  track selected candidates, then export reviewed motion layers.
 - Keeps heavyweight ML paths optional and capability-gated.
 - Shows provider diagnostics before a run, including missing SAM2, CUDA,
   detectors, hosted endpoints, FFmpeg, and model paths.
@@ -40,6 +43,32 @@ silhouettes, contours, labels, icons, annotations, and simple flat graphics.
 
 SAM2 is also not automatic semantic discovery by itself. Text prompts need a
 detector or open-vocabulary candidate provider before segmentation/tracking.
+
+## Default object discovery workflow
+
+The default workflow is low-cost and review-first:
+
+```text
+Discover objects with Clean settings
+-> review API-returned object candidates
+-> select the objects you want
+-> track selected candidates
+-> export reviewed JSON-controlled motion layers
+```
+
+Clean discovery is the default because it samples a few keyframes, caps
+candidates, filters whole-frame/background-like masks, and tracks selected
+objects only. Maximum Recall is an advanced preset for missed objects; it uses
+more keyframes, looser filters, and more candidates, so it is slower and
+noisier. Trace Everything is expert/experimental, requires explicit
+cost/noise acknowledgement, stays capped, and remains review-gated before
+export.
+
+When configured, SAM2 is the practical lower-cost path for automatic keyframe
+mask proposals and selected-object tracking. SAM3 is optional and best for
+concept prompts, exemplar search, and higher-recall semantic discovery. Hosted
+SAM2/SAM3-style providers require explicit cost/privacy opt-in before network
+tests or hosted runs.
 
 ## Who it is for
 
@@ -326,6 +355,12 @@ Common first checks:
 
 - `python: command not found`: use `python3` on macOS/Linux or `py -3` on
   Windows.
+- Object discovery missed the thing you want: start with Clean, then retry with
+  Maximum Recall only when the candidate gallery is too sparse.
+- Object discovery found too much: stay in Clean or Balanced, use the API
+  candidate filters, and track selected candidates only.
+- Trace Everything is blocked: acknowledge the advanced cost/noise warning and
+  expect review-required output before export.
 - SAM2 is missing: use `mock`, `threshold`, `motion`, or `external`, or install
   optional SAM2 dependencies and configure checkpoint/model paths.
 - Text/class detectors are missing: install and configure the relevant detector

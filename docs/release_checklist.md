@@ -20,6 +20,28 @@ Known limitations must be clear in the release notes, README, and migration
 guide before tagging. Do not imply that optional SAM2, detector, hosted model,
 or Remotion workflows are bundled when they are only configured or planned.
 
+## Object Discovery Release Gate
+
+- Confirm Clean discovery is the default first-run object discovery preset.
+- Confirm Maximum Recall is labeled advanced, slower, noisier, and useful when
+  Clean misses desired objects.
+- Confirm Trace Everything is expert/experimental, capped, requires explicit
+  cost/noise acknowledgement, and blocks export until review.
+- Confirm API review payloads own candidates, tracks, diagnostics, correction
+  history, artifacts, timeline markers, and export eligibility; the UI must not
+  fabricate normal completed job outputs.
+- Confirm selected-candidate tracking validates candidate IDs, tracks selected
+  objects by default, and returns updated API review/artifact state.
+- Confirm auto-discovered exports remain review-gated and validation messages
+  explain how to unblock them.
+- Confirm SAM2 automatic proposals stay optional and capability-gated behind
+  package/checkpoint/config/device diagnostics.
+- Confirm SAM3 local/hosted concept, exemplar, and higher-recall paths remain
+  optional, capability-gated, and clearly separated from the CPU/mock default.
+- Confirm hosted SAM2/SAM3-compatible providers require explicit cost/privacy
+  opt-in before network tests or hosted runs, and secrets are redacted from
+  diagnostics, screenshots, API responses, logs, and docs.
+
 ## Tests
 
 ```bash

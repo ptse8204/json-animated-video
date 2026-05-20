@@ -8,6 +8,13 @@ and export. Heavyweight ML providers remain optional and capability-gated.
 
 ## Highlights
 
+- API-first object discovery workflow: Clean discovery is the default,
+  candidates are returned by the backend review API, users select desired
+  candidates, the backend tracks selected objects, and selected-object exports
+  stay review-gated.
+- Advanced discovery presets: Maximum Recall increases keyframes/candidates
+  for missed objects, while Trace Everything is expert/experimental, capped,
+  cost/noise acknowledged, and review-required.
 - Local UI workflow for choosing tracing goals: one object, text-driven object
   discovery, moving objects, all visible segments, external masks, and review of
   existing MotionJSON output.
@@ -24,6 +31,10 @@ and export. Heavyweight ML providers remain optional and capability-gated.
   object proposals, motion-only discovery, and detector class presets. Real
   text/class/automatic-mask providers require optional packages, models, and
   configuration.
+- Optional SAM2 automatic proposals provide the practical lower-cost local
+  provider path when SAM2 package/checkpoint/config/device diagnostics pass.
+  Optional SAM3 local/hosted modes cover concept, exemplar, and higher-recall
+  discovery behind capability and hosted opt-in gates.
 - Export quality routing, source rights and lineage warnings, and the local
   Asset Library for reusable motion layers, brand collections, and rights-gated
   creator-approved pack metadata. This is not a hosted marketplace or commerce
@@ -37,6 +48,9 @@ and export. Heavyweight ML providers remain optional and capability-gated.
 - Heavy ML dependencies are not required for the default install.
 - Local UI and API responses redact local filesystem paths and storage keys from
   public payloads.
+- Hosted provider setup checks do not send frames. Hosted SAM3 smoke tests and
+  hosted discovery runs require explicit network, hosted, and cost/privacy
+  acknowledgement before any frame leaves the machine.
 - Raster-only output is surfaced through review diagnostics instead of being
   silently treated as successful vector/object extraction.
 - Asset Library and creator-pack workflows use existing local assets and rights

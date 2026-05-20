@@ -80,3 +80,19 @@ embed machine-specific local paths.
 The benchmark fixtures are not replacements for visual QA. They are deterministic
 regression inputs for object count, track continuity, mask coverage, duplicate
 overlap, fallback reason counts, runtime, and schema validation.
+
+## Object Discovery Coverage
+
+The benchmark suite intentionally stays CPU/mock and deterministic. It can run
+mock automatic proposals with `--modes auto`, mock SAM-style automatic masks
+through `--modes sam_auto`, mock text detector boxes with `--modes mock`, and
+mock class presets with `--modes class`. These modes exercise the shared
+candidate, filtering, track, fallback, and schema-validation surfaces without
+installing SAM2/SAM3, downloading model weights, using CUDA, or sending frames
+to hosted providers.
+
+Quality presets such as Clean, Maximum Recall, and Trace Everything are covered
+by config/API/UI tests rather than benchmark videos because their acceptance
+criteria are mostly candidate caps, warnings, review gates, and API contract
+behavior. Real SAM2/SAM3 benchmark runs should remain opt-in local experiments
+and must not be required for CI.

@@ -56,6 +56,10 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+def normalized(text: str) -> str:
+    return " ".join(text.split())
+
+
 def iter_local_links(source: Path):
     text = source.read_text(encoding="utf-8")
     for match in MARKDOWN_LINK_RE.finditer(text):
@@ -151,7 +155,7 @@ def test_od07_sam3_mock_and_hosted_docs_are_truthful():
     assert "SAM3_LOCAL_MODEL" in capabilities_doc
     assert "SAM3_HOSTED_URL" in security
     assert "SAM3_HOSTED_API_KEY" in security
-    assert "do not send frames or make network calls" in security
+    assert "do not send frames or make network calls" in normalized(security)
 
 
 def test_od08_sam3_local_adapter_docs_are_truthful():
@@ -164,6 +168,36 @@ def test_od08_sam3_local_adapter_docs_are_truthful():
     assert "unsupported_runtime" in capabilities_doc
     assert "sam3ModelPath" in run_config
     assert "not install SAM3" in sam3
+
+
+def test_od14_object_discovery_release_docs_cover_workflow():
+    readme = read("README.md")
+    index = read("docs/index.md")
+    checklist = read("docs/release_checklist.md")
+    troubleshooting = read("docs/troubleshooting.md")
+    repo_status = read("docs/repo_status.md")
+    release_notes = read("docs/release_notes.md")
+
+    for text in (readme, index, checklist, release_notes):
+        compact = normalized(text)
+        assert "Clean" in text
+        assert "Maximum Recall" in compact
+        assert "Trace Everything" in compact
+
+    for phrase in (
+        "API-first object discovery",
+        "Selected-candidate tracking",
+        "Review-gated exports",
+        "OD roadmap reports",
+    ):
+        assert phrase in repo_status
+
+    assert "review API-returned object candidates" in readme
+    assert "API review payloads own candidates" in checklist
+    assert "SAM2 automatic proposals stay optional" in checklist
+    assert "SAM3 local/hosted concept" in checklist
+    assert "Object Discovery Finds Too Few Candidates" in troubleshooting
+    assert "Object Discovery Finds Too Many Candidates" in troubleshooting
 
 
 def test_important_markdown_local_links_resolve():

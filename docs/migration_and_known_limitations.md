@@ -18,6 +18,9 @@
 - Reusable motion layers can be saved through the local Asset Library only from
   explicit generated/export artifact kinds. Creator-approved packs require
   approved creator and commercial-use rights metadata on every included layer.
+- New object discovery configs should use `auto_object_proposals` with the
+  default Clean preset first. Maximum Recall and Trace Everything are explicit
+  advanced modes and should not be treated as first-run defaults.
 
 ## Known limitations
 
@@ -37,6 +40,10 @@
 - Automatic mask proposals can still include weak candidates. The product
   workflow filters whole-frame/background fragments and explains raster fallback
   reasons, but users should review tracks before export.
+- API review state is the source of truth for candidates, tracks, correction
+  history, artifacts, timeline markers, and export eligibility. UI-only
+  synthetic completed tracks are demo-only and must not be exported as normal
+  job output.
 - Final video rendering still depends on FFmpeg availability. Validated
   MotionJSON export and website/runtime artifacts work without FFmpeg.
 - The Asset Library is local metadata and local stored assets. It is not a

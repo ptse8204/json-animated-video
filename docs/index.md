@@ -30,6 +30,10 @@ python3 scripts/run_red_ball_demo.sh
 Use this path when your goal is to create object tracks, masks, cutouts, and
 MotionJSON output:
 
+- Default object discovery is API-first: run the Clean preset, review
+  backend-returned candidates, select the desired objects, track selected
+  candidates, then export reviewed JSON-controlled motion layers. Maximum
+  Recall and Trace Everything are advanced/noisy paths, not first-run defaults.
 - [Examples](examples.md) shows the red-ball demo, UI screenshots, expected
   output folders, and browser preview links.
 - [Local UI](local_ui.md) explains projects, videos, extraction presets, prompt
@@ -149,5 +153,7 @@ files, tests, screenshots or demos, known limitations, and follow-up tasks.
 python3 -m pytest -q
 npm test
 npm run lint
+npm run build
+python3 scripts/capture_docs_assets.py --check
 git diff --check
 ```
