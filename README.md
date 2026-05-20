@@ -283,6 +283,7 @@ generate a Remotion component today.
 | `auto_object_proposals` | Mock or optional SAM2 | Clean candidate gallery before selected tracking | Mock mode is no-model; real local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
 | `sam2-local` | Optional | Promptable segmentation/tracking | Requires SAM2 package, torch, checkpoint, and config. |
 | `sam2-hosted` | Optional | Explicit hosted segmentation experiments | Requires endpoint/auth and opt-in network use. |
+| `sam3-local` / `sam3-hosted` | Optional | Concept, exemplar, and higher-recall discovery | Mock modes are no-model; real SAM3 remains capability-gated and optional. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |

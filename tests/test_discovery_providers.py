@@ -18,6 +18,9 @@ from motionjson.providers import (
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
+    SAM3AutoMasksDiscoveryProvider,
+    SAM3ConceptDiscoveryProvider,
+    SAM3ExemplarDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     discovery_provider_schemas,
@@ -146,12 +149,18 @@ def test_discovery_provider_schemas_cover_phase5_modes():
         "manual_prompt",
         "auto_object_proposals",
         "sam_auto_masks",
+        "sam3_concept",
+        "sam3_exemplar",
+        "sam3_auto_masks",
         "text_detector",
         "class_detector",
         "motion_foreground",
         "external_masks",
     }
     assert DISCOVERY_PROVIDER_SCHEMAS["auto_object_proposals"]["defaultQualityPreset"] == "clean"
+    assert DISCOVERY_PROVIDER_SCHEMAS["sam3_concept"]["mockAvailable"] is True
+    assert DISCOVERY_PROVIDER_SCHEMAS["sam3_exemplar"]["mockAvailable"] is True
+    assert DISCOVERY_PROVIDER_SCHEMAS["sam3_auto_masks"]["mockAvailable"] is True
     assert DISCOVERY_PROVIDER_SCHEMAS["text_detector"]["configSchema"]["text"]
     assert DISCOVERY_PROVIDER_SCHEMAS["class_detector"]["presets"]["vehicles"]
     assert DISCOVERY_PROVIDER_SCHEMAS["motion_foreground"]["noModelSafe"] is True
@@ -238,6 +247,64 @@ def test_mock_class_detector_discovery_filters_requested_classes_without_network
     assert len(candidates) == 1
     assert candidates[0].label == "person"
     assert candidates[0].metadata["maskDir"].startswith("discovery/class_detector/")
+
+
+def test_mock_sam3_concept_discovery_works_without_model(tmp_path):
+    candidates = SAM3ConceptDiscoveryProvider().propose(
+        video_source(),
+        {"mock": True, "concept": "red ball . blue cup", "max_candidates": 2},
+        RunContext(out_dir=tmp_path),
+    )
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert [candidate.label for candidate in candidates] == ["SAM3 concept: red ball", "SAM3 concept: blue cup"]
+    assert candidates[0].source == "sam3_concept"
+    assert candidates[0].metadata["providerName"] == "sam3-mock"
+    assert candidates[0].metadata["sam3Mode"] == "concept"
+    assert candidates[0].metadata["maskDir"].startswith("discovery/sam3_concept/")
+    assert specs[0].object_id.startswith("sam3_concept_")
+
+
+def test_mock_sam3_exemplar_discovery_works_without_model(tmp_path):
+    candidates = SAM3ExemplarDiscoveryProvider().propose(
+        video_source(),
+        {"mock": True, "exemplars": ["crop_001", "crop_002"], "max_candidates": 2},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert [candidate.label for candidate in candidates] == ["SAM3 exemplar match 1", "SAM3 exemplar match 2"]
+    assert candidates[0].source == "sam3_exemplar"
+    assert candidates[0].metadata["providerName"] == "sam3-mock"
+    assert candidates[0].metadata["sam3Mode"] == "exemplar"
+    assert candidates[0].metadata["exemplarCount"] == 2
+    assert candidates[0].metadata["maskDir"].startswith("discovery/sam3_exemplar/")
+
+
+def test_mock_sam3_auto_masks_discovery_uses_review_artifact_shape(tmp_path):
+    candidates = SAM3AutoMasksDiscoveryProvider().propose(
+        video_source(),
+        {"mock": True, "qualityPreset": "clean", "maxCandidatesPerKeyframe": 3, "maxObjects": 2},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert len(candidates) == 3
+    assert candidates[0].source == "sam3_auto_masks"
+    assert candidates[0].metadata["providerName"] == "sam3-mock"
+    assert candidates[0].metadata["thumbnailArtifactPath"].startswith("discovery/sam3_auto_masks/")
+    assert sum(1 for candidate in candidates if not candidate.metadata.get("rejectionReason")) == 2
+
+
+@pytest.mark.parametrize(
+    ("provider", "message"),
+    [
+        (SAM3ConceptDiscoveryProvider(), "sam3_concept discovery requires"),
+        (SAM3ExemplarDiscoveryProvider(), "sam3_exemplar discovery requires"),
+        (SAM3AutoMasksDiscoveryProvider(), "sam3_auto_masks discovery requires"),
+    ],
+)
+def test_sam3_mock_providers_fail_clearly_without_mock(provider, message):
+    with pytest.raises(ProviderConfigError, match=message):
+        provider.propose(video_source(), {}, RunContext())
 
 
 def test_class_detector_presets_expand_and_merge_custom_classes_without_network(tmp_path):

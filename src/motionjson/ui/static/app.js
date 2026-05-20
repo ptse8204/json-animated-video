@@ -1770,7 +1770,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
+      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted", "sam3-concept", "sam3-exemplar", "sam3-auto-masks", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
       const providers = asArray(state.capabilities.providers)
         .filter((provider) => priority.has(provider.name))
         .sort((a, b) => a.name.localeCompare(b.name));

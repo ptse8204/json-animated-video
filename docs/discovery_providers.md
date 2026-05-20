@@ -25,6 +25,14 @@ provider receives boxes or masks.
   tool. It imports one candidate per object mask directory or manifest entry.
 - `sam_auto_masks`: automatic keyframe mask proposals. It is capability-gated
   behind optional SAM2/torch/model configuration and has a mock mode for tests.
+- `sam3_concept`: optional SAM3-style concept discovery from a text phrase.
+  Mock mode writes deterministic candidates without SAM3, GPU, credentials, or
+  network calls.
+- `sam3_exemplar`: optional SAM3-style discovery from exemplar/crop references.
+  Mock mode lets the review API and UI exercise exemplar-shaped candidates.
+- `sam3_auto_masks`: optional SAM3-style high-recall automatic proposals. Mock
+  mode uses the same candidate/rejected-candidate review shape as the default
+  object proposal flow.
 - `text_detector`: scaffold for open-vocabulary detection. Missing detector
   packages or model paths are capability warnings; mock mode can produce local
   boxes for UI smoke checks.
@@ -55,6 +63,7 @@ provider receives boxes or masks.
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks use the same optional local SAM2 automatic proposal adapter. | Runnable in mock mode through the local worker; with local SAM2 configured, review shows SAM2 proposal candidates, track filtering, fallback diagnostics, and merge suggestions. |
+| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real SAM3 remains optional and capability-gated. | Runnable in mock mode through the local worker; diagnostics show missing local/hosted SAM3 setup without claiming SAM3 is installed. |
 
 Candidate-producing workflows write `candidates.json`, which is registered as a
 `candidate_summary` artifact. `/api/jobs/JOB_ID/review` and
@@ -166,6 +175,42 @@ started from `--mock`: keyframe settings and proposal filters are recorded in
 `candidates.json`, generated masks feed the shared tracker, and
 `tracks.json` carries filter/dedupe summaries for review.
 
+SAM3 concept mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam3_concept_mock \
+  --discovery-provider sam3_concept \
+  --discovery-config '{"mock":true,"concept":"red ball . hand"}' \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
+SAM3 exemplar mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam3_exemplar_mock \
+  --discovery-provider sam3_exemplar \
+  --discovery-config '{"mock":true,"exemplars":["crop_001","crop_002"]}' \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
+SAM3 auto-mask mock smoke check:
+
+```bash
+python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
+  --out out/sam3_auto_mock \
+  --discovery-provider sam3_auto_masks \
+  --discovery-config '{"mock":true,"qualityPreset":"clean"}' \
+  --mask-provider mock \
+  --max-frames 2 \
+  --min-area 1
+```
+
 Local SAM2 automatic proposal run:
 
 ```bash
@@ -256,7 +301,9 @@ python3 -m motionjson.cli backend diagnostics --json
 providers when base dependencies are installed. `auto_object_proposals` and
 `sam_auto_masks` report runnable only when the optional SAM2 automatic mask
 generator, torch, checkpoint, and model config are present; otherwise they
-report `missing_dependency`, `missing_model`, or `not_configured`. `text_detector`
+report `missing_dependency`, `missing_model`, or `not_configured`. `sam3_concept`,
+`sam3_exemplar`, and `sam3_auto_masks` expose mock modes for UI/API testing and
+report missing SAM3 dependency/model setup for real execution. `text_detector`
 and `class_detector` remain scaffolded until detector adapters are wired. Those
 warnings do not break the base CLI, and mock mode remains available for local
 smoke checks.

@@ -13,9 +13,11 @@ dependencies = ["numpy", "opencv-python", "Pillow", "tqdm", "jsonschema>=4.22", 
 [project.optional-dependencies]
 ui = []
 sam2 = ["torch>=2.1", "sam2"]
+sam3 = ["torch>=2.1"]
 detectors = ["groundingdino-py>=0.4"]
 yolo = ["ultralytics>=8"]
 hosted-segmentation = ["requests>=2.31"]
+hosted-sam3 = ["requests>=2.31"]
 openrouter = ["requests>=2.31"]
 dev = ["pytest>=8", "build>=1.2", "wheel>=0.43", "tomli>=2; python_version<'3.11'"]
 

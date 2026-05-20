@@ -281,6 +281,11 @@ def test_discovery_heavy_providers_report_missing_optional_deps_without_cuda(mon
     assert _provider(report, "sam_auto_masks")["mockAvailable"] is True
     assert _provider(report, "text_detector")["status"] == "missing_dependency"
     assert _provider(report, "class_detector")["status"] == "missing_dependency"
+    for name in ("sam3-local", "sam3-concept", "sam3-exemplar", "sam3-auto-masks"):
+        assert _provider(report, name)["status"] == "missing_dependency"
+        assert _provider(report, name)["mockAvailable"] is True
+    assert _provider(report, "sam3-hosted")["status"] == "not_configured"
+    assert _provider(report, "sam3-hosted")["needsCredentials"] is True
 
 
 def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(tmp_path, monkeypatch) -> None:
@@ -288,12 +293,14 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
     class_model = tmp_path / "class-detector.pt"
     sam2_checkpoint = tmp_path / "sam2.pt"
     sam2_config = tmp_path / "sam2.yaml"
-    for path in (text_model, class_model, sam2_checkpoint, sam2_config):
+    sam3_model = tmp_path / "sam3.pt"
+    for path in (text_model, class_model, sam2_checkpoint, sam2_config, sam3_model):
         path.write_text("placeholder")
     monkeypatch.setenv("TEXT_DETECTOR_MODEL", str(text_model))
     monkeypatch.setenv("CLASS_DETECTOR_MODEL", str(class_model))
     monkeypatch.setenv("SAM2_LOCAL_CHECKPOINT", str(sam2_checkpoint))
     monkeypatch.setenv("SAM2_LOCAL_CONFIG", str(sam2_config))
+    monkeypatch.setenv("SAM3_LOCAL_MODEL", str(sam3_model))
     monkeypatch.setattr(capabilities, "_module_available", lambda module: True)
     monkeypatch.setattr(
         capabilities,
@@ -327,6 +334,36 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
         assert provider["needsModelPath"] is True
         assert provider["modelPaths"]
         assert "scaffolded" in " ".join(provider["reasons"])
+
+    for name in ("sam3-local", "sam3-concept", "sam3-exemplar", "sam3-auto-masks"):
+        provider = _provider(report, name)
+        assert provider["available"] is True
+        assert provider["runnable"] is True
+        assert provider["status"] == "ready"
+        assert provider["needsModelPath"] is True
+        assert provider["mockAvailable"] is True
+
+
+def test_sam3_hosted_credentials_are_redacted_and_need_network_opt_in(monkeypatch) -> None:
+    secret = "secret-sam3-hosted-token-abcdef123456"
+    monkeypatch.setenv("SAM3_HOSTED_URL", "https://provider.example.invalid/sam3")
+    monkeypatch.setenv("SAM3_HOSTED_API_KEY", secret)
+
+    report = capabilities.build_capability_report()
+    encoded = json.dumps(report)
+    hosted = _provider(report, "sam3-hosted")
+
+    assert secret not in encoded
+    assert hosted["configured"] is True
+    assert hosted["available"] is True
+    assert hosted["runnable"] is False
+    assert hosted["status"] == "needs_network_opt_in"
+    assert hosted["metadata"]["credentialSource"] == "environment"
+    assert hosted["networkRequired"] is True
+    assert hosted["estimatedCost"]["status"] == "unknown_provider_cost"
+
+    opted_in = capabilities.build_capability_report(hosted_allow_network=True)
+    assert _provider(opted_in, "sam3-hosted")["runnable"] is True
 
 
 def test_no_model_discovery_modes_are_marked_available_or_mock_available() -> None:

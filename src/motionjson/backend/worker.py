@@ -31,6 +31,9 @@ from motionjson.providers.discovery import (
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
+    SAM3AutoMasksDiscoveryProvider,
+    SAM3ConceptDiscoveryProvider,
+    SAM3ExemplarDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     object_specs_from_candidates,
@@ -261,6 +264,12 @@ def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> t
         if discovery_config.get("mock"):
             return SamAutoMasksDiscoveryProvider(), "automatic mask mock proposals configured", True
         return SamAutoMasksDiscoveryProvider(), "SAM2 automatic mask proposals configured", False
+    if mode == "sam3_concept":
+        return SAM3ConceptDiscoveryProvider(), "SAM3 concept mock discovery configured", True
+    if mode == "sam3_exemplar":
+        return SAM3ExemplarDiscoveryProvider(), "SAM3 exemplar mock discovery configured", True
+    if mode == "sam3_auto_masks":
+        return SAM3AutoMasksDiscoveryProvider(), "SAM3 auto-mask mock discovery configured", True
     if mode == "class_detector":
         return ClassDetectorDiscoveryProvider(), "class detector mock discovery configured", True
     if mode == "motion_foreground":

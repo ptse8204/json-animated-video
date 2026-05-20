@@ -204,3 +204,41 @@ def test_hosted_sam2_settings_require_endpoint_key_and_opt_in(tmp_path):
     assert capability["metadata"]["networkOptIn"] is True
     assert capability["metadata"]["settingsOnly"] is True
     assert secret not in body.decode("utf-8")
+
+
+def test_hosted_sam3_settings_are_redacted_and_never_test_network(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "hosted-sam3-secret-abcdef123456"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam3-hosted",
+                "apiKey": secret,
+                "endpoint": "https://provider.example.test/sam3",
+                "selectedModel": "auto",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert secret not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/sam3-hosted/test", body=b"{}")
+    checked = decode(body)
+    assert status == 200
+    assert checked["status"] == "configured"
+    assert checked["networkAttempted"] is False
+    assert secret not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", "/api/capabilities")
+    capability = capability_by_name(decode(body), "sam3-hosted")
+    assert status == 200
+    assert capability["configured"] is True
+    assert capability["runnable"] is False
+    assert capability["status"] == "configured_settings_only"
+    assert capability["metadata"]["credentialSource"] == "local_settings"
+    assert capability["metadata"]["settingsOnly"] is True
+    assert secret not in body.decode("utf-8")

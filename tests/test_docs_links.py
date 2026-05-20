@@ -139,6 +139,20 @@ def test_od06_sam2_automatic_proposal_docs_are_truthful():
     assert "does not silently" in discovery
 
 
+def test_od07_sam3_mock_and_hosted_docs_are_truthful():
+    discovery = read("docs/discovery_providers.md")
+    capabilities_doc = read("docs/provider_capabilities.md")
+    security = read("docs/security/api_keys.md")
+
+    for phrase in ("sam3_concept", "sam3_exemplar", "sam3_auto_masks"):
+        assert phrase in discovery
+        assert phrase in capabilities_doc
+    assert "SAM3_LOCAL_MODEL" in capabilities_doc
+    assert "SAM3_HOSTED_URL" in security
+    assert "SAM3_HOSTED_API_KEY" in security
+    assert "do not send frames or make network calls" in security
+
+
 def test_important_markdown_local_links_resolve():
     failures: list[str] = []
     for relative in IMPORTANT_DOCS:

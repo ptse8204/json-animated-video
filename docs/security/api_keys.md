@@ -19,6 +19,9 @@ The Local UI Provider settings panel currently covers:
   a segmentation provider.
 - `text_detector` and `class_detector`: local model-choice surfaces for
   scaffolded detector workflows.
+- `sam3-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
+  Hosted SAM3-compatible discovery uses `SAM3_HOSTED_URL` and
+  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally and do not send frames or make network calls without explicit opt-in.
 
 ![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
 
@@ -32,6 +35,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_DEFAULT_MODEL=openrouter/auto
 HOSTED_SEGMENTATION_URL=
 HOSTED_SEGMENTATION_API_KEY=
+SAM3_HOSTED_URL=
+SAM3_HOSTED_API_KEY=
 ```
 
 The Local UI can also save a provider key in the selected SQLite database,

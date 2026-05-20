@@ -28,6 +28,9 @@ from .providers.discovery import (
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
+    SAM3AutoMasksDiscoveryProvider,
+    SAM3ConceptDiscoveryProvider,
+    SAM3ExemplarDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
     object_specs_from_candidates,
@@ -121,6 +124,9 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
             "manual_prompt",
             "auto_object_proposals",
             "sam_auto_masks",
+            "sam3_concept",
+            "sam3_exemplar",
+            "sam3_auto_masks",
             "text_detector",
             "class_detector",
             "motion_foreground",
@@ -406,6 +412,12 @@ def build_discovery_provider(args: argparse.Namespace):
         return MotionForegroundDiscoveryProvider(), config
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), config
+    if mode == "sam3_concept":
+        return SAM3ConceptDiscoveryProvider(), config
+    if mode == "sam3_exemplar":
+        return SAM3ExemplarDiscoveryProvider(), config
+    if mode == "sam3_auto_masks":
+        return SAM3AutoMasksDiscoveryProvider(), config
     if mode == "auto_object_proposals":
         provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "auto")
         if config.get("mock") or provider_preference == "mock":

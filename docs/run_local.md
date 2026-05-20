@@ -160,11 +160,17 @@ ready to configure the provider:
 
 ```bash
 python3 -m pip install -e ".[sam2]"
+python3 -m pip install -e ".[sam3]"
 python3 -m pip install -e ".[detectors]"
 python3 -m pip install -e ".[yolo]"
 python3 -m pip install -e ".[hosted-segmentation]"
+python3 -m pip install -e ".[hosted-sam3]"
 python3 -m pip install -e ".[openrouter]"
 ```
+
+The `sam3` extra prepares the Python environment for local SAM3-style
+diagnostics; real SAM3 execution still requires a compatible SAM3 package/model
+installed separately and a configured `SAM3_LOCAL_MODEL`.
 
 Then rerun:
 

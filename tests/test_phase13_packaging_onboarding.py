@@ -21,14 +21,26 @@ def test_pyproject_declares_phase13_optional_dependency_extras():
     pyproject = tomllib.loads(read("pyproject.toml"))
     extras = pyproject["project"]["optional-dependencies"]
 
-    for name in ["ui", "sam2", "detectors", "yolo", "hosted-segmentation", "openrouter", "dev"]:
+    for name in [
+        "ui",
+        "sam2",
+        "sam3",
+        "detectors",
+        "yolo",
+        "hosted-segmentation",
+        "hosted-sam3",
+        "openrouter",
+        "dev",
+    ]:
         assert name in extras
 
     assert extras["ui"] == []
     assert any(dep.lower().startswith("torch") for dep in extras["sam2"])
     assert any(dep.lower().startswith("sam2") for dep in extras["sam2"])
+    assert any(dep.lower().startswith("torch") for dep in extras["sam3"])
     assert any(dep.lower().startswith("groundingdino") for dep in extras["detectors"])
     assert any(dep.lower().startswith("ultralytics") for dep in extras["yolo"])
+    assert any(dep.lower().startswith("requests") for dep in extras["hosted-sam3"])
     assert any(dep.lower().startswith("pytest") for dep in extras["dev"])
     assert not any(dep.lower().startswith(("torch", "sam2", "groundingdino", "ultralytics")) for dep in pyproject["project"]["dependencies"])
 
@@ -43,7 +55,7 @@ def test_provider_optional_extras_align_with_packaging_metadata():
     }
 
     assert advertised <= set(extras)
-    assert {"sam2", "detectors", "yolo", "hosted-segmentation", "openrouter"} <= advertised
+    assert {"sam2", "sam3", "detectors", "yolo", "hosted-segmentation", "hosted-sam3", "openrouter"} <= advertised
 
 
 def test_first_run_docs_cover_install_launch_demos_and_powershell():

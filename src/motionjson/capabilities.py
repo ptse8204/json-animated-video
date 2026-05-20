@@ -276,6 +276,7 @@ def dependency_statuses() -> list[DependencyStatus]:
         _dependency("jsonschema", "jsonschema", "Install jsonschema for MotionJSON validation."),
         _dependency("tqdm", "tqdm", "Install tqdm for CLI extraction progress."),
         _dependency("sam2", "sam2", "Install SAM2 separately only when using sam2-local."),
+        _dependency("sam3", "sam3", "Install SAM3 separately only when using optional sam3-local discovery."),
         _dependency("torch", "torch", "Install torch separately only when using local ML providers."),
     ]
 
@@ -292,14 +293,20 @@ def provider_capabilities(
     pil_ready = deps.get("PIL", False)
     sam2_installed = deps.get("sam2", False)
     sam2_auto_installed = bool(sam2_installed and _module_available("sam2.automatic_mask_generator"))
+    sam3_installed = deps.get("sam3", False)
     torch_info = cuda_status()
     checkpoint = _path_config_status("SAM2_LOCAL_CHECKPOINT", sam2_checkpoint)
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
     hosted_settings = dict((provider_settings or {}).get("sam2-hosted", {}))
+    sam3_hosted_settings = dict((provider_settings or {}).get("sam3-hosted", {}))
     openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
+    sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
     hosted_endpoint = _settings_presence_config("HOSTED_SEGMENTATION_URL", provider_settings, "sam2-hosted", "endpoint_configured")
     hosted_auth = _settings_presence_config("HOSTED_SEGMENTATION_API_KEY", provider_settings, "sam2-hosted", "api_key_configured")
+    sam3_model = _path_config_status("SAM3_LOCAL_MODEL")
+    sam3_hosted_endpoint = _settings_presence_config("SAM3_HOSTED_URL", provider_settings, "sam3-hosted", "endpoint_configured")
+    sam3_hosted_auth = _settings_presence_config("SAM3_HOSTED_API_KEY", provider_settings, "sam3-hosted", "api_key_configured")
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -349,6 +356,26 @@ def provider_capabilities(
         sam_auto_masks_status = "available_cpu_only"
     else:
         sam_auto_masks_status = "ready"
+    sam3_local_reasons = [
+        reason
+        for reason in (
+            None if sam3_installed else "Python module 'sam3' is not importable.",
+            *_model_path_reasons(sam3_model, "SAM3 local model", "SAM3_LOCAL_MODEL"),
+            None if torch_info["torchInstalled"] else "torch is not installed.",
+        )
+        if reason
+    ]
+    sam3_local_ready = bool(sam3_installed and sam3_model["exists"] and torch_info["torchInstalled"])
+    if not sam3_installed or not torch_info["torchInstalled"]:
+        sam3_local_status = "missing_dependency"
+    elif sam3_model["configured"] and not sam3_model["exists"]:
+        sam3_local_status = "missing_model"
+    elif not sam3_model["configured"]:
+        sam3_local_status = "not_configured"
+    elif not torch_info["available"]:
+        sam3_local_status = "available_cpu_only"
+    else:
+        sam3_local_status = "ready"
     text_detector_reasons = [
         reason
         for reason in (
@@ -405,6 +432,26 @@ def provider_capabilities(
         hosted_status = "ready"
     else:
         hosted_status = "not_configured"
+
+    sam3_hosted_configured = bool(sam3_hosted_endpoint["configured"] and sam3_hosted_auth["configured"])
+    sam3_hosted_settings_only = bool(sam3_hosted_settings.get("settings_only"))
+    sam3_hosted_endpoint_valid = sam3_hosted_settings.get("endpoint_valid", True) is not False
+    sam3_hosted_runtime_runnable = bool(
+        sam3_hosted_configured
+        and sam3_hosted_endpoint_valid
+        and sam3_hosted_allow_network_effective
+        and not sam3_hosted_settings_only
+    )
+    if not sam3_hosted_endpoint_valid:
+        sam3_hosted_status = "invalid_configuration"
+    elif sam3_hosted_settings_only and sam3_hosted_configured:
+        sam3_hosted_status = "configured_settings_only"
+    elif sam3_hosted_configured and not sam3_hosted_allow_network_effective:
+        sam3_hosted_status = "needs_network_opt_in"
+    elif sam3_hosted_configured:
+        sam3_hosted_status = "ready"
+    else:
+        sam3_hosted_status = "not_configured"
 
     openrouter_configured = bool(openrouter_key["configured"])
     openrouter_settings_only = bool(openrouter_settings.get("settings_only"))
@@ -565,6 +612,157 @@ def provider_capabilities(
                 "endpointSource": hosted_endpoint.get("source"),
                 "settingsOnly": hosted_settings_only,
                 "selectedModel": hosted_settings.get("selected_model"),
+            },
+        ),
+        ProviderCapability(
+            name="sam3-local",
+            kind="discovery_provider",
+            available=sam3_local_ready,
+            configured=bool(sam3_model["configured"]),
+            installed=bool(sam3_installed and torch_info["torchInstalled"]),
+            runnable=sam3_local_ready,
+            status=sam3_local_status,
+            supports=["concept_discovery", "exemplar_discovery", "automatic_masks", "video_tracking", "local_model"],
+            reasons=sam3_local_reasons,
+            install_hint="Install SAM3/torch separately and set SAM3_LOCAL_MODEL before using local SAM3 discovery.",
+            device=torch_info.get("device"),
+            no_model_safe=False,
+            network_required=False,
+            needs_model_path=True,
+            model_paths=[sam3_model],
+            mock_available=True,
+            optional_extra="sam3",
+            checks=[
+                _check("sam3_import", "ok" if sam3_installed else "missing", None if sam3_installed else "sam3 package is not importable"),
+                _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
+                _check("model", "ok" if sam3_model["exists"] else "missing", sam3_model["env"], sam3_model["exists"]),
+            ],
+            metadata={
+                "model": sam3_model,
+                "uiDescription": "Optional local SAM3 family for concept, exemplar, and higher-recall discovery.",
+                "whenToUse": "Use when a compatible SAM3 environment and model are configured.",
+                "semanticDiscovery": True,
+                "mockRunnable": cv_ready and pil_ready,
+            },
+        ),
+        ProviderCapability(
+            name="sam3-hosted",
+            kind="discovery_provider",
+            available=sam3_hosted_configured and sam3_hosted_endpoint_valid and not sam3_hosted_settings_only,
+            configured=sam3_hosted_configured and sam3_hosted_endpoint_valid,
+            installed=True,
+            runnable=sam3_hosted_runtime_runnable,
+            status=sam3_hosted_status,
+            supports=["concept_discovery", "exemplar_discovery", "hosted_segmentation", "hosted_tracking"],
+            reasons=[
+                reason
+                for reason in (
+                    None if sam3_hosted_endpoint["configured"] else "SAM3_HOSTED_URL is not set.",
+                    None if sam3_hosted_auth["configured"] else "SAM3_HOSTED_API_KEY is not set.",
+                    None if sam3_hosted_endpoint_valid else "Hosted SAM3 endpoint must be an http:// or https:// URL.",
+                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are settings-only; export them to environment variables or wire an execution adapter before treating the provider as runnable.",
+                    None if sam3_hosted_allow_network_effective or not sam3_hosted_configured else "Hosted SAM3 requires explicit network opt-in.",
+                )
+                if reason
+            ],
+            install_hint="Set SAM3_HOSTED_URL and SAM3_HOSTED_API_KEY, then opt into hosted network use explicitly.",
+            device="remote",
+            no_model_safe=False,
+            network_required=True,
+            needs_credentials=True,
+            mock_available=True,
+            optional_extra="hosted-sam3",
+            checks=[
+                _check("endpoint_env", "ok" if sam3_hosted_endpoint["configured"] else "missing", sam3_hosted_endpoint["env"], sam3_hosted_endpoint["configured"]),
+                _check("auth_env", "ok" if sam3_hosted_auth["configured"] else "missing", sam3_hosted_auth["env"], sam3_hosted_auth["configured"]),
+                _check("network_opt_in", "ok" if sam3_hosted_allow_network_effective else "required", "Hosted SAM3 requires explicit network opt-in.", sam3_hosted_allow_network_effective),
+                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are not passed to runtime providers.", sam3_hosted_settings_only),
+            ],
+            metadata={
+                "endpointEnv": sam3_hosted_endpoint,
+                "authEnv": sam3_hosted_auth,
+                "networkDefault": "disabled",
+                "networkOptIn": sam3_hosted_allow_network_effective,
+                "credentialSource": sam3_hosted_auth.get("source"),
+                "endpointSource": sam3_hosted_endpoint.get("source"),
+                "settingsOnly": sam3_hosted_settings_only,
+                "selectedModel": sam3_hosted_settings.get("selected_model"),
+                "semanticDiscovery": True,
+            },
+        ),
+        ProviderCapability(
+            name="sam3-concept",
+            kind="discovery_provider",
+            available=sam3_local_ready,
+            configured=bool(sam3_model["configured"]),
+            installed=bool(sam3_installed and torch_info["torchInstalled"]),
+            runnable=sam3_local_ready,
+            status=sam3_local_status,
+            supports=["text_concept_discovery", "open_vocabulary_instances", "mock_concept_candidates"],
+            reasons=sam3_local_reasons,
+            install_hint="Use discovery.config.mock=true for local smoke checks, or configure SAM3 local/hosted support.",
+            device=torch_info.get("device"),
+            no_model_safe=False,
+            network_required=False,
+            needs_model_path=True,
+            model_paths=[sam3_model],
+            mock_available=True,
+            optional_extra="sam3",
+            metadata={
+                "uiDescription": "SAM3-style concept prompt discovery; mock mode is available without SAM3.",
+                "whenToUse": "Use for text/concept object discovery after SAM3 setup.",
+                "discoveryMode": "sam3_concept",
+                "mockRunnable": cv_ready and pil_ready,
+            },
+        ),
+        ProviderCapability(
+            name="sam3-exemplar",
+            kind="discovery_provider",
+            available=sam3_local_ready,
+            configured=bool(sam3_model["configured"]),
+            installed=bool(sam3_installed and torch_info["torchInstalled"]),
+            runnable=sam3_local_ready,
+            status=sam3_local_status,
+            supports=["exemplar_discovery", "visual_prompt_instances", "mock_exemplar_candidates"],
+            reasons=sam3_local_reasons,
+            install_hint="Use discovery.config.mock=true for local smoke checks, or configure SAM3 local/hosted support.",
+            device=torch_info.get("device"),
+            no_model_safe=False,
+            network_required=False,
+            needs_model_path=True,
+            model_paths=[sam3_model],
+            mock_available=True,
+            optional_extra="sam3",
+            metadata={
+                "uiDescription": "SAM3-style exemplar/crop discovery; mock mode is available without SAM3.",
+                "whenToUse": "Use for finding objects similar to a selected reference after SAM3 setup.",
+                "discoveryMode": "sam3_exemplar",
+                "mockRunnable": cv_ready and pil_ready,
+            },
+        ),
+        ProviderCapability(
+            name="sam3-auto-masks",
+            kind="discovery_provider",
+            available=sam3_local_ready,
+            configured=bool(sam3_model["configured"]),
+            installed=bool(sam3_installed and torch_info["torchInstalled"]),
+            runnable=sam3_local_ready,
+            status=sam3_local_status,
+            supports=["higher_recall_auto_masks", "semantic_proposals", "mock_auto_candidates"],
+            reasons=sam3_local_reasons,
+            install_hint="Use discovery.config.mock=true for local smoke checks, or configure SAM3 local/hosted support.",
+            device=torch_info.get("device"),
+            no_model_safe=False,
+            network_required=False,
+            needs_model_path=True,
+            model_paths=[sam3_model],
+            mock_available=True,
+            optional_extra="sam3",
+            metadata={
+                "uiDescription": "SAM3-style higher-recall automatic proposals; mock mode is available without SAM3.",
+                "whenToUse": "Use when clean SAM2 proposals miss semantically important objects.",
+                "discoveryMode": "sam3_auto_masks",
+                "mockRunnable": cv_ready and pil_ready,
             },
         ),
         ProviderCapability(
@@ -934,7 +1132,21 @@ def build_capability_report(
         provider.name
         for provider in providers
         if not provider.available
-        and provider.name in {"sam2-local", "sam2-hosted", "openrouter", "sam_auto_masks", "text_detector", "class_detector", "ffmpeg-video"}
+        and provider.name
+        in {
+            "sam2-local",
+            "sam2-hosted",
+            "sam3-local",
+            "sam3-hosted",
+            "sam3-concept",
+            "sam3-exemplar",
+            "sam3-auto-masks",
+            "openrouter",
+            "sam_auto_masks",
+            "text_detector",
+            "class_detector",
+            "ffmpeg-video",
+        }
     ]
     return {
         "schema": CAPABILITY_SCHEMA,

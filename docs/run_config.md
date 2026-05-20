@@ -125,6 +125,10 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   keys `sam2Checkpoint`, `sam2ModelConfig`, and `sam2Device`. Missing SAM2,
   torch, checkpoint, config, or automatic-mask support fails clearly in
   diagnostics and job logs.
+- `sam3_concept`, `sam3_exemplar`, and `sam3_auto_masks` are optional SAM3
+  discovery modes. With `discovery.config.mock: true`, they run without SAM3,
+  GPU, hosted credentials, or network access and write normal candidate review
+  artifacts. Real SAM3 execution remains capability-gated behind SAM3 setup.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use

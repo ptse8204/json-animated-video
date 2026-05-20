@@ -21,6 +21,9 @@ DISCOVERY_MODES = {
     "manual_prompt",
     "auto_object_proposals",
     "sam_auto_masks",
+    "sam3_concept",
+    "sam3_exemplar",
+    "sam3_auto_masks",
     "text_detector",
     "class_detector",
     "motion_foreground",
@@ -102,6 +105,49 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
             "overlap_threshold": "number 0..1",
             "max_candidates": "integer",
             "mock": "boolean",
+        },
+        "noModelSafe": False,
+        "mockAvailable": True,
+    },
+    "sam3_concept": {
+        "mode": "sam3_concept",
+        "title": "SAM3 concept",
+        "description": "Optional SAM3-style concept discovery from text phrases, with mock mode for local review flows.",
+        "whenToUse": "Use when users want to find all instances of a described concept and SAM3 is configured, or in mock mode for smoke tests.",
+        "inputs": ["concept", "text prompt", "candidate caps", "optional mock"],
+        "configSchema": {
+            "concept": "text phrase such as 'red ball'",
+            "mock": "boolean",
+            "max_candidates": "integer",
+        },
+        "noModelSafe": False,
+        "mockAvailable": True,
+    },
+    "sam3_exemplar": {
+        "mode": "sam3_exemplar",
+        "title": "SAM3 exemplar",
+        "description": "Optional SAM3-style exemplar discovery from a crop or reference, with mock mode for local review flows.",
+        "whenToUse": "Use when users want to find objects like a selected exemplar and SAM3 is configured, or in mock mode for smoke tests.",
+        "inputs": ["exemplar references", "candidate caps", "optional mock"],
+        "configSchema": {
+            "exemplars": "array of crop, artifact, or reference ids",
+            "mock": "boolean",
+            "max_candidates": "integer",
+        },
+        "noModelSafe": False,
+        "mockAvailable": True,
+    },
+    "sam3_auto_masks": {
+        "mode": "sam3_auto_masks",
+        "title": "SAM3 auto masks",
+        "description": "Optional SAM3-style high-recall automatic proposals, with mock mode for local review flows.",
+        "whenToUse": "Use for semantic/high-recall proposal review when SAM3 is configured, or in mock mode for tests.",
+        "inputs": ["quality preset", "candidate caps", "optional mock"],
+        "configSchema": {
+            "qualityPreset": "clean, balanced, maximum_recall, or trace_everything",
+            "mock": "boolean",
+            "maxCandidatesPerKeyframe": "integer",
+            "maxObjects": "integer",
         },
         "noModelSafe": False,
         "mockAvailable": True,
@@ -1007,6 +1053,86 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
         return 0.0
     visible = sum(1 for mask in masks if np.count_nonzero(mask) > 0)
     return round(visible / len(masks), 4)
+
+
+@dataclass
+class SAM3ConceptDiscoveryProvider:
+    detector: Any | None = None
+    name: str = "sam3_concept"
+    provider_name: str = "sam3-mock"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        if self.detector is not None:
+            return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config))]
+        if not config.get("mock"):
+            raise ProviderConfigError("sam3_concept discovery requires configured SAM3 support or discovery.config.mock=true.")
+        concept = str(config.get("concept") or config.get("text") or config.get("prompt") or "object")
+        labels = [f"SAM3 concept: {label}" for label in _split_labels(concept)]
+        return _mock_box_candidates(
+            video,
+            {
+                **dict(config),
+                "labels": labels,
+                "metadata": {
+                    "providerName": self.provider_name,
+                    "sam3Mode": "concept",
+                    "concept": concept,
+                    "aiUsage": "none",
+                },
+                "filters": {
+                    "maxCandidates": config.get("max_candidates", config.get("maxCandidates")),
+                },
+            },
+            ctx,
+            self.name,
+            "Mock SAM3 concept proposal",
+        )
+
+
+@dataclass
+class SAM3ExemplarDiscoveryProvider:
+    detector: Any | None = None
+    name: str = "sam3_exemplar"
+    provider_name: str = "sam3-mock"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        if self.detector is not None:
+            return [_candidate_from_detection(item, index, self.name) for index, item in enumerate(self.detector.detect(video, config))]
+        if not config.get("mock"):
+            raise ProviderConfigError("sam3_exemplar discovery requires configured SAM3 support or discovery.config.mock=true.")
+        exemplars = _label_list(config.get("exemplars") or config.get("exemplarRefs") or config.get("exemplar_refs") or ["selected exemplar"])
+        labels = [f"SAM3 exemplar match {index + 1}" for index, _item in enumerate(exemplars)] or ["SAM3 exemplar match 1"]
+        return _mock_box_candidates(
+            video,
+            {
+                **dict(config),
+                "labels": labels,
+                "metadata": {
+                    "providerName": self.provider_name,
+                    "sam3Mode": "exemplar",
+                    "exemplarCount": len(exemplars),
+                    "aiUsage": "none",
+                },
+                "filters": {
+                    "maxCandidates": config.get("max_candidates", config.get("maxCandidates")),
+                    "exemplarCount": len(exemplars),
+                },
+            },
+            ctx,
+            self.name,
+            "Mock SAM3 exemplar proposal",
+        )
+
+
+@dataclass
+class SAM3AutoMasksDiscoveryProvider:
+    name: str = "sam3_auto_masks"
+    provider_name: str = "sam3-mock"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        if not config.get("mock"):
+            raise ProviderConfigError("sam3_auto_masks discovery requires configured SAM3 support or discovery.config.mock=true.")
+        return MockObjectDiscoveryProvider(name=self.name, provider_name=self.provider_name).propose(video, {**dict(config), "mock": True}, ctx)
 
 
 @dataclass

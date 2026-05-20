@@ -42,6 +42,8 @@ what remains optional, environment-dependent, or future work.
 | --- | --- |
 | Local SAM2 execution | Optional. Diagnostics report `sam2`, `sam2.automatic_mask_generator`, torch, checkpoint, and config status. Prompt tracking and automatic proposal paths remain outside the base install. |
 | Hosted SAM2 execution | Optional. Diagnostics report hosted endpoint/auth env vars are unset and network calls are disabled by default. |
+| Local SAM3 execution | Optional. Diagnostics report `sam3`, torch, and `SAM3_LOCAL_MODEL` status. Mock SAM3 discovery modes are available for UI/API smoke checks. |
+| Hosted SAM3 execution | Optional. Diagnostics report hosted endpoint/auth env vars are unset and network calls are disabled by default. |
 | Text detector discovery | Optional/scaffolded. Diagnostics report `groundingdino` and `TEXT_DETECTOR_MODEL` are unavailable. |
 | Known-class detector discovery | Optional/scaffolded. Diagnostics report `ultralytics` and `CLASS_DETECTOR_MODEL` are unavailable. |
 | OpenRouter/VLM reasoning | Optional. Diagnostics report `OPENROUTER_API_KEY` is unset and OpenRouter is not a segmentation provider. |
