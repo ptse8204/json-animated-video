@@ -280,6 +280,9 @@ def test_rest_api_job_review_returns_api_first_candidate_payload(tmp_path):
     assert review["candidateSummary"]["candidateCount"] == 2
     assert review["candidateSummary"]["acceptedCandidateCount"] == 1
     assert review["candidateSummary"]["rejectionReasons"] == {"duplicate_mask": 1}
+    assert review["timeline"]["format"] == "motionjson.review_timeline.v0.1"
+    assert review["timeline"]["markerCountsByKind"] == {"candidate": 2}
+    assert [item["frameIndex"] for item in review["timeline"]["suggestedKeyframes"]] == [0]
     public_body = body.decode("utf-8")
     assert "storage_key" not in public_body
     assert "storageKey" not in public_body

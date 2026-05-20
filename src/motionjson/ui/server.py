@@ -69,6 +69,7 @@ from motionjson.provider_settings import (
 )
 from motionjson.providers.discovery import discovery_provider_schemas
 from motionjson.providers.local_storage import LocalStorageProvider
+from motionjson.review_timeline import review_timeline_payload
 from motionjson.rights import build_rights_review_report, rights_review_summary
 
 
@@ -1312,6 +1313,12 @@ class LocalUIApp:
         correction_state = build_track_correction_state(corrections or [], job_id=job_id or "")
         if corrections is not None:
             review = apply_track_correction_state(review, correction_state)
+        review["timeline"] = review_timeline_payload(
+            candidates=review.get("candidates") if isinstance(review.get("candidates"), list) else [],
+            tracks=review.get("tracks") if isinstance(review.get("tracks"), list) else [],
+            source=review.get("source") if isinstance(review.get("source"), dict) else {},
+            candidate_summary=review.get("candidateSummary") if isinstance(review.get("candidateSummary"), dict) else {},
+        )
         return _public_review_value(review)
 
     def _read_review_json(

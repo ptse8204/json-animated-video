@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 from motionjson.candidate_review import candidate_review_payload, public_review_value
 from motionjson.provider_settings import hosted_sam3_smoke_test
 from motionjson.providers.local_storage import LocalStorageProvider
+from motionjson.review_timeline import review_timeline_payload
 
 from .api_keys import require_api_key
 from .assets import get_asset, list_assets_for_job, list_project_assets, load_asset_bytes, register_upload
@@ -450,6 +451,7 @@ class MotionJSONAPI:
         diagnostics: list[dict[str, Any]] = []
         storage = self.storage()
         artifact_ids_by_rel_path = _artifact_ids_by_rel_path(assets)
+        source_summary: dict[str, Any] = {}
         for asset in assets:
             kind = str(asset.get("kind") or "")
             if kind not in {"candidate_summary", "track_summary", "scene_graph"}:
@@ -498,10 +500,25 @@ class MotionJSONAPI:
                 if filter_report:
                     review["trackSummary"] = public_review_value(filter_report.get("summary", filter_report))
             elif kind == "scene_graph":
+                source = document.get("source") if isinstance(document.get("source"), dict) else {}
+                canvas = document.get("canvas") if isinstance(document.get("canvas"), dict) else {}
+                source_summary = {
+                    "width": source.get("width") or canvas.get("width"),
+                    "height": source.get("height") or canvas.get("height"),
+                    "fps": source.get("sampleFps") or canvas.get("fps"),
+                    "frameCount": source.get("sampledFrameCount") or canvas.get("frame_count"),
+                }
+                review["source"] = public_review_value(source_summary)
                 objects = document.get("objects") if isinstance(document.get("objects"), list) else []
                 review["objects"] = public_review_value(objects)
         if diagnostics:
             review["diagnostics"] = diagnostics
+        review["timeline"] = review_timeline_payload(
+            candidates=review.get("candidates") if isinstance(review.get("candidates"), list) else [],
+            tracks=review.get("tracks") if isinstance(review.get("tracks"), list) else [],
+            source=source_summary,
+            candidate_summary=review.get("candidateSummary") if isinstance(review.get("candidateSummary"), dict) else {},
+        )
         return public_review_value(review)
 
     def _error(self, status: HTTPStatus, message: str) -> tuple[int, dict[str, str], bytes]:

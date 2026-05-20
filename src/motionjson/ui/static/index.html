@@ -154,6 +154,14 @@
               <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
               <button id="markKeyframeButton" type="button" aria-keyshortcuts="M" title="Mark current frame as a keyframe">Mark keyframe</button>
             </div>
+            <div class="timeline-review" aria-label="Review timeline">
+              <div id="timelineMarkerTrack" class="timeline-marker-track" role="list" aria-label="API review timeline markers"></div>
+              <div class="timeline-keyframe-row">
+                <span id="timelineSummary" class="row-meta">No API timeline loaded.</span>
+                <button id="useSuggestedKeyframesButton" class="mini-action" type="button" disabled>Use suggestions</button>
+              </div>
+              <div id="timelineMarkerList" class="timeline-marker-list" aria-live="polite"></div>
+            </div>
           </article>
 
           <article class="panel setup-panel" aria-label="Project and video setup">

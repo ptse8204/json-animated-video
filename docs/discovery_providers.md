@@ -71,7 +71,10 @@ Candidate-producing workflows write `candidates.json`, which is registered as a
 `review.candidates` records with candidate IDs, boxes, scores, review status,
 warnings, rejection reasons, artifact preview IDs when available, and an
 aggregate `candidateSummary`. UI code should render these API records instead
-of fabricating final candidates or tracks.
+of fabricating final candidates or tracks. Review routes also return
+`review.timeline`, an API-owned timeline summary with candidate markers, track
+start/end/loss markers, marker counts, and suggested keyframes for the review
+scrubber and follow-up discovery runs.
 
 The Local UI's default goal is `auto_object_proposals` with the Clean preset.
 Balanced and Maximum Recall are explicit preset choices in the run config, and

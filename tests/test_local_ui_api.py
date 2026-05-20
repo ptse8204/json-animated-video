@@ -845,6 +845,10 @@ def test_local_ui_review_returns_api_first_candidates_and_redacts_private_fields
     assert review["candidateSummary"]["provider"] == "mock"
     assert review["candidateSummary"]["providerName"] == "mock"
     assert len(review["candidateSummary"]["candidates"]) == 2
+    assert review["timeline"]["format"] == "motionjson.review_timeline.v0.1"
+    assert review["timeline"]["frameCount"] == 10
+    assert review["timeline"]["markerCountsByKind"] == {"candidate": 2}
+    assert [item["frameIndex"] for item in review["timeline"]["suggestedKeyframes"]] == [0]
     public_body = body.decode("utf-8")
     assert "storage_key" not in public_body
     assert "storageKey" not in public_body
@@ -948,6 +952,9 @@ def test_local_ui_auto_object_proposals_mock_review_uses_artifact_backed_candida
     assert review["candidateSummary"]["acceptedCandidateCount"] == 2
     assert review["candidateSummary"]["rejectedCandidateCount"] == 2
     assert len(review["tracks"]) == 2
+    assert review["timeline"]["markerCountsByKind"]["candidate"] == 4
+    assert review["timeline"]["markerCountsByKind"]["track_start"] == 2
+    assert review["timeline"]["suggestedKeyframes"][0]["source"] == "review.timeline"
     assert review["candidates"][0]["thumbnailArtifactId"] in artifact_ids
     assert review["candidates"][0]["maskPreviewArtifactId"] in artifact_ids
     assert review["candidates"][2]["reviewStatus"] == "rejected"

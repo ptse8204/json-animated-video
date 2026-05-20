@@ -227,6 +227,9 @@ manifests. It records candidate source, provider, preset, review status,
 selected tracking state, confidence/coverage scores, artifact lineage, and
 export review state so runtimes and SDK clients do not need to reverse-engineer
 `candidates.json`.
+Review APIs also return `review.timeline` with API-owned candidate and track
+markers plus suggested keyframes, so the UI scrubber can preview object
+appearance/loss and reuse backend-derived keyframes without inventing results.
 
 ## Use MotionJSON on a website
 

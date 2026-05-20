@@ -180,6 +180,14 @@ advanced disclosure and requires explicit acknowledgement before its config can
 validate. Trace Everything output is intentionally review-pending and blocked
 from export until the user reviews selected objects.
 
+The review response also includes `review.timeline` in
+`motionjson.review_timeline.v0.1` format. This API-owned summary contains
+candidate appearance markers, track start/end/loss markers, marker counts, and
+suggested keyframes derived from configured discovery keyframes or review
+markers. The preview timeline renders those API markers and lets users reuse
+suggested keyframes in the next discovery config; local keyframes are shown as
+config input, not fabricated review output.
+
 `POST /api/jobs/JOB_ID/track-selected` accepts `candidateIds`,
 `trackMode: "selected_only"`, and `exportReviewRequired`. The backend validates
 that each ID belongs to the job's candidate artifact, rejects ignored/rejected
@@ -279,6 +287,12 @@ step frames, shift plus left/right steps farther, Space plays or pauses the
 preview, `M` marks a keyframe, `P` selects point prompts, `B` selects boxes, and
 `E` selects the eraser. Text fields, selects, links, and buttons keep their
 native keyboard behavior.
+
+Preview overlays come from API review tracks when tracks exist. The scrubber
+only shows a track inside its reported visible frame range, so a sparse or lost
+track does not appear before its first marker or after its last marker. Timeline
+marker clicks seek the video and select the related track for relabel,
+hide/show, export inclusion, merge, split, add-object, or repair actions.
 
 ```json
 {"operation": "split", "objectId": "object_0", "newObjectId": "object_0_tail", "frameRange": [24, 48]}

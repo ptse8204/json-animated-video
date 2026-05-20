@@ -100,6 +100,7 @@ const autoObjectConfig = ui.buildRunConfig({
 
 assert.equal(autoObjectConfig.discovery.mode, "auto_object_proposals");
 assert.equal(autoObjectConfig.discovery.config.qualityPreset, "clean");
+assert.deepEqual(autoObjectConfig.discovery.config.keyframes, [0]);
 assert.equal(autoObjectConfig.discovery.config.maxKeyframes, 3);
 assert.equal(autoObjectConfig.discovery.config.maxObjects, 5);
 assert.equal(autoObjectConfig.discovery.config.trackSelectedOnly, true);
@@ -376,6 +377,28 @@ assert.deepEqual(ui.trackSelectedPayload(["cand_1", "cand_1", "cand_2"]), {
   exportReviewRequired: true,
 });
 
+const timeline = ui.timelineMarkersForDisplay(
+  {
+    timeline: {
+      format: "motionjson.review_timeline.v0.1",
+      frameCount: 5,
+      markers: [
+        { id: "candidate:cand_1:0", kind: "candidate", frameIndex: 0, label: "candidate one", candidateId: "cand_1" },
+        { id: "track:object_0:start:1", kind: "track_start", frameIndex: 1, label: "object appears", objectId: "object_0" },
+      ],
+      suggestedKeyframes: [{ frameIndex: 1, reason: "scene_change_policy_review_marker", source: "review.timeline" }],
+    },
+  },
+  [{ id: "object_0", objectId: "object_0", frameEnd: 4 }],
+  new Set([0, 4]),
+);
+assert.equal(timeline.hasApiTimeline, true);
+assert.deepEqual(timeline.suggestedKeyframes.map((item) => item.frameIndex), [1]);
+assert.deepEqual(
+  timeline.markers.map((marker) => marker.kind),
+  ["candidate", "configured_keyframe", "track_start", "configured_keyframe"],
+);
+
 const correctionRequest = ui.buildCorrectionRequestFromPrompts(
   "red_ball",
   [
@@ -425,6 +448,8 @@ const correctedTracks = ui.applyCorrectionStateToTracks(
 assert.equal(correctedTracks[0].label, "ball corrected");
 assert.equal(correctedTracks[0].exportIncluded, false);
 assert.equal(correctedTracks[0].exportStatus, "excluded");
+assert.equal(ui.trackFrameForDisplay(correctedTracks[0], 99), null);
+assert.deepEqual(ui.trackFrameForDisplay(correctedTracks[0], 0).bbox, { x: 10, y: 10, w: 30, h: 30 });
 
 const pendingExportSummary = ui.buildExportPanelSummary({
   exportState: {},
@@ -477,6 +502,7 @@ console.log(
         "run-config-builder",
         "object-discovery-presets",
         "api-candidate-filtering",
+        "api-review-timeline",
         "review-track-gating",
         "correction-state",
         "python-config-validation",

@@ -111,6 +111,19 @@ export function boxFromPoints(start, end) {
   };
 }
 
+export function parseKeyframes(value) {
+  const values = Array.isArray(value)
+    ? value
+    : value instanceof Set
+      ? [...value]
+      : String(value ?? "")
+          .split(/[,\s]+/)
+          .filter(Boolean);
+  return [...new Set(values.map((item) => Number.parseInt(item, 10)).filter((number) => Number.isFinite(number) && number >= 0))].sort(
+    (a, b) => a - b,
+  );
+}
+
 export function promptToConfig(prompt, { objectId, label, frameIndex }) {
   if (prompt.kind === "box") {
     return {
@@ -141,6 +154,7 @@ export function promptToConfig(prompt, { objectId, label, frameIndex }) {
 
 export function objectDiscoveryConfig(input, advanced) {
   const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || "clean";
+  const keyframes = parseKeyframes(advanced.keyframe ?? advanced.keyframes ?? input.keyframes ?? 0);
   const presets = {
     clean: {
       intent: "discover_objects_clean",
@@ -210,6 +224,7 @@ export function objectDiscoveryConfig(input, advanced) {
     intent: preset.intent,
     providerPreference: "auto",
     keyframePolicy: preset.keyframePolicy,
+    keyframes,
     maxKeyframes: preset.maxKeyframes,
     frameInterval: preset.frameInterval,
     maxCandidatesPerKeyframe: preset.maxCandidatesPerKeyframe,

@@ -433,12 +433,14 @@ const MotionJSONUI = (() => {
   function objectDiscoveryConfig(input) {
     const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean";
     const defaults = objectDiscoveryDefaults(qualityPreset);
+    const keyframes = parseKeyframes(input.keyframes);
     return {
       mock: true,
       qualityPreset,
       intent: defaults.intent,
       providerPreference: "auto",
       keyframePolicy: defaults.keyframePolicy,
+      keyframes,
       maxKeyframes: defaults.maxKeyframes,
       frameInterval: defaults.frameInterval,
       maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
@@ -1080,9 +1082,14 @@ const MotionJSONUI = (() => {
   function trackFrameForDisplay(track, frameIndex) {
     const frames = asArray(track.frames).filter((frame) => frame.visible !== false && (frame.bbox || asArray(frame.polygon).length >= 3));
     if (!frames.length) return null;
-    return frames.find((frame) => frame.frame === frameIndex) || frames.reduce((nearest, frame) => {
+    const sorted = frames.slice().sort((a, b) => toInteger(a.frame, 0) - toInteger(b.frame, 0));
+    const first = toInteger(sorted[0].frame, 0);
+    const last = toInteger(sorted[sorted.length - 1].frame, first);
+    const requested = toInteger(frameIndex, 0);
+    if (requested < first || requested > last) return null;
+    return sorted.find((frame) => toInteger(frame.frame, 0) === requested) || sorted.reduce((nearest, frame) => {
       if (!nearest) return frame;
-      return Math.abs(frame.frame - frameIndex) < Math.abs(nearest.frame - frameIndex) ? frame : nearest;
+      return Math.abs(toInteger(frame.frame, 0) - requested) < Math.abs(toInteger(nearest.frame, 0) - requested) ? frame : nearest;
     }, null);
   }
 
@@ -1090,6 +1097,65 @@ const MotionJSONUI = (() => {
     const count = Math.max(1, toInteger(track.frameCount, asArray(track.frames).length || 1));
     const visible = clamp(toInteger(track.visibleFrameCount, count), 0, count);
     return `${track.frameStart ?? 0}-${track.frameEnd ?? Math.max(0, count - 1)} (${Math.round((visible / count) * 100)}%)`;
+  }
+
+  function reviewTimelinePayload(review) {
+    const timeline = review?.timeline;
+    if (!timeline || typeof timeline !== "object") return null;
+    return String(timeline.format || "") === "motionjson.review_timeline.v0.1" ? timeline : null;
+  }
+
+  function markerFrame(marker) {
+    return Math.max(0, toInteger(marker?.frameIndex ?? marker?.frame_index, 0));
+  }
+
+  function timelineFrameCount(review, tracks = []) {
+    const timeline = reviewTimelinePayload(review);
+    const source = review?.source || {};
+    const explicit = toInteger(timeline?.frameCount ?? source.frameCount ?? source.frame_count, 0);
+    const markerMax = asArray(timeline?.markers).reduce((max, marker) => Math.max(max, markerFrame(marker)), -1);
+    const trackMax = asArray(tracks).reduce((max, track) => Math.max(max, toInteger(track.frameEnd, -1)), -1);
+    return Math.max(1, explicit || 0, markerMax + 1, trackMax + 1);
+  }
+
+  function timelineMarkersForDisplay(review, tracks = [], keyframes = new Set()) {
+    const timeline = reviewTimelinePayload(review);
+    const parsedKeyframes = parseKeyframes(keyframes);
+    const keyframeMax = parsedKeyframes.reduce((max, frameIndex) => Math.max(max, frameIndex), -1);
+    const frameCount = Math.max(timelineFrameCount(review, tracks), keyframeMax + 1);
+    const apiMarkers = asArray(timeline?.markers).map((marker, index) => ({
+      id: String(marker.id || `api-marker-${index}`),
+      kind: String(marker.kind || "marker"),
+      frameIndex: markerFrame(marker),
+      label: String(marker.label || marker.objectId || marker.candidateId || marker.kind || "marker"),
+      objectId: marker.objectId || null,
+      candidateId: marker.candidateId || null,
+      source: marker.source || "api",
+      status: marker.status || "",
+      apiOwned: true,
+    }));
+    const localKeyframes = parsedKeyframes.map((frameIndex) => ({
+      id: `keyframe:${frameIndex}`,
+      kind: "configured_keyframe",
+      frameIndex: clamp(frameIndex, 0, Math.max(0, frameCount - 1)),
+      label: `keyframe ${frameIndex}`,
+      source: "local_config",
+      status: "selected",
+      apiOwned: false,
+    }));
+    const markers = [...apiMarkers, ...localKeyframes].sort((a, b) => a.frameIndex - b.frameIndex || a.kind.localeCompare(b.kind));
+    const suggestedKeyframes = asArray(timeline?.suggestedKeyframes).map((item) => ({
+      frameIndex: clamp(markerFrame(item), 0, Math.max(0, frameCount - 1)),
+      reason: String(item.reason || "review_marker"),
+      source: String(item.source || "review.timeline"),
+    }));
+    return {
+      frameCount,
+      markers,
+      suggestedKeyframes,
+      markerCountsByKind: timeline?.markerCountsByKind || {},
+      hasApiTimeline: Boolean(timeline),
+    };
   }
 
   function correctionRoute(jobId) {
@@ -2970,6 +3036,7 @@ const MotionJSONUI = (() => {
       renderExportPanel();
       renderCorrectionHistory();
       renderFallbackDiagnostics();
+      renderTimelinePanel();
       scheduleDrawOverlay();
     }
 
@@ -3045,6 +3112,64 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">No prompts on the current config.</div>`;
     }
 
+    function renderTimelinePanel() {
+      const timeline = timelineMarkersForDisplay(state.jobReview, state.reviewTracks, state.keyframes);
+      const currentFrame = state.video.currentFrame;
+      const markerTrack = $("#timelineMarkerTrack");
+      const markerList = $("#timelineMarkerList");
+      const summary = $("#timelineSummary");
+      const suggestionsButton = $("#useSuggestedKeyframesButton");
+      const frameCount = Math.max(1, timeline.frameCount || 0, toInteger($("#frameSlider").max, 0) + 1);
+      const visibleMarkers = timeline.markers.slice(0, 80);
+      markerTrack.innerHTML = visibleMarkers.length
+        ? visibleMarkers
+            .map((marker) => {
+              const left = frameCount <= 1 ? 0 : (clamp(marker.frameIndex, 0, frameCount - 1) / Math.max(1, frameCount - 1)) * 100;
+              const active = marker.frameIndex === currentFrame;
+              const title = `${marker.label} - frame ${marker.frameIndex}${marker.apiOwned ? " - API" : " - selected keyframe"}`;
+              return `
+                <button
+                  class="timeline-marker is-${escapeAttribute(marker.kind)} ${active ? "is-active" : ""} ${marker.apiOwned ? "is-api" : "is-local"}"
+                  type="button"
+                  role="listitem"
+                  style="left: ${left.toFixed(3)}%"
+                  data-timeline-frame="${escapeAttribute(marker.frameIndex)}"
+                  data-timeline-object="${escapeAttribute(marker.objectId || "")}"
+                  title="${escapeAttribute(title)}"
+                  aria-label="${escapeAttribute(title)}"
+                ></button>
+              `;
+            })
+            .join("")
+        : `<span class="timeline-empty-marker" aria-hidden="true"></span>`;
+
+      const apiCount = timeline.markers.filter((marker) => marker.apiOwned).length;
+      const localCount = timeline.markers.length - apiCount;
+      summary.textContent = timeline.hasApiTimeline
+        ? `${apiCount} API marker${apiCount === 1 ? "" : "s"}; ${timeline.suggestedKeyframes.length} suggested keyframe${timeline.suggestedKeyframes.length === 1 ? "" : "s"}.`
+        : localCount
+          ? `${localCount} selected keyframe${localCount === 1 ? "" : "s"}; API timeline appears after review artifacts load.`
+          : "No API timeline loaded.";
+      suggestionsButton.disabled = timeline.suggestedKeyframes.length === 0;
+      suggestionsButton.textContent = timeline.suggestedKeyframes.length
+        ? `Use ${timeline.suggestedKeyframes.length} suggestion${timeline.suggestedKeyframes.length === 1 ? "" : "s"}`
+        : "Use suggestions";
+      markerList.innerHTML = timeline.hasApiTimeline && visibleMarkers.length
+        ? visibleMarkers
+            .filter((marker) => marker.apiOwned)
+            .slice(0, 8)
+            .map(
+              (marker) => `
+                <button class="timeline-marker-row" type="button" data-timeline-frame="${escapeAttribute(marker.frameIndex)}" data-timeline-object="${escapeAttribute(marker.objectId || "")}">
+                  <strong>${escapeHtml(marker.label || marker.kind)}</strong>
+                  <span class="row-meta">${escapeHtml(`frame ${marker.frameIndex} - ${marker.kind}${marker.status ? ` - ${marker.status}` : ""}`)}</span>
+                </button>
+              `,
+            )
+            .join("")
+        : `<div class="empty-state">Review markers come from the API review timeline; local keyframes are only config input.</div>`;
+    }
+
     function renderVideoMetrics() {
       const video = elements.video;
       const fps = Math.max(0.1, toNumber($("#sampleFps").value, 12));
@@ -3058,6 +3183,7 @@ const MotionJSONUI = (() => {
         state.video.width && state.video.height
           ? `${state.video.width}x${state.video.height} px`
           : "video pixels unavailable";
+      renderTimelinePanel();
     }
 
     function loadSelectedVideoPreview() {
@@ -3526,6 +3652,7 @@ const MotionJSONUI = (() => {
 
     function markKeyframe(frame = state.video.currentFrame) {
       state.keyframes.add(Math.max(0, Math.round(frame)));
+      renderTimelinePanel();
       renderConfigPreview();
     }
 
@@ -3645,13 +3772,21 @@ const MotionJSONUI = (() => {
 
     function seekToFrame(frame) {
       const fps = Math.max(0.1, toNumber($("#sampleFps").value, 12));
-      const nextFrame = Math.max(0, Math.round(frame));
+      const sliderMax = toInteger($("#frameSlider").max, 0);
+      const durationMax = Number.isFinite(elements.video.duration) && elements.video.duration > 0 ? Math.round(elements.video.duration * fps) : sliderMax;
+      const maxFrame = Math.max(0, sliderMax, durationMax);
+      const nextFrame = clamp(Math.round(toNumber(frame, state.video.currentFrame)), 0, maxFrame);
       if (Number.isFinite(elements.video.duration) && elements.video.duration > 0) {
         elements.video.currentTime = clamp(nextFrame / fps, 0, elements.video.duration);
       }
       state.video.currentFrame = nextFrame;
+      $("#frameSlider").max = String(maxFrame);
+      $("#frameSlider").value = String(nextFrame);
+      $("#frameReadout").textContent = `frame ${nextFrame}`;
+      renderTimelinePanel();
       renderVideoMetrics();
       renderConfigPreview();
+      scheduleDrawOverlay();
     }
 
     async function togglePreviewPlayback() {
@@ -4801,9 +4936,15 @@ const MotionJSONUI = (() => {
       elements.stage.classList.toggle("has-video", Boolean(state.video.width && state.video.height));
       renderVideoMetrics();
       renderConfigPreview();
+      scheduleDrawOverlay();
     });
 
     elements.video.addEventListener("timeupdate", () => {
+      renderVideoMetrics();
+      scheduleDrawOverlay();
+    });
+
+    elements.video.addEventListener("seeked", () => {
       renderVideoMetrics();
       scheduleDrawOverlay();
     });
@@ -4823,6 +4964,37 @@ const MotionJSONUI = (() => {
     });
 
     $("#markKeyframeButton").addEventListener("click", () => markKeyframe());
+
+    function jumpToTimelineMarker(target) {
+      const frame = toInteger(target?.dataset?.timelineFrame, state.video.currentFrame);
+      const objectId = target?.dataset?.timelineObject || "";
+      seekToFrame(frame);
+      if (objectId && state.reviewTracks.some((track) => track.id === objectId || track.objectId === objectId)) {
+        state.selectedCorrectionTrackId = objectId;
+        renderTrackList();
+        renderSelectedTrackDetail();
+        renderCorrectionPanel();
+      }
+    }
+
+    $("#timelineMarkerTrack").addEventListener("click", (event) => {
+      const marker = event.target.closest("[data-timeline-frame]");
+      if (marker) jumpToTimelineMarker(marker);
+    });
+
+    $("#timelineMarkerList").addEventListener("click", (event) => {
+      const marker = event.target.closest("[data-timeline-frame]");
+      if (marker) jumpToTimelineMarker(marker);
+    });
+
+    $("#useSuggestedKeyframesButton").addEventListener("click", () => {
+      const timeline = timelineMarkersForDisplay(state.jobReview, state.reviewTracks, state.keyframes);
+      const suggestions = timeline.suggestedKeyframes.map((item) => item.frameIndex);
+      if (!suggestions.length) return;
+      state.keyframes = new Set(suggestions);
+      renderTimelinePanel();
+      renderConfigPreview();
+    });
 
     document.addEventListener("keydown", handleKeyboardShortcut);
 
@@ -4995,6 +5167,7 @@ const MotionJSONUI = (() => {
     reviewCandidates,
     safeLocalContentUrl,
     slugObjectId,
+    timelineMarkersForDisplay,
     trackFrameForDisplay,
     trackSelectedPayload,
   };
