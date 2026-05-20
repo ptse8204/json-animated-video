@@ -10,6 +10,11 @@ The immediate user pain is that a single SAM2 point prompt can fail badly and ex
 
 - Work phase-by-phase. Do not jump ahead to later phases unless the current phase acceptance criteria are complete.
 - End every phase with a git commit.
+- Use `docs/roadmap/ui_model_connector_plan.md` as the active roadmap when the
+  work concerns the nontechnical Local UI, model-assisted planning, provider
+  setup, guided review, export handoff, or Codex operational integration.
+  Older numeric, public-onboarding, commercial, and OD roadmaps are historical
+  context unless a user explicitly selects one of those tracks.
 - Do not hide or silently swallow provider failures. If CUDA, SAM2, detectors, FFmpeg, model weights, or optional dependencies are unavailable, show this in diagnostics and logs.
 - Preserve CLI compatibility unless a phase explicitly migrates an interface with documentation and tests.
 - Prefer small stable abstractions over one-off UI glue.
@@ -25,8 +30,8 @@ The immediate user pain is that a single SAM2 point prompt can fail badly and ex
 For each phase:
 
 1. Start from a clean working tree or record why it is not clean.
-2. Read the phase requirements in `docs/codex_motionjson_roadmap.md` and `codex_tasks.yaml`.
-3. Spawn/assign subagents for exploration, implementation, UI, tests, docs, and review as appropriate.
+2. Read the active phase requirements in `docs/roadmap/ui_model_connector_plan.md`, `docs/codex_motionjson_roadmap.md`, and `codex_tasks.yaml`.
+3. The master Codex agent owns planning, implementation, validation, review synthesis, and commits. Use bounded read-only scouts only when independent critique materially improves quality.
 4. Implement the smallest coherent slice that satisfies the phase.
 5. Run relevant tests and smoke commands.
 6. Write `docs/roadmap/phase-N-report.md` with:
@@ -36,6 +41,51 @@ For each phase:
    - known limitations;
    - follow-up tasks.
 7. Commit with `git commit -m "phase N: <description>"`.
+
+## Scout workflow
+
+Use scouts sparingly and keep them read-only unless a user explicitly assigns
+implementation work. Suitable scouts for the active UI/model roadmap are:
+
+- `plan-risk-scout`: critiques phase plans and API shapes before implementation.
+- `diff-review-scout`: reviews final diffs for correctness, secrets, and regressions.
+- `rendering-scout`: reviews browser screenshots, layout behavior, and visual regressions.
+- `test-gap-scout`: checks whether tests cover behavior, edge cases, and regressions.
+- `adoption-scout`: checks whether the feature helps less technical users.
+
+Every scout must return only:
+
+- Scope inspected
+- Files/symbols reviewed
+- Findings
+- Evidence
+- Recommended action
+- Confidence level
+
+Use at most one or two scouts per phase unless the user explicitly asks for
+more. The master agent makes the final decision and is responsible for the
+commit.
+
+## Browser evidence for UI phases
+
+Any phase that changes Local UI layout, cards, fonts, visual hierarchy, panels,
+tool layout, right rail, wizard layout, provider settings, review cards, export
+cards, or responsive behavior must use rendered browser evidence.
+
+Required workflow:
+
+1. Start the Local UI in mock/no-model mode.
+2. Open it with the Codex in-app browser when available, otherwise use the
+   repository headless Chrome/layout tooling.
+3. Capture before screenshots before layout changes.
+4. Inspect those screenshots before coding.
+5. Capture after screenshots.
+6. Compare before/after evidence in the phase report.
+7. Save screenshots under `docs/design/screenshots/<phase-id>/` unless the
+   phase report explains why generated screenshots should not be committed.
+
+Required viewports for layout phases are 390x844, 768x1024, 1024x768,
+1366x768, 1440x900, and 1920x1080 where tooling supports them.
 
 ## Suggested test commands
 

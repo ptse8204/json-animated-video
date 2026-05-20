@@ -1,90 +1,144 @@
-# Codex Master Prompt — MotionJSON UI + Multi-Object Extraction Roadmap
+# Codex Master Prompt - MotionJSON Guided UI + Model Connector Roadmap
 
-You are the Master Agent for the `motionjson` repository.
+You are the master Codex agent for the `motionjson` repository.
 
 Read these files first:
 
 - `AGENTS.md`
+- `docs/roadmap/ui_model_connector_plan.md`
+- `codex_tasks.yaml`
+- `docs/repo_status.md`
+- `docs/local_ui.md`
+- `docs/design/local-ui-audit.md`
 - `docs/codex_motionjson_context.md`
-- `docs/codex_motionjson_prd.md`
-- `docs/codex_motionjson_roadmap.md`
 - `docs/codex_motionjson_architecture.md`
 - `docs/codex_motionjson_ui_spec.md`
 - `docs/codex_motionjson_ml_pipeline_spec.md`
 - `docs/codex_motionjson_quality_benchmarks.md`
-- `codex_tasks.yaml`
 
 ## Mission
 
-Transform MotionJSON from a mostly CLI-driven extractor into a local-first application that helps users trace video objects with multiple extraction approaches:
+Turn MotionJSON's local UI into a nontechnical, guided object-tracing workflow
+and add a safe server-side model connector that lets users describe what they
+want, validate a model-generated run plan, run extraction, review candidates,
+correct tracks, and export reviewed MotionJSON assets without CLI knowledge.
 
-1. single-object prompt tracking;
-2. text-guided object discovery + SAM2 segmentation/tracking;
-3. automatic mask proposals + filtering/tracking;
-4. optional detector/segmenter based discovery/tracking;
-5. motion-only discovery;
-6. review/correction/export workflows.
+The work must preserve MotionJSON's local-first boundary:
 
-The UI must stop users from “goofying in CLI copy/paste” and make the pipeline understandable, debuggable, and adoptable.
+- CPU/mock/no-model workflows remain available and testable.
+- Heavy CV/ML dependencies remain optional and capability-gated.
+- Hosted calls require explicit user opt-in.
+- Provider failures, missing credentials, missing models, CUDA/FFmpeg problems,
+  and raster-only fallbacks are visible in diagnostics and logs.
+- Model output is a proposed plan, not trusted extraction truth.
+- Raw JSON remains available for technical users, but it is not the default
+  first-run surface for nontechnical users.
 
-## Required subagent workflow
+## Active Roadmap
 
-Use a master-agent / subagent pattern. Spawn specialized subagents when phases involve their domain, wait for their results, consolidate, and only then implement or commit.
+Use `docs/roadmap/ui_model_connector_plan.md` as the active roadmap for current
+UI/model work. It supersedes older Codex execution prompts only for this work
+stream. The completed Phase 0-14 and OD reports under `docs/roadmap/` remain
+historical evidence and should not be deleted or rewritten.
 
-Use these project-scoped custom agents if available:
+Current phase order:
 
-- `repo_archaeologist`: map current repo structure, existing CLI, backend, tests, and packaging.
-- `product_strategist`: refine user flows, acceptance criteria, and naming.
-- `backend_cv_architect`: design/implement provider abstractions and CV/ML pipelines.
-- `frontend_ui_engineer`: design/implement UI, API integration, state management, and browser smoke checks.
-- `qa_benchmark_engineer`: implement tests, fixture videos, mock providers, benchmarks, and regression checks.
-- `docs_devrel_engineer`: write docs, examples, onboarding, and troubleshooting.
-- `release_packaging_engineer`: implement launchers, dependency groups, packaging, and installer/readiness checks.
-- `reviewer`: review correctness, risks, missing tests, and phase acceptance before commits.
+1. `UI-MODEL-00` - align Codex workflow with the model connector roadmap.
+2. `UI-LAYOUT-01` - browser-driven layout and readability overhaul.
+3. `UI-MODEL-01` - nontechnical first-run wizard.
+4. `UI-MODEL-02` - model connector backend contract.
+5. `UI-MODEL-03` - provider settings to connector wiring.
+6. `UI-MODEL-04` - OpenAI planning connector MVP.
+7. `UI-MODEL-05` - UI connect-model flow.
+8. `UI-MODEL-06` - model plan to extraction run.
+9. `UI-MODEL-07` - review UX upgrade.
+10. `UI-MODEL-08` - seamless export handoff.
+11. `UI-MODEL-09` - Codex operational integration.
+12. `UI-MODEL-10` - release hardening.
 
-If custom agents are unavailable, spawn built-in `explorer`/`worker`/`reviewer` style agents with the same roles.
+Do not skip ahead. Do not begin the next phase until the current phase has a
+phase report, validation notes, diff review, and a git commit.
 
-## Mandatory phase loop
+## Master-Agent Workflow
 
-For each phase in `codex_tasks.yaml`:
+The master agent owns planning, implementation, validation, review synthesis,
+commits, and final decisions end to end. Do not split planning, execution, and
+review into separate full-context agents by default.
 
-1. Announce the phase objective.
-2. Spawn relevant subagents to inspect or design the phase.
-3. Consolidate their findings into a concrete implementation plan.
-4. Implement the phase.
-5. Run the phase’s required tests and smoke commands.
-6. Spawn `reviewer` to inspect the diff and acceptance criteria.
-7. Fix material review findings.
-8. Write `docs/roadmap/phase-N-report.md`.
-9. Create a git commit:
+Use bounded read-only scouts only when independent critique materially improves
+quality. Appropriate scouts are:
 
-```bash
-git status --short
-git add <phase files>
-git commit -m "phase N: <short description>"
+- `plan-risk-scout`
+- `diff-review-scout`
+- `rendering-scout`
+- `test-gap-scout`
+- `adoption-scout`
+
+Scout restrictions:
+
+- Scouts are read-only unless the user explicitly says otherwise.
+- Scouts may inspect files, screenshots, diffs, tests, and validation output.
+- Scouts may not edit files, install dependencies, change configuration,
+  commit, or spawn other agents.
+- Use at most one or two scouts per phase unless the user explicitly asks for
+  more.
+
+Every scout must return only:
+
+```text
+Scope inspected
+Files/symbols reviewed
+Findings
+Evidence
+Recommended action
+Confidence level
 ```
 
-10. Report the commit hash and known limitations.
+The master agent must synthesize scout output and decide what to do.
 
-Do not begin the next phase until the current phase has a commit.
+## Phase Loop
 
-## Development constraints
+For every phase:
 
-- Preserve existing CLI behavior unless explicitly changed and documented.
-- Keep heavyweight ML dependencies optional.
-- Provide mock/no-model paths for UI and tests.
-- Surface capability failures clearly in both UI and CLI.
-- Do not silently export raster-only output without diagnostics explaining why object/vector tracks failed.
-- Favor local-first operation. No required cloud service.
-- Avoid storing sensitive paths/tokens in committed files.
+1. Re-check `git status`.
+2. Read the active phase requirements and relevant repository docs.
+3. Produce or update a concise phase plan.
+4. Use a read-only scout only when the phase risk justifies it.
+5. Implement the smallest coherent slice that satisfies the phase.
+6. For UI/layout phases, use browser-rendered screenshots before and after
+   changes.
+7. Run relevant tests, build, lint, behavior validation, screenshot checks, and
+   docs checks where available.
+8. Review the diff for secrets, unrelated files, generated junk, and acceptance
+   criteria.
+9. Write `docs/roadmap/phase-<phase-id>-report.md` with summary, changed files,
+   tests, screenshots when relevant, known limitations, and follow-up tasks.
+10. Commit with the expected phase commit message.
+11. Report the commit hash and material limitations before moving on.
 
-## First action
+## Browser Evidence Requirement
 
-Start with Phase 0. Spawn:
+For any phase that changes UI layout, cards, fonts, visual hierarchy, panels,
+tool layout, right rail, wizard layout, provider settings, review cards, export
+cards, or responsive behavior:
 
-- `repo_archaeologist` to map current code, CLI commands, dependencies, tests, and extraction flow.
-- `product_strategist` to validate user-facing goals against the roadmap.
-- `qa_benchmark_engineer` to identify existing tests and minimal smoke fixtures.
-- `reviewer` to list phase risks before implementation.
+- start the Local UI in mock/no-model mode;
+- open it with the Codex in-app browser when available, otherwise use the
+  repository's headless Chrome/layout tooling;
+- capture before screenshots before coding;
+- inspect those screenshots as working context;
+- capture after screenshots;
+- compare before/after evidence in the phase report;
+- save screenshot evidence under `docs/design/screenshots/<phase-id>/` unless
+  the phase report documents a different repository policy.
 
-Then implement Phase 0 and commit it.
+Required viewports for layout phases are 390x844, 768x1024, 1024x768,
+1366x768, 1440x900, and 1920x1080 where tooling supports them.
+
+Never claim layout quality without browser-rendered evidence.
+
+## First Action
+
+Start with `UI-MODEL-00`. Update the repo-level Codex instructions and active
+roadmap metadata so future sessions can continue this product direction without
+hidden ChatGPT context. Commit the phase before starting `UI-LAYOUT-01`.

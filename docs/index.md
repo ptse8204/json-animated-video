@@ -112,8 +112,11 @@ base CPU/mock install.
 
 Use this path when continuing the phase-based roadmap:
 
-- [Codex future plan](codex_future_plan.md) is the active public-onboarding
-  phase plan.
+- [UI model connector roadmap](roadmap/ui_model_connector_plan.md) is the
+  active phase plan for the guided Local UI, browser-verified layout work, safe
+  server-side model planning connector, guided review, and export handoff.
+- [Codex future plan](codex_future_plan.md) preserves the completed
+  public-onboarding phase plan and remains useful historical context.
 - [Repository status](repo_status.md) records what is implemented, partial, or
   planned.
 - [Phase commit checklist](phase_commit_checklist.md) summarizes phase hygiene.
