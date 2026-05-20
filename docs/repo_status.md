@@ -1,6 +1,6 @@
 # MotionJSON Repository Status
 
-Baseline recorded: 2026-05-17 10:45 PDT
+Baseline recorded: 2026-05-20 00:09 PDT
 
 This status table reflects the final public-launch audit after the Phase 11G
 Asset Library slice. It separates what is implemented in the repository from
@@ -18,7 +18,7 @@ what remains optional, environment-dependent, or future work.
 | Local UI command | `python3 -m motionjson.cli ui --help` passes and exposes `--mock`, `--no-open`, host, port, db, and storage-root flags. |
 | Static UI shell | `npm run build` checks `index.html`, `app.css`, `app.js`, and `config_builder.js` in dependency-free static UI mode. |
 | Runtime and SDK packages | Root npm workspace includes `packages/motionjson-runtime` and `packages/motionjson-sdk`; `npm test` passes 19 Node tests. |
-| Python tests | `python3 -m pytest` passes 291 tests in the final audit environment. |
+| Python tests | `python3 -m pytest -q` passes 306 tests in the OD-00 audit environment. |
 | Benchmark fixture support | `benchmark` CLI exists and tests cover benchmark behavior, including whole-frame regression fixtures. |
 | Raster fallback diagnostics | `src/motionjson/track_filters.py` defines reason codes such as `masks_too_large_whole_frame`, and pipeline writes `fallback_diagnostics.json`. |
 | Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, troubleshooting links, and current launch risks. `docs/index.md` links first-run, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
