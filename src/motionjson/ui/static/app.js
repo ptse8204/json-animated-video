@@ -4110,7 +4110,7 @@ const MotionJSONUI = (() => {
           details.open = details.querySelector("#providerSettingsPanel") !== null;
         });
       } else if (capture === "new-project") {
-        if (shell) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
+        if (shell && window.innerWidth > 860) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
         if (rightRail) rightRail.style.display = "none";
         if (wizardPanel) wizardPanel.style.display = "none";
       } else if (capture === "job-review") {
@@ -4122,11 +4122,15 @@ const MotionJSONUI = (() => {
         if (workspace) workspace.style.display = "none";
         if (rightRail) {
           rightRail.style.display = "grid";
-          rightRail.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+          rightRail.style.gridTemplateColumns = window.innerWidth < 760 ? "1fr" : "repeat(2, minmax(0, 1fr))";
           rightRail.style.gap = "16px";
           rightRail.style.borderLeft = "0";
           rightRail.style.minHeight = "100vh";
         }
+        document.querySelectorAll(".right-rail details").forEach((details) => {
+          const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
+          details.open = ["run monitor", "review", "artifacts and exports"].includes(summary);
+        });
       }
 
       window.setTimeout(() => {

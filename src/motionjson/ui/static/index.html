@@ -33,7 +33,7 @@
           </nav>
         </section>
 
-        <details class="compact-panel disclosure-panel" open>
+        <details class="compact-panel disclosure-panel">
           <summary>Workspace</summary>
           <dl id="workspaceSummary" class="facts"></dl>
           <div id="workspaceRecent" class="workspace-recent"></div>
@@ -62,15 +62,15 @@
           </form>
         </details>
 
-        <section class="compact-panel">
-          <div class="panel-heading compact-heading">
-            <h2>First Run</h2>
+        <details class="compact-panel disclosure-panel first-run-panel">
+          <summary>
+            <span>First Run</span>
             <span class="subtle-chip">safe path</span>
-          </div>
+          </summary>
           <div id="firstRunChecklist" class="first-run-list" aria-live="polite"></div>
-        </section>
+        </details>
 
-        <details class="compact-panel disclosure-panel" open>
+        <details class="compact-panel disclosure-panel">
           <summary>Local API</summary>
           <dl id="healthStatus" class="facts"></dl>
         </details>
@@ -386,7 +386,7 @@
       </section>
 
       <aside class="right-rail" aria-label="Jobs and diagnostics">
-        <details class="rail-section" open>
+        <details class="rail-section">
           <summary>Provider settings</summary>
           <section id="providerSettingsPanel" class="compact-panel">
             <div class="panel-heading compact-heading">

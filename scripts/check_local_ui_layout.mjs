@@ -8,10 +8,12 @@ import process from "node:process";
 
 const ROOT = process.cwd();
 const VIEWPORTS = [
+  { name: "mobile-390", width: 390, height: 844 },
+  { name: "tablet-768", width: 768, height: 1024 },
+  { name: "tablet-1024", width: 1024, height: 768 },
   { name: "laptop-1366", width: 1366, height: 768 },
   { name: "desktop-1440", width: 1440, height: 900 },
   { name: "desktop-1920", width: 1920, height: 1080 },
-  { name: "tablet-1024", width: 1024, height: 768 },
 ];
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
 const CAPTURE_STATES = ["first-run", "new-project", "extraction-wizard", "provider-diagnostics", "provider-settings", "job-review"];
@@ -28,10 +30,11 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,job-review] [--viewport laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,job-review] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
-horizontal overflow or unintended overlaps across the commercial UI viewport matrix.`);
+horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
+across the commercial UI viewport matrix.`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -297,6 +300,12 @@ async function evaluateLayout(cdp) {
       for (const [a, b] of pairs) {
         if (intersects(boxes[a], boxes[b])) failures.push(a + " overlaps " + b);
       }
+      const isVisible = (element) => {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        const visibleByBrowser = typeof element.checkVisibility === "function" ? element.checkVisibility() : true;
+        return visibleByBrowser && box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+      };
       const workspacePanels = [".viewer-panel", ".setup-panel", ".wizard-panel", ".config-panel"]
         .map((selector) => boxes[selector])
         .filter(Boolean)
@@ -308,12 +317,34 @@ async function evaluateLayout(cdp) {
           }
         }
       }
+      for (const element of document.querySelectorAll("button, .load-config-button")) {
+        if (!isVisible(element)) continue;
+        const label = (element.textContent || element.getAttribute("aria-label") || element.id || element.className || element.tagName)
+          .trim()
+          .replace(/\\s+/g, " ")
+          .slice(0, 80);
+        if (element.scrollWidth - element.clientWidth > 2) {
+          failures.push("clipped control width: " + label);
+        }
+        if (element.scrollHeight - element.clientHeight > 2) {
+          failures.push("clipped control height: " + label);
+        }
+      }
+      const cardMinimumWidth = Math.min(240, Math.max(0, viewportWidth - 32));
+      for (const element of document.querySelectorAll(".workspace .panel, .right-rail .compact-panel, .provider-settings-row, .candidate-row, .track-row, .right-rail .artifact-row, .first-run-row")) {
+        if (!isVisible(element)) continue;
+        const box = element.getBoundingClientRect();
+        const minimumWidth = element.closest(".right-rail") ? 220 : cardMinimumWidth;
+        if (box.width < minimumWidth) {
+          const label = (element.getAttribute("aria-label") || element.querySelector("h2,h3,strong,summary")?.textContent || element.className || element.tagName)
+            .trim()
+            .replace(/\\s+/g, " ")
+            .slice(0, 80);
+          failures.push("too-narrow card: " + label + " " + Math.round(box.width) + "px");
+        }
+      }
       const focusTarget = [...document.querySelectorAll("button, input, select, summary, a[href]")]
-        .find((element) => {
-          const box = element.getBoundingClientRect();
-          const style = getComputedStyle(element);
-          return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.disabled;
-        });
+        .find((element) => isVisible(element) && !element.disabled);
       if (focusTarget) {
         focusTarget.focus();
         const focusStyle = getComputedStyle(focusTarget);

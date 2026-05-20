@@ -101,3 +101,74 @@ Representative after captures:
 - The mock job used by screenshot/layout validation can emit Python resource
   tracker semaphore warnings during shutdown. The layout command exits
   successfully when the UI passes.
+
+## UI-LAYOUT-01 Evidence
+
+UI-LAYOUT-01 revisited the commercial shell with the stricter model-connector
+roadmap requirement: browser evidence across mobile-like, tablet, laptop, and
+desktop widths, plus default, wizard, provider, review, export, and expanded
+disclosure states.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-layout-01-before
+```
+
+The stricter baseline captured 54 screenshots across:
+
+- 390x844 mobile-like width;
+- 768x1024 tablet portrait;
+- 1024x768 tablet-like width;
+- 1366x768 laptop;
+- 1440x900 desktop;
+- 1920x1080 desktop.
+
+Baseline findings:
+
+- 390px states had horizontal overflow from the sticky topbar margin.
+- The `new-project` docs capture forced a desktop two-column shell on mobile.
+- The `job-review` docs capture forced two right-rail columns on mobile.
+- The default left rail exposed workspace details, first-run diagnostics, and
+  local API details too early.
+- Provider settings dominated the right rail before the user had chosen to
+  configure providers.
+- Fully expanded disclosure states squeezed diagnostic rows into narrow
+  columns.
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-layout-01
+```
+
+Representative captures:
+
+![UI-LAYOUT-01 mobile first-run](screenshots/ui-layout-01/mobile-390-first-run.png)
+
+![UI-LAYOUT-01 laptop first-run](screenshots/ui-layout-01/laptop-1366-first-run.png)
+
+![UI-LAYOUT-01 desktop job review](screenshots/ui-layout-01/desktop-1440-job-review.png)
+
+Fixes made:
+
+- Added 390x844 and 768x1024 viewports to the repeatable layout gate.
+- Added checks for horizontal overflow, panel overlap, clipped control text,
+  visible focus style, and too-narrow main/inspector cards.
+- Collapsed secondary left-rail sections by default so the first screen starts
+  with goal choice instead of a diagnostics wall.
+- Collapsed Provider settings by default and kept Run monitor as the primary
+  right-rail status surface.
+- Made docs capture modes responsive for mobile `new-project` and `job-review`
+  states.
+- Opened review/export sections in the `job-review` capture so candidate cards,
+  track detail, and export surfaces are browser-validated.
+- Widened the desktop/tablet sidebar enough for expanded first-run diagnostics
+  to remain readable.
+- Fixed 390px topbar overflow.
+
+Known compromise:
+
+- The right rail remains intentionally dense in expanded review/export states.
+  This phase improves hierarchy and validation coverage without redesigning the
+  review model or export handoff; those are covered by later UI-MODEL phases.

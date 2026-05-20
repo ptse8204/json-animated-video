@@ -316,13 +316,14 @@ h2 {
 .subtle-chip {
   display: inline-flex;
   align-items: center;
+  max-width: 100%;
   min-height: 24px;
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
-  line-height: 1;
-  white-space: nowrap;
+  line-height: 1.2;
+  white-space: normal;
   background: var(--surface-muted);
 }
 
@@ -1356,11 +1357,13 @@ body {
 
 body {
   overflow: hidden;
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(220px, 236px) minmax(0, 1fr) minmax(300px, 320px);
+  grid-template-columns: minmax(280px, 304px) minmax(0, 1fr) minmax(292px, 304px);
   width: 100%;
   height: 100vh;
   min-height: 0;
@@ -1399,6 +1402,7 @@ body {
 .right-rail {
   display: grid;
   align-content: start;
+  align-items: start;
   gap: var(--space-sm);
   padding: var(--space-md);
   border-left: 1px solid var(--border);
@@ -1576,6 +1580,13 @@ h3 {
   margin-bottom: var(--space-sm);
 }
 
+.panel-heading > *,
+.provider-settings-header > *,
+.candidate-topline > *,
+.track-topline > * {
+  min-width: 0;
+}
+
 .compact-heading {
   align-items: center;
   margin-bottom: var(--space-xs);
@@ -1740,6 +1751,18 @@ button,
   min-height: 40px;
   padding: 11px 34px 11px 12px;
   font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.first-run-panel summary {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.first-run-panel summary .subtle-chip {
+  margin-left: auto;
 }
 
 .advanced-panel summary::after,
@@ -1799,6 +1822,7 @@ button,
   background: #eef4f1;
   font-size: 13px;
   font-weight: 850;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
@@ -1907,7 +1931,7 @@ button,
 
 @media (max-width: 1360px) {
   .app-shell {
-    grid-template-columns: minmax(206px, 224px) minmax(0, 1fr) minmax(286px, 306px);
+    grid-template-columns: minmax(280px, 304px) minmax(0, 1fr) minmax(282px, 296px);
   }
 
   .workspace {
@@ -1934,7 +1958,7 @@ button,
   }
 
   .app-shell {
-    grid-template-columns: minmax(210px, 240px) minmax(0, 1fr);
+    grid-template-columns: minmax(280px, 304px) minmax(0, 1fr);
     height: auto;
     min-height: 100vh;
     overflow: visible;
@@ -2000,6 +2024,11 @@ button,
   .workspace,
   .sidebar,
   .right-rail {
+    padding: var(--space-sm);
+  }
+
+  .topbar {
+    margin: calc(var(--space-sm) * -1) calc(var(--space-sm) * -1) var(--space-sm);
     padding: var(--space-sm);
   }
 
