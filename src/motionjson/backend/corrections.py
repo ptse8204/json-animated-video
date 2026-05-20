@@ -1471,13 +1471,14 @@ def _append_track_warning(track: dict[str, Any], warning: str) -> None:
 
 
 def _apply_review_track_edit(track: dict[str, Any], edit: dict[str, Any]) -> None:
+    has_export_edit = "exportIncluded" in edit
     if edit.get("label"):
         track["label"] = edit["label"]
     if "visible" in edit:
         track["visible"] = bool(edit["visible"])
     else:
         track.setdefault("visible", True)
-    if "exportIncluded" in edit:
+    if has_export_edit:
         track["exportIncluded"] = bool(edit["exportIncluded"])
     else:
         track["exportIncluded"] = _export_included(track)
@@ -1494,7 +1495,7 @@ def _apply_review_track_edit(track: dict[str, Any], edit: dict[str, Any]) -> Non
         track["exportStatus"] = "deleted"
         _append_track_warning(track, "deleted_by_user")
     elif track.get("exportIncluded") is False:
-        track["exportStatus"] = edit.get("exportStatus") or "excluded"
+        track["exportStatus"] = edit.get("exportStatus") or (track.get("exportStatus") if not has_export_edit else None) or "excluded"
         _append_track_warning(track, "excluded_from_export")
     if track.get("visible") is False:
         _append_track_warning(track, "hidden_by_user")

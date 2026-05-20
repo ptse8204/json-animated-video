@@ -147,7 +147,7 @@ def _edit_for_object(track_edits: dict[str, Any], object_id: str) -> dict[str, A
 
 
 def _status_excludes(value: Any) -> bool:
-    return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged", str(value or "")))
+    return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged|review_pending", str(value or "")))
 
 
 def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]) -> tuple[list[str], list[str], list[dict[str, Any]]]:

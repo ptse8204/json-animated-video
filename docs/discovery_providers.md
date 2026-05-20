@@ -65,6 +65,12 @@ warnings, rejection reasons, artifact preview IDs when available, and an
 aggregate `candidateSummary`. UI code should render these API records instead
 of fabricating final candidates or tracks.
 
+Selected-candidate tracking is API-owned. `POST /api/jobs/JOB_ID/track-selected`
+or `POST /v1/jobs/JOB_ID/track-selected` validates selected candidate IDs
+against `candidates.json`, tracks only those candidate masks, and writes updated
+tracks/scene artifacts. With `exportReviewRequired`, generated tracks are
+`review_pending` so auto-discovered objects cannot be exported without review.
+
 ## CLI Examples
 
 CPU moving-region discovery:

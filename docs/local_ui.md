@@ -121,6 +121,7 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `GET /api/jobs/JOB_ID/review`
 - `GET /api/jobs/JOB_ID/corrections`
 - `POST /api/jobs/JOB_ID/track-edits`
+- `POST /api/jobs/JOB_ID/track-selected`
 - `POST /api/jobs/JOB_ID/cancel`
 - `POST /api/jobs/JOB_ID/validate`
 - `POST /api/jobs/JOB_ID/exports`
@@ -169,6 +170,14 @@ Mock `auto_object_proposals` jobs write deterministic thumbnails and mask
 preview overlays under `discovery/`; once those files are registered as
 artifacts, the review route resolves their relative paths into
 `thumbnailArtifactId` and `maskPreviewArtifactId`.
+
+`POST /api/jobs/JOB_ID/track-selected` accepts `candidateIds`,
+`trackMode: "selected_only"`, and `exportReviewRequired`. The backend validates
+that each ID belongs to the job's candidate artifact, rejects ignored/rejected
+candidates, runs tracking for the selected mask candidates only, and returns
+updated `artifacts` plus `review`. When `exportReviewRequired` is true, selected
+tracks are marked `review_pending` and export validation blocks until review
+state explicitly includes them.
 
 ## Provider And Model Settings
 

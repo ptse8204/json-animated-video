@@ -43,6 +43,7 @@ from .library import (
 from .models import BackendError, ForbiddenError, NotFoundError, ProviderPolicyError, UnauthorizedError
 from .projects import create_project, get_project, list_projects
 from .queue import request_cancel_job
+from .selected_tracking import track_selected_candidates
 from .support import create_error_report, create_feedback_item, list_error_reports, list_feedback_items
 from .webhooks import create_webhook, disable_webhook, list_webhook_deliveries, list_webhooks
 
@@ -332,6 +333,26 @@ class MotionJSONAPI:
             job = get_job(conn, user_id=user_id, job_id=parts[2])
             assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
             return {"review": self._review_payload(assets)}
+        if (
+            len(parts) == 4
+            and parts[0] == "v1"
+            and parts[1] in {"jobs", "extraction-runs"}
+            and parts[3] == "track-selected"
+            and method == "POST"
+        ):
+            result = track_selected_candidates(
+                conn,
+                storage=self.storage(),
+                user_id=user_id,
+                job_id=parts[2],
+                payload=payload,
+            )
+            assets = result.pop("assets")
+            return {
+                "trackSelected": result,
+                "artifacts": [_public_asset(asset) for asset in assets],
+                "review": self._review_payload(assets),
+            }
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "corrections" and method == "GET":
             return {"corrections": list_track_corrections(conn, user_id=user_id, job_id=parts[2])}
         if len(parts) == 4 and parts[:2] == ["v1", "jobs"] and parts[3] == "track-edits" and method == "POST":
@@ -416,19 +437,22 @@ class MotionJSONAPI:
             "format": "motionjson.api_review.v0.1",
             "artifactCountsByKind": _artifact_counts(assets),
             "candidates": [],
+            "tracks": [],
+            "objects": [],
         }
         diagnostics: list[dict[str, Any]] = []
         storage = self.storage()
         artifact_ids_by_rel_path = _artifact_ids_by_rel_path(assets)
         for asset in assets:
-            if str(asset.get("kind") or "") != "candidate_summary":
+            kind = str(asset.get("kind") or "")
+            if kind not in {"candidate_summary", "track_summary", "scene_graph"}:
                 continue
             if int(asset.get("byte_size") or 0) > 5_000_000:
                 diagnostics.append(
                     {
                         "code": "artifact_review_too_large",
                         "artifactId": asset.get("id"),
-                        "kind": asset.get("kind"),
+                        "kind": kind,
                         "message": "artifact is too large to inline for API review",
                     }
                 )
@@ -440,7 +464,7 @@ class MotionJSONAPI:
                     {
                         "code": "artifact_review_unavailable",
                         "artifactId": asset.get("id"),
-                        "kind": asset.get("kind"),
+                        "kind": kind,
                         "message": str(exc) or type(exc).__name__,
                         "errorType": type(exc).__name__,
                     }
@@ -451,14 +475,24 @@ class MotionJSONAPI:
                     {
                         "code": "artifact_review_invalid_json",
                         "artifactId": asset.get("id"),
-                        "kind": asset.get("kind"),
+                        "kind": kind,
                         "message": "artifact JSON must be an object",
                     }
                 )
                 continue
-            candidate_review = candidate_review_payload(document, artifact_ids_by_rel_path=artifact_ids_by_rel_path)
-            review["candidates"] = candidate_review["candidates"]
-            review["candidateSummary"] = candidate_review["candidateSummary"]
+            if kind == "candidate_summary":
+                candidate_review = candidate_review_payload(document, artifact_ids_by_rel_path=artifact_ids_by_rel_path)
+                review["candidates"] = candidate_review["candidates"]
+                review["candidateSummary"] = candidate_review["candidateSummary"]
+            elif kind == "track_summary":
+                tracks = document.get("tracks") if isinstance(document.get("tracks"), list) else []
+                review["tracks"] = public_review_value(tracks)
+                filter_report = document.get("filterReport") if isinstance(document.get("filterReport"), dict) else {}
+                if filter_report:
+                    review["trackSummary"] = public_review_value(filter_report.get("summary", filter_report))
+            elif kind == "scene_graph":
+                objects = document.get("objects") if isinstance(document.get("objects"), list) else []
+                review["objects"] = public_review_value(objects)
         if diagnostics:
             review["diagnostics"] = diagnostics
         return public_review_value(review)

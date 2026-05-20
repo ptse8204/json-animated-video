@@ -955,6 +955,92 @@ def test_local_ui_auto_object_proposals_mock_review_uses_artifact_backed_candida
     assert "storage_key" not in json.dumps(artifact_payload)
 
 
+def test_local_ui_track_selected_validates_candidates_and_gates_export(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Track Selected"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": f"local-ui://assets/{video['id']}"},
+        "output": {"directory": str(tmp_path / "private-output")},
+        "objects": [{"object_id": "object_0", "label": "Discovered objects"}],
+        "sampling": {"sample_fps": 12.0, "max_frames": 2},
+        "provider": {"name": "mock"},
+        "discovery": {
+            "mode": "auto_object_proposals",
+            "config": {
+                "mock": True,
+                "qualityPreset": "clean",
+                "maxCandidatesPerKeyframe": 4,
+                "maxObjects": 2,
+                "writeRejectedCandidates": True,
+            },
+        },
+        "prompts": [],
+        "filters": {"min_area": 1, "simplify_ratio": 0.006},
+        "export": {"output_mode": "authoring", "feather": 0, "layer_padding": 4, "sprite_format": "webp", "production_avif": False},
+    }
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    job = wait_for_job(app, decode(body)["job"]["id"])
+    review = decode(app.handle("GET", f"/api/jobs/{job['id']}/review")[2])["review"]
+    selected_id = review["candidates"][0]["candidateId"]
+    rejected_id = review["candidates"][2]["candidateId"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-selected",
+        body=json.dumps({"candidateIds": [selected_id], "trackMode": "selected_only", "exportReviewRequired": True}).encode("utf-8"),
+    )
+    payload = decode(body)
+    updated = payload["review"]
+
+    assert status == 200
+    assert payload["trackSelected"]["trackedObjectIds"] == [selected_id]
+    assert len(updated["tracks"]) == 1
+    assert updated["tracks"][0]["objectId"] == selected_id
+    assert updated["tracks"][0]["exportStatus"] == "review_pending"
+    assert updated["candidateSummary"]["candidateCount"] == 4
+    assert updated["candidateSummary"]["acceptedCandidateCount"] == 1
+    assert any(artifact["kind"] == "track_summary" for artifact in payload["artifacts"])
+    assert any(artifact["kind"] == "scene_graph" for artifact in payload["artifacts"])
+    assert "storage_key" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-selected",
+        body=json.dumps({"candidateIds": ["missing_candidate"], "trackMode": "selected_only"}).encode("utf-8"),
+    )
+    assert status == 400
+    assert "do not belong" in decode(body)["error"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-selected",
+        body=json.dumps({"candidateIds": [rejected_id], "trackMode": "selected_only"}).encode("utf-8"),
+    )
+    assert status == 400
+    assert "cannot be tracked" in decode(body)["error"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "compact"}).encode("utf-8"),
+    )
+    assert status == 400
+    assert "No exportable object tracks" in decode(body)["error"]
+
+
 def test_local_ui_cancel_pending_job_records_public_status_and_event(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 

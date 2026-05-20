@@ -47,6 +47,7 @@ from motionjson.backend.library import (
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.backend.queue import request_cancel_job
+from motionjson.backend.selected_tracking import track_selected_candidates
 from motionjson.backend.workspace import (
     commercial_readiness_response,
     get_workspace_preferences,
@@ -475,6 +476,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/review",
                     "/api/jobs/{jobId}/corrections",
                     "/api/jobs/{jobId}/track-edits",
+                    "/api/jobs/{jobId}/track-selected",
                     "/api/jobs/{jobId}/cancel",
                     "/api/jobs/{jobId}/validate",
                     "/api/jobs/{jobId}/exports",
@@ -737,6 +739,19 @@ class LocalUIApp:
                         ),
                         "worker": self._start_worker(),
                     }
+                if len(parts) == 4 and parts[3] == "track-selected":
+                    result = track_selected_candidates(
+                        conn,
+                        storage=self.storage(),
+                        user_id=user_id,
+                        job_id=parts[2],
+                        payload=payload,
+                    )
+                    assets = result.pop("assets")
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    response = self._artifacts_response(assets, corrections=corrections, job_id=parts[2])
+                    response["trackSelected"] = _public_review_value(result)
+                    return response
                 if len(parts) == 4 and parts[3] in {"corrections", "track-edits"}:
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     action_payload = payload.get("action") or payload.get("correction") or payload

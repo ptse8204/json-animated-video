@@ -98,6 +98,13 @@ aggregate with quality preset, provider, review requirement, candidate counts,
 and rejection reason counts. The route omits internal storage keys and raw
 local paths.
 
+`POST /v1/jobs/{jobId}/track-selected` and the equivalent
+`POST /v1/extraction-runs/{runId}/track-selected` accept `candidateIds`,
+`trackMode: "selected_only"`, and `exportReviewRequired`. The backend validates
+candidate ownership, rejects ignored/rejected candidates, tracks only the
+selected candidate masks, returns updated artifacts and review data, and marks
+new auto-discovered tracks `review_pending` when export review is required.
+
 ## Endpoints
 
 - `POST /v1/projects`
@@ -123,6 +130,8 @@ local paths.
 - `POST /v1/jobs/{jobId}/cancel`
 - `GET /v1/jobs/{jobId}/artifacts`
 - `GET /v1/jobs/{jobId}/review`
+- `POST /v1/jobs/{jobId}/track-selected`
+- `POST /v1/extraction-runs/{runId}/track-selected`
 - `GET /v1/jobs/{jobId}/corrections`
 - `POST /v1/jobs/{jobId}/track-edits`
 - `POST /v1/projects/{projectId}/asset-packages`

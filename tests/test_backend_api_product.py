@@ -319,6 +319,74 @@ def test_rest_api_job_review_redacts_unavailable_candidate_artifact_diagnostics(
     assert asset["storage_key"] not in public_body
 
 
+def test_rest_api_track_selected_returns_review_and_blocks_unreviewed_export(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    key = create_api_key(conn, user_id=user["id"], name="API")["apiKey"]
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": f"local-ui://assets/{upload['id']}"},
+        "output": {"directory": str(tmp_path / "private-output")},
+        "objects": [{"object_id": "object_0", "label": "Discovered objects"}],
+        "sampling": {"sample_fps": 12.0, "max_frames": 2},
+        "provider": {"name": "mock"},
+        "discovery": {
+            "mode": "auto_object_proposals",
+            "config": {
+                "mock": True,
+                "qualityPreset": "clean",
+                "maxCandidatesPerKeyframe": 4,
+                "maxObjects": 2,
+                "writeRejectedCandidates": True,
+            },
+        },
+        "prompts": [],
+        "filters": {"min_area": 1, "simplify_ratio": 0.006},
+        "export": {"output_mode": "authoring", "feather": 0, "layer_padding": 4, "sprite_format": "webp", "production_avif": False},
+    }
+    job = enqueue_extract_job(
+        conn,
+        user_id=user["id"],
+        project_id=project["id"],
+        asset_id=upload["id"],
+        mask_provider="mock",
+        max_frames=2,
+        run_config=run_config,
+    )
+    assert worker_once(conn, storage=storage)["status"] == "succeeded"
+    conn.close()
+
+    api = MotionJSONAPI(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
+    headers = {"authorization": f"Bearer {key}"}
+    status, _headers, body = api.handle("GET", f"/v1/jobs/{job['id']}/review", headers, b"")
+    selected_id = json.loads(body)["review"]["candidates"][0]["candidateId"]
+
+    status, _headers, body = api.handle(
+        "POST",
+        f"/v1/jobs/{job['id']}/track-selected",
+        headers,
+        json.dumps({"candidateIds": [selected_id], "trackMode": "selected_only", "exportReviewRequired": True}).encode(),
+    )
+    payload = json.loads(body)
+
+    assert status == 200
+    assert payload["trackSelected"]["trackedObjectIds"] == [selected_id]
+    assert len(payload["review"]["tracks"]) == 1
+    assert payload["review"]["tracks"][0]["objectId"] == selected_id
+    assert payload["review"]["tracks"][0]["exportStatus"] == "review_pending"
+    assert any(artifact["kind"] == "track_summary" for artifact in payload["artifacts"])
+    assert "storage_key" not in body.decode("utf-8")
+
+    status, _headers, body = api.handle(
+        "POST",
+        f"/v1/extraction-runs/{job['id']}/track-selected",
+        headers,
+        json.dumps({"candidateIds": ["not_here"], "trackMode": "selected_only"}).encode(),
+    )
+    assert status == 400
+    assert "do not belong" in json.loads(body)["error"]
+
+
 def test_worker_render_job_registers_remotion_plan_and_manifest_with_no_ai_usage(tmp_path):
     conn, storage, user, project = backend(tmp_path)
     upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
