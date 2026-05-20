@@ -8,6 +8,7 @@ await import("../src/motionjson/ui/static/app.js");
 const ui = globalThis.MotionJSONUI;
 assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 
 assert.equal(ui.safeLocalContentUrl("/api/videos/asset_123/content"), "/api/videos/asset_123/content");
 assert.equal(ui.safeLocalContentUrl("/api/artifacts/export_123/content?download=1"), "/api/artifacts/export_123/content?download=1");
@@ -74,6 +75,89 @@ assert.equal(manualConfig.provider.name, "sam2-local");
 assert.equal(manualConfig.provider.sam2.prompt_frame, 7);
 assert.equal(manualConfig.prompts.length, 3);
 assert.equal(manualConfig.prompts[0].data.x, 960);
+
+const autoObjectConfig = ui.buildRunConfig({
+  preset: "auto_object_proposals",
+  discoveryMode: "auto_object_proposals",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "object_0",
+  objectLabel: "discovered object",
+  keyframes: new Set([0]),
+  maskProvider: "mock",
+  sampleFps: 8,
+  maxFrames: 24,
+  minArea: 90,
+  maxAreaRatio: 0.6,
+  stabilityThreshold: 0.8,
+  overlapThreshold: 0.7,
+  boxThreshold: 0.4,
+  textThreshold: 0.3,
+  motionSensitivity: 30,
+  maxObjects: 5,
+  outputMode: "authoring",
+  qualityPreset: "clean",
+});
+
+assert.equal(autoObjectConfig.discovery.mode, "auto_object_proposals");
+assert.equal(autoObjectConfig.discovery.config.qualityPreset, "clean");
+assert.equal(autoObjectConfig.discovery.config.maxKeyframes, 3);
+assert.equal(autoObjectConfig.discovery.config.maxObjects, 5);
+assert.equal(autoObjectConfig.discovery.config.trackSelectedOnly, true);
+assert.equal(autoObjectConfig.discovery.config.requireReview, true);
+assert.equal(autoObjectConfig.provider.name, "mock");
+
+const maximumRecallConfig = ui.buildRunConfig({
+  preset: "auto_object_proposals",
+  discoveryMode: "auto_object_proposals",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "object_0",
+  objectLabel: "discovered object",
+  keyframes: new Set([0]),
+  maskProvider: "mock",
+  sampleFps: 8,
+  maxFrames: 24,
+  minArea: 90,
+  maxAreaRatio: 0.6,
+  stabilityThreshold: 0.8,
+  overlapThreshold: 0.7,
+  boxThreshold: 0.4,
+  textThreshold: 0.3,
+  motionSensitivity: 30,
+  maxObjects: 5,
+  outputMode: "authoring",
+  qualityPreset: "maximum_recall",
+});
+assert.equal(maximumRecallConfig.discovery.config.qualityPreset, "maximum_recall");
+assert.equal(maximumRecallConfig.discovery.config.maxKeyframes, 8);
+assert.equal(maximumRecallConfig.discovery.config.maxObjects, 64);
+assert.equal(maximumRecallConfig.discovery.config.trackSelectedOnly, true);
+
+const traceEverythingConfig = ui.buildRunConfig({
+  preset: "auto_object_proposals",
+  discoveryMode: "auto_object_proposals",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "object_0",
+  objectLabel: "discovered object",
+  keyframes: new Set([0]),
+  maskProvider: "mock",
+  sampleFps: 8,
+  maxFrames: 24,
+  minArea: 90,
+  maxAreaRatio: 0.6,
+  stabilityThreshold: 0.8,
+  overlapThreshold: 0.7,
+  boxThreshold: 0.4,
+  textThreshold: 0.3,
+  motionSensitivity: 30,
+  maxObjects: 5,
+  outputMode: "authoring",
+  traceEverythingMode: true,
+  traceEverythingAcknowledged: true,
+});
+assert.equal(traceEverythingConfig.discovery.config.qualityPreset, "trace_everything");
+assert.equal(traceEverythingConfig.discovery.config.requireExplicitCostWarning, true);
+assert.equal(traceEverythingConfig.discovery.config.costWarningAcknowledged, true);
+assert.equal(traceEverythingConfig.discovery.config.trackSelectedOnly, false);
 
 const textConfig = ui.buildRunConfig({
   preset: "text_detector",
@@ -205,6 +289,9 @@ assert.equal(externalConfig.provider.external.mask_dir, "masks/object_0");
 assert.equal(externalConfig.objects[0].mask_dir, "masks/object_0");
 
 const presetExpectations = [
+  [autoObjectConfig, "auto_object_proposals", "mock"],
+  [maximumRecallConfig, "auto_object_proposals", "mock"],
+  [traceEverythingConfig, "auto_object_proposals", "mock"],
   [manualConfig, "manual_prompt", "sam2-local"],
   [textConfig, "text_detector", "mock"],
   [classConfig, "class_detector", "mock"],
@@ -243,6 +330,9 @@ const pendingPreviewTracks = ui.buildReviewTracks({
   review: {},
 });
 assert.ok(pendingPreviewTracks.length > 0, "pending jobs may show estimated review tracks");
+assert.equal(pendingPreviewTracks[0].demoMode, true);
+assert.equal(pendingPreviewTracks[0].source, "demo-only");
+assert.equal(pendingPreviewTracks[0].exportable, false);
 
 const fallbackTerminalTracks = ui.buildReviewTracks({
   job: { status: "failed" },
@@ -255,6 +345,36 @@ const fallbackTerminalTracks = ui.buildReviewTracks({
   },
 });
 assert.deepEqual(fallbackTerminalTracks, [], "terminal fallback jobs must not synthesize fake overlay tracks");
+
+const terminalNoApiTracks = ui.buildReviewTracks({
+  job: { status: "succeeded", result: { objects: 2, frames: 3 } },
+  config: textConfig,
+  artifacts: [],
+  review: {},
+});
+assert.deepEqual(terminalNoApiTracks, [], "normal terminal jobs without API tracks must not synthesize final tracks");
+
+const filteredCandidates = ui.filterReviewCandidates(
+  [
+    { candidateId: "cand_1", stabilityScore: 0.92, motionScore: 0.2, frameCoverageEstimate: 0.8, reviewStatus: "pending" },
+    { candidateId: "cand_2", stabilityScore: 0.94, motionScore: 0.3, frameCoverageEstimate: 0.8, rejectionReason: "background_like" },
+    { candidateId: "cand_3", stabilityScore: 0.6, motionScore: 0.2, frameCoverageEstimate: 0.8, reviewStatus: "pending" },
+  ],
+  { cand_1: true, cand_2: true, cand_3: true },
+  { selectedOnly: true, stableOnly: true, movingOnly: true, notBackground: true, notDuplicate: true, minCoverage: 0.5 },
+);
+assert.deepEqual(filteredCandidates.map((candidate) => candidate.candidateId), ["cand_1"]);
+assert.deepEqual(
+  ui.reviewCandidates({ candidateSummary: { candidates: [{ candidateId: "legacy_only" }] } }),
+  [],
+  "candidate browser must not select from legacy candidateSummary.candidates",
+);
+assert.deepEqual(ui.reviewCandidates({ candidates: [{ candidateId: "api_cand" }] }), [{ candidateId: "api_cand" }]);
+assert.deepEqual(ui.trackSelectedPayload(["cand_1", "cand_1", "cand_2"]), {
+  candidateIds: ["cand_1", "cand_2"],
+  trackMode: "selected_only",
+  exportReviewRequired: true,
+});
 
 const correctionRequest = ui.buildCorrectionRequestFromPrompts(
   "red_ball",
@@ -352,7 +472,15 @@ console.log(
   JSON.stringify(
     {
       status: "ok",
-      checked: ["coordinate-mapping", "run-config-builder", "review-track-gating", "correction-state", "python-config-validation"],
+      checked: [
+        "coordinate-mapping",
+        "run-config-builder",
+        "object-discovery-presets",
+        "api-candidate-filtering",
+        "review-track-gating",
+        "correction-state",
+        "python-config-validation",
+      ],
     },
     null,
     2,

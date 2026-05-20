@@ -20,6 +20,7 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}/review",
     "/api/jobs/{jobId}/corrections",
     "/api/jobs/{jobId}/track-edits",
+    "/api/jobs/{jobId}/track-selected",
     "/api/jobs/{jobId}/cancel",
     "/api/jobs/{jobId}/validate",
     "/api/jobs/{jobId}/exports",
@@ -62,6 +63,12 @@ const MotionJSONUI = (() => {
   };
 
   const PRESETS = {
+    auto_object_proposals: {
+      label: "Discover objects",
+      discoveryMode: "auto_object_proposals",
+      maskProvider: "mock",
+      outputMode: "authoring",
+    },
     trace_one_object: {
       label: "Trace one object",
       discoveryMode: "manual_prompt",
@@ -163,11 +170,14 @@ const MotionJSONUI = (() => {
     importStatus: "",
     selectedCorrectionTrackId: "",
     mergeSelection: new Set(),
+    candidateSelection: {},
+    candidateSelectionJobId: "",
+    candidateTrackingStatus: "",
     runConfigsByJob: {},
     lastRunConfig: null,
     polling: false,
     errors: {},
-    selectedPreset: "trace_one_object",
+    selectedPreset: "auto_object_proposals",
     activeTool: "point",
     pointKind: "positive_point",
     prompts: [],
@@ -353,6 +363,101 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function objectDiscoveryDefaults(qualityPreset) {
+    const defaults = {
+      clean: {
+        intent: "discover_objects_clean",
+        keyframePolicy: "scene_changes",
+        maxKeyframes: 3,
+        frameInterval: null,
+        maxCandidatesPerKeyframe: 32,
+        maxObjects: 12,
+        minMaskArea: 96,
+        maxMaskAreaRatio: 0.45,
+        dedupeIou: 0.78,
+        stabilityThreshold: 0.86,
+        trackSelectedOnly: true,
+        trackTopCandidates: false,
+        requireExplicitCostWarning: false,
+      },
+      balanced: {
+        intent: "discover_objects_balanced",
+        keyframePolicy: "scene_changes",
+        maxKeyframes: 5,
+        frameInterval: null,
+        maxCandidatesPerKeyframe: 64,
+        maxObjects: 24,
+        minMaskArea: 64,
+        maxMaskAreaRatio: 0.6,
+        dedupeIou: 0.84,
+        stabilityThreshold: 0.78,
+        trackSelectedOnly: true,
+        trackTopCandidates: false,
+        requireExplicitCostWarning: false,
+      },
+      maximum_recall: {
+        intent: "discover_objects_maximum_recall",
+        keyframePolicy: "scene_changes",
+        maxKeyframes: 8,
+        frameInterval: 24,
+        maxCandidatesPerKeyframe: 128,
+        maxObjects: 64,
+        minMaskArea: 32,
+        maxMaskAreaRatio: 0.75,
+        dedupeIou: 0.9,
+        stabilityThreshold: 0.7,
+        trackSelectedOnly: true,
+        trackTopCandidates: false,
+        requireExplicitCostWarning: false,
+      },
+      trace_everything: {
+        intent: "trace_everything",
+        keyframePolicy: "uniform_interval",
+        maxKeyframes: 8,
+        frameInterval: 24,
+        maxCandidatesPerKeyframe: 128,
+        maxObjects: 64,
+        minMaskArea: 32,
+        maxMaskAreaRatio: 0.75,
+        dedupeIou: 0.9,
+        stabilityThreshold: 0.7,
+        trackSelectedOnly: false,
+        trackTopCandidates: true,
+        requireExplicitCostWarning: true,
+      },
+    };
+    return defaults[qualityPreset] || defaults.clean;
+  }
+
+  function objectDiscoveryConfig(input) {
+    const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean";
+    const defaults = objectDiscoveryDefaults(qualityPreset);
+    return {
+      mock: true,
+      qualityPreset,
+      intent: defaults.intent,
+      providerPreference: "auto",
+      keyframePolicy: defaults.keyframePolicy,
+      maxKeyframes: defaults.maxKeyframes,
+      frameInterval: defaults.frameInterval,
+      maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
+      maxObjects: qualityPreset === "clean" ? toInteger(input.maxObjects, defaults.maxObjects) : defaults.maxObjects,
+      minMaskArea: defaults.minMaskArea,
+      maxMaskAreaRatio: defaults.maxMaskAreaRatio,
+      dedupeIou: defaults.dedupeIou,
+      stabilityThreshold: defaults.stabilityThreshold,
+      motionScoreWeight: 0.35,
+      rejectWholeFrame: true,
+      rejectBackgroundLike: true,
+      trackSelectedOnly: defaults.trackSelectedOnly,
+      trackTopCandidates: defaults.trackTopCandidates,
+      requireReview: true,
+      writeRejectedCandidates: true,
+      requireExplicitCostWarning: defaults.requireExplicitCostWarning,
+      ...(qualityPreset === "trace_everything" ? { costWarningAcknowledged: input.traceEverythingAcknowledged === true } : {}),
+    };
+  }
+
   function buildMaskPrompt(strokes, objectId, label, frameIndex) {
     if (!strokes.length) return null;
     return {
@@ -372,6 +477,9 @@ const MotionJSONUI = (() => {
 
   function buildDiscoveryConfig(input, promptsForConfig) {
     const keyframes = parseKeyframes(input.keyframes);
+    if (input.discoveryMode === "auto_object_proposals") {
+      return objectDiscoveryConfig(input);
+    }
     if (input.discoveryMode === "text_detector") {
       return {
         text: input.textPrompt || "",
@@ -437,7 +545,7 @@ const MotionJSONUI = (() => {
   }
 
   function buildRunConfig(input) {
-    const preset = PRESETS[input.preset] || PRESETS.trace_one_object;
+    const preset = PRESETS[input.preset] || PRESETS.auto_object_proposals;
     const objectId = slugObjectId(input.objectId, "object_0");
     const objectLabel = String(input.objectLabel || objectId || "selected_object").trim() || objectId;
     const discoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
@@ -668,7 +776,7 @@ const MotionJSONUI = (() => {
   }
 
   function collectFormState($) {
-    const preset = PRESETS[state.selectedPreset] || PRESETS.trace_one_object;
+    const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
     const frameIndex = state.video.currentFrame || toInteger($("#frameSlider").value, 0);
     return {
       preset: state.selectedPreset,
@@ -699,6 +807,9 @@ const MotionJSONUI = (() => {
       maxObjects: $("#maxObjects").value,
       modelName: $("#modelName").value.trim(),
       outputMode: $("#outputMode").value,
+      qualityPreset: $("#discoveryQualityPreset").value,
+      traceEverythingMode: $("#traceEverythingMode").checked,
+      traceEverythingAcknowledged: $("#traceEverythingAck").checked,
       textPrompt: $("#textPrompt").value.trim(),
       classPreset: $("#classPreset").value,
       classList: $("#classList").value.trim(),
@@ -764,6 +875,14 @@ const MotionJSONUI = (() => {
       warnings.push("class_detector custom mode needs at least one class label.");
     }
 
+    if (config.discovery.mode === "auto_object_proposals" && config.discovery.config.qualityPreset === "trace_everything") {
+      if (!config.discovery.config.costWarningAcknowledged) {
+        warnings.push("Trace Everything requires explicit cost and noise acknowledgement.");
+      } else {
+        warnings.push("Trace Everything is expert mode; expect slower, noisier review-required output.");
+      }
+    }
+
     if (config.provider.name === "external" && !config.provider.external.mask_dir) {
       warnings.push("external provider needs a mask directory.");
     }
@@ -827,6 +946,9 @@ const MotionJSONUI = (() => {
       frameEnd: toInteger(frames[frames.length - 1]?.frame ?? frames[frames.length - 1]?.frameIndex ?? frames.length - 1, frames.length - 1),
       warnings: asArray(track.warnings).map(String),
       exportStatus: track.exportStatus || track.export_status || "accepted",
+      exportIncluded: track.exportIncluded ?? track.export_included,
+      exportable: track.exportable !== false,
+      demoMode: track.demoMode === true || track.demo_mode === true,
       providerName: track.providerName || track.provider_name || null,
       rightsSummary: track.rightsSummary || track.rights_summary || null,
       color: TRACK_COLORS[index % TRACK_COLORS.length],
@@ -877,18 +999,20 @@ const MotionJSONUI = (() => {
         id: objectId,
         objectId,
         label: object.label || objectId,
-        source: `${providerName}/${discoveryMode}`,
+        source: "demo-only",
         confidence: providerName === "mock" ? 0.92 : 0.72,
         frameCount,
         visibleFrameCount: frameCount,
         frameStart: 0,
         frameEnd: frameCount - 1,
         warnings,
-        exportStatus: warnings.includes("awaiting_track_artifact") ? "review_pending" : "included",
+        exportStatus: "review_pending",
+        exportable: false,
+        demoMode: true,
         providerName,
         color: TRACK_COLORS[index % TRACK_COLORS.length],
         frames,
-        reviewSource: providerName === "mock" ? "mock-config" : "config-estimate",
+        reviewSource: "demo-only",
       };
     });
   }
@@ -934,13 +1058,15 @@ const MotionJSONUI = (() => {
           {
             objectId: `object_${index}`,
             label: `object_${index}`,
-            source: "job_result",
+            source: "demo-only",
             confidence: 0.7,
             frameCount: toInteger(result.scene?.frames ?? result.frames, 1),
             visibleFrameCount: toInteger(result.scene?.frames ?? result.frames, 1),
             frames: [{ frame: 0, bbox: [80 + index * 24, 60 + index * 18, 120, 90], visible: true }],
             warnings: ["result_has_counts_only"],
             exportStatus: "review_pending",
+            exportable: false,
+            demoMode: true,
           },
           index,
         ),
@@ -971,6 +1097,10 @@ const MotionJSONUI = (() => {
 
   function trackEditRoute(jobId) {
     return `/api/jobs/${encodeURIComponent(jobId)}/track-edits`;
+  }
+
+  function trackSelectedRoute(jobId) {
+    return `/api/jobs/${encodeURIComponent(jobId)}/track-selected`;
   }
 
   function normalizedActionType(action) {
@@ -1249,19 +1379,26 @@ const MotionJSONUI = (() => {
     const tracks = sourceTracks.map((track) => {
       const edit = correctionState?.trackEdits?.[track.id] || correctionState?.trackEdits?.[track.objectId] || {};
       const next = { ...track };
+      const hasExportEdit = edit.exportIncluded != null;
       if (edit.label) next.label = edit.label;
       if (edit.visible != null) next.visible = edit.visible !== false;
-      if (edit.exportIncluded != null) next.exportIncluded = edit.exportIncluded !== false;
+      if (hasExportEdit) next.exportIncluded = edit.exportIncluded !== false;
       if (edit.deleted) next.deleted = true;
       if (edit.mergedInto) next.mergedInto = edit.mergedInto;
       next.warnings = [...asArray(track.warnings)];
       if (next.visible === false && !next.warnings.includes("hidden_by_user")) next.warnings.push("hidden_by_user");
-      if (next.exportIncluded === false && !next.warnings.includes("excluded_from_export")) next.warnings.push("excluded_from_export");
+      if (
+        next.exportIncluded === false &&
+        (hasExportEdit || /deleted|excluded|rejected|failed|fallback_raster/.test(String(next.exportStatus || ""))) &&
+        !next.warnings.includes("excluded_from_export")
+      ) {
+        next.warnings.push("excluded_from_export");
+      }
       if (next.deleted && !next.warnings.includes("deleted_by_user")) next.warnings.push("deleted_by_user");
       if (next.mergedInto && !next.warnings.includes(`merged_into_${next.mergedInto}`)) next.warnings.push(`merged_into_${next.mergedInto}`);
       if (edit.repairRequested && !next.warnings.includes("repair_requested")) next.warnings.push("repair_requested");
       if (next.deleted) next.exportStatus = "deleted";
-      else if (next.exportIncluded === false) next.exportStatus = "excluded";
+      else if (next.exportIncluded === false && hasExportEdit) next.exportStatus = "excluded";
       return next;
     });
 
@@ -1302,6 +1439,7 @@ const MotionJSONUI = (() => {
   }
 
   function isTrackExportIncluded(track) {
+    if (track.exportable === false || track.demoMode === true) return false;
     if (track.deleted || track.exportIncluded === false) return false;
     if (track.exportIncluded === true) return true;
     return !/deleted|excluded|rejected|failed|fallback_raster|review_pending/.test(String(track.exportStatus || ""));
@@ -1321,6 +1459,92 @@ const MotionJSONUI = (() => {
       result.push(id);
     }
     return result;
+  }
+
+  function candidateId(candidate) {
+    return String(candidate?.candidateId || candidate?.candidate_id || candidate?.id || "").trim();
+  }
+
+  function reviewCandidates(review = state.jobReview) {
+    return asArray(review?.candidates);
+  }
+
+  function candidateRejected(candidate) {
+    const status = String(candidate?.reviewStatus || "").toLowerCase();
+    return Boolean(candidate?.rejectionReason) || /rejected|ignored|excluded/.test(status);
+  }
+
+  function candidateReasonText(candidate) {
+    return [candidate?.rejectionReason, candidate?.reviewStatus, ...asArray(candidate?.warnings)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function candidateSelectable(candidate) {
+    return Boolean(candidateId(candidate)) && !candidateRejected(candidate);
+  }
+
+  function candidateDefaultSelected(candidate) {
+    return candidateSelectable(candidate) && candidate.defaultSelected !== false;
+  }
+
+  function syncCandidateSelection(candidates) {
+    const jobId = state.selectedJobId || "";
+    if (state.candidateSelectionJobId !== jobId) {
+      state.candidateSelection = {};
+      state.candidateSelectionJobId = jobId;
+    }
+    const ids = new Set(candidates.map(candidateId).filter(Boolean));
+    for (const id of Object.keys(state.candidateSelection)) {
+      if (!ids.has(id)) delete state.candidateSelection[id];
+    }
+    for (const candidate of candidates) {
+      const id = candidateId(candidate);
+      if (id && state.candidateSelection[id] == null) {
+        state.candidateSelection[id] = candidateDefaultSelected(candidate);
+      }
+    }
+  }
+
+  function readCandidateFilters() {
+    const field = (id) => (typeof document === "undefined" ? null : document.querySelector(`#${id}`));
+    return {
+      selectedOnly: Boolean(field("candidateFilterSelected")?.checked),
+      stableOnly: Boolean(field("candidateFilterStable")?.checked),
+      movingOnly: Boolean(field("candidateFilterMoving")?.checked),
+      notBackground: field("candidateFilterNotBackground")?.checked !== false,
+      notDuplicate: field("candidateFilterNotDuplicate")?.checked !== false,
+      minCoverage: toNumber(field("candidateMinCoverage")?.value, 0),
+    };
+  }
+
+  function filterReviewCandidates(candidates, selection = {}, filters = {}) {
+    return asArray(candidates).filter((candidate) => {
+      const id = candidateId(candidate);
+      const selected = selection[id] === true;
+      const reason = candidateReasonText(candidate);
+      if (filters.selectedOnly && !selected) return false;
+      if (filters.stableOnly && toNumber(candidate.stabilityScore, 0) < 0.8) return false;
+      if (filters.movingOnly && toNumber(candidate.motionScore, 0) <= 0.05) return false;
+      if (filters.notBackground && /background|whole_frame|wall|floor/.test(reason)) return false;
+      if (filters.notDuplicate && /duplicate/.test(reason)) return false;
+      if (toNumber(candidate.frameCoverageEstimate, 0) < toNumber(filters.minCoverage, 0)) return false;
+      return true;
+    });
+  }
+
+  function selectedCandidateIds(candidates = reviewCandidates()) {
+    syncCandidateSelection(candidates);
+    return candidates.filter((candidate) => state.candidateSelection[candidateId(candidate)] === true && candidateSelectable(candidate)).map(candidateId);
+  }
+
+  function trackSelectedPayload(candidateIds, { exportReviewRequired = true } = {}) {
+    return {
+      candidateIds: uniqueIds(candidateIds),
+      trackMode: "selected_only",
+      exportReviewRequired,
+    };
   }
 
   function buildExportPanelSummary({ exportState = {}, reviewExport = {}, reviewTracks = [], reviewObjects = [] } = {}) {
@@ -1501,7 +1725,7 @@ const MotionJSONUI = (() => {
         providers: `${providerSummary.configuredCount || 0} configured`,
         "safe default": providerSummary.mockNoModelDefault ? "mock/no-model" : "check settings",
       });
-      $("#preferenceDefaultGoal").value = preferences.defaultGoal || "trace_one_object";
+      $("#preferenceDefaultGoal").value = preferences.defaultGoal || "auto_object_proposals";
       $("#preferenceExportPreset").value = preferences.defaultExportPreset || "compact";
       const tasks = asArray(state.workspace.guidedTasks).slice(0, 4);
       const videos = asArray(state.workspace.recentVideos).slice(0, 3);
@@ -2231,46 +2455,102 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Creator-approved packs appear after all selected collection assets pass rights checks.</div>`;
     }
 
+    function artifactById(id) {
+      const wanted = String(id || "");
+      return state.jobArtifacts.find((artifact) => String(artifact.id || "") === wanted) || null;
+    }
+
+    function candidatePreviewImage(candidate, key, label) {
+      const artifact = artifactById(candidate?.[key]);
+      const contentUrl = safeLocalContentUrl(artifact?.contentUrl);
+      return contentUrl ? `<img src="${escapeAttribute(contentUrl)}" alt="${escapeAttribute(label)}" loading="lazy" />` : "";
+    }
+
+    function candidateScoreLabel(candidate, key, label) {
+      return typeof candidate?.[key] === "number" ? `${label} ${Math.round(candidate[key] * 100)}%` : "";
+    }
+
     function renderCandidateSummary() {
       const summary = state.jobReview?.candidateSummary || null;
-      const candidates = asArray(summary?.candidates);
-      const provider = summary?.provider || "none";
-      $("#candidateSummaryStatus").textContent = candidates.length ? `${candidates.length} proposed` : summary ? "No candidates" : "Not loaded";
+      const candidates = reviewCandidates();
+      syncCandidateSelection(candidates);
+      const filters = readCandidateFilters();
+      const visibleCandidates = filterReviewCandidates(candidates, state.candidateSelection, filters);
+      const selectedIds = selectedCandidateIds(candidates);
+      const selectedCount = selectedIds.length;
+      const candidateCount = summary?.candidateCount ?? candidates.length;
+      const provider = summary?.providerName || summary?.provider || "none";
+      const qualityPreset = summary?.qualityPreset || "unknown";
+      const trackButton = $("#trackSelectedCandidatesButton");
+      const status = $("#candidateActionStatus");
+      trackButton.disabled = !state.selectedJobId || selectedCount === 0 || state.candidateTrackingStatus === "tracking";
+      trackButton.textContent = state.candidateTrackingStatus === "tracking" ? "Tracking..." : "Track selected";
+      status.textContent =
+        state.candidateTrackingStatus && state.candidateTrackingStatus !== "tracking"
+          ? state.candidateTrackingStatus
+          : candidates.length
+            ? `${selectedCount} selected from API candidates.`
+            : "No API candidates loaded.";
+      $("#candidateSummaryStatus").textContent = candidates.length
+        ? `${selectedCount}/${candidateCount} selected`
+        : summary
+          ? "No candidates"
+          : "Not loaded";
       $("#candidateSummaryStatus").className = `status-chip ${candidates.length ? "is-ready" : summary ? "is-warn" : "is-muted"}`;
-      $("#candidateSummaryList").innerHTML = candidates.length
-        ? candidates
+      $("#candidateSummaryList").innerHTML = visibleCandidates.length
+        ? visibleCandidates
             .map((candidate) => {
-              const metadata = candidate.metadata || {};
+              const id = candidateId(candidate);
+              const selected = state.candidateSelection[id] === true;
+              const rejected = candidateRejected(candidate);
               const box = candidate.box
                 ? `box x:${candidate.box.x}, y:${candidate.box.y}, ${candidate.box.w}x${candidate.box.h}`
-                : candidate.point
-                  ? `point x:${candidate.point.x}, y:${candidate.point.y}`
-                  : candidate.maskRef
-                    ? "mask reference"
-                    : "no geometry";
-              const score = typeof candidate.score === "number" ? `score ${Math.round(candidate.score * 100)}%` : "score unavailable";
-              const maskStatus = metadata.maskDir || metadata.mask_dir ? "mask sequence ready" : "mask handoff unavailable";
+                : "geometry unavailable";
               const detail = [
-                candidate.id || "candidate",
+                id || "candidate",
                 candidate.source || provider,
+                `quality ${qualityPreset}`,
                 box,
-                score,
-                maskStatus,
+                candidateScoreLabel(candidate, "confidence", "confidence"),
+                candidateScoreLabel(candidate, "stabilityScore", "stable"),
+                candidateScoreLabel(candidate, "motionScore", "motion"),
+                candidateScoreLabel(candidate, "frameCoverageEstimate", "coverage"),
               ]
                 .filter(Boolean)
                 .join(" - ");
+              const preview = [
+                candidatePreviewImage(candidate, "thumbnailArtifactId", `${candidate.label || id} thumbnail`),
+                candidatePreviewImage(candidate, "maskPreviewArtifactId", `${candidate.label || id} mask preview`),
+              ]
+                .filter(Boolean)
+                .join("");
               return `
-                <div class="artifact-row candidate-row">
-                  <strong>${escapeHtml(candidate.label || candidate.id || "candidate")}</strong>
-                  ${statusChip(candidate.source || provider || "candidate", candidate.source || provider || "candidate", Boolean(metadata.maskDir || metadata.mask_dir || candidate.maskRef))}
-                  <span class="row-meta">${escapeHtml(detail)}</span>
+                <div class="candidate-row ${selected ? "is-selected" : ""} ${rejected ? "is-rejected" : ""}" data-candidate-row="${escapeAttribute(id)}">
+                  <div class="candidate-preview">${preview || `<span>${escapeHtml(candidate.frameIndex != null ? `frame ${candidate.frameIndex}` : "no preview")}</span>`}</div>
+                  <div class="candidate-body">
+                    <div class="candidate-topline">
+                      <strong>${escapeHtml(candidate.label || id || "candidate")}</strong>
+                      ${statusChip(candidate.reviewStatus || (rejected ? "rejected" : selected ? "selected" : "pending"), candidate.reviewStatus || "candidate", !rejected)}
+                    </div>
+                    <span class="row-meta">${escapeHtml(detail)}</span>
+                    <div class="track-actions">
+                      <label class="track-toggle">
+                        <input type="checkbox" data-candidate-select="${escapeAttribute(id)}" ${selected ? "checked" : ""} ${candidateSelectable(candidate) ? "" : "disabled"} />
+                        <span>keep</span>
+                      </label>
+                      ${candidate.rejectionReason ? detailChip(candidate.rejectionReason) : ""}
+                      ${asArray(candidate.warnings).map((warning) => detailChip(warning)).join("")}
+                    </div>
+                  </div>
                 </div>
               `;
             })
             .join("")
-        : summary
-          ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
-          : `<div class="empty-state">Candidate proposals appear here after discovery writes candidates.json.</div>`;
+        : candidates.length
+          ? `<div class="empty-state">No API candidates match the current filters.</div>`
+          : summary
+            ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
+            : `<div class="empty-state">API candidates appear here after discovery writes candidates.json.</div>`;
     }
 
     function renderTrackList() {
@@ -2706,9 +2986,12 @@ const MotionJSONUI = (() => {
     }
 
     function renderPresetFields() {
-      const preset = PRESETS[state.selectedPreset] || PRESETS.trace_one_object;
+      const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
       $("#presetSummary").textContent = preset.label;
       $("#presetSummary").className = "status-chip is-neutral";
+      const isObjectDiscovery = state.selectedPreset === "auto_object_proposals";
+      $("#qualityPresetField").classList.toggle("is-hidden", !isObjectDiscovery);
+      $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
       $("#classPresetField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#classListField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
@@ -3052,6 +3335,9 @@ const MotionJSONUI = (() => {
         state.jobArtifacts = [];
         state.reviewTracks = [];
         state.correctionState = emptyCorrectionState();
+        state.candidateSelection = {};
+        state.candidateSelectionJobId = "";
+        state.candidateTrackingStatus = "";
         renderJobReview();
         return;
       }
@@ -3172,7 +3458,7 @@ const MotionJSONUI = (() => {
     }
 
     function applyPreset(presetName, options = {}) {
-      state.selectedPreset = PRESETS[presetName] ? presetName : "trace_one_object";
+      state.selectedPreset = PRESETS[presetName] ? presetName : "auto_object_proposals";
       document.querySelectorAll(".goal").forEach((button) => {
         const active = button.dataset.preset === state.selectedPreset;
         button.classList.toggle("is-active", active);
@@ -3402,7 +3688,7 @@ const MotionJSONUI = (() => {
 
     function applyLoadedConfig(config) {
       const presetEntry = Object.entries(PRESETS).find(([, preset]) => preset.discoveryMode === config.discovery?.mode);
-      applyPreset(presetEntry?.[0] || "trace_one_object", { keepProvider: true });
+      applyPreset(presetEntry?.[0] || "auto_object_proposals", { keepProvider: true });
       $("#objectId").value = config.objects?.[0]?.object_id || "object_0";
       $("#objectLabel").value = config.objects?.[0]?.label || "selected_object";
       $("#sampleFps").value = config.sampling?.sample_fps ?? 12;
@@ -3412,6 +3698,11 @@ const MotionJSONUI = (() => {
       $("#maskProviderSelect").value = config.provider?.name || $("#maskProviderSelect").value;
       $("#externalMaskDir").value = config.provider?.external?.mask_dir || config.objects?.[0]?.mask_dir || "masks/object_0";
       $("#textPrompt").value = config.discovery?.config?.text || $("#textPrompt").value;
+      $("#discoveryQualityPreset").value = ["clean", "balanced", "maximum_recall"].includes(config.discovery?.config?.qualityPreset)
+        ? config.discovery.config.qualityPreset
+        : "clean";
+      $("#traceEverythingMode").checked = config.discovery?.config?.qualityPreset === "trace_everything";
+      $("#traceEverythingAck").checked = config.discovery?.config?.costWarningAcknowledged === true;
       $("#classPreset").value = config.discovery?.config?.class_preset || "common_objects";
       $("#classList").value = asArray(config.discovery?.config?.classes).join(", ") || $("#classList").value;
       $("#deviceSelect").value = config.provider?.sam2?.device || "auto";
@@ -3497,6 +3788,9 @@ const MotionJSONUI = (() => {
         state.jobArtifacts = [];
         state.reviewTracks = [];
         state.correctionState = emptyCorrectionState();
+        state.candidateSelection = {};
+        state.candidateSelectionJobId = "";
+        state.candidateTrackingStatus = "";
         renderJobReview();
         return;
       }
@@ -3818,6 +4112,37 @@ const MotionJSONUI = (() => {
       state.reviewTracks = applyCorrectionStateToTracks(baseTracks, state.correctionState);
       for (const track of state.reviewTracks) {
         if (!(track.id in state.trackVisibility)) state.trackVisibility[track.id] = true;
+      }
+    }
+
+    async function trackSelectedCandidatesWithApi() {
+      if (!state.selectedJobId) {
+        state.candidateTrackingStatus = "Select a run before tracking candidates.";
+        renderCandidateSummary();
+        return;
+      }
+      const candidates = reviewCandidates();
+      const ids = selectedCandidateIds(candidates);
+      if (!ids.length) {
+        state.candidateTrackingStatus = "Select at least one reviewable API candidate.";
+        renderCandidateSummary();
+        return;
+      }
+      state.candidateTrackingStatus = "tracking";
+      renderCandidateSummary();
+      try {
+        const response = await api(trackSelectedRoute(state.selectedJobId), {
+          method: "POST",
+          body: JSON.stringify(trackSelectedPayload(ids)),
+        });
+        if (response?.review) state.jobReview = response.review;
+        if (response?.artifacts) state.jobArtifacts = asArray(response.artifacts);
+        await loadJobReview(state.selectedJobId);
+        state.candidateTrackingStatus = `Tracked ${ids.length} selected candidate${ids.length === 1 ? "" : "s"}; export remains review-gated.`;
+        renderJobReview();
+      } catch (error) {
+        state.candidateTrackingStatus = error.message;
+        renderCandidateSummary();
       }
     }
 
@@ -4254,6 +4579,7 @@ const MotionJSONUI = (() => {
       const choice = event.target.closest("[data-job-id]");
       if (!choice) return;
       state.selectedJobId = choice.dataset.jobId;
+      state.candidateTrackingStatus = "";
       renderJobs();
       await refreshSelectedJobReview();
       if (shouldPollJobs()) startPolling();
@@ -4287,6 +4613,39 @@ const MotionJSONUI = (() => {
         renderCorrectionPanel();
       }
     });
+
+    $("#candidateSummaryList").addEventListener("change", (event) => {
+      const checkbox = event.target.closest("[data-candidate-select]");
+      if (!checkbox) return;
+      state.candidateSelection[checkbox.dataset.candidateSelect] = checkbox.checked;
+      state.candidateTrackingStatus = "";
+      renderCandidateSummary();
+    });
+
+    $("#candidateSummaryList").addEventListener("click", (event) => {
+      const row = event.target.closest("[data-candidate-row]");
+      if (!row || event.target.closest("input, a, button, label")) return;
+      const id = row.dataset.candidateRow;
+      const candidate = reviewCandidates().find((item) => candidateId(item) === id);
+      if (!candidateSelectable(candidate)) return;
+      state.candidateSelection[id] = state.candidateSelection[id] !== true;
+      state.candidateTrackingStatus = "";
+      renderCandidateSummary();
+    });
+
+    [
+      "candidateFilterSelected",
+      "candidateFilterStable",
+      "candidateFilterMoving",
+      "candidateFilterNotBackground",
+      "candidateFilterNotDuplicate",
+      "candidateMinCoverage",
+    ].forEach((id) => {
+      $(`#${id}`).addEventListener("input", renderCandidateSummary);
+      $(`#${id}`).addEventListener("change", renderCandidateSummary);
+    });
+
+    $("#trackSelectedCandidatesButton").addEventListener("click", trackSelectedCandidatesWithApi);
 
     $("#trackList").addEventListener("click", (event) => {
       const editButton = event.target.closest("[data-track-edit]");
@@ -4538,6 +4897,9 @@ const MotionJSONUI = (() => {
       "maxObjects",
       "modelName",
       "outputMode",
+      "discoveryQualityPreset",
+      "traceEverythingMode",
+      "traceEverythingAck",
       "textPrompt",
       "classList",
       "externalMaskDir",
@@ -4602,14 +4964,18 @@ const MotionJSONUI = (() => {
     containedVideoRect,
     correctionDiagnosticMessages,
     correctionResponseMessage,
+    filterReviewCandidates,
     normalizeCorrectionState,
+    objectDiscoveryConfig,
     mapClientPointToVideo,
     normalizePrompt,
     parseCsv,
     parseKeyframes,
+    reviewCandidates,
     safeLocalContentUrl,
     slugObjectId,
     trackFrameForDisplay,
+    trackSelectedPayload,
   };
 
   globalThis.MotionJSONUI = publicApi;

@@ -22,7 +22,8 @@
         <section class="sidebar-section">
           <p class="section-kicker">Choose a goal</p>
           <nav class="goal-list" aria-label="Extraction wizard presets">
-            <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Trace one object</button>
+            <button class="goal is-active" type="button" data-preset="auto_object_proposals" aria-pressed="true" aria-current="step">Discover objects</button>
+            <button class="goal" type="button" data-preset="trace_one_object" aria-pressed="false">Trace one object</button>
             <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
             <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
             <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
@@ -40,6 +41,7 @@
             <label>
               <span>Default goal</span>
               <select id="preferenceDefaultGoal">
+                <option value="auto_object_proposals">Discover objects</option>
                 <option value="trace_one_object">Trace one object</option>
                 <option value="text_detector">Find objects from text</option>
                 <option value="class_detector">Find known classes</option>
@@ -211,7 +213,7 @@
                 <h2>Extraction settings</h2>
                 <p class="panel-note">Mock/no-model is the safe default. Hosted or heavy providers stay gated by diagnostics.</p>
               </div>
-              <span id="presetSummary" class="status-chip is-neutral">Trace one object</span>
+              <span id="presetSummary" class="status-chip is-neutral">Discover objects</span>
             </div>
 
             <div id="providerWarning" class="warning-box" role="status"></div>
@@ -224,6 +226,14 @@
               <label>
                 <span>Object ID</span>
                 <input id="objectId" type="text" value="object_0" />
+              </label>
+              <label id="qualityPresetField">
+                <span>Discovery quality</span>
+                <select id="discoveryQualityPreset">
+                  <option value="clean">Clean</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="maximum_recall">Maximum recall</option>
+                </select>
               </label>
               <label id="textPromptField">
                 <span>Text prompt</span>
@@ -262,6 +272,20 @@
                 </select>
               </label>
             </div>
+
+            <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel">
+              <summary>Trace Everything</summary>
+              <div class="trace-everything-controls">
+                <label class="track-toggle">
+                  <input id="traceEverythingMode" type="checkbox" />
+                  <span>Use expert noisy discovery</span>
+                </label>
+                <label class="track-toggle">
+                  <input id="traceEverythingAck" type="checkbox" />
+                  <span>I understand this can be slower, noisier, and review-required</span>
+                </label>
+              </div>
+            </details>
 
             <details class="advanced-panel">
               <summary>Advanced parameters</summary>
@@ -416,6 +440,36 @@
             <div class="panel-heading compact-heading">
               <h2>Candidates</h2>
               <span id="candidateSummaryStatus" class="status-chip is-muted">Not loaded</span>
+            </div>
+            <div class="candidate-controls" aria-label="Candidate filters">
+              <label class="track-toggle">
+                <input id="candidateFilterSelected" type="checkbox" />
+                <span>selected</span>
+              </label>
+              <label class="track-toggle">
+                <input id="candidateFilterStable" type="checkbox" />
+                <span>stable</span>
+              </label>
+              <label class="track-toggle">
+                <input id="candidateFilterMoving" type="checkbox" />
+                <span>moving</span>
+              </label>
+              <label class="track-toggle">
+                <input id="candidateFilterNotBackground" type="checkbox" checked />
+                <span>not background</span>
+              </label>
+              <label class="track-toggle">
+                <input id="candidateFilterNotDuplicate" type="checkbox" checked />
+                <span>not duplicate</span>
+              </label>
+              <label class="compact-field">
+                <span>coverage</span>
+                <input id="candidateMinCoverage" type="number" min="0" max="1" step="0.05" value="0" />
+              </label>
+            </div>
+            <div class="candidate-action-row">
+              <button id="trackSelectedCandidatesButton" class="primary-action" type="button" disabled>Track selected</button>
+              <span id="candidateActionStatus" class="row-meta">No API candidates loaded.</span>
             </div>
             <div id="candidateSummaryList" class="artifact-list"></div>
           </section>

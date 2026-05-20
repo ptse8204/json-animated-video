@@ -2,6 +2,13 @@ export const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
 
 export const WIZARD_PRESETS = [
   {
+    id: "auto_object_proposals",
+    label: "Discover objects",
+    discoveryMode: "auto_object_proposals",
+    defaultMaskProvider: "mock",
+    requiredTools: ["keyframe"],
+  },
+  {
     id: "trace_one_object",
     label: "Trace one object",
     discoveryMode: "manual_prompt",
@@ -56,6 +63,9 @@ export const DEFAULT_ADVANCED = {
   textThreshold: 0.25,
   motionSensitivity: 32,
   maxObjects: 12,
+  qualityPreset: "clean",
+  traceEverythingMode: false,
+  traceEverythingAcknowledged: false,
   classPreset: "common_objects",
   simplify: 0.006,
   lowerHsv: [0, 80, 80],
@@ -129,6 +139,97 @@ export function promptToConfig(prompt, { objectId, label, frameIndex }) {
   };
 }
 
+export function objectDiscoveryConfig(input, advanced) {
+  const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || "clean";
+  const presets = {
+    clean: {
+      intent: "discover_objects_clean",
+      keyframePolicy: "scene_changes",
+      maxKeyframes: 3,
+      frameInterval: null,
+      maxCandidatesPerKeyframe: 32,
+      maxObjects: Number(advanced.maxObjects || 12),
+      minMaskArea: 96,
+      maxMaskAreaRatio: 0.45,
+      dedupeIou: 0.78,
+      stabilityThreshold: 0.86,
+      trackSelectedOnly: true,
+      trackTopCandidates: false,
+      requireExplicitCostWarning: false,
+    },
+    balanced: {
+      intent: "discover_objects_balanced",
+      keyframePolicy: "scene_changes",
+      maxKeyframes: 5,
+      frameInterval: null,
+      maxCandidatesPerKeyframe: 64,
+      maxObjects: 24,
+      minMaskArea: 64,
+      maxMaskAreaRatio: 0.6,
+      dedupeIou: 0.84,
+      stabilityThreshold: 0.78,
+      trackSelectedOnly: true,
+      trackTopCandidates: false,
+      requireExplicitCostWarning: false,
+    },
+    maximum_recall: {
+      intent: "discover_objects_maximum_recall",
+      keyframePolicy: "scene_changes",
+      maxKeyframes: 8,
+      frameInterval: 24,
+      maxCandidatesPerKeyframe: 128,
+      maxObjects: 64,
+      minMaskArea: 32,
+      maxMaskAreaRatio: 0.75,
+      dedupeIou: 0.9,
+      stabilityThreshold: 0.7,
+      trackSelectedOnly: true,
+      trackTopCandidates: false,
+      requireExplicitCostWarning: false,
+    },
+    trace_everything: {
+      intent: "trace_everything",
+      keyframePolicy: "uniform_interval",
+      maxKeyframes: 8,
+      frameInterval: 24,
+      maxCandidatesPerKeyframe: 128,
+      maxObjects: 64,
+      minMaskArea: 32,
+      maxMaskAreaRatio: 0.75,
+      dedupeIou: 0.9,
+      stabilityThreshold: 0.7,
+      trackSelectedOnly: false,
+      trackTopCandidates: true,
+      requireExplicitCostWarning: true,
+    },
+  };
+  const preset = presets[qualityPreset] || presets.clean;
+  return {
+    mock: true,
+    qualityPreset,
+    intent: preset.intent,
+    providerPreference: "auto",
+    keyframePolicy: preset.keyframePolicy,
+    maxKeyframes: preset.maxKeyframes,
+    frameInterval: preset.frameInterval,
+    maxCandidatesPerKeyframe: preset.maxCandidatesPerKeyframe,
+    maxObjects: preset.maxObjects,
+    minMaskArea: preset.minMaskArea,
+    maxMaskAreaRatio: preset.maxMaskAreaRatio,
+    dedupeIou: preset.dedupeIou,
+    stabilityThreshold: preset.stabilityThreshold,
+    motionScoreWeight: 0.35,
+    rejectWholeFrame: true,
+    rejectBackgroundLike: true,
+    trackSelectedOnly: preset.trackSelectedOnly,
+    trackTopCandidates: preset.trackTopCandidates,
+    requireReview: true,
+    writeRejectedCandidates: true,
+    requireExplicitCostWarning: preset.requireExplicitCostWarning,
+    ...(qualityPreset === "trace_everything" ? { costWarningAcknowledged: advanced.traceEverythingAcknowledged === true } : {}),
+  };
+}
+
 export function buildRunConfig(input) {
   const preset = WIZARD_PRESETS.find((item) => item.id === input.presetId) || WIZARD_PRESETS[0];
   const advanced = { ...DEFAULT_ADVANCED, ...(input.advanced || {}) };
@@ -147,6 +248,9 @@ export function buildRunConfig(input) {
   );
   const discoveryConfig = {};
   const maxCandidates = Number(input.discoveryMaxCandidates || advanced.maxObjects || 12);
+  if (preset.id === "auto_object_proposals") {
+    Object.assign(discoveryConfig, objectDiscoveryConfig(input, advanced));
+  }
   if (preset.id === "text_detector") {
     discoveryConfig.mock = true;
     if (input.discoveryText) {

@@ -134,7 +134,8 @@ def test_phase11a_static_ui_surfaces_candidate_summary_review():
         'id="candidateSummaryStatus"',
         'id="candidateSummaryList"',
         "renderCandidateSummary",
+        "review?.candidates",
         "state.jobReview?.candidateSummary",
-        "Candidate proposals appear here after discovery writes candidates.json.",
+        "API candidates appear here after discovery writes candidates.json.",
     ):
         assert marker in combined

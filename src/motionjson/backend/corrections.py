@@ -1496,7 +1496,8 @@ def _apply_review_track_edit(track: dict[str, Any], edit: dict[str, Any]) -> Non
         _append_track_warning(track, "deleted_by_user")
     elif track.get("exportIncluded") is False:
         track["exportStatus"] = edit.get("exportStatus") or (track.get("exportStatus") if not has_export_edit else None) or "excluded"
-        _append_track_warning(track, "excluded_from_export")
+        if has_export_edit or re.search(r"deleted|excluded|rejected|failed|fallback_raster", str(track.get("exportStatus") or "")):
+            _append_track_warning(track, "excluded_from_export")
     if track.get("visible") is False:
         _append_track_warning(track, "hidden_by_user")
 

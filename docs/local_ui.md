@@ -171,6 +171,14 @@ preview overlays under `discovery/`; once those files are registered as
 artifacts, the review route resolves their relative paths into
 `thumbnailArtifactId` and `maskPreviewArtifactId`.
 
+The right-rail candidate browser renders `review.candidates` from this API
+payload. It supports Clean, Balanced, and Maximum Recall run presets, filters
+for selected/stable/moving/non-background/non-duplicate candidates, a minimum
+coverage threshold, and a Track selected action that posts selected candidate
+IDs back to the backend. The Trace Everything control is isolated in an
+advanced disclosure and requires explicit acknowledgement before its config can
+validate.
+
 `POST /api/jobs/JOB_ID/track-selected` accepts `candidateIds`,
 `trackMode: "selected_only"`, and `exportReviewRequired`. The backend validates
 that each ID belongs to the job's candidate artifact, rejects ignored/rejected

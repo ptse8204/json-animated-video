@@ -65,6 +65,13 @@ warnings, rejection reasons, artifact preview IDs when available, and an
 aggregate `candidateSummary`. UI code should render these API records instead
 of fabricating final candidates or tracks.
 
+The Local UI's default goal is `auto_object_proposals` with the Clean preset.
+Balanced and Maximum Recall are explicit preset choices in the run config, and
+Trace Everything is kept behind an expert disclosure with cost/noise
+acknowledgement. The candidate browser uses API-returned thumbnails, mask
+previews, scores, rejection reasons, and review status; synthetic tracks are
+only used as non-exportable in-flight demos before API results exist.
+
 Selected-candidate tracking is API-owned. `POST /api/jobs/JOB_ID/track-selected`
 or `POST /v1/jobs/JOB_ID/track-selected` validates selected candidate IDs
 against `candidates.json`, tracks only those candidate masks, and writes updated
