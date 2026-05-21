@@ -28,15 +28,25 @@ It does not install SAM2, detector weights, or hosted provider credentials.
 GitHub's Codespaces docs explain that localhost URLs printed by an app can be
 forwarded and opened from the browser.
 
-## Google Colab CLI demo
+## Google Colab notebooks
 
-Colab is suitable for short CLI demos and inspecting generated files. It is not
-the right place to host a public long-running MotionJSON web service.
+Colab is suitable for short interactive demos and inspecting generated files.
+It is not the right place to host a public long-running MotionJSON web service.
 
-Use the checked-in notebook when you want a ready Colab surface:
-[Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb).
+Use the checked-in notebooks when you want ready Colab surfaces:
 
-Notebook cells can use:
+- [Colab local UI demo](../notebooks/colab_ui_local_demo.ipynb): launches
+  `python3 -m motionjson.cli ui --no-open --mock` in the notebook runtime,
+  displays `/ui/` through Colab's port proxy, and provides the generated
+  red-ball video path for UI registration.
+- [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb): runs
+  the compact threshold extraction, validation, and ZIP download path.
+
+The UI notebook is intended for active, short, notebook-driven demos. Keep it in
+mock/no-model mode first, avoid secrets in shared notebooks, and prefer
+Codespaces or a local machine for sustained UI sessions.
+
+Notebook cells can still use the manual CLI path:
 
 ```bash
 !git clone https://github.com/ptse8204/json-animated-video.git

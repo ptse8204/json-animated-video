@@ -1,0 +1,15 @@
+# MotionJSON Colab notebooks
+
+These notebooks are designed for short, interactive MotionJSON demos in Google
+Colab. Keep the first run CPU/no-model unless you intentionally configure
+optional providers.
+
+| Notebook | Purpose | Safe first path |
+| --- | --- | --- |
+| `colab_ui_local_demo.ipynb` | Launches the local MotionJSON UI inside a Colab runtime using Colab's notebook port proxy. | Mock/no-model local UI with a generated red-ball video path to register. |
+| `colab_red_ball_cli_demo.ipynb` | Existing compact CLI demo that extracts, validates, and downloads red-ball output. | Threshold provider, CPU-only. |
+
+Colab is useful for learning and short demos. It is not a production hosting
+surface for a long-running public MotionJSON UI. Do not paste private videos,
+provider API keys, hosted segmentation credentials, SAM checkpoints, or other
+secrets into shared notebooks.

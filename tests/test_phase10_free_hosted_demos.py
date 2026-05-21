@@ -32,6 +32,7 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
     for expected in [
         "https://github.com/codespaces/badge.svg",
         "https://codespaces.new/ptse8204/json-animated-video",
+        "notebooks/colab_ui_local_demo.ipynb",
         "notebooks/colab_red_ball_cli_demo.ipynb",
         "spaces/huggingface/README.md",
         "no paid GPU",
@@ -40,10 +41,13 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
         assert expected in readme
 
     for expected in [
+        "../notebooks/colab_ui_local_demo.ipynb",
         "../notebooks/colab_red_ball_cli_demo.ipynb",
         "../spaces/huggingface/README.md",
         "CPU/mock/no-model",
         "public long-running MotionJSON web service",
+        "motionjson.cli ui --no-open --mock",
+        "Colab's port proxy",
         "Free instances may reset disks",
         "provider credentials",
     ]:
@@ -71,6 +75,40 @@ def test_colab_notebook_is_valid_cpu_cli_demo() -> None:
     assert "provider credentials" in joined
     assert "SAM2 checkpoints" in joined
     assert "OPENROUTER_API_KEY" not in joined
+
+
+def test_colab_ui_notebook_is_valid_mock_local_ui_demo() -> None:
+    notebook = json.loads(read("notebooks/colab_ui_local_demo.ipynb"))
+    joined = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert notebook["nbformat"] == 4
+    assert "https://github.com/ptse8204/json-animated-video.git" in joined
+    assert "sys.executable" in joined
+    assert "pip\", \"install\", \"-e\", \".[ui]\"" in joined
+    assert "examples/make_demo_video.py" in joined
+    assert "backend\", \"diagnostics\", \"--text\"" in joined
+    assert "motionjson.cli" in joined
+    assert "\"ui\"" in joined
+    assert "\"--no-open\"" in joined
+    assert "\"--mock\"" in joined
+    assert "\"127.0.0.1\"" in joined
+    assert "output.serve_kernel_port_as_iframe" in joined
+    assert "output.serve_kernel_port_as_window" in joined
+    assert "Demo video path to register in the UI" in joined
+    assert "long-running/public UI hosting" in joined
+    assert "provider credentials" in joined
+    assert "hosted-service secrets" in joined
+    assert "OPENROUTER_API_KEY" not in joined
+    assert "ngrok" not in joined.lower()
+    assert "ZipFile" not in joined
+    assert "files.download" not in joined
+    assert "archive.write" not in joined
+    assert "workspace_zip" not in joined
+    assert "secret_json" not in joined
+    assert all(not cell.get("outputs") for cell in notebook["cells"])
 
 
 def test_huggingface_space_plan_is_cpu_basic_no_secret_no_gpu() -> None:

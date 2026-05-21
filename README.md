@@ -184,12 +184,22 @@ installs Python and Node dependencies after the container starts; then use the
 forwarded UI port from the Codespaces Ports panel. The full low-install guide
 is [docs/run_free_instances.md](docs/run_free_instances.md).
 
-### Google Colab CLI demo
+### Google Colab notebooks
 
-Colab is useful for short CLI demos, not for hosting a long-running public web
-service. The intended path is clone, install CPU dependencies, run the red-ball
-demo, and inspect generated files. Use the checked-in
-[Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb).
+Colab is useful for short interactive demos and generated-file inspection. It
+is not the right place to host a long-running public MotionJSON web service.
+Use the checked-in notebooks for the safe first paths:
+
+- [Colab local UI notebook](notebooks/colab_ui_local_demo.ipynb): clones the
+  repo, installs the lightweight UI extra, creates the deterministic red-ball
+  video, runs provider diagnostics, starts `motionjson ui --no-open --mock`,
+  and displays `/ui/` through Colab's notebook port proxy.
+- [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb): runs
+  the compact CPU/no-model threshold extraction, validation, and ZIP download
+  path.
+
+Keep shared notebooks free of private videos, provider credentials, API keys,
+SAM checkpoints, hosted-service secrets, and other sensitive local artifacts.
 
 ### Hugging Face Space demo plan
 

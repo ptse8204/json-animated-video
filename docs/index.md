@@ -12,7 +12,7 @@ SAM2, CUDA, detector weights, hosted services, or provider credentials.
 2. [Run locally](run_local.md) gives copy-paste script and manual commands for
    the mock UI, red-ball CLI demo, backend API, Docker, and cleanup.
 3. [Run on free or low-install instances](run_free_instances.md) covers
-   Codespaces, Colab CLI demos, and the Hugging Face Space demo plan.
+   Codespaces, Colab UI/CLI demos, and the Hugging Face Space demo plan.
 4. [Troubleshooting](troubleshooting.md) explains common setup, provider, bad
    mask, and raster-only failures.
 

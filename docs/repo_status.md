@@ -34,7 +34,7 @@ remains optional, environment-dependent, or future work.
 | Trace Everything safeguards | Trace Everything remains expert/experimental, requires explicit acknowledgement, stays capped, writes rejected candidates, and blocks export until review. |
 | Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, troubleshooting links, and current launch risks. `docs/index.md` links first-run, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
 | Screenshot and demo assets | Real local mock-UI screenshots and deterministic red-ball preview/GIF assets exist under `docs/assets/`, with regeneration commands in `docs/assets/README_ASSETS.md`. |
-| Free and low-install run paths | Codespaces, Colab CLI demo, and Hugging Face Space planning docs exist. The Colab path is a checked-in notebook; Hugging Face remains a documented plan, not a production hosted service. |
+| Free and low-install run paths | Codespaces, Colab UI and CLI demos, and Hugging Face Space planning docs exist. The Colab paths are checked-in notebooks; Hugging Face remains a documented plan, not a production hosted service. |
 | License metadata | Root `LICENSE`, Python project metadata, and npm workspace/package metadata declare Apache-2.0. Generated asset rights still depend on source-media rights and recorded export metadata. |
 | Advanced Phase 11 slices | Text-guided mock discovery, automatic proposal mocks, motion-only discovery, detector class presets, export quality routing, rights lineage warnings, and local Asset Library workflows are implemented with CPU/mock tests and phase reports. |
 | OD roadmap reports | `docs/roadmap/phase-od-00-report.md` through `docs/roadmap/phase-od-14-report.md` record the API-first object discovery work. |
@@ -46,7 +46,7 @@ remains optional, environment-dependent, or future work.
 | --- | --- | --- |
 | Generated output policy | `out/demo/**` is intentionally tracked as the small runtime/web demo; `.gitignore` ignores new generated `out/*` runs, `.motionjson/`, `output/`, local databases, and env files while allowing the tracked demo exception. | New generated assets should be committed only when they are deterministic, documented, small, and required by tests or public docs. |
 | Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available, and `npm run ui:layout` captures the Local UI responsive matrix for layout phases. | CI has static shell and docs asset checks; full screenshot refresh and release-specific layout matrices remain local/docs maintenance commands. |
-| Hosted demos | Codespaces and Colab CLI paths are documented and low-install. Hugging Face Space scope is specified. | No public Space is shipped or operated from this repository snapshot. |
+| Hosted demos | Codespaces and Colab UI/CLI paths are documented and low-install. Hugging Face Space scope is specified. | No public Space is shipped or operated from this repository snapshot. |
 | Release tag | Release notes, checklist, final QA report, final audit, and Apache-2.0 license metadata exist. | No signed release tag exists in this repository snapshot. Complete the release checklist before publishing a release candidate. |
 
 ## Planned Or Not Bundled By Default
