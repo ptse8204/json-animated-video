@@ -57,6 +57,23 @@ model/provider mode, prompt needs, review gate, and next steps. The generated
 `ExtractionRunConfig` JSON remains available under Advanced for CLI and
 developer users, but it is no longer the default explanation of what will run.
 
+## Model Setup Wizard
+
+The main workspace includes a nontechnical Mode and model setup panel before
+the extraction controls. It lists the safe `fake-local-planner` first, then
+hosted planning options such as `openai-planner` and the settings-only
+`openrouter-planner`. The local planner is selectable without credentials and
+its test action performs a no-network readiness check.
+
+Hosted planner cards show missing-key, settings-only, or ready status in plain
+language before the user opens the advanced Provider settings rail. The setup
+form saves model choice, optional base URL, API key replacement, and hosted
+cost/privacy opt-in through `/api/provider-settings`; browser responses never
+echo raw keys. `POST /api/model-providers/PROVIDER_ID/test` checks saved
+server-side settings without making a hosted network call. A hosted model run
+still requires the later per-run `allowNetwork` and cost/privacy
+acknowledgement payload.
+
 ## Model Planning Connector Contract
 
 The Local UI exposes a server-side model planning contract for future
@@ -297,10 +314,12 @@ Provider settings are stored in the selected local SQLite database for the
 reserved Local UI user. Raw keys are never returned by `/api/provider-settings`,
 `/api/capabilities`, validation responses, screenshots, or error messages.
 Environment variables take precedence over local UI settings for headless/CLI
-work. Saved hosted keys are currently settings-only for diagnostics; the local
-worker still runs only deterministic providers until runtime provider routing
-is explicitly wired. See [Provider API keys](security/api_keys.md) for storage,
-redaction, deletion, and hosted-provider guidance.
+work. Saved hosted keys feed server-side model connector readiness and tests;
+the OpenAI planning connector still requires explicit per-run hosted
+confirmation, and the local extraction worker continues to run only
+deterministic providers until runtime extraction routing is explicitly wired.
+See [Provider API keys](security/api_keys.md) for storage, redaction, deletion,
+and hosted-provider guidance.
 
 ## Product Shell
 

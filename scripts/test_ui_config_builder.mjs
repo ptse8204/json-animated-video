@@ -9,6 +9,77 @@ const ui = globalThis.MotionJSONUI;
 assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
+assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
+
+const sortedModelProviders = ui.modelConnectorsForSetup({
+  providers: [
+    { id: "openrouter-planner", name: "OpenRouter" },
+    { id: "fake-local-planner", name: "Mock local" },
+    { id: "openai-planner", name: "OpenAI" },
+    { id: "unrelated", name: "Unrelated" },
+  ],
+});
+assert.deepEqual(sortedModelProviders.map((provider) => provider.id), ["fake-local-planner", "openai-planner", "openrouter-planner"]);
+
+const localModelSummary = ui.modelSetupProviderSummary({
+  id: "fake-local-planner",
+  name: "Mock local planner",
+  hostedCallsRequired: false,
+  readiness: { status: "ready", runnable: true, networkAttempted: false },
+  estimatedCost: { label: "Free local" },
+});
+assert.equal(localModelSummary.tone, "ready");
+assert.match(localModelSummary.message, /No API key/);
+
+const hostedMissingSummary = ui.modelSetupProviderSummary(
+  { id: "openai-planner", name: "OpenAI planner", hostedCallsRequired: true, readiness: { status: "missing_key" } },
+  { id: "openai", locality: "hosted", cost: { label: "Provider billed" }, privacy: "Text prompts are sent to OpenAI after opt-in." },
+);
+assert.equal(hostedMissingSummary.tone, "bad");
+assert.equal(hostedMissingSummary.action, "Add key");
+
+const hostedWarningSummary = ui.modelSetupProviderSummary(
+  {
+    id: "openai-planner",
+    name: "OpenAI planner",
+    hostedCallsRequired: true,
+    readiness: { status: "hosted_opt_in_required", configured: true, hostedCallsAllowed: false },
+  },
+  { id: "openai", locality: "hosted", cost: { label: "Provider billed" } },
+);
+assert.equal(hostedWarningSummary.tone, "warn");
+assert.equal(hostedWarningSummary.action, "Confirm");
+
+const hostedReadySummary = ui.modelSetupProviderSummary(
+  {
+    id: "openai-planner",
+    name: "OpenAI planner",
+    hostedCallsRequired: true,
+    readiness: { status: "ready", configured: true, runnable: true, hostedCallsAllowed: true },
+  },
+  { id: "openai", locality: "hosted", cost: { label: "Provider billed" } },
+);
+assert.equal(hostedReadySummary.tone, "ready");
+assert.equal(hostedReadySummary.action, "Test setup");
+
+const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {
+  selectedModel: " gpt-5.4-mini ",
+  customModelId: " ",
+  baseUrl: " https://api.openai.com/v1 ",
+  allowHosted: true,
+  apiKey: " model-setup-placeholder ",
+});
+assert.deepEqual(modelSetupPayload, {
+  providerId: "openai",
+  selectedModel: "gpt-5.4-mini",
+  customModelId: "",
+  baseUrl: "https://api.openai.com/v1",
+  endpoint: "",
+  allowHosted: true,
+  apiKey: "model-setup-placeholder",
+});
+const noSecretPayload = ui.modelSetupPayloadFromValues("openai", { selectedModel: "gpt-5.4-mini", apiKey: " " });
+assert.equal(Object.hasOwn(noSecretPayload, "apiKey"), false);
 
 assert.equal(ui.safeLocalContentUrl("/api/videos/asset_123/content"), "/api/videos/asset_123/content");
 assert.equal(ui.safeLocalContentUrl("/api/artifacts/export_123/content?download=1"), "/api/artifacts/export_123/content?download=1");
@@ -519,6 +590,7 @@ console.log(
         "api-review-timeline",
         "review-track-gating",
         "correction-state",
+        "model-setup-flow",
         "python-config-validation",
       ],
     },

@@ -52,6 +52,7 @@ const MotionJSONUI = (() => {
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external"]);
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
+  const MODEL_SETUP_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
     "final_render_mp4",
@@ -189,6 +190,7 @@ const MotionJSONUI = (() => {
     runDefaults: null,
     exportFormats: null,
     providerSettings: null,
+    modelProviders: null,
     workspace: null,
     commercialReadiness: null,
     projects: [],
@@ -214,6 +216,9 @@ const MotionJSONUI = (() => {
     selectedLibraryCollectionId: "",
     libraryStatus: "Not loaded",
     importStatus: "",
+    selectedModelSetupProviderId: "fake-local-planner",
+    modelSetupMessage: "",
+    modelSetupTone: "neutral",
     selectedCorrectionTrackId: "",
     mergeSelection: new Set(),
     candidateSelection: {},
@@ -970,6 +975,140 @@ const MotionJSONUI = (() => {
   function providerEffectiveModel(provider) {
     if (!provider) return "";
     return provider.effectiveModel || provider.settings?.customModelId || provider.settings?.selectedModel || provider.defaultModel || "";
+  }
+
+  function modelConnectorsForSetup(payload = state.modelProviders) {
+    const providers = asArray(payload?.providers);
+    const order = new Map(MODEL_SETUP_PROVIDER_ORDER.map((id, index) => [id, index]));
+    return providers
+      .filter((provider) => MODEL_SETUP_PROVIDER_ORDER.includes(provider.id))
+      .sort(
+        (a, b) =>
+          (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99) ||
+          String(a.label || a.name || a.id).localeCompare(String(b.label || b.name || b.id)),
+      );
+  }
+
+  function modelConnectorById(providerId) {
+    return modelConnectorsForSetup().find((provider) => provider.id === providerId) || null;
+  }
+
+  function modelSetupProviderSummary(provider, settingsProvider = null) {
+    if (!provider) {
+      return {
+        label: "Unavailable",
+        status: "unavailable",
+        tone: "bad",
+        message: "Model provider information has not loaded yet.",
+        cost: "not reported",
+        privacy: "not reported",
+        action: "Refresh",
+      };
+    }
+    const readiness = provider.readiness || {};
+    const settingsReadiness = settingsProvider?.readiness || readiness.settingsProvider?.readiness || {};
+    const hosted = Boolean(provider.hostedCallsRequired || readiness.hostedCallsRequired || settingsProvider?.locality === "hosted");
+    const planned = Boolean(readiness.plannedConnector || provider.implemented === false);
+    const configured = Boolean(readiness.configured || settingsReadiness.configured);
+    const runnable = readiness.runnable === true;
+    const status = readiness.status || settingsReadiness.status || (hosted ? "not_configured" : "ready");
+    const cost = provider.estimatedCost?.label || settingsProvider?.cost?.label || (hosted ? "Provider billed" : "Free local");
+    const privacy =
+      provider.privacy?.summary ||
+      settingsProvider?.privacy ||
+      (hosted ? "Hosted provider can receive redacted planning context only after confirmation." : "Frames and prompts stay on this machine.");
+
+    if (!hosted) {
+      return {
+        label: "Mock/local",
+        status: "ready",
+        tone: "ready",
+        message: "Ready now. No API key, hosted call, or model install is required for planning checks.",
+        cost,
+        privacy,
+        action: "Use safely",
+      };
+    }
+    if (/missing|not_configured/.test(String(status))) {
+      return {
+        label: "Needs setup",
+        status,
+        tone: "bad",
+        message: readiness.message || settingsReadiness.message || "Paste a server-side API key before this hosted planner can be used.",
+        cost,
+        privacy,
+        action: "Add key",
+      };
+    }
+    if (/invalid/.test(String(status))) {
+      return {
+        label: "Invalid setup",
+        status,
+        tone: "bad",
+        message: readiness.message || settingsReadiness.message || "The saved credential format is invalid. Replace it with a valid key.",
+        cost,
+        privacy,
+        action: "Fix key",
+      };
+    }
+    if (/hosted|confirmation/.test(String(status)) && !readiness.hostedCallsAllowed) {
+      return {
+        label: "Confirm hosted use",
+        status,
+        tone: "warn",
+        message: readiness.message || settingsReadiness.message || "Hosted calls remain disabled until cost and privacy are confirmed.",
+        cost,
+        privacy,
+        action: "Confirm",
+      };
+    }
+    if (planned || /settings_only|planned/.test(String(status))) {
+      return {
+        label: "Settings saved",
+        status,
+        tone: "warn",
+        message:
+          readiness.message ||
+          "Settings are saved, but this hosted planning connector is not enabled for model runs yet. No hosted network call will be made.",
+        cost,
+        privacy,
+        action: "Settings only",
+      };
+    }
+    if (configured && runnable) {
+      return {
+        label: "Ready",
+        status: status || "ready",
+        tone: "ready",
+        message: readiness.message || "Configured and ready. A hosted run still requires per-run confirmation before network access.",
+        cost,
+        privacy,
+        action: "Test setup",
+      };
+    }
+    return {
+      label: "Check setup",
+      status,
+      tone: "warn",
+      message: readiness.message || settingsReadiness.message || "Review settings before using this hosted planner.",
+      cost,
+      privacy,
+      action: "Review",
+    };
+  }
+
+  function modelSetupPayloadFromValues(providerId, values = {}) {
+    const payload = {
+      providerId,
+      selectedModel: String(values.selectedModel || "").trim(),
+      customModelId: String(values.customModelId || "").trim(),
+      baseUrl: String(values.baseUrl || "").trim(),
+      endpoint: String(values.endpoint || "").trim(),
+      allowHosted: Boolean(values.allowHosted),
+    };
+    const apiKey = String(values.apiKey || "").trim();
+    if (apiKey) payload.apiKey = apiKey;
+    return payload;
   }
 
   function selectedCapabilityWarnings(config, $) {
@@ -1974,7 +2113,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted", "sam3-concept", "sam3-exemplar", "sam3-auto-masks", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
+      const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted", "sam3-concept", "sam3-exemplar", "sam3-auto-masks", "openai", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
       const providers = asArray(state.capabilities.providers)
         .filter((provider) => priority.has(provider.name))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -2015,6 +2154,165 @@ const MotionJSONUI = (() => {
       status.textContent = configuredHosted ? `${configuredHosted} hosted configured` : "Mock default";
       status.className = `status-chip ${configuredHosted ? "is-warn" : "is-ready"}`;
       list.innerHTML = providers.map(renderProviderSettingsRow).join("");
+    }
+
+    function renderModelSetup() {
+      const status = $("#modelSetupStatus");
+      const choices = $("#modelSetupChoices");
+      const detail = $("#modelSetupDetail");
+      if (!status || !choices || !detail) return;
+
+      if (!state.modelProviders) {
+        status.textContent = state.errors.modelProviders ? "Unavailable" : "Not loaded";
+        status.className = `status-chip ${state.errors.modelProviders ? "is-bad" : "is-muted"}`;
+        choices.innerHTML = "";
+        detail.innerHTML = `<div class="${state.errors.modelProviders ? "error-state" : "empty-state"}">${escapeHtml(state.errors.modelProviders || "Model provider information has not loaded yet.")}</div>`;
+        return;
+      }
+
+      const providers = modelConnectorsForSetup();
+      if (!providers.length) {
+        status.textContent = "No planners";
+        status.className = "status-chip is-bad";
+        choices.innerHTML = "";
+        detail.innerHTML = `<div class="error-state">No planning providers were reported by the local API.</div>`;
+        return;
+      }
+
+      if (!providers.some((provider) => provider.id === state.selectedModelSetupProviderId)) {
+        state.selectedModelSetupProviderId = state.modelProviders.defaultProviderId || providers[0].id;
+      }
+      const selected = modelConnectorById(state.selectedModelSetupProviderId) || providers[0];
+      const selectedSettingsProvider = selected.readiness?.settingsProviderId ? providerSettingsById(selected.readiness.settingsProviderId) : null;
+      const selectedSummary = modelSetupProviderSummary(selected, selectedSettingsProvider);
+      status.textContent = selectedSummary.label;
+      status.className = `status-chip is-${selectedSummary.tone}`;
+
+      choices.innerHTML = providers
+        .map((provider) => {
+          const settingsProvider = provider.readiness?.settingsProviderId ? providerSettingsById(provider.readiness.settingsProviderId) : null;
+          const summary = modelSetupProviderSummary(provider, settingsProvider);
+          const active = provider.id === selected.id;
+          const hosted = Boolean(provider.hostedCallsRequired || provider.readiness?.hostedCallsRequired || settingsProvider?.locality === "hosted");
+          const configuredText = summary.status === "ready" || provider.readiness?.configured ? "configured" : "setup needed";
+          return `
+            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(provider.id)}" aria-pressed="${active}">
+              <span class="model-choice-topline">
+                <strong>${escapeHtml(provider.label || provider.name || provider.id)}</strong>
+                ${statusChip(summary.label, summary.status, summary.tone === "ready")}
+              </span>
+              <span class="model-choice-copy">${escapeHtml(summary.message)}</span>
+              <span class="model-choice-meta">${escapeHtml(hosted ? `${summary.cost} - ${configuredText}` : "No key required - local/mock")}</span>
+            </button>
+          `;
+        })
+        .join("");
+
+      detail.innerHTML = renderModelSetupDetail(selected, selectedSettingsProvider, selectedSummary);
+    }
+
+    function renderModelSetupDetail(provider, settingsProvider, summary) {
+      const hosted = Boolean(provider.hostedCallsRequired || provider.readiness?.hostedCallsRequired || settingsProvider?.locality === "hosted");
+      const resultTone = state.modelSetupTone || summary.tone || "neutral";
+      const resultMessage = state.modelSetupMessage || summary.message;
+      const readiness = provider.readiness || {};
+      const readinessDetails = [
+        summary.cost,
+        hosted ? "hosted planner" : "mock/local planner",
+        readiness.networkAttempted ? "network attempted" : "no network check",
+        readiness.effectiveModel || settingsProvider?.effectiveModel || provider.defaultModel,
+      ].filter(Boolean);
+
+      if (!hosted) {
+        return `
+          <div class="model-setup-summary">
+            <div class="model-setup-copy">
+              <h3>${escapeHtml(provider.label || provider.name || "Mock planner")}</h3>
+              <p>${escapeHtml(summary.message)}</p>
+              <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
+            </div>
+            <div class="model-setup-actions">
+              <button type="button" data-model-setup-action="test">Test setup</button>
+            </div>
+          </div>
+          <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status">${escapeHtml(resultMessage)}</div>
+        `;
+      }
+
+      const settings = settingsProvider?.settings || {};
+      const credentials = asArray(settingsProvider?.credentials);
+      const modelOptions = asArray(settingsProvider?.modelOptions);
+      const selectedModel = settings.selectedModel || settingsProvider?.defaultModel || provider.defaultModel || "";
+      const customHidden = selectedModel !== "__custom__";
+      const credentialSummary = credentials.length
+        ? credentials
+            .map((credential) => {
+              const display = credential.configured ? `${credential.source}: ${credential.display || "configured"}` : `missing ${credential.env || credential.name}`;
+              return `<span class="row-meta">${escapeHtml(credential.label || credential.name)} - ${escapeHtml(display)}</span>`;
+            })
+            .join("")
+        : `<span class="row-meta">No API key required.</span>`;
+      const baseUrlField = settingsProvider?.baseUrlField
+        ? `<label>
+            <span>${escapeHtml(settingsProvider.baseUrlField.label || "Base URL")}</span>
+            <input data-model-setup-field="baseUrl" type="url" value="${escapeAttribute(settings.baseUrl || "")}" placeholder="${escapeAttribute(settingsProvider.baseUrlField.env || "")}" />
+          </label>`
+        : "";
+      const endpointField = settingsProvider?.endpointField
+        ? `<label>
+            <span>${escapeHtml(settingsProvider.endpointField.label || "Endpoint URL")}</span>
+            <input data-model-setup-field="endpoint" type="url" value="${escapeAttribute(settings.endpoint || "")}" placeholder="${escapeAttribute(settingsProvider.endpointField.env || "")}" />
+          </label>`
+        : "";
+      const credentialField = credentials.some((credential) => credential.name === "api_key")
+        ? `<label>
+            <span>API key</span>
+            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || provider.label || provider.name)} API key" />
+          </label>`
+        : "";
+
+      return `
+        <div class="model-setup-summary">
+          <div class="model-setup-copy">
+            <h3>${escapeHtml(provider.label || provider.name || "Hosted planner")}</h3>
+            <p>${escapeHtml(summary.message)}</p>
+            <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
+          </div>
+          <div class="model-setup-credentials">${credentialSummary}</div>
+        </div>
+        <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status">${escapeHtml(resultMessage)}</div>
+        <div class="warning-box is-warn">${escapeHtml(summary.privacy)} Hosted planning is reasoning only; it cannot segment video and every hosted run still requires a separate confirmation.</div>
+        <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || provider.readiness?.settingsProviderId || "")}">
+          <label>
+            <span>Model</span>
+            <select data-model-setup-field="selectedModel">
+              ${modelOptions
+                .map((option) => `<option value="${escapeAttribute(option.id)}" ${option.id === selectedModel ? "selected" : ""}>${escapeHtml(option.label || option.id)}</option>`)
+                .join("")}
+            </select>
+          </label>
+          ${
+            settingsProvider?.customModelAllowed
+              ? `<label class="model-setup-custom-model" ${customHidden ? "hidden" : ""}>
+                  <span>Custom model id</span>
+                  <input data-model-setup-field="customModelId" type="text" value="${escapeAttribute(settings.customModelId || "")}" />
+                </label>`
+              : ""
+          }
+          ${baseUrlField}
+          ${endpointField}
+          ${credentialField}
+          <label class="track-toggle model-hosted-toggle">
+            <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+            <span>I understand hosted calls can send redacted planning context off-device and may cost money</span>
+          </label>
+          <div class="model-setup-actions">
+            <button type="button" data-model-setup-action="save">Save setup</button>
+            <button type="button" data-model-setup-action="test">Test setup</button>
+            <button type="button" data-model-setup-action="reset">Reset</button>
+          </div>
+        </form>
+      `;
     }
 
     function renderCommercialReadiness() {
@@ -2292,6 +2590,29 @@ const MotionJSONUI = (() => {
       const key = value("[data-provider-field='apiKey']");
       if (key) payload.apiKey = key;
       return payload;
+    }
+
+    function modelSetupPayloadFromForm(form) {
+      const value = (selector) => form.querySelector(selector)?.value?.trim() || "";
+      const checked = (selector) => Boolean(form.querySelector(selector)?.checked);
+      return modelSetupPayloadFromValues(form.dataset.providerSettingsId, {
+        selectedModel: value("[data-model-setup-field='selectedModel']"),
+        customModelId: value("[data-model-setup-field='customModelId']"),
+        endpoint: value("[data-model-setup-field='endpoint']"),
+        baseUrl: value("[data-model-setup-field='baseUrl']"),
+        allowHosted: checked("[data-model-setup-field='allowHosted']"),
+        apiKey: value("[data-model-setup-field='apiKey']"),
+      });
+    }
+
+    function setModelSetupMessage(message, tone = "neutral") {
+      state.modelSetupMessage = message || "";
+      state.modelSetupTone = tone || "neutral";
+      const result = $("#modelSetupResult");
+      if (result) {
+        result.textContent = state.modelSetupMessage;
+        result.className = `model-setup-result is-${state.modelSetupTone}`;
+      }
     }
 
     async function saveProviderSettingsFromRow(row) {
@@ -4092,6 +4413,7 @@ const MotionJSONUI = (() => {
           ["commercialReadiness", "/api/commercial-readiness"],
           ["capabilities", capabilityRoute],
           ["providerSettings", "/api/provider-settings"],
+          ["modelProviders", "/api/model-providers"],
           ["runDefaults", "/api/run-config/defaults"],
           ["exportFormats", "/api/exports/formats"],
           ["projects", "/api/projects"],
@@ -4115,6 +4437,7 @@ const MotionJSONUI = (() => {
         if (key === "commercialReadiness") state.commercialReadiness = payload;
         if (key === "capabilities") state.capabilities = payload;
         if (key === "providerSettings") state.providerSettings = payload;
+        if (key === "modelProviders") state.modelProviders = payload;
         if (key === "runDefaults") state.runDefaults = payload;
         if (key === "exportFormats") state.exportFormats = payload;
         if (key === "projects") state.projects = payload?.projects || [];
@@ -4261,6 +4584,7 @@ const MotionJSONUI = (() => {
       renderWorkspace();
       renderCapabilities();
       renderProviderSettings();
+      renderModelSetup();
       renderCommercialReadiness();
       renderFirstRunChecklist();
       renderRunDefaults();
@@ -4293,10 +4617,49 @@ const MotionJSONUI = (() => {
       const workspaceGrid = document.querySelector(".workspace-grid");
       const viewerPanel = document.querySelector(".viewer-panel");
       const configPanel = document.querySelector(".config-panel");
+      const modelSetupPanel = document.querySelector("#modelSetupPanel");
       const localPathDisclosure = document.querySelector("#localPathDisclosure");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
 
-      if (capture === "first-run") {
+      if (capture.startsWith("model-setup")) {
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (rightRail) rightRail.style.display = "none";
+        if (guidedStart) guidedStart.style.display = "none";
+        if (workflowSteps) workflowSteps.style.display = "none";
+        if (workspaceGrid) workspaceGrid.style.display = "none";
+        if (modelSetupPanel) {
+          modelSetupPanel.style.display = "grid";
+          modelSetupPanel.style.maxWidth = "1040px";
+        }
+        const captureState = {
+          "model-setup": ["fake-local-planner", "", "neutral"],
+          "model-setup-local": ["fake-local-planner", "Mock/local planning is selected. No API key or hosted call is needed.", "ready"],
+          "model-setup-hosted-warning": ["openai-planner", "Hosted setup is optional. Save a key only when you are ready to allow billed provider planning.", "warn"],
+          "model-setup-missing": ["openai-planner", "Paste a server-side API key before this hosted planner can be used.", "bad"],
+          "model-setup-invalid": ["openai-planner", "openai API key is invalid or too short. Paste the key without spaces.", "bad"],
+          "model-setup-success": ["fake-local-planner", "Test setup passed. No hosted network request was made.", "ready"],
+        }[capture];
+        if (captureState) {
+          state.selectedModelSetupProviderId = captureState[0];
+          state.modelSetupMessage = captureState[1];
+          state.modelSetupTone = captureState[2];
+          renderModelSetup();
+          if (capture === "model-setup-invalid") {
+            const keyInput = document.querySelector("[data-model-setup-field='apiKey']");
+            const hostedToggle = document.querySelector("[data-model-setup-field='allowHosted']");
+            if (keyInput) keyInput.value = "bad key";
+            if (hostedToggle) hostedToggle.checked = true;
+          }
+          if (capture === "model-setup-hosted-warning" || capture === "model-setup-missing") {
+            const hostedToggle = document.querySelector("[data-model-setup-field='allowHosted']");
+            if (hostedToggle) hostedToggle.checked = capture === "model-setup-missing";
+          }
+        }
+      } else if (capture === "first-run") {
         if (shell) {
           shell.style.display = "block";
           shell.style.minHeight = "100vh";
@@ -5325,6 +5688,70 @@ const MotionJSONUI = (() => {
       }
     });
 
+    $("#modelSetupPanel").addEventListener("click", async (event) => {
+      const choice = event.target.closest("[data-model-setup-provider]");
+      if (choice) {
+        state.selectedModelSetupProviderId = choice.dataset.modelSetupProvider;
+        state.modelSetupMessage = "";
+        state.modelSetupTone = "neutral";
+        renderModelSetup();
+        return;
+      }
+
+      const button = event.target.closest("[data-model-setup-action]");
+      if (!button) return;
+      const action = button.dataset.modelSetupAction;
+      const provider = modelConnectorById(state.selectedModelSetupProviderId);
+      if (!provider) return;
+      const form = $("#modelSetupForm");
+      button.disabled = true;
+      setModelSetupMessage(`${action} in progress...`, "neutral");
+      try {
+        if (action === "save") {
+          if (!form) throw new Error("Select a hosted planner before saving setup.");
+          const response = await api("/api/provider-settings", {
+            method: "POST",
+            body: JSON.stringify(modelSetupPayloadFromForm(form)),
+          });
+          state.providerSettings = response;
+          form.querySelectorAll("[data-model-setup-field='apiKey']").forEach((input) => {
+            input.value = "";
+          });
+          state.modelSetupMessage = "Model setup saved. Test setup checks saved settings without making a hosted network call.";
+          state.modelSetupTone = "ready";
+          await refreshAll();
+        } else if (action === "test") {
+          const payload = await api(`/api/model-providers/${encodeURIComponent(provider.id)}/test`, {
+            method: "POST",
+            body: JSON.stringify({}),
+          });
+          const ready = payload.ready === true || payload.status === "ready";
+          setModelSetupMessage(payload.message || payload.status || "Model setup checked without a hosted network call.", ready ? "ready" : "warn");
+          await refreshAll();
+          setModelSetupMessage(payload.message || payload.status || "Model setup checked without a hosted network call.", ready ? "ready" : "warn");
+        } else if (action === "reset") {
+          const settingsProviderId = provider.readiness?.settingsProviderId || form?.dataset.providerSettingsId;
+          if (!settingsProviderId) throw new Error("The mock/local planner has no server-side credentials to reset.");
+          await api(`/api/provider-settings/${encodeURIComponent(settingsProviderId)}`, { method: "DELETE", body: JSON.stringify({}) });
+          state.modelSetupMessage = "Hosted model setup reset. Mock/local planning remains ready.";
+          state.modelSetupTone = "neutral";
+          await refreshAll();
+        }
+      } catch (error) {
+        setModelSetupMessage(error.message, "bad");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    $("#modelSetupPanel").addEventListener("change", (event) => {
+      const form = event.target.closest("#modelSetupForm");
+      if (!form) return;
+      const customModel = form.querySelector(".model-setup-custom-model");
+      const select = form.querySelector("[data-model-setup-field='selectedModel']");
+      if (customModel && select) customModel.hidden = select.value !== "__custom__";
+    });
+
     [
       "objectLabel",
       "objectId",
@@ -5413,6 +5840,9 @@ const MotionJSONUI = (() => {
     correctionDiagnosticMessages,
     correctionResponseMessage,
     filterReviewCandidates,
+    modelConnectorsForSetup,
+    modelSetupPayloadFromValues,
+    modelSetupProviderSummary,
     normalizeCorrectionState,
     objectDiscoveryConfig,
     mapClientPointToVideo,

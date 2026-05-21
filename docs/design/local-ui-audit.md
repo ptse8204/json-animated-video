@@ -214,3 +214,52 @@ Findings and changes:
   the layout gate across the required viewport matrix.
 - The mobile `advanced-config` state also writes a full-page screenshot so the
   raw JSON disclosure and backend local path disclosure are visible at 390px.
+
+## UI-MODEL-05 Evidence
+
+UI-MODEL-05 added a guided model setup panel to the main workspace so less
+technical users can choose mock/local planning or hosted planning before
+entering the dense Provider settings rail.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-05-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-05
+python3 scripts/capture_docs_assets.py --out-dir docs/design/screenshots/ui-model-05-docs
+```
+
+Representative captures:
+
+![UI-MODEL-05 laptop model setup hosted warning](screenshots/ui-model-05/laptop-1366-model-setup-hosted-warning.png)
+
+![UI-MODEL-05 mobile model setup invalid key full page](screenshots/ui-model-05/mobile-390-model-setup-invalid-full.png)
+
+![UI-MODEL-05 desktop model setup success](screenshots/ui-model-05/desktop-1920-model-setup-success.png)
+
+Findings and changes:
+
+- The before state only exposed model/provider setup through the right-rail
+  Provider settings list, which starts with local mask providers and requires
+  scrolling before OpenAI/OpenRouter planning is visible.
+- The after state adds a main-canvas Mode and model panel with local/mock first,
+  hosted options second, and explicit missing-key, cost/privacy, and no-network
+  test states.
+- Model setup screenshots now cover empty/default, local selected, hosted
+  warning, missing config, invalid config, and test success states across the
+  required viewport matrix.
+- Mobile model setup states also write full-page screenshots so the hosted
+  detail, warnings, fields, acknowledgement, and actions are visible at 390px.
+- The larger screenshot matrix initially exposed too-narrow model cards at
+  1366px. The grid now drops columns before cards fall below the layout gate.
+- Scout review found the hosted warning/error result and actions were too low
+  in the laptop/mobile evidence. The result now appears above the hosted form,
+  and desktop/laptop hosted fields use a compact three-column form.
+- The headless layout script now closes Chrome targets between states and waits
+  longer for capture readiness so the expanded model setup matrix can run
+  repeatably.

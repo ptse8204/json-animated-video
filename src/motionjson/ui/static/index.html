@@ -146,6 +146,19 @@
           <li><span>9</span>Export</li>
         </ol>
 
+        <section id="modelSetupPanel" class="model-setup-panel panel" aria-label="Model setup">
+          <div class="model-setup-heading">
+            <div>
+              <p class="section-kicker">Mode and model</p>
+              <h2>Choose how planning works</h2>
+              <p class="panel-note">Mock/local planning is ready without an API key. Hosted planners need a saved server-side key and a separate cost/privacy confirmation before any network call.</p>
+            </div>
+            <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
+          </div>
+          <div id="modelSetupChoices" class="model-choice-grid" aria-label="Planning model choices"></div>
+          <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
+        </section>
+
         <section class="workspace-grid">
           <article class="panel viewer-panel" aria-label="Video viewer">
             <div class="panel-heading">

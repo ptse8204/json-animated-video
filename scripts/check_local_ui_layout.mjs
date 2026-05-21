@@ -23,6 +23,12 @@ const CAPTURE_STATES = [
   "advanced-config",
   "provider-diagnostics",
   "provider-settings",
+  "model-setup",
+  "model-setup-local",
+  "model-setup-hosted-warning",
+  "model-setup-missing",
+  "model-setup-invalid",
+  "model-setup-success",
   "job-review",
 ];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
@@ -38,7 +44,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,job-review] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,model-setup,job-review] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -230,7 +236,7 @@ function connectCdp(webSocketDebuggerUrl) {
 }
 
 async function waitForReady(cdp, capture) {
-  const deadline = Date.now() + 9000;
+  const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
     try {
       const result = await cdp.send("Runtime.evaluate", {
@@ -262,7 +268,7 @@ async function evaluateLayout(cdp) {
       const importantSelectors = [
         ".app-shell", ".sidebar", ".workspace", ".right-rail", ".topbar",
         ".workspace-grid", ".viewer-panel", ".setup-panel", ".wizard-panel",
-        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel"
+        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel", "#modelSetupPanel"
       ];
       const rect = (selector) => {
         const element = document.querySelector(selector);
@@ -339,7 +345,7 @@ async function evaluateLayout(cdp) {
         }
       }
       const cardMinimumWidth = Math.min(240, Math.max(0, viewportWidth - 32));
-      for (const element of document.querySelectorAll(".workspace .panel, .right-rail .compact-panel, .provider-settings-row, .candidate-row, .track-row, .right-rail .artifact-row, .first-run-row")) {
+      for (const element of document.querySelectorAll(".workspace .panel, .model-choice-card, .right-rail .compact-panel, .provider-settings-row, .candidate-row, .track-row, .right-rail .artifact-row, .first-run-row")) {
         if (!isVisible(element)) continue;
         const box = element.getBoundingClientRect();
         const minimumWidth = element.closest(".right-rail") ? 220 : cardMinimumWidth;
@@ -400,11 +406,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (state === "advanced-config" && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
+      if (state.startsWith("model-setup") && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
     }
     for (const failure of layout.failures) {
       failures.push(`${viewport.name}/${state}: ${failure}`);
     }
   } finally {
+    await cdp.send("Target.closeTarget", { targetId: page.id }).catch(() => {});
     cdp.close();
   }
 }

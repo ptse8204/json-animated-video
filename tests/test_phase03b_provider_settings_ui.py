@@ -19,24 +19,36 @@ def test_phase03b_local_ui_has_provider_settings_surface():
     for expected in [
         "providerSettingsPanel",
         "providerSettingsList",
+        "modelSetupPanel",
+        "modelSetupChoices",
         "Provider settings",
         "Providers and models",
+        "Choose how planning works",
     ]:
         assert expected in html
 
     for expected in [
         "/api/provider-settings",
+        "/api/model-providers",
+        "modelSetupProviderSummary",
+        "modelSetupPayloadFromValues",
+        "renderModelSetup",
         "data-provider-field=\"apiKey\"",
+        "data-model-setup-field=\"apiKey\"",
         "allowHosted",
         "providerSettingsById",
         "saveProviderSettingsFromRow",
         "/api/provider-settings/${encodeURIComponent(providerId)}/test",
         "/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test",
+        "/api/model-providers/${encodeURIComponent(provider.id)}/test",
         "Run hosted smoke",
     ]:
         assert expected in js
 
     for expected in [
+        "model-setup-panel",
+        "model-choice-card",
+        "model-hosted-toggle",
         "provider-settings-row",
         "provider-hosted-toggle",
         "provider-actions",
@@ -44,3 +56,4 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         assert expected in css
 
     assert "provider-settings" in layout
+    assert "model-setup-hosted-warning" in layout
