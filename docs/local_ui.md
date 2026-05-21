@@ -60,9 +60,24 @@ developer users, but it is no longer the default explanation of what will run.
 ## Model Planning Connector Contract
 
 The Local UI exposes a server-side model planning contract for future
-model-assisted workflows. UI-MODEL-02 includes only `fake-local-planner`, a
-deterministic no-network connector for tests and smoke runs. It does not call
-OpenAI, OpenRouter, SAM2, SAM3, or any hosted service.
+model-assisted workflows. `fake-local-planner` is the default deterministic
+no-network connector for tests and smoke runs. UI-MODEL-03 also exposes
+`openrouter-planner`, a settings-backed hosted planning surface that reads the
+existing OpenRouter provider settings and redaction policy. It reports whether
+the server has a key, which model is selected, whether hosted cost/privacy
+opt-in is enabled, and whether a model plan can run.
+
+`openrouter-planner` is intentionally not runnable in UI-MODEL-03. Its test and
+estimate routes never make hosted requests, and `POST /api/model-runs` rejects
+it with a clear not-ready error until the hosted planning transport is
+implemented in a later phase. This phase does not call OpenAI, OpenRouter,
+SAM2, SAM3, or any hosted service.
+
+OpenRouter connector readiness uses the existing Provider settings precedence:
+environment credentials override local SQLite secrets, local saved model choices
+override defaults, and `OPENROUTER_DEFAULT_MODEL` supplies the effective model
+when no local model is selected. Raw keys remain server-side and are never
+returned by `/api/model-providers`.
 
 The model connector routes are:
 
@@ -84,9 +99,11 @@ still starts only through the existing job confirmation path.
 
 The fake connector returns a proposed `ExtractionRunConfig`, validation result,
 privacy summary, zero-local cost estimate, and `requiresUserConfirmation: true`.
-All public model responses pass through the Local UI sanitizer so API keys,
-bearer tokens, local absolute paths, storage keys, and `file://` URIs are not
-returned to browser code.
+Settings-backed hosted connectors return redacted readiness and blocked
+estimate metadata until their server-side transport exists. All public model
+responses pass through the Local UI sanitizer so API keys, bearer tokens, local
+absolute paths, storage keys, and `file://` URIs are not returned to browser
+code.
 
 ## Launch
 

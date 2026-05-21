@@ -719,7 +719,20 @@ def _public_provider_state(
     }
     provider["credentials"] = _credential_states(definition, settings, secrets, environ)
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
-    provider["effectiveModel"] = _effective_model(definition, settings)
+    effective_model = _effective_model(definition, settings)
+    if (
+        definition["id"] == "openrouter"
+        and not settings.get("selected_model")
+        and environ.get("OPENROUTER_DEFAULT_MODEL")
+    ):
+        effective_model = str(environ["OPENROUTER_DEFAULT_MODEL"])
+    if (
+        definition["id"] == "sam3-hosted"
+        and not settings.get("selected_model")
+        and environ.get("SAM3_HOSTED_MODEL")
+    ):
+        effective_model = str(environ["SAM3_HOSTED_MODEL"])
+    provider["effectiveModel"] = effective_model
     return provider
 
 

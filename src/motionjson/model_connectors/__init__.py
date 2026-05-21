@@ -1,8 +1,7 @@
 """Server-side model planning connector contracts for the Local UI.
 
-The phase UI-MODEL-02 implementation intentionally ships only a deterministic
-fake connector. Hosted providers are added in later phases and must stay
-server-side.
+The default registry keeps deterministic local planning available and exposes
+settings-backed hosted provider readiness without making hosted calls.
 """
 
 from .contracts import (
@@ -21,6 +20,7 @@ from .contracts import (
     ModelProviderDefinition,
     ModelRunEvent,
     ModelRunState,
+    OpenRouterSettingsModelConnector,
     VolatileModelRunStore,
 )
 
@@ -40,5 +40,6 @@ __all__ = [
     "ModelProviderDefinition",
     "ModelRunEvent",
     "ModelRunState",
+    "OpenRouterSettingsModelConnector",
     "VolatileModelRunStore",
 ]

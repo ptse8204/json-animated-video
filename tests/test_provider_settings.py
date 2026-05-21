@@ -183,6 +183,7 @@ def test_provider_settings_environment_precedence_for_headless_users(tmp_path, m
     assert status == 200
     assert openrouter["credentials"][0]["configured"] is True
     assert openrouter["credentials"][0]["source"] == "environment"
+    assert openrouter["effectiveModel"] == "env/model"
     assert secret not in body.decode("utf-8")
 
     status, _headers, body = app.handle("GET", "/api/capabilities")

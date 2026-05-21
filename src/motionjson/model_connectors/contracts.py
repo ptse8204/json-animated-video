@@ -493,9 +493,64 @@ class FakeModelConnector:
         }
 
 
+class OpenRouterSettingsModelConnector:
+    provider = ModelProviderDefinition(
+        id="openrouter-planner",
+        label="OpenRouter planner",
+        locality="hosted",
+        implemented=False,
+        network_required=True,
+        hosted_calls_required=True,
+        credential_required=True,
+        settings_provider_id="openrouter",
+        description=(
+            "Server-side settings surface for hosted model planning. "
+            "UI-MODEL-03 reports readiness only; hosted planning transport is added later."
+        ),
+    )
+
+    def readiness(self) -> dict[str, Any]:
+        return {
+            "status": "settings_required",
+            "runnable": False,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "OpenRouter planner is settings-backed and is not runnable until hosted planning is implemented.",
+        }
+
+    def test(self, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "format": "motionjson.model_provider_test.v0.1",
+            "providerId": self.provider.id,
+            "status": "settings_required",
+            "ready": False,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "Use the Local UI provider settings test for OpenRouter readiness. No hosted request was made.",
+        }
+
+    def estimate(self, request: ModelPlanRequest) -> ModelEstimate:
+        return ModelEstimate(
+            provider_id=self.provider.id,
+            status="unknown_provider_cost",
+            hosted_calls_required=True,
+            frames_leave_device=False,
+            estimated_units=max(1, min(request.max_objects, 12)),
+            message=(
+                "Hosted planner cost depends on the configured OpenRouter model. "
+                "No hosted estimate request is made in UI-MODEL-03."
+            ),
+        )
+
+    def plan(self, request: ModelPlanRequest) -> ModelPlanResult:
+        raise ModelConnectorError(
+            "openrouter-planner is settings-only in UI-MODEL-03; hosted planning is not enabled."
+        )
+
+
 class ModelConnectorRegistry:
     def __init__(self, connectors: list[ModelConnector] | None = None):
-        items = connectors or [FakeModelConnector()]
+        items = connectors or [FakeModelConnector(), OpenRouterSettingsModelConnector()]
         self._connectors = {connector.provider.id: connector for connector in items}
 
     def list(self) -> list[ModelConnector]:

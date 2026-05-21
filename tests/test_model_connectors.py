@@ -1,7 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from motionjson.config import ExtractionRunConfig
-from motionjson.model_connectors import FakeModelConnector, ModelPlanRequest, VolatileModelRunStore
+from motionjson.model_connectors import (
+    FakeModelConnector,
+    ModelConnectorError,
+    ModelConnectorRegistry,
+    ModelPlanRequest,
+    OpenRouterSettingsModelConnector,
+    VolatileModelRunStore,
+)
 
 
 def test_fake_model_connector_builds_valid_text_plan_without_network():
@@ -27,6 +36,31 @@ def test_fake_model_connector_builds_valid_text_plan_without_network():
     assert result.run_config["provider"]["name"] == "mock"
     assert result.requires_user_confirmation is True
     ExtractionRunConfig.from_dict(result.run_config)
+
+
+def test_openrouter_settings_connector_is_no_network_and_not_runnable():
+    connector = OpenRouterSettingsModelConnector()
+    request = ModelPlanRequest.from_dict({"goal": "Find by description", "prompt": "red ball"})
+
+    readiness = connector.readiness()
+    estimate = connector.estimate(request)
+
+    assert connector.provider.settings_provider_id == "openrouter"
+    assert connector.provider.implemented is False
+    assert readiness["networkAttempted"] is False
+    assert readiness["runnable"] is False
+    assert estimate.hosted_calls_required is True
+    assert estimate.frames_leave_device is False
+    with pytest.raises(ModelConnectorError, match="settings-only"):
+        connector.plan(request)
+
+
+def test_model_connector_registry_exposes_fake_default_and_settings_provider():
+    registry = ModelConnectorRegistry()
+
+    assert registry.default_provider_id() == "fake-local-planner"
+    provider_ids = [connector.provider.id for connector in registry.list()]
+    assert provider_ids == ["fake-local-planner", "openrouter-planner"]
 
 
 def test_volatile_model_run_store_tracks_events_and_cancellation():

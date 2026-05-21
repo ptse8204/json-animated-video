@@ -938,10 +938,94 @@ class LocalUIApp:
         request_payload = payload.get("request") if isinstance(payload.get("request"), dict) else payload
         return ModelPlanRequest.from_dict(request_payload)
 
+    def _model_provider_settings_snapshot(self) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return provider_settings_response(conn, user_id=user["id"])
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _settings_provider_state(settings_payload: dict[str, Any], provider_id: str) -> dict[str, Any]:
+        for provider in settings_payload.get("providers", []):
+            if isinstance(provider, dict) and provider.get("id") == provider_id:
+                return provider
+        raise ValueError(f"Unknown provider settings id for model connector: {provider_id}")
+
+    def _model_connector_readiness(self, connector: Any, settings_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        base = dict(connector.readiness())
+        base.setdefault("networkAttempted", False)
+        base.setdefault("hostedCallsRequired", connector.provider.hosted_calls_required)
+        settings_provider_id = connector.provider.settings_provider_id
+        if not settings_provider_id:
+            return base
+
+        settings_payload = settings_payload or self._model_provider_settings_snapshot()
+        settings_state = self._settings_provider_state(settings_payload, settings_provider_id)
+        provider_readiness = settings_state.get("readiness") if isinstance(settings_state.get("readiness"), dict) else {}
+        provider_settings = settings_state.get("settings") if isinstance(settings_state.get("settings"), dict) else {}
+        credentials = settings_state.get("credentials") if isinstance(settings_state.get("credentials"), list) else []
+        configured = bool(provider_readiness.get("configured"))
+        hosted_allowed = bool(provider_settings.get("allowHosted"))
+        hosted_required = bool(connector.provider.hosted_calls_required)
+
+        status = str(provider_readiness.get("status") or base.get("status") or "not_configured")
+        message = str(provider_readiness.get("message") or base.get("message") or "")
+        if configured and hosted_required and not hosted_allowed:
+            status = "hosted_opt_in_required"
+            message = (
+                f"{settings_state.get('name') or settings_provider_id} settings are configured, "
+                "but hosted calls remain disabled until cost and privacy are confirmed."
+            )
+        elif configured and not connector.provider.implemented:
+            status = "configured_settings_only"
+            message = (
+                f"{settings_state.get('name') or settings_provider_id} settings are configured. "
+                "This hosted planning connector is not implemented yet, so no hosted network call will be made."
+            )
+        elif configured:
+            status = str(base.get("status") or "ready")
+            message = str(base.get("message") or message)
+
+        runnable = bool(
+            connector.provider.implemented
+            and configured
+            and (not hosted_required or hosted_allowed)
+            and base.get("runnable", True)
+        )
+        return {
+            **base,
+            "status": status,
+            "configured": configured,
+            "runnable": runnable,
+            "networkAttempted": False,
+            "networkRequired": connector.provider.network_required,
+            "hostedCallsRequired": hosted_required,
+            "hostedCallsAllowed": hosted_allowed,
+            "settingsProviderId": settings_provider_id,
+            "settingsProvider": {
+                "id": settings_state.get("id"),
+                "name": settings_state.get("name"),
+                "locality": settings_state.get("locality"),
+                "readiness": provider_readiness,
+            },
+            "credentials": credentials,
+            "effectiveModel": settings_state.get("effectiveModel"),
+            "plannedConnector": not connector.provider.implemented,
+            "message": message,
+        }
+
     def _model_providers_response(self) -> dict[str, Any]:
+        settings_payload = self._model_provider_settings_snapshot()
         providers = []
         for connector in self.model_connectors.list():
-            providers.append({**connector.provider.to_dict(), "readiness": connector.readiness()})
+            providers.append(
+                {
+                    **connector.provider.to_dict(),
+                    "readiness": self._model_connector_readiness(connector, settings_payload=settings_payload),
+                }
+            )
         return _public_value(
             {
                 "format": f"{MODEL_CONNECTOR_FORMAT}.providers",
@@ -952,26 +1036,73 @@ class LocalUIApp:
 
     def _model_provider_response(self, provider_id: str) -> dict[str, Any]:
         connector = self.model_connectors.get(provider_id)
+        settings_payload = self._model_provider_settings_snapshot()
         return _public_value(
             {
                 "format": MODEL_CONNECTOR_FORMAT,
                 "provider": connector.provider.to_dict(),
-                "readiness": connector.readiness(),
+                "readiness": self._model_connector_readiness(connector, settings_payload=settings_payload),
             }
         )
 
     def _test_model_provider(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         connector = self.model_connectors.get(provider_id)
+        if connector.provider.settings_provider_id:
+            conn = self.connection()
+            try:
+                user = self._local_user(conn)
+                settings_check = test_provider_settings(
+                    conn,
+                    user_id=user["id"],
+                    provider_id=connector.provider.settings_provider_id,
+                )
+                settings_payload = provider_settings_response(conn, user_id=user["id"])
+            finally:
+                conn.close()
+            readiness = self._model_connector_readiness(connector, settings_payload=settings_payload)
+            return _public_value(
+                {
+                    "format": "motionjson.model_provider_test.v0.1",
+                    "providerId": connector.provider.id,
+                    "settingsProviderId": connector.provider.settings_provider_id,
+                    "status": readiness.get("status"),
+                    "ready": readiness.get("runnable") is True,
+                    "configured": settings_check.get("ready") is True,
+                    "networkAttempted": False,
+                    "hostedCallsRequired": connector.provider.hosted_calls_required,
+                    "hostedCallsAllowed": readiness.get("hostedCallsAllowed") is True,
+                    "message": readiness.get("message"),
+                    "settingsCheck": settings_check,
+                    "readiness": readiness,
+                }
+            )
         return _public_value(connector.test(payload))
 
     def _estimate_model_provider(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         connector = self.model_connectors.get(provider_id)
         request = self._model_plan_request_from_payload(payload)
-        return _public_value(connector.estimate(request).to_dict())
+        estimate = connector.estimate(request).to_dict()
+        if connector.provider.settings_provider_id:
+            readiness = self._model_connector_readiness(connector)
+            estimate.update(
+                {
+                    "networkAttempted": False,
+                    "requiresUserConfirmation": True,
+                    "hostedCallsAllowed": readiness.get("hostedCallsAllowed") is True,
+                    "settingsProviderId": connector.provider.settings_provider_id,
+                    "readiness": readiness,
+                    "blocked": readiness.get("runnable") is not True,
+                    "blockedReason": None if readiness.get("runnable") is True else readiness.get("message"),
+                }
+            )
+        return _public_value(estimate)
 
     def _start_model_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         provider_id = self._model_provider_id_from_payload(payload)
         connector = self.model_connectors.get(provider_id)
+        readiness = self._model_connector_readiness(connector)
+        if readiness.get("runnable") is False:
+            raise ValueError(f"{provider_id} is not ready to run: {readiness.get('message')}")
         request = self._model_plan_request_from_payload(payload)
         run = self.model_runs.create(provider_id=provider_id, request=request)
         auto_start = payload.get("autoStart", payload.get("auto_start", True))

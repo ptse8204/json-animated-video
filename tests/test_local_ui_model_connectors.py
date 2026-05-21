@@ -20,6 +20,10 @@ def api(app: LocalUIApp, method: str, path: str, payload: dict | None = None) ->
     return status, decode(raw)
 
 
+def model_provider_by_id(payload: dict, provider_id: str) -> dict:
+    return next(provider for provider in payload["providers"] if provider["id"] == provider_id)
+
+
 def create_project_video_and_job(app: LocalUIApp) -> tuple[dict, dict, dict]:
     status, project_body = api(app, "POST", "/api/projects", {"name": "Model Plan Project"})
     assert status == 200
@@ -52,6 +56,12 @@ def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
     assert provider["id"] == "fake-local-planner"
     assert provider["readiness"]["networkAttempted"] is False
     assert provider["hostedCallsRequired"] is False
+    openrouter = model_provider_by_id(providers, "openrouter-planner")
+    assert openrouter["settingsProviderId"] == "openrouter"
+    assert openrouter["readiness"]["status"] == "missing_key"
+    assert openrouter["readiness"]["runnable"] is False
+    assert openrouter["readiness"]["networkAttempted"] is False
+    assert openrouter["readiness"]["hostedCallsRequired"] is True
 
     status, tested = api(app, "POST", "/api/model-providers/fake-local-planner/test", {"apiKey": "sk-test-secret-123456"})
     assert status == 200
@@ -67,6 +77,108 @@ def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
     assert status == 200
     assert estimate["status"] == "zero_local"
     assert estimate["hostedCallsRequired"] is False
+
+
+def test_openrouter_model_provider_uses_provider_settings_without_network(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "sk-or-v1-model-settings-secret-123456"
+
+    status, saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {"providerId": "openrouter", "apiKey": secret, "selectedModel": "__custom__", "customModelId": "example/planner"},
+    )
+    assert status == 200
+    assert secret not in json.dumps(saved)
+
+    status, body = api(app, "GET", "/api/model-providers/openrouter-planner")
+    assert status == 200
+    assert secret not in json.dumps(body)
+    readiness = body["readiness"]
+    assert readiness["settingsProviderId"] == "openrouter"
+    assert readiness["status"] == "hosted_opt_in_required"
+    assert readiness["configured"] is True
+    assert readiness["runnable"] is False
+    assert readiness["hostedCallsAllowed"] is False
+    assert readiness["networkAttempted"] is False
+    assert readiness["effectiveModel"] == "example/planner"
+
+    status, tested = api(app, "POST", "/api/model-providers/openrouter-planner/test", {"apiKey": secret})
+    assert status == 200
+    assert tested["networkAttempted"] is False
+    assert tested["configured"] is True
+    assert tested["ready"] is False
+    assert tested["settingsCheck"]["status"] == "configured"
+    assert tested["status"] == "hosted_opt_in_required"
+    assert secret not in json.dumps(tested)
+
+
+def test_openrouter_model_provider_uses_environment_settings_precedence(tmp_path, monkeypatch):
+    secret = "sk-or-v1-model-env-secret-123456"
+    monkeypatch.setenv("OPENROUTER_API_KEY", secret)
+    monkeypatch.setenv("OPENROUTER_DEFAULT_MODEL", "env/planner")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, body = api(app, "GET", "/api/model-providers/openrouter-planner")
+
+    assert status == 200
+    readiness = body["readiness"]
+    assert readiness["status"] == "hosted_opt_in_required"
+    assert readiness["configured"] is True
+    assert readiness["credentials"][0]["source"] == "environment"
+    assert readiness["effectiveModel"] == "env/planner"
+    assert readiness["networkAttempted"] is False
+    assert secret not in json.dumps(body)
+
+
+def test_openrouter_model_provider_opt_in_remains_settings_only_until_connector_exists(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "sk-or-v1-model-opt-in-secret-123456"
+
+    status, _saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {"providerId": "openrouter", "apiKey": secret, "allowHosted": True},
+    )
+    assert status == 200
+
+    status, body = api(app, "GET", "/api/model-providers")
+    assert status == 200
+    openrouter = model_provider_by_id(body, "openrouter-planner")
+    readiness = openrouter["readiness"]
+    assert readiness["status"] == "configured_settings_only"
+    assert readiness["configured"] is True
+    assert readiness["hostedCallsAllowed"] is True
+    assert readiness["plannedConnector"] is True
+    assert readiness["runnable"] is False
+    assert secret not in json.dumps(body)
+
+    status, estimate = api(
+        app,
+        "POST",
+        "/api/model-providers/openrouter-planner/estimate",
+        {"request": {"goal": "Find by description", "prompt": "red ball", "maxObjects": 3}},
+    )
+    assert status == 200
+    assert estimate["status"] == "unknown_provider_cost"
+    assert estimate["hostedCallsRequired"] is True
+    assert estimate["framesLeaveDevice"] is False
+    assert estimate["networkAttempted"] is False
+    assert estimate["blocked"] is True
+    assert "not implemented" in estimate["blockedReason"]
+    assert secret not in json.dumps(estimate)
+
+    status, failed = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {"providerId": "openrouter-planner", "request": {"goal": "Find by description", "prompt": "red ball"}},
+    )
+    assert status == 400
+    assert "not ready to run" in failed["error"]
+    assert secret not in json.dumps(failed)
 
 
 def test_local_ui_model_run_redacts_request_plan_and_events(tmp_path):
