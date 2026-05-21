@@ -20,6 +20,7 @@ from .contracts import (
     ModelProviderDefinition,
     ModelRunEvent,
     ModelRunState,
+    OpenAIPlanningConnector,
     OpenRouterSettingsModelConnector,
     VolatileModelRunStore,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "ModelProviderDefinition",
     "ModelRunEvent",
     "ModelRunState",
+    "OpenAIPlanningConnector",
     "OpenRouterSettingsModelConnector",
     "VolatileModelRunStore",
 ]

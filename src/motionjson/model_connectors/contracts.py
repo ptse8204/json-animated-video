@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import json
 import re
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from motionjson.backend.usage import utc_now
 from motionjson.config import ConfigValidationError, ExtractionRunConfig, RUN_CONFIG_SCHEMA
+from motionjson.provider_settings import redact_secret_text
 
 
 MODEL_CONNECTOR_FORMAT = "motionjson.model_connector.v0.1"
@@ -15,6 +19,7 @@ MODEL_ESTIMATE_FORMAT = "motionjson.model_estimate.v0.1"
 MODEL_PLAN_FORMAT = "motionjson.model_plan.v0.1"
 MODEL_RUN_FORMAT = "motionjson.model_run.v0.1"
 MODEL_RUN_STATUSES = {"pending", "running", "cancel_requested", "canceled", "succeeded", "failed"}
+OpenAIResponsesTransport = Callable[[str, Mapping[str, Any], Mapping[str, str], float], Mapping[str, Any]]
 
 GOAL_ALIASES = {
     "cut_out_one_object": "trace_one_object",
@@ -97,6 +102,36 @@ def _labels_from_text(value: str) -> list[str]:
 def _normalized_goal(goal: str) -> str:
     key = re.sub(r"[^a-z0-9]+", "_", goal.strip().lower()).strip("_")
     return GOAL_ALIASES.get(key, key or "trace_one_object")
+
+
+def _clean_base_url(base_url: str) -> str:
+    return str(base_url or "").strip().rstrip("/") or "https://api.openai.com/v1"
+
+
+def _hosted_safe_text(value: Any) -> str:
+    text = redact_secret_text(str(value or ""))
+    text = re.sub(r"(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\s\"'<>]+", "[LOCAL_PATH_REDACTED]", text)
+    text = re.sub(r"(?i)\bfile://[^\s\"'<>]+", "[LOCAL_FILE_URI_REDACTED]", text)
+    text = re.sub(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\s\"'<>|]+", "[LOCAL_PATH_REDACTED]", text)
+    return text
+
+
+def _urllib_openai_responses_transport(
+    url: str,
+    payload: Mapping[str, Any],
+    headers: Mapping[str, str],
+    timeout: float,
+) -> Mapping[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers=dict(headers), method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise ModelConnectorError(redact_secret_text(f"OpenAI request failed with HTTP {exc.code}: {body}")) from exc
+    except urllib.error.URLError as exc:
+        raise ModelConnectorError(redact_secret_text(f"OpenAI request failed: {exc.reason}")) from exc
 
 
 @dataclass(frozen=True)
@@ -493,6 +528,308 @@ class FakeModelConnector:
         }
 
 
+OPENAI_PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "goal",
+        "objectLabels",
+        "objectId",
+        "textPrompt",
+        "suggestedKeyframes",
+        "providerPlan",
+        "troubleshooting",
+    ],
+    "properties": {
+        "goal": {
+            "type": "string",
+            "enum": [
+                "trace_one_object",
+                "find_moving_things",
+                "find_objects_from_text",
+                "import_masks",
+                "review_existing_result",
+            ],
+        },
+        "objectLabels": {"type": "array", "items": {"type": "string"}},
+        "objectId": {"type": "string"},
+        "textPrompt": {"type": "string"},
+        "suggestedKeyframes": {"type": "array", "items": {"type": "integer"}},
+        "providerPlan": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["discoveryProvider", "maskProvider", "trackingMode", "rationale"],
+            "properties": {
+                "discoveryProvider": {
+                    "type": "string",
+                    "enum": ["manual_prompt", "motion_foreground", "text_detector", "external_masks"],
+                },
+                "maskProvider": {"type": "string", "enum": ["mock", "motion", "external"]},
+                "trackingMode": {"type": "string", "enum": ["selected_only"]},
+                "rationale": {"type": "string"},
+            },
+        },
+        "troubleshooting": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+OPENAI_PLANNING_INSTRUCTIONS = """You are MotionJSON's planning assistant.
+Return only JSON that matches the supplied schema. Propose a conservative
+object-tracing plan; do not claim to segment pixels, inspect video frames, or
+discover objects directly. Route text requests through text_detector, moving
+object requests through motion_foreground, mask imports through external_masks,
+and single-object prompt workflows through manual_prompt. Use mock, motion, or
+external mask providers only unless a later user-reviewed stage changes the CV
+provider. Keep requires-review assumptions conservative."""
+
+
+def _extract_openai_output_text(response: Mapping[str, Any]) -> str:
+    output_text = response.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+    output = response.get("output")
+    if isinstance(output, list):
+        chunks: list[str] = []
+        for item in output:
+            if not isinstance(item, Mapping):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if isinstance(part, Mapping) and isinstance(part.get("text"), str):
+                    chunks.append(str(part["text"]))
+        if chunks:
+            return "\n".join(chunks)
+    choices = response.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0]
+        if isinstance(first, Mapping):
+            message = first.get("message")
+            if isinstance(message, Mapping) and isinstance(message.get("content"), str):
+                return str(message["content"])
+    raise ModelConnectorError("OpenAI response did not include structured output text.")
+
+
+def _parse_openai_plan_payload(response: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        parsed = json.loads(_extract_openai_output_text(response))
+    except json.JSONDecodeError as exc:
+        raise ModelConnectorError(f"OpenAI planner returned invalid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ModelConnectorError("OpenAI planner returned a non-object plan.")
+    return parsed
+
+
+def _safe_keyframes(value: Any, *, max_frames: int) -> list[int]:
+    if not isinstance(value, list):
+        return [0]
+    frames: list[int] = []
+    for item in value:
+        if isinstance(item, bool):
+            continue
+        try:
+            frame = int(item)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= frame < max(max_frames, 1):
+            frames.append(frame)
+    return sorted(set(frames))[:8] or [0]
+
+
+class OpenAIPlanningConnector:
+    provider = ModelProviderDefinition(
+        id="openai-planner",
+        label="OpenAI planner",
+        locality="hosted",
+        implemented=True,
+        network_required=True,
+        hosted_calls_required=True,
+        credential_required=True,
+        settings_provider_id="openai",
+        description="Server-side OpenAI Responses API planner for reviewable MotionJSON extraction plans.",
+    )
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        transport: OpenAIResponsesTransport | None = None,
+        timeout: float = 45.0,
+        allow_network: bool = False,
+    ):
+        self.api_key = api_key
+        self.base_url = _clean_base_url(base_url or "https://api.openai.com/v1")
+        self.model = model or "gpt-5.4-mini"
+        self.transport = transport
+        self.timeout = timeout
+        self.allow_network = allow_network
+
+    def with_runtime_settings(
+        self,
+        settings: Mapping[str, Any],
+        *,
+        allow_network: bool = False,
+    ) -> "OpenAIPlanningConnector":
+        return OpenAIPlanningConnector(
+            api_key=str(settings.get("api_key") or "") or self.api_key,
+            base_url=str(settings.get("base_url") or "") or self.base_url,
+            model=str(settings.get("selected_model") or "") or self.model,
+            transport=self.transport,
+            timeout=self.timeout,
+            allow_network=allow_network,
+        )
+
+    def readiness(self) -> dict[str, Any]:
+        return {
+            "status": "ready",
+            "runnable": True,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "OpenAI planner can run after server settings, hosted opt-in, and per-request confirmation.",
+        }
+
+    def test(self, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "format": "motionjson.model_provider_test.v0.1",
+            "providerId": self.provider.id,
+            "status": "configured",
+            "ready": False,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "OpenAI planner setup check is no-network; model runs require explicit hosted confirmation.",
+        }
+
+    def estimate(self, request: ModelPlanRequest) -> ModelEstimate:
+        units = max(1, min(len((request.prompt or request.text_prompt or "").split()) // 24 + 1, 12))
+        return ModelEstimate(
+            provider_id=self.provider.id,
+            status="unknown_provider_cost",
+            hosted_calls_required=True,
+            frames_leave_device=False,
+            estimated_units=units,
+            message="OpenAI planner sends text intent and redacted context only; provider billing depends on the selected model.",
+        )
+
+    def plan(self, request: ModelPlanRequest) -> ModelPlanResult:
+        if not self.api_key:
+            raise ModelConnectorError("OPENAI_API_KEY is required for openai-planner.")
+        if not self.allow_network:
+            raise ModelConnectorError(
+                "openai-planner does not make hosted calls by default; pass allowNetwork=true with cost/privacy acknowledgement."
+            )
+        transport = self.transport or _urllib_openai_responses_transport
+        payload = self._request_payload(request)
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        response = transport(f"{self.base_url}/responses", payload, headers, self.timeout)
+        proposed = _parse_openai_plan_payload(response)
+        return self._plan_result(request, proposed)
+
+    def _request_payload(self, request: ModelPlanRequest) -> dict[str, Any]:
+        safe_context = {
+            "goal": request.goal,
+            "prompt": _hosted_safe_text(request.prompt),
+            "objectLabel": _hosted_safe_text(request.object_label),
+            "objectId": _slug(_hosted_safe_text(request.object_id), request.object_id or "object_0"),
+            "textPrompt": _hosted_safe_text(request.text_prompt),
+            "hasRegisteredVideo": bool(request.video_id),
+            "hasSourcePath": bool(request.source_path),
+            "maxFrames": request.max_frames,
+            "maxObjects": request.max_objects,
+            "sampleFps": request.sample_fps,
+        }
+        return {
+            "model": self.model,
+            "instructions": OPENAI_PLANNING_INSTRUCTIONS,
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(safe_context, sort_keys=True),
+                        }
+                    ],
+                }
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "motionjson_run_plan",
+                    "strict": True,
+                    "schema": OPENAI_PLAN_SCHEMA,
+                }
+            },
+            "store": False,
+        }
+
+    def _plan_result(self, request: ModelPlanRequest, proposed: Mapping[str, Any]) -> ModelPlanResult:
+        labels = [str(item).strip() for item in proposed.get("objectLabels", []) if str(item).strip()] if isinstance(proposed.get("objectLabels"), list) else []
+        goal = _normalized_goal(_text(proposed.get("goal"), request.goal))
+        label = _text(labels[0] if labels else proposed.get("textPrompt"), request.object_label or "selected_object")
+        safe_request = ModelPlanRequest(
+            goal=goal,
+            prompt=request.prompt,
+            project_id=request.project_id,
+            video_id=request.video_id,
+            source_path=request.source_path,
+            output_directory=request.output_directory,
+            object_label=label,
+            object_id=_slug(_text(proposed.get("objectId"), request.object_id or label), "object_0"),
+            text_prompt=_text(proposed.get("textPrompt"), request.text_prompt or request.prompt or label),
+            mask_dir=request.mask_dir,
+            sample_fps=request.sample_fps,
+            max_frames=request.max_frames,
+            max_objects=request.max_objects,
+            metadata={**request.metadata, "modelProvider": self.provider.id, "model": self.model},
+        )
+        local_builder = FakeModelConnector()
+        run_config = local_builder._run_config(safe_request)
+        keyframes = _safe_keyframes(proposed.get("suggestedKeyframes"), max_frames=safe_request.max_frames)
+        discovery_config = run_config.get("discovery", {}).get("config")
+        if isinstance(discovery_config, dict):
+            discovery_config["keyframes"] = keyframes
+        validation = validate_run_config_payload(run_config)
+        if validation["valid"]:
+            run_config = validation["runConfig"]
+        provider_plan = local_builder._provider_plan(safe_request)
+        provider_plan.update(
+            {
+                "reasoningProvider": self.provider.id,
+                "model": self.model,
+                "reviewRequired": True,
+                "modelSuggestedKeyframes": keyframes,
+            }
+        )
+        troubleshooting = [
+            _hosted_safe_text(item)
+            for item in proposed.get("troubleshooting", [])
+            if isinstance(item, str) and item.strip()
+        ][:6]
+        return ModelPlanResult(
+            provider_id=self.provider.id,
+            request=safe_request,
+            goal=safe_request.goal,
+            provider_plan=provider_plan,
+            privacy={
+                "framesLeaveDevice": False,
+                "hostedCallsRequired": True,
+                "summary": "Only the text intent and redacted project context were sent to OpenAI.",
+            },
+            estimated_cost=self.estimate(safe_request).to_dict(),
+            run_config=run_config,
+            validation=validation,
+            requires_user_confirmation=True,
+            messages=[
+                "OpenAI proposed a plan; MotionJSON generated and validated the run config locally.",
+                *troubleshooting,
+            ],
+        )
+
+
 class OpenRouterSettingsModelConnector:
     provider = ModelProviderDefinition(
         id="openrouter-planner",
@@ -550,7 +887,7 @@ class OpenRouterSettingsModelConnector:
 
 class ModelConnectorRegistry:
     def __init__(self, connectors: list[ModelConnector] | None = None):
-        items = connectors or [FakeModelConnector(), OpenRouterSettingsModelConnector()]
+        items = connectors or [FakeModelConnector(), OpenAIPlanningConnector(), OpenRouterSettingsModelConnector()]
         self._connectors = {connector.provider.id: connector for connector in items}
 
     def list(self) -> list[ModelConnector]:

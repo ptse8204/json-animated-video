@@ -212,6 +212,20 @@ Authorization: Bearer <OPENROUTER_API_KEY>
 
 It supports `messages`, optional `model`, `tools`, `response_format`, and routing fields. It uses stdlib HTTP by default and accepts an injected transport for tests. It is only for LLM/VLM reasoning and must not be used for pixel segmentation or matting.
 
+## OpenAI Planning Scope
+
+`openai-planner` is a Local UI model connector, not a segmentation provider. It
+uses the OpenAI Responses API with structured JSON output to propose intent,
+labels, keyframes, troubleshooting notes, and a conservative provider plan. The
+connector sends text intent and redacted project context only; it does not send
+frames or raw local paths in UI-MODEL-04.
+
+OpenAI output is treated as untrusted planning input. MotionJSON maps it back
+to explicit CV providers, generates the `ExtractionRunConfig` locally, validates
+that config, and requires user confirmation before extraction. Hosted requests
+require server-side settings, hosted-call opt-in, and per-request
+`allowNetwork` plus `acknowledgeCostPrivacy`.
+
 ## Mock Providers And No-Network Tests
 
 Mock providers live in `src/motionjson/providers/mocks.py`:

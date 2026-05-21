@@ -300,6 +300,33 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "docs": "docs/ai_provider_architecture.md",
     },
     {
+        "id": "openai",
+        "name": "OpenAI planning",
+        "capabilityName": "openai",
+        "kind": "llm_provider",
+        "locality": "hosted",
+        "implemented": True,
+        "runsInLocalWorker": False,
+        "credentialRequired": True,
+        "credentialFields": [
+            {"name": "api_key", "label": "API key", "env": "OPENAI_API_KEY", "required": True},
+        ],
+        "baseUrlField": {"name": "base_url", "label": "Base URL", "env": "OPENAI_BASE_URL", "required": False},
+        "modelOptions": [
+            {"id": "gpt-5.4-mini", "label": "GPT-5.4 mini"},
+            {"id": "gpt-5.5", "label": "GPT-5.5"},
+            {"id": CUSTOM_MODEL_ID, "label": "Custom OpenAI model id"},
+        ],
+        "defaultModel": "gpt-5.4-mini",
+        "customModelAllowed": True,
+        "capabilities": ["intent parsing", "run planning", "labels", "troubleshooting"],
+        "hardware": "Remote provider",
+        "cost": {"status": "unknown_provider_cost", "label": "Provider billed"},
+        "privacy": "Text prompts and redacted project context are sent to OpenAI only after hosted calls are explicitly enabled.",
+        "warning": "OpenAI planning proposes run configs only. It is not a segmentation or mask provider.",
+        "docs": "docs/local_ui.md",
+    },
+    {
         "id": "text_detector",
         "name": "Text detector",
         "capabilityName": "text_detector",
@@ -421,6 +448,71 @@ def provider_settings_response(
             "displayExample": "sk-...abcd",
             "environmentOverridesLocal": True,
         },
+    }
+
+
+def provider_runtime_settings(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return raw server-side provider settings for connector execution.
+
+    This function is for backend-only use. Do not return its payload from a
+    public API route because it may include raw credential material.
+    """
+
+    environ = environ or os.environ
+    definition = _definition(provider_id)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    api_key = ""
+    credential_source = "none"
+    credential_field = next(iter(definition.get("credentialFields", [])), None)
+    if credential_field:
+        name = str(credential_field["name"])
+        env = str(credential_field.get("env") or "")
+        env_value = environ.get(env)
+        local_value = secrets.get(name)
+        api_key = str(env_value or local_value or "")
+        credential_source = "environment" if env_value else "local_settings" if local_value else "unset"
+
+    base_url_field = definition.get("baseUrlField")
+    base_url = ""
+    base_url_source = "unset"
+    if base_url_field:
+        env = str(base_url_field.get("env") or "")
+        env_value = environ.get(env)
+        local_value = settings.get("base_url")
+        base_url = str(env_value or local_value or "")
+        base_url_source = "environment" if env_value else "local_settings" if local_value else "unset"
+
+    endpoint_field = definition.get("endpointField")
+    endpoint = ""
+    endpoint_source = "unset"
+    if endpoint_field:
+        env = str(endpoint_field.get("env") or "")
+        env_value = environ.get(env)
+        local_value = settings.get("endpoint")
+        endpoint = str(env_value or local_value or "")
+        endpoint_source = "environment" if env_value else "local_settings" if local_value else "unset"
+
+    readiness = _readiness(definition, settings, secrets, environ)
+    return {
+        "providerId": provider_id,
+        "api_key": api_key,
+        "credential_source": credential_source,
+        "base_url": base_url,
+        "base_url_source": base_url_source,
+        "endpoint": endpoint,
+        "endpoint_source": endpoint_source,
+        "selected_model": _runtime_effective_model(definition, settings, environ),
+        "allow_hosted": bool(settings.get("allow_hosted", False)),
+        "configured": readiness["configured"],
+        "readiness": readiness,
+        "settings_source": "local_settings" if row is not None else "default",
     }
 
 
@@ -719,20 +811,7 @@ def _public_provider_state(
     }
     provider["credentials"] = _credential_states(definition, settings, secrets, environ)
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
-    effective_model = _effective_model(definition, settings)
-    if (
-        definition["id"] == "openrouter"
-        and not settings.get("selected_model")
-        and environ.get("OPENROUTER_DEFAULT_MODEL")
-    ):
-        effective_model = str(environ["OPENROUTER_DEFAULT_MODEL"])
-    if (
-        definition["id"] == "sam3-hosted"
-        and not settings.get("selected_model")
-        and environ.get("SAM3_HOSTED_MODEL")
-    ):
-        effective_model = str(environ["SAM3_HOSTED_MODEL"])
-    provider["effectiveModel"] = effective_model
+    provider["effectiveModel"] = _runtime_effective_model(definition, settings, environ)
     return provider
 
 
@@ -763,11 +842,7 @@ def _capability_override(
         base_url = environ.get(env) or settings.get("base_url")
         base_url_source = "environment" if environ.get(env) else "local_settings" if base_url else "unset"
         base_url_valid = not base_url or _valid_http_url(str(base_url))
-    selected_model = _effective_model(definition, settings)
-    if provider_id == "openrouter" and not settings.get("selected_model") and environ.get("OPENROUTER_DEFAULT_MODEL"):
-        selected_model = str(environ["OPENROUTER_DEFAULT_MODEL"])
-    if provider_id == "sam3-hosted" and not settings.get("selected_model") and environ.get("SAM3_HOSTED_MODEL"):
-        selected_model = str(environ["SAM3_HOSTED_MODEL"])
+    selected_model = _runtime_effective_model(definition, settings, environ)
     return {
         "configured": _readiness(definition, settings, secrets, environ)["configured"],
         "api_key_configured": bool(api_credential and api_credential.get("configured")),
@@ -880,6 +955,23 @@ def _model_status(definition: Mapping[str, Any], settings: Mapping[str, Any]) ->
 def _effective_model(definition: Mapping[str, Any], settings: Mapping[str, Any]) -> str:
     status = _model_status(definition, settings)
     return str(status.get("effectiveModel") or definition.get("defaultModel") or "")
+
+
+def _runtime_effective_model(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    environ: Mapping[str, str],
+) -> str:
+    effective_model = _effective_model(definition, settings)
+    env_defaults = {
+        "openrouter": "OPENROUTER_DEFAULT_MODEL",
+        "openai": "OPENAI_DEFAULT_MODEL",
+        "sam3-hosted": "SAM3_HOSTED_MODEL",
+    }
+    env = env_defaults.get(str(definition["id"]))
+    if env and not settings.get("selected_model") and environ.get(env):
+        effective_model = str(environ[env])
+    return effective_model
 
 
 def _optional_text(value: Any) -> str | None:

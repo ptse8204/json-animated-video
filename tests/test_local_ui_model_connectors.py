@@ -3,6 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from motionjson.model_connectors import (
+    FakeModelConnector,
+    ModelConnectorRegistry,
+    OpenAIPlanningConnector,
+    OpenRouterSettingsModelConnector,
+)
 from motionjson.ui.server import LocalUIApp
 
 
@@ -62,6 +68,11 @@ def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
     assert openrouter["readiness"]["runnable"] is False
     assert openrouter["readiness"]["networkAttempted"] is False
     assert openrouter["readiness"]["hostedCallsRequired"] is True
+    openai = model_provider_by_id(providers, "openai-planner")
+    assert openai["settingsProviderId"] == "openai"
+    assert openai["readiness"]["status"] == "missing_key"
+    assert openai["readiness"]["runnable"] is False
+    assert openai["readiness"]["networkAttempted"] is False
 
     status, tested = api(app, "POST", "/api/model-providers/fake-local-planner/test", {"apiKey": "sk-test-secret-123456"})
     assert status == 200
@@ -179,6 +190,131 @@ def test_openrouter_model_provider_opt_in_remains_settings_only_until_connector_
     assert status == 400
     assert "not ready to run" in failed["error"]
     assert secret not in json.dumps(failed)
+
+
+def test_openai_model_provider_requires_settings_opt_in_and_per_request_ack(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "sk-openai-model-secret-123456"
+
+    status, saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {"providerId": "openai", "apiKey": secret, "allowHosted": True},
+    )
+    assert status == 200
+    assert secret not in json.dumps(saved)
+
+    status, body = api(app, "GET", "/api/model-providers/openai-planner")
+    assert status == 200
+    readiness = body["readiness"]
+    assert readiness["status"] == "ready"
+    assert readiness["configured"] is True
+    assert readiness["hostedCallsAllowed"] is True
+    assert readiness["runnable"] is True
+    assert readiness["effectiveModel"] == "gpt-5.4-mini"
+    assert secret not in json.dumps(body)
+
+    status, failed = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {"providerId": "openai-planner", "request": {"goal": "Find by description", "prompt": "red ball"}},
+    )
+    assert status == 400
+    assert "allowNetwork=true" in failed["error"]
+    assert secret not in json.dumps(failed)
+
+    status, failed = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "openai-planner",
+            "allowNetwork": True,
+            "request": {"goal": "Find by description", "prompt": "red ball"},
+        },
+    )
+    assert status == 400
+    assert "acknowledgeCostPrivacy=true" in failed["error"]
+    assert secret not in json.dumps(failed)
+
+
+def test_openai_model_run_uses_server_secret_with_mocked_transport_and_redacts_response(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "sk-openai-runtime-secret-123456"
+    captured = {}
+
+    def transport(url, payload, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return {
+            "output": [
+                {
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": (
+                                '{"goal":"find_objects_from_text","objectLabels":["red ball"],'
+                                '"objectId":"red_ball","textPrompt":"red ball",'
+                                '"suggestedKeyframes":[0],'
+                                '"providerPlan":{"discoveryProvider":"text_detector","maskProvider":"mock",'
+                                '"trackingMode":"selected_only","rationale":"Use a text detector."},'
+                                '"troubleshooting":["Review candidates before export."]}'
+                            ),
+                        }
+                    ]
+                }
+            ],
+            "usage": {"input_tokens": 10, "output_tokens": 20},
+        }
+
+    app.model_connectors = ModelConnectorRegistry(
+        [
+            FakeModelConnector(),
+            OpenAIPlanningConnector(transport=transport),
+            OpenRouterSettingsModelConnector(),
+        ]
+    )
+    status, _saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {"providerId": "openai", "apiKey": secret, "allowHosted": True},
+    )
+    assert status == 200
+
+    status, body = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "openai-planner",
+            "allowNetwork": True,
+            "acknowledgeCostPrivacy": True,
+            "request": {
+                "goal": "Find by description",
+                "prompt": "red ball api_key=sk-or-v1-do-not-send-123456",
+                "sourcePath": "/Users/alice/private/movie.mp4",
+            },
+        },
+    )
+
+    assert status == 200
+    assert captured["url"] == "https://api.openai.com/v1/responses"
+    assert captured["headers"]["Authorization"] == f"Bearer {secret}"
+    encoded_payload = json.dumps(captured["payload"])
+    assert "sk-or-v1-do-not-send" not in encoded_payload
+    assert "/Users/alice" not in encoded_payload
+    encoded_response = json.dumps(body)
+    assert secret not in encoded_response
+    assert "sk-or-v1-do-not-send" not in encoded_response
+    assert body["modelRun"]["status"] == "succeeded"
+    assert body["modelRun"]["result"]["providerId"] == "openai-planner"
+    assert body["modelRun"]["result"]["validation"]["valid"] is True
+    assert body["modelRun"]["result"]["runConfig"]["discovery"]["mode"] == "text_detector"
 
 
 def test_local_ui_model_run_redacts_request_plan_and_events(tmp_path):

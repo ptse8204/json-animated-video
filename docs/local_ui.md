@@ -61,23 +61,26 @@ developer users, but it is no longer the default explanation of what will run.
 
 The Local UI exposes a server-side model planning contract for future
 model-assisted workflows. `fake-local-planner` is the default deterministic
-no-network connector for tests and smoke runs. UI-MODEL-03 also exposes
-`openrouter-planner`, a settings-backed hosted planning surface that reads the
-existing OpenRouter provider settings and redaction policy. It reports whether
-the server has a key, which model is selected, whether hosted cost/privacy
-opt-in is enabled, and whether a model plan can run.
+no-network connector for tests and smoke runs. `openrouter-planner` is a
+settings-backed hosted planning surface that reads the existing OpenRouter
+provider settings and remains non-runnable until an OpenRouter transport is
+implemented. UI-MODEL-04 adds `openai-planner`, a server-side OpenAI Responses
+API connector for generating reviewable run plans from text intent.
 
-`openrouter-planner` is intentionally not runnable in UI-MODEL-03. Its test and
-estimate routes never make hosted requests, and `POST /api/model-runs` rejects
-it with a clear not-ready error until the hosted planning transport is
-implemented in a later phase. This phase does not call OpenAI, OpenRouter,
-SAM2, SAM3, or any hosted service.
+`openai-planner` never runs by default. It requires all of the following before
+any hosted request is attempted: server-side OpenAI provider settings or
+environment credentials, hosted-call opt-in in provider settings, and a
+per-request payload with `allowNetwork: true` plus
+`acknowledgeCostPrivacy: true`. The connector sends only text intent and
+redacted project context. It does not send video frames, local absolute paths,
+storage keys, or browser-supplied API keys.
 
-OpenRouter connector readiness uses the existing Provider settings precedence:
-environment credentials override local SQLite secrets, local saved model choices
-override defaults, and `OPENROUTER_DEFAULT_MODEL` supplies the effective model
-when no local model is selected. Raw keys remain server-side and are never
-returned by `/api/model-providers`.
+OpenAI and OpenRouter connector readiness use the existing Provider settings
+precedence: environment credentials override local SQLite secrets, local saved
+model choices override defaults, and `OPENAI_DEFAULT_MODEL` or
+`OPENROUTER_DEFAULT_MODEL` supplies the effective model when no local model is
+selected. Raw keys remain server-side and are never returned by
+`/api/model-providers`.
 
 The model connector routes are:
 
@@ -99,8 +102,11 @@ still starts only through the existing job confirmation path.
 
 The fake connector returns a proposed `ExtractionRunConfig`, validation result,
 privacy summary, zero-local cost estimate, and `requiresUserConfirmation: true`.
-Settings-backed hosted connectors return redacted readiness and blocked
-estimate metadata until their server-side transport exists. All public model
+The OpenAI connector treats model output as an untrusted proposal: MotionJSON
+coerces it into explicit CV providers, generates the `ExtractionRunConfig`
+locally, validates it, and still marks the plan as requiring user confirmation.
+Segmentation and tracking remain routed through `mock`, `motion`, `external`,
+or detector discovery modes; OpenAI does not segment video. All public model
 responses pass through the Local UI sanitizer so API keys, bearer tokens, local
 absolute paths, storage keys, and `file://` URIs are not returned to browser
 code.
@@ -279,6 +285,8 @@ The Local UI currently exposes settings for:
 - `sam2-local`: local SAM2 model selection and diagnostics. Model weights and
   package setup still come from local environment paths.
 - `sam2-hosted`: endpoint, model, API key, and explicit hosted-call opt-in.
+- `openai`: OpenAI model selection and API key for hosted plan generation. It
+  is not a mask or segmentation provider.
 - `openrouter`: LLM/VLM model selection and API key for reasoning only. It is
   not a mask or segmentation provider.
 - `text_detector` and `class_detector`: local model settings for scaffolded

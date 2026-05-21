@@ -68,6 +68,7 @@ from motionjson.model_connectors import (
 )
 from motionjson.provider_settings import (
     hosted_sam3_smoke_test,
+    provider_runtime_settings,
     provider_settings_for_capabilities,
     provider_settings_response,
     redact_secret_text,
@@ -1097,19 +1098,57 @@ class LocalUIApp:
             )
         return _public_value(estimate)
 
+    def _runtime_model_connector(self, connector: Any, payload: dict[str, Any]) -> Any:
+        if not connector.provider.settings_provider_id or not hasattr(connector, "with_runtime_settings"):
+            return connector
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            settings = provider_runtime_settings(
+                conn,
+                user_id=user["id"],
+                provider_id=connector.provider.settings_provider_id,
+            )
+        finally:
+            conn.close()
+        return connector.with_runtime_settings(
+            settings,
+            allow_network=_truthy_payload(payload, "allowNetwork", "allow_network"),
+        )
+
+    def _require_hosted_model_run_confirmation(self, connector: Any, payload: dict[str, Any]) -> None:
+        if not connector.provider.hosted_calls_required:
+            return
+        if not _truthy_payload(payload, "allowNetwork", "allow_network"):
+            raise ValueError(
+                f"{connector.provider.id} requires allowNetwork=true before making a hosted model request."
+            )
+        if not _truthy_payload(
+            payload,
+            "acknowledgeCostPrivacy",
+            "acknowledge_cost_privacy",
+            "costPrivacyAcknowledged",
+            "cost_privacy_acknowledged",
+        ):
+            raise ValueError(
+                f"{connector.provider.id} requires acknowledgeCostPrivacy=true before making a hosted model request."
+            )
+
     def _start_model_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         provider_id = self._model_provider_id_from_payload(payload)
         connector = self.model_connectors.get(provider_id)
         readiness = self._model_connector_readiness(connector)
         if readiness.get("runnable") is False:
             raise ValueError(f"{provider_id} is not ready to run: {readiness.get('message')}")
+        self._require_hosted_model_run_confirmation(connector, payload)
+        runtime_connector = self._runtime_model_connector(connector, payload)
         request = self._model_plan_request_from_payload(payload)
         run = self.model_runs.create(provider_id=provider_id, request=request)
         auto_start = payload.get("autoStart", payload.get("auto_start", True))
         if auto_start is not False and not _truthy_payload(payload, "defer", "deferred"):
             self.model_runs.mark_running(run.id)
             try:
-                result = connector.plan(request)
+                result = runtime_connector.plan(request)
             except Exception as exc:
                 run = self.model_runs.mark_failed(run.id, str(exc) or type(exc).__name__)
             else:

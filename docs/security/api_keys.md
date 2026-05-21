@@ -15,6 +15,9 @@ The Local UI Provider settings panel currently covers:
 - `sam2-local`: local model choice only. SAM2 package and model paths still
   come from local installation and environment variables.
 - `sam2-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
+- `openai`: model choice and API key for hosted plan generation. It is not a
+  segmentation provider and never receives frames from the UI-MODEL-04
+  connector.
 - `openrouter`: LLM/VLM model choice and API key for reasoning only. It is not
   a segmentation provider.
 - `text_detector` and `class_detector`: local model-choice surfaces for
@@ -38,6 +41,9 @@ Environment variables are preferred for headless and CLI use:
 OPENROUTER_API_KEY=
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 OPENROUTER_DEFAULT_MODEL=openrouter/auto
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_DEFAULT_MODEL=gpt-5.4-mini
 HOSTED_SEGMENTATION_URL=
 HOSTED_SEGMENTATION_API_KEY=
 SAM3_HOSTED_URL=
@@ -52,8 +58,8 @@ Use it for local development machines you control. Do not use it for public
 demo instances unless you understand who can access the database file.
 
 Environment variables take precedence over Local UI settings. If
-`OPENROUTER_API_KEY` is set, diagnostics report the credential source as
-`environment` even if a different Local UI key is saved.
+`OPENROUTER_API_KEY` or `OPENAI_API_KEY` is set, diagnostics report the
+credential source as `environment` even if a different Local UI key is saved.
 
 In Phase 03B, saved hosted keys are a user-facing settings and diagnostics
 surface. They are not passed into runtime provider constructors yet. Diagnostics
@@ -62,7 +68,8 @@ environment variables for actual provider execution until per-user runtime
 provider routing is wired in a later phase.
 
 Phase OD-09 adds a narrow exception for `sam3-hosted`: the Local UI can run an
-explicit one-frame smoke test from server-side saved settings. The browser never
+explicit one-frame smoke test from server-side saved settings. UI-MODEL-04 adds
+the same safety shape for `openai-planner` model-plan runs. The browser never
 receives the raw key and does not send the key back to the API. The request must
 include both `allowNetwork: true` and `acknowledgeCostPrivacy: true`, and the
 provider must have the hosted-call opt-in enabled in settings or in the
@@ -136,9 +143,10 @@ The smoke-test payload is:
 Responses redact secrets and include `networkAttempted`. Failed setup or
 missing acknowledgement returns before any hosted request is attempted.
 
-OpenRouter remains reasoning-only. It can help with labels or VLM/LLM
-reasoning in future workflows, but it is not a pixel segmentation engine and
-will not trace objects by itself.
+OpenAI and OpenRouter remain reasoning-only. OpenAI can propose a reviewed run
+plan in UI-MODEL-04, but MotionJSON still validates the generated config and
+routes segmentation through explicit CV providers. Neither hosted reasoning
+provider is a pixel segmentation engine or traces objects by itself.
 
 ## Safe Demo Guidance
 

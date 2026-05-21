@@ -195,6 +195,31 @@ def test_provider_settings_environment_precedence_for_headless_users(tmp_path, m
     assert secret not in body.decode("utf-8")
 
 
+def test_openai_provider_settings_are_redacted_and_use_env_model_precedence(tmp_path, monkeypatch):
+    secret = "sk-openai-env-secret-abcdef123456"
+    monkeypatch.setenv("OPENAI_API_KEY", secret)
+    monkeypatch.setenv("OPENAI_DEFAULT_MODEL", "gpt-test-env")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    payload = decode(body)
+    openai = provider_by_id(payload, "openai")
+
+    assert status == 200
+    assert openai["locality"] == "hosted"
+    assert openai["credentials"][0]["configured"] is True
+    assert openai["credentials"][0]["source"] == "environment"
+    assert openai["effectiveModel"] == "gpt-test-env"
+    assert secret not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/openai/test", body=b"{}")
+    checked = decode(body)
+    assert status == 200
+    assert checked["status"] == "configured"
+    assert checked["networkAttempted"] is False
+    assert secret not in body.decode("utf-8")
+
+
 def test_hosted_sam2_settings_require_endpoint_key_and_opt_in(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     secret = "hosted-sam2-secret-abcdef123456"
