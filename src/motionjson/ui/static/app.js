@@ -1933,6 +1933,112 @@ const MotionJSONUI = (() => {
     return candidateSelectable(candidate) && candidate.defaultSelected !== false;
   }
 
+  function humanizeReviewCode(value) {
+    return (
+      String(value || "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "review"
+    );
+  }
+
+  function candidateConfidenceScore(candidate) {
+    for (const key of ["confidence", "score", "confidenceScore"]) {
+      const value = toNumber(candidate?.[key], Number.NaN);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+
+  function candidateStatusItems(candidate, { selected = false, exportReady = false } = {}) {
+    const reason = candidateReasonText(candidate);
+    const rawStatus = String(candidate?.reviewStatus || "").toLowerCase();
+    const rejected = candidateRejected(candidate);
+    const confidence = candidateConfidenceScore(candidate);
+    const statuses = [];
+    const add = (key, label, tone) => {
+      if (!statuses.some((item) => item.key === key)) statuses.push({ key, label, tone });
+    };
+
+    if (selected) add("selected", "Selected", "ready");
+    if (rejected) add("rejected", "Rejected", "bad");
+    if (/background|whole_frame|wall|floor|too_large/.test(reason)) add("background_like", "Background-like", "warn");
+    if (/duplicate|overlap|same object/.test(reason)) add("duplicate", "Duplicate", "warn");
+    if ((confidence != null && confidence < 0.45) || /low_confidence|low confidence|uncertain/.test(reason)) {
+      add("low_confidence", "Low confidence", "warn");
+    }
+    if (!rejected && (/needs_review|review_pending|pending/.test(rawStatus) || (!selected && !exportReady))) {
+      add("needs_review", "Needs review", "warn");
+    }
+    if (!rejected && (exportReady || (selected && /reviewed|approved|accepted/.test(rawStatus)))) {
+      add("reviewed_for_export", "Reviewed for export", "ready");
+    }
+    if (!statuses.length) add("candidate", humanizeReviewCode(candidate?.reviewStatus || "candidate"), "neutral");
+    return statuses;
+  }
+
+  function candidateStatusChip(status) {
+    const tone = ["ready", "warn", "bad", "neutral", "muted", "violet"].includes(status?.tone) ? status.tone : "neutral";
+    return `<span class="status-chip is-${tone} candidate-status-chip">${escapeHtml(status?.label || "candidate")}</span>`;
+  }
+
+  function candidateStatusCounts(candidates, selection = {}) {
+    const counts = { selected: 0, rejected: 0, backgroundLike: 0, duplicate: 0, lowConfidence: 0, needsReview: 0, reviewedForExport: 0 };
+    for (const candidate of asArray(candidates)) {
+      const selected = selection[candidateId(candidate)] === true;
+      for (const status of candidateStatusItems(candidate, { selected })) {
+        if (status.key === "selected") counts.selected += 1;
+        else if (status.key === "rejected") counts.rejected += 1;
+        else if (status.key === "background_like") counts.backgroundLike += 1;
+        else if (status.key === "duplicate") counts.duplicate += 1;
+        else if (status.key === "low_confidence") counts.lowConfidence += 1;
+        else if (status.key === "needs_review") counts.needsReview += 1;
+        else if (status.key === "reviewed_for_export") counts.reviewedForExport += 1;
+      }
+    }
+    return counts;
+  }
+
+  function candidateRetrySuggestions({ candidates = [], visibleCandidates = candidates, summary = {}, filters = {} } = {}) {
+    const suggestions = [];
+    const add = (key, title, detail, tone = "warn") => {
+      if (!suggestions.some((item) => item.key === key)) suggestions.push({ key, title, detail, tone });
+    };
+    const allCandidates = asArray(candidates);
+    const visible = asArray(visibleCandidates);
+    const candidateCount = summary?.candidateCount ?? allCandidates.length;
+    const reasons = allCandidates.map(candidateReasonText).join(" ");
+    const lowConfidence = allCandidates.some((candidate) => {
+      const confidence = candidateConfidenceScore(candidate);
+      return confidence != null && confidence < 0.45;
+    });
+
+    if (!candidateCount) {
+      add("maximum_recall", "Try Maximum Recall", "Ask discovery for broader proposals before filtering anything out.");
+      add("add_prompt", "Add a prompt", "Place a point or box on the object so the tracker has a stronger starting cue.");
+      add("import_masks", "Import masks", "Use prepared masks when automatic discovery cannot see the object.");
+    }
+    if (visible.length === 0 && allCandidates.length > 0) {
+      add("maximum_recall", "Try Maximum Recall", "Relax review filters or rerun with a broader recall preset.");
+    }
+    if (/background|whole_frame|wall|floor|too_large/.test(reasons)) {
+      add("smaller_max_area", "Reduce max area", "Background-like candidates usually mean the largest allowed mask is too broad.");
+    }
+    if (/duplicate|overlap|same object/.test(reasons)) {
+      add("smaller_max_area", "Reduce max area", "Tighter masks and overlap filtering can reduce duplicate candidates.");
+    }
+    if (lowConfidence || /low_confidence|low confidence|uncertain/.test(reasons)) {
+      add("add_prompt", "Add a prompt", "A point, box, or brush prompt can turn a weak candidate into a repairable track.");
+    }
+    if (filters.movingOnly && visible.length === 0) {
+      add("moving_workflow", "Choose moving-object workflow", "CPU motion discovery is better when the thing changes between frames.");
+    }
+    if (candidateCount > 0 && allCandidates.every(candidateRejected)) {
+      add("import_masks", "Import masks", "Prepared masks are safest when every automatic candidate is rejected.");
+    }
+    return suggestions.slice(0, 4);
+  }
+
   function syncCandidateSelection(candidates) {
     const jobId = state.selectedJobId || "";
     if (state.candidateSelectionJobId !== jobId) {
@@ -2014,6 +2120,55 @@ const MotionJSONUI = (() => {
     return { includedIds, excludedIds, pendingIds, materializedIds };
   }
 
+  function exportGateSummary({ includedIds = [], excludedIds = [], pendingIds = [], status = null } = {}) {
+    const includedCount = asArray(includedIds).length;
+    const excludedCount = asArray(excludedIds).length;
+    const pendingCount = asArray(pendingIds).length;
+    const rows = [
+      {
+        key: "reviewed_selected_only",
+        tone: includedCount ? "ready" : "warn",
+        title: includedCount ? `${includedCount} reviewed for export` : "No reviewed exports",
+        detail: "Only tracks kept in Review and marked export are included by default.",
+      },
+    ];
+    if (excludedCount) {
+      rows.push({
+        key: "excluded",
+        tone: "warn",
+        title: `${excludedCount} not exported`,
+        detail: "Rejected, hidden, pending, or unmaterialized tracks stay out of the MotionJSON package.",
+      });
+    }
+    if (pendingCount) {
+      rows.push({
+        key: "pending_corrections",
+        tone: "warn",
+        title: "Pending corrections",
+        detail: `${pendingCount} track${pendingCount === 1 ? "" : "s"} need materialized assets before export.`,
+      });
+    }
+    if (status) {
+      rows.push({
+        key: "validation",
+        tone: status.ok === true ? "ready" : "bad",
+        title: "Validation",
+        detail: `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}.`,
+      });
+    }
+    return rows;
+  }
+
+  function exportActionState({ job = null, includedIds = [], status = null } = {}) {
+    const includedCount = asArray(includedIds).length;
+    if (!job) return { disabled: true, label: "Export MotionJSON", reason: "Select a completed run before exporting." };
+    if (!includedCount) return { disabled: true, label: "Export MotionJSON", reason: "No reviewed tracks are included for export." };
+    if (status && status.ok !== true) {
+      return { disabled: true, label: "Resolve validation first", reason: "Fix or validate the reviewed export state before writing MotionJSON." };
+    }
+    return { disabled: false, label: "Export MotionJSON", reason: "" };
+  }
+
   function correctionDiagnosticMessages(entry) {
     const messages = [];
     const repair = entry?.repairDiagnostics || {};
@@ -2043,6 +2198,46 @@ const MotionJSONUI = (() => {
       messages.push(...correctionDiagnosticMessages({ partialRerun: response.partialRerun }));
     }
     return messages.filter(Boolean).join(" - ");
+  }
+
+  function correctionGuidanceForTrack(track, { promptCount = 0, mergeSelectionSize = 0, status = "" } = {}) {
+    if (!track) {
+      return {
+        title: "Choose a track to correct",
+        tone: "muted",
+        items: [
+          "Open Review, choose a track, then relabel, merge, split, add from prompts, or repair it.",
+          "Exports stay disabled until there is a reviewed object track.",
+        ],
+      };
+    }
+    const exportIncluded = isTrackExportIncluded(track);
+    const items = [];
+    if (track.deleted) {
+      items.push("This track is deleted and will not export unless you undo or recreate it.");
+    } else if (exportIncluded) {
+      items.push("This track is currently included in reviewed export output.");
+    } else {
+      items.push("This track is excluded or still review-gated, so it will not export by default.");
+    }
+    if (mergeSelectionSize < 2) {
+      items.push("To merge duplicates, tick merge on at least two tracks in Review.");
+    } else {
+      items.push(`${mergeSelectionSize} tracks are selected for merge; the chosen correction target is kept.`);
+    }
+    if (promptCount === 0) {
+      items.push("Draw a point, box, or brush prompt before Add from prompts or Repair with prompts.");
+    } else {
+      items.push(`${promptCount} prompt${promptCount === 1 ? "" : "s"} ready for add-object or repair actions.`);
+    }
+    if (/failed|unavailable|route unavailable/i.test(status)) {
+      items.push("The correction save route needs attention before edits are durable.");
+    }
+    return {
+      title: track.label || track.objectId || track.id || "Selected track",
+      tone: track.deleted ? "bad" : exportIncluded ? "ready" : "warn",
+      items,
+    };
   }
 
   function collectDiagnostics(job, events, artifacts, tracks, review) {
@@ -3258,6 +3453,15 @@ const MotionJSONUI = (() => {
       return contentUrl ? `<img src="${escapeAttribute(contentUrl)}" alt="${escapeAttribute(label)}" loading="lazy" />` : "";
     }
 
+    function candidatePreviewSlot(candidate, key, label) {
+      const image = candidatePreviewImage(candidate, key, label);
+      return `
+        <div class="candidate-preview-slot">
+          ${image || `<span>${escapeHtml(label)}</span>`}
+        </div>
+      `;
+    }
+
     function candidateScoreLabel(candidate, key, label) {
       return typeof candidate?.[key] === "number" ? `${label} ${Math.round(candidate[key] * 100)}%` : "";
     }
@@ -3270,9 +3474,11 @@ const MotionJSONUI = (() => {
       const visibleCandidates = filterReviewCandidates(candidates, state.candidateSelection, filters);
       const selectedIds = selectedCandidateIds(candidates);
       const selectedCount = selectedIds.length;
+      const statusCounts = candidateStatusCounts(candidates, state.candidateSelection);
       const candidateCount = summary?.candidateCount ?? candidates.length;
       const provider = summary?.providerName || summary?.provider || "none";
       const qualityPreset = summary?.qualityPreset || "unknown";
+      const suggestions = candidateRetrySuggestions({ candidates, visibleCandidates, summary, filters });
       const trackButton = $("#trackSelectedCandidatesButton");
       const status = $("#candidateActionStatus");
       trackButton.disabled = !state.selectedJobId || selectedCount === 0 || state.candidateTrackingStatus === "tracking";
@@ -3281,27 +3487,44 @@ const MotionJSONUI = (() => {
         state.candidateTrackingStatus && state.candidateTrackingStatus !== "tracking"
           ? state.candidateTrackingStatus
           : candidates.length
-            ? `${selectedCount} selected from API candidates.`
+            ? `${selectedCount} kept, ${statusCounts.needsReview} need review, ${statusCounts.rejected} rejected.`
             : "No API candidates loaded.";
       $("#candidateSummaryStatus").textContent = candidates.length
-        ? `${selectedCount}/${candidateCount} selected`
+        ? `${selectedCount}/${candidateCount} kept`
         : summary
           ? "No candidates"
           : "Not loaded";
       $("#candidateSummaryStatus").className = `status-chip ${candidates.length ? "is-ready" : summary ? "is-warn" : "is-muted"}`;
+      $("#candidateRetrySuggestions").innerHTML = suggestions.length
+        ? suggestions
+            .map(
+              (suggestion) => `
+                <div class="suggestion-row candidate-suggestion is-${escapeAttribute(suggestion.tone || "warn")}">
+                  <strong>${escapeHtml(suggestion.title)}</strong>
+                  <span class="row-meta">${escapeHtml(suggestion.detail)}</span>
+                </div>
+              `,
+            )
+            .join("")
+        : "";
       $("#candidateSummaryList").innerHTML = visibleCandidates.length
         ? visibleCandidates
             .map((candidate) => {
               const id = candidateId(candidate);
               const selected = state.candidateSelection[id] === true;
               const rejected = candidateRejected(candidate);
+              const statuses = candidateStatusItems(candidate, { selected });
               const box = candidate.box
                 ? `box x:${candidate.box.x}, y:${candidate.box.y}, ${candidate.box.w}x${candidate.box.h}`
                 : "geometry unavailable";
-              const detail = [
-                id || "candidate",
+              const sourceDetail = [
                 candidate.source || provider,
-                `quality ${qualityPreset}`,
+                candidate.providerName ? `via ${candidate.providerName}` : "",
+                candidate.frameIndex != null ? `frame ${candidate.frameIndex}` : "",
+              ]
+                .filter(Boolean)
+                .join(" - ");
+              const scoreDetail = [
                 box,
                 candidateScoreLabel(candidate, "confidence", "confidence"),
                 candidateScoreLabel(candidate, "stabilityScore", "stable"),
@@ -3311,20 +3534,22 @@ const MotionJSONUI = (() => {
                 .filter(Boolean)
                 .join(" - ");
               const preview = [
-                candidatePreviewImage(candidate, "thumbnailArtifactId", `${candidate.label || id} thumbnail`),
-                candidatePreviewImage(candidate, "maskPreviewArtifactId", `${candidate.label || id} mask preview`),
+                candidatePreviewSlot(candidate, "thumbnailArtifactId", "thumbnail"),
+                candidatePreviewSlot(candidate, "maskPreviewArtifactId", "mask"),
               ]
-                .filter(Boolean)
                 .join("");
               return `
                 <div class="candidate-row ${selected ? "is-selected" : ""} ${rejected ? "is-rejected" : ""}" data-candidate-row="${escapeAttribute(id)}">
-                  <div class="candidate-preview">${preview || `<span>${escapeHtml(candidate.frameIndex != null ? `frame ${candidate.frameIndex}` : "no preview")}</span>`}</div>
+                  <div class="candidate-preview">${preview}</div>
                   <div class="candidate-body">
                     <div class="candidate-topline">
-                      <strong>${escapeHtml(candidate.label || id || "candidate")}</strong>
-                      ${statusChip(candidate.reviewStatus || (rejected ? "rejected" : selected ? "selected" : "pending"), candidate.reviewStatus || "candidate", !rejected)}
+                      <div class="candidate-title-group">
+                        <strong>${escapeHtml(candidate.label || id || "candidate")}</strong>
+                        <span class="row-meta">${escapeHtml(sourceDetail || id || "candidate source")}</span>
+                      </div>
+                      <div class="candidate-status-list">${statuses.map(candidateStatusChip).join("")}</div>
                     </div>
-                    <span class="row-meta">${escapeHtml(detail)}</span>
+                    <span class="row-meta">${escapeHtml(scoreDetail || `quality ${qualityPreset}`)}</span>
                     <div class="track-actions">
                       <label class="track-toggle">
                         <input type="checkbox" data-candidate-select="${escapeAttribute(id)}" ${selected ? "checked" : ""} ${candidateSelectable(candidate) ? "" : "disabled"} />
@@ -3483,6 +3708,25 @@ const MotionJSONUI = (() => {
       $("#repairTrackButton").disabled = !state.selectedCorrectionTrackId || promptCount === 0;
       $("#splitTrackButton").disabled = !state.selectedCorrectionTrackId;
       $("#addObjectButton").disabled = promptCount === 0;
+      const guidance = correctionGuidanceForTrack(selected, {
+        promptCount,
+        mergeSelectionSize: state.mergeSelection.size,
+        status,
+      });
+      $("#correctionGuidance").innerHTML = `
+        <div class="diagnostic-row is-${escapeAttribute(guidance.tone || "warn")}">
+          <strong>${escapeHtml(guidance.title)}</strong>
+          <span class="row-meta">${escapeHtml(guidance.items[0] || "Review the selected track before exporting.")}</span>
+        </div>
+        ${
+          guidance.items.length > 1
+            ? `<ul class="guidance-list">${guidance.items
+                .slice(1)
+                .map((item) => `<li>${escapeHtml(item)}</li>`)
+                .join("")}</ul>`
+            : ""
+        }
+      `;
 
       const suggestions = asArray(state.correctionState.mergeSuggestions);
       $("#mergeSuggestionList").innerHTML = suggestions.length
@@ -3695,10 +3939,13 @@ const MotionJSONUI = (() => {
       });
       const status = exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation;
       const ok = status?.ok === true;
+      const exportAction = exportActionState({ job, includedIds, status });
       $("#exportStatus").textContent = !job ? "No run" : ok ? "Valid" : status ? "Needs review" : "Not validated";
       $("#exportStatus").className = `status-chip ${!job ? "is-muted" : ok ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       $("#validateExportButton").disabled = !job;
-      $("#exportMotionJsonButton").disabled = !job || includedIds.length === 0;
+      $("#exportMotionJsonButton").disabled = exportAction.disabled;
+      $("#exportMotionJsonButton").textContent = exportAction.label;
+      $("#exportMotionJsonButton").dataset.tooltip = exportAction.reason || "Write validated MotionJSON artifacts";
 
       const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : storedExportArtifacts;
       const artifactLinks = exportArtifacts
@@ -3719,22 +3966,19 @@ const MotionJSONUI = (() => {
           ? `<div class="diagnostic-row is-warn"><strong>quality routing changed</strong><span class="row-meta">Validate again to refresh routes for the current export settings.</span></div>`
           : "";
       const rightsRows = rightsWarningRows(exportState.rightsSummary || storedValidationArtifact?.metadata?.rightsSummary || state.jobReview?.rightsSummary, exportState.exportWarnings);
+      const gateRows = exportGateSummary({ includedIds, excludedIds, pendingIds, status })
+        .map(
+          (row) => `
+            <div class="diagnostic-row is-${escapeAttribute(row.tone)} export-gate-row">
+              <strong>${escapeHtml(row.title)}</strong>
+              <span class="row-meta">${escapeHtml(row.detail)}</span>
+            </div>
+          `,
+        )
+        .join("");
       $("#exportSummary").innerHTML = job
         ? `
-            <div class="diagnostic-row is-${ok ? "ready" : status ? "warn" : "warn"}">
-              <strong>${escapeHtml(includedIds.length ? `${includedIds.length} included` : "no included tracks")}</strong>
-              <span class="row-meta">${escapeHtml(excludedIds.length ? `${excludedIds.length} excluded from export` : "no excluded tracks reported")}</span>
-            </div>
-            ${
-              pendingIds.length
-                ? `<div class="diagnostic-row is-warn"><strong>pending corrections</strong><span class="row-meta">${escapeHtml(`${pendingIds.length} track${pendingIds.length === 1 ? "" : "s"} need materialized assets before export`)}</span></div>`
-                : ""
-            }
-            ${
-              status
-                ? `<div class="diagnostic-row is-${ok ? "ready" : "bad"}"><strong>validation</strong><span class="row-meta">${escapeHtml(`${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}`)}</span></div>`
-                : ""
-            }
+            ${gateRows}
             ${issueRows}
             ${validationMessageRows}
             ${rightsRows}
@@ -4982,6 +5226,254 @@ const MotionJSONUI = (() => {
       renderConfigPreview();
     }
 
+    function applyReviewCaptureFixture(capture) {
+      const jobId = `job_${capture}_layout`;
+      const runConfig = buildRunConfig({
+        preset: "auto_object_proposals",
+        discoveryMode: "auto_object_proposals",
+        projectId: "project_layout",
+        videoId: "video_layout",
+        sourcePath: "local-ui://assets/video_layout",
+        videoPath: "local-ui://assets/video_layout",
+        outputDirectory: "out/ui-runs/project_layout",
+        objectLabel: "red ball",
+        objectId: "red_ball",
+        currentFrame: 12,
+        keyframes: new Set([0, 12, 24]),
+        prompts: [],
+        strokes: [],
+        maskProvider: "mock",
+        device: "auto",
+        sampleFps: "12",
+        maxFrames: "48",
+        minArea: "100",
+        maxAreaRatio: "0.45",
+        stabilityThreshold: "0.82",
+        overlapThreshold: "0.72",
+        boxThreshold: "0.35",
+        textThreshold: "0.25",
+        motionSensitivity: "32",
+        maxObjects: "5",
+        modelName: "auto",
+        outputMode: "authoring",
+        qualityPreset: "balanced",
+      });
+      const job = {
+        id: jobId,
+        type: "extract",
+        status: "succeeded",
+        progress: 100,
+        percent: 100,
+        payload: { mask_provider: "mock", run_config: runConfig },
+        result: { objects: 2, frames: 48 },
+        updated_at: "2026-05-20T12:00:00Z",
+        message: "review fixture ready",
+      };
+      const candidates = [
+        {
+          candidateId: "cand_red_ball",
+          objectId: "red_ball",
+          label: "Red ball",
+          source: "text_detector",
+          providerName: "mock detector",
+          frameIndex: 12,
+          box: { x: 310, y: 160, w: 84, h: 84 },
+          confidence: 0.92,
+          stabilityScore: 0.91,
+          motionScore: 0.22,
+          frameCoverageEstimate: 0.76,
+          reviewStatus: "accepted",
+          defaultSelected: true,
+        },
+        {
+          candidateId: "cand_floor",
+          objectId: "floor_patch",
+          label: "Floor patch",
+          source: "sam_auto_masks",
+          providerName: "mock masks",
+          frameIndex: 12,
+          box: { x: 0, y: 300, w: 640, h: 160 },
+          confidence: 0.54,
+          stabilityScore: 0.7,
+          motionScore: 0.01,
+          frameCoverageEstimate: 0.95,
+          reviewStatus: "rejected",
+          rejectionReason: "background_like",
+          warnings: ["whole_frame_like"],
+          defaultSelected: false,
+        },
+        {
+          candidateId: "cand_duplicate",
+          objectId: "red_ball_duplicate",
+          label: "Duplicate red ball",
+          source: "text_detector",
+          providerName: "mock detector",
+          frameIndex: 13,
+          box: { x: 316, y: 164, w: 80, h: 80 },
+          confidence: 0.86,
+          stabilityScore: 0.88,
+          motionScore: 0.2,
+          frameCoverageEstimate: 0.72,
+          reviewStatus: "rejected",
+          rejectionReason: "duplicate_mask",
+          defaultSelected: false,
+        },
+        {
+          candidateId: "cand_low_confidence",
+          objectId: "soft_shadow",
+          label: "Soft shadow",
+          source: "text_detector",
+          providerName: "mock detector",
+          frameIndex: 18,
+          box: { x: 410, y: 220, w: 68, h: 42 },
+          confidence: 0.31,
+          stabilityScore: 0.55,
+          motionScore: 0.04,
+          frameCoverageEstimate: 0.28,
+          reviewStatus: "needs_review",
+          warnings: ["low_confidence"],
+          defaultSelected: false,
+        },
+        {
+          candidateId: "cand_moving_hand",
+          objectId: "moving_hand",
+          label: "Moving hand",
+          source: "motion_foreground",
+          providerName: "CPU motion",
+          frameIndex: 22,
+          box: { x: 120, y: 92, w: 96, h: 120 },
+          confidence: 0.66,
+          stabilityScore: 0.62,
+          motionScore: 0.48,
+          frameCoverageEstimate: 0.44,
+          reviewStatus: "pending",
+          defaultSelected: false,
+        },
+      ];
+      const reviewTracks = [
+        {
+          id: "red_ball",
+          objectId: "red_ball",
+          label: "Red ball",
+          source: "selected-candidate-tracker",
+          providerName: "mock tracker",
+          confidence: 0.91,
+          frameStart: 1,
+          frameEnd: 48,
+          visibleFrameCount: 45,
+          frameCount: 48,
+          exportStatus: "accepted",
+          exportIncluded: true,
+          reviewSource: "reviewed",
+          color: "#10a37f",
+          rightsSummary: {
+            commercialUseStatus: "review_required",
+            license: "user_uploaded_unverified",
+            attributionRequired: true,
+            sourceAttribution: { displayText: "User uploaded source video" },
+          },
+          frames: [{ frame: 12, bbox: { x: 310, y: 160, w: 84, h: 84 }, visible: true }],
+        },
+        {
+          id: "duplicate_ball",
+          objectId: "duplicate_ball",
+          label: "Duplicate ball",
+          source: "selected-candidate-tracker",
+          providerName: "mock tracker",
+          confidence: 0.86,
+          frameStart: 2,
+          frameEnd: 40,
+          visibleFrameCount: 36,
+          frameCount: 48,
+          exportStatus: "review_pending",
+          exportIncluded: false,
+          reviewSource: "duplicate",
+          warnings: ["possible duplicate of Red ball"],
+          color: "#2f80ed",
+          frames: [{ frame: 12, bbox: { x: 316, y: 164, w: 80, h: 80 }, visible: true }],
+        },
+      ];
+      state.selectedProjectId = "project_layout";
+      state.selectedVideoId = "video_layout";
+      state.jobs = [job];
+      state.selectedJobId = job.id;
+      state.selectedJob = job;
+      state.jobEvents = [
+        { event_type: "candidate_discovery", message: "5 candidates proposed for review" },
+        { event_type: "track_linking", message: "2 selected candidates tracked" },
+        { event_type: "review_gate", message: "export includes reviewed selected objects only" },
+      ];
+      state.jobArtifacts = [];
+      state.jobReview = {
+        candidates,
+        candidateSummary: {
+          provider: "auto_object_proposals",
+          providerName: "mock detector",
+          qualityPreset: "balanced",
+          candidateCount: candidates.length,
+          acceptedCandidateCount: 1,
+          rejectedCandidateCount: 2,
+          defaultSelectedCount: 1,
+          rejectionReasons: { background_like: 1, duplicate_mask: 1 },
+        },
+        tracks: reviewTracks,
+        objects: [{ objectId: "red_ball", id: "red_ball", label: "Red ball" }],
+        export: {
+          includedObjectIds: ["red_ball", "manual_prompt_pending"],
+          excludedObjectIds: ["duplicate_ball", "floor_patch", "soft_shadow"],
+          exportReviewRequired: true,
+        },
+        rightsSummary: {
+          format: "motionjson.export_rights_summary.v0.1",
+          summary: { commercialUseApproved: false, commercialUseReviewRequired: ["red_ball"] },
+          warnings: [{ code: "commercial_use_review_required", message: "Review source rights before publishing." }],
+        },
+      };
+      state.reviewTracks = reviewTracks;
+      state.trackVisibility = { red_ball: true, duplicate_ball: true };
+      state.candidateSelection = { cand_red_ball: true };
+      state.candidateSelectionJobId = job.id;
+      state.candidateTrackingStatus = "1 reviewed candidate tracked; export remains reviewed-only.";
+      state.selectedCorrectionTrackId = "red_ball";
+      state.mergeSelection = capture === "correction-tools" ? new Set(["red_ball", "duplicate_ball"]) : new Set();
+      state.prompts = [
+        { id: "prompt_layout_point", kind: "positive_point", frame_index: 12, object_id: "red_ball", label: "Red ball", data: { x: 350, y: 198 } },
+      ];
+      state.strokes = [];
+      state.correctionState = {
+        ...emptyCorrectionState(job.id),
+        loaded: true,
+        persistenceStatus: "loaded",
+        persistenceMessage: "Correction state loaded from the local backend. Edits are saved locally before export.",
+        mergeSuggestions: [{ keepObjectId: "red_ball", mergeObjectId: "duplicate_ball", meanIou: 0.82 }],
+        history: [
+          {
+            type: "relabel_track",
+            trackId: "red_ball",
+            label: "Red ball",
+            frameRange: [1, 48],
+            createdAt: "2026-05-20T12:00:00Z",
+            persistenceStatus: "saved",
+          },
+        ],
+      };
+      state.exportValidation =
+        capture === "export-gate"
+          ? {
+              jobId: job.id,
+              includedObjectIds: ["red_ball"],
+              excludedObjectIds: ["duplicate_ball", "manual_prompt_pending"],
+              validation: { ok: false, issueCount: 1, checked: 4, issues: [{ path: "manual_prompt_pending", message: "Added object needs materialized assets before export." }] },
+              exportValidationMessages: [{ code: "reviewed_only_export", severity: "warn", message: "Only reviewed selected tracks are eligible for export." }],
+              rightsSummary: state.jobReview.rightsSummary,
+              exportWarnings: [{ code: "commercial_use_review_required", severity: "warn", message: "Confirm source rights before public distribution." }],
+            }
+          : null;
+      state.exportResult = null;
+      renderJobs();
+      renderJobReview();
+    }
+
     function applyDocsCaptureMode() {
       const params = new URLSearchParams(window.location.search);
       const capture = params.get("capture");
@@ -5266,6 +5758,39 @@ const MotionJSONUI = (() => {
         if (configPanel) configPanel.style.order = "-1";
         if (localPathDisclosure) localPathDisclosure.open = true;
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
+      } else if (["candidate-review", "correction-tools", "export-gate"].includes(capture)) {
+        if (shell) {
+          shell.style.display = "block";
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (workspace) workspace.style.display = "none";
+        if (rightRail) {
+          rightRail.style.display = "grid";
+          rightRail.style.gridTemplateColumns = window.innerWidth < 760 ? "1fr" : "repeat(2, minmax(0, 1fr))";
+          rightRail.style.gap = "16px";
+          rightRail.style.borderLeft = "0";
+          rightRail.style.minHeight = "100vh";
+        }
+        applyReviewCaptureFixture(capture);
+        if (capture === "candidate-review") {
+          const backgroundFilter = document.querySelector("#candidateFilterNotBackground");
+          const duplicateFilter = document.querySelector("#candidateFilterNotDuplicate");
+          if (backgroundFilter) backgroundFilter.checked = false;
+          if (duplicateFilter) duplicateFilter.checked = false;
+          renderCandidateSummary();
+        }
+        document.querySelectorAll(".right-rail details").forEach((details) => {
+          const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
+          const openSummaries = {
+            "candidate-review": ["run monitor", "review"],
+            "correction-tools": ["review", "corrections"],
+            "export-gate": ["review", "artifacts and exports"],
+          }[capture];
+          const open = openSummaries.includes(summary);
+          details.open = open;
+          details.style.display = open ? "" : "none";
+        });
       } else if (capture === "job-review") {
         if (shell) {
           shell.style.display = "block";
@@ -6397,9 +6922,15 @@ const MotionJSONUI = (() => {
     buildRunConfig,
     buildRunPlan,
     buildReviewTracks,
+    candidateRetrySuggestions,
+    candidateStatusCounts,
+    candidateStatusItems,
     containedVideoRect,
     correctionDiagnosticMessages,
+    correctionGuidanceForTrack,
     correctionResponseMessage,
+    exportActionState,
+    exportGateSummary,
     filterReviewCandidates,
     modelConnectorsForSetup,
     modelPlanConfirmPayload,

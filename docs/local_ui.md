@@ -272,6 +272,15 @@ advanced disclosure and requires explicit acknowledgement before its config can
 validate. Trace Everything output is intentionally review-pending and blocked
 from export until the user reviews selected objects.
 
+The browser cards show thumbnails and mask previews when the API resolves them
+to local artifact links. When previews are missing, the card keeps the same
+space and labels the empty thumbnail/mask slots instead of collapsing the
+layout. Candidate status chips use plain review language: selected, rejected,
+background-like, duplicate, low confidence, needs review, and reviewed for
+export. The candidate panel also renders retry suggestions that point users to
+Maximum Recall, smaller max-area settings, the moving-object workflow, extra
+prompts, or mask import when the candidate mix indicates those recovery paths.
+
 The review response also includes `review.timeline` in
 `motionjson.review_timeline.v0.1` format. This API-owned summary contains
 candidate appearance markers, track start/end/loss markers, marker counts, and
@@ -407,7 +416,10 @@ review/export decision has a durable local audit trail.
 request is persisted with `aiUsage: "none"` and `partialRerun.available:
 false` instead of silently pretending that SAM2, detectors, or other ML
 providers ran. The correction UI surfaces these repair and partial-rerun
-diagnostics in the saved edit message and correction history.
+diagnostics in the saved edit message and correction history. It also shows a
+track-specific correction guidance panel before the edit controls so users can
+see whether the selected track exports, whether enough tracks are selected for
+merge, and whether prompts are required before add-object or repair actions.
 
 `POST /api/jobs/JOB_ID/validate` validates the corrected export state without
 writing new artifacts. It accepts the same `preset`, `includeMasks`,
@@ -443,7 +455,10 @@ object ids, sanitized run config/correction state, quality routing, validation
 status, object-layer pack summary, export validation messages, rights warnings,
 and `aiUsage: "none"`. Local absolute paths and storage keys are redacted from
 public export payloads. The export panel and selected-track detail surface
-rights status without requiring users to open raw JSON.
+rights status without requiring users to open raw JSON. The default export gate
+is reviewed-selected-only: included rows come from tracks the user kept in
+Review and marked for export, while rejected, hidden, pending, review-pending,
+or unmaterialized correction tracks are summarized as not exported.
 
 `POST /api/projects/PROJECT_ID/imports/motionjson` imports an existing
 MotionJSON file or output directory into a succeeded `motionjson_import` job

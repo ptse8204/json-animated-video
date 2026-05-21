@@ -567,6 +567,7 @@
               <button id="trackSelectedCandidatesButton" class="primary-action" type="button" disabled>Track selected</button>
               <span id="candidateActionStatus" class="row-meta">No API candidates loaded.</span>
             </div>
+            <div id="candidateRetrySuggestions" class="candidate-suggestions" aria-live="polite"></div>
             <div id="candidateSummaryList" class="artifact-list"></div>
           </section>
           <section class="compact-panel">
@@ -603,6 +604,7 @@
               <h2>Export</h2>
               <span id="exportStatus" class="status-chip is-muted">Not validated</span>
             </div>
+            <p class="panel-note">Only reviewed tracks kept in Review and marked for export are included by default.</p>
             <div class="export-panel">
               <label>
                 <span>Preset</span>
@@ -642,6 +644,7 @@
               <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
             </div>
             <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
+            <div id="correctionGuidance" class="correction-guidance" aria-live="polite"></div>
             <div class="correction-editor">
               <label>
                 <span>Track</span>

@@ -306,3 +306,48 @@ Findings and changes:
 - Probe screenshots exposed disabled primary buttons that still looked active
   and run-monitor cards that became too narrow beside the plan panel. Disabled
   button styling and the capture grid were adjusted before the final matrix.
+
+## UI-MODEL-07 Evidence
+
+UI-MODEL-07 upgraded the review path after extraction. Candidate cards now keep
+stable preview slots, expose explicit review/export status chips, and render
+plain-language retry suggestions. The correction panel now starts with
+track-specific guidance, and the export panel states that only reviewed
+selected tracks are included by default.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-07-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-07
+python3 scripts/capture_docs_assets.py --out-dir docs/design/screenshots/ui-model-07-docs
+```
+
+Representative captures:
+
+![UI-MODEL-07 desktop candidate review](screenshots/ui-model-07/desktop-1440-candidate-review.png)
+
+![UI-MODEL-07 desktop correction tools](screenshots/ui-model-07/desktop-1440-correction-tools.png)
+
+![UI-MODEL-07 mobile export gate](screenshots/ui-model-07/mobile-390-export-gate-full.png)
+
+Findings and changes:
+
+- The before matrix showed the API candidates, tracks, and export cards, but it
+  did not isolate correction tools and only showed a pending/accepted candidate
+  status path.
+- The after matrix adds `candidate-review`, `correction-tools`, and
+  `export-gate` states across 390x844, 768x1024, 1024x768, 1366x768,
+  1440x900, and 1920x1080.
+- Candidate review evidence now includes selected, rejected, background-like,
+  duplicate, low-confidence, needs-review, and reviewed-for-export statuses.
+- Correction evidence shows the selected track export state, merge readiness,
+  prompt readiness, edit controls, duplicate merge suggestion, and correction
+  history without unrelated right-rail sections competing for the first screen.
+- Export evidence shows reviewed-selected-only inclusion, excluded/pending
+  counts, validation issues, and rights warnings in plain language.

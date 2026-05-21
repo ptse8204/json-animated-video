@@ -36,6 +36,9 @@ const CAPTURE_STATES = [
   "model-plan-running",
   "model-plan-succeeded",
   "job-review",
+  "candidate-review",
+  "correction-tools",
+  "export-gate",
 ];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
 
@@ -50,7 +53,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,model-setup,job-review] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -274,7 +277,8 @@ async function evaluateLayout(cdp) {
       const importantSelectors = [
         ".app-shell", ".sidebar", ".workspace", ".right-rail", ".topbar",
         ".workspace-grid", ".viewer-panel", ".setup-panel", ".wizard-panel",
-        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel", "#modelSetupPanel"
+        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel", "#modelSetupPanel",
+        "#candidateSummaryList", "#correctionGuidance", "#exportSummary"
       ];
       const rect = (selector) => {
         const element = document.querySelector(selector);
@@ -416,6 +420,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
+      if (["job-review", "candidate-review", "correction-tools", "export-gate"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
     }

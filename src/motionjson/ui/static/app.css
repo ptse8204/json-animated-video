@@ -950,11 +950,17 @@ input[type="range"] {
   justify-content: space-between;
 }
 
+.candidate-suggestions {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+}
+
 .candidate-row {
   display: grid;
-  grid-template-columns: minmax(56px, 72px) minmax(0, 1fr);
-  gap: 10px;
-  padding: 9px;
+  grid-template-columns: minmax(88px, 104px) minmax(0, 1fr);
+  gap: 12px;
+  padding: 11px;
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface-muted);
@@ -971,9 +977,15 @@ input[type="range"] {
 
 .candidate-preview {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-template-columns: 1fr;
+  gap: 6px;
+  align-self: start;
+}
+
+.candidate-preview-slot {
+  display: grid;
   place-items: stretch;
-  min-height: 58px;
+  min-height: 48px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -983,20 +995,22 @@ input[type="range"] {
   text-align: center;
 }
 
-.candidate-preview img {
+.candidate-preview-slot img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.candidate-preview span {
+.candidate-preview-slot span {
   align-self: center;
   justify-self: center;
-  padding: 4px;
+  padding: 5px;
 }
 
 .candidate-body,
-.candidate-topline {
+.candidate-topline,
+.candidate-title-group,
+.candidate-status-list {
   min-width: 0;
 }
 
@@ -1013,8 +1027,35 @@ input[type="range"] {
   flex-wrap: wrap;
 }
 
+.candidate-title-group {
+  display: grid;
+  gap: 2px;
+}
+
+.candidate-status-list {
+  display: flex;
+  gap: 5px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
 .candidate-topline .status-chip {
   max-width: 100%;
+}
+
+.candidate-suggestion {
+  border-color: #e5be5f;
+  background: var(--warn-soft);
+}
+
+.candidate-suggestion.is-ready {
+  border-color: #7ab9b1;
+  background: var(--ready-soft);
+}
+
+.candidate-suggestion.is-bad {
+  border-color: #f0a29b;
+  background: var(--bad-soft);
 }
 
 .track-row.is-selected {
@@ -1159,6 +1200,22 @@ input[type="range"] {
 
 .correction-meta {
   margin-top: 8px;
+}
+
+.correction-guidance {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.guidance-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .panel-note {
@@ -2633,6 +2690,14 @@ button,
 
   .goal-card {
     min-height: 0;
+  }
+
+  .candidate-row {
+    grid-template-columns: 1fr;
+  }
+
+  .candidate-status-list {
+    justify-content: flex-start;
   }
 
   .run-plan-step {

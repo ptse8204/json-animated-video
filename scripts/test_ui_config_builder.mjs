@@ -520,6 +520,44 @@ assert.deepEqual(ui.trackSelectedPayload(["cand_1", "cand_1", "cand_2"]), {
   trackMode: "selected_only",
   exportReviewRequired: true,
 });
+const candidateStatuses = ui.candidateStatusItems(
+  { candidateId: "cand_review", confidence: 0.32, reviewStatus: "needs_review", warnings: ["low_confidence"] },
+  { selected: false },
+);
+assert.deepEqual(
+  candidateStatuses.map((status) => status.key),
+  ["low_confidence", "needs_review"],
+);
+assert.deepEqual(ui.candidateStatusItems({ reviewStatus: "accepted" }, { selected: true }).map((status) => status.key), [
+  "selected",
+  "reviewed_for_export",
+]);
+const reviewStatusCounts = ui.candidateStatusCounts(
+  [
+    { candidateId: "cand_selected", reviewStatus: "accepted" },
+    { candidateId: "cand_background", reviewStatus: "rejected", rejectionReason: "background_like" },
+    { candidateId: "cand_duplicate", reviewStatus: "rejected", rejectionReason: "duplicate_mask" },
+  ],
+  { cand_selected: true },
+);
+assert.equal(reviewStatusCounts.selected, 1);
+assert.equal(reviewStatusCounts.rejected, 2);
+assert.equal(reviewStatusCounts.backgroundLike, 1);
+assert.equal(reviewStatusCounts.duplicate, 1);
+const retrySuggestions = ui.candidateRetrySuggestions({
+  candidates: [
+    { candidateId: "cand_background", reviewStatus: "rejected", rejectionReason: "background_like" },
+    { candidateId: "cand_low", reviewStatus: "needs_review", confidence: 0.2 },
+  ],
+  visibleCandidates: [],
+  summary: { candidateCount: 2 },
+  filters: { movingOnly: true },
+});
+assert.ok(retrySuggestions.some((suggestion) => suggestion.key === "maximum_recall"));
+assert.ok(retrySuggestions.some((suggestion) => suggestion.key === "smaller_max_area"));
+assert.ok(retrySuggestions.some((suggestion) => suggestion.key === "add_prompt"));
+assert.ok(retrySuggestions.some((suggestion) => suggestion.key === "moving_workflow"));
+assert.ok(ui.candidateRetrySuggestions({ candidates: [], summary: { candidateCount: 0 } }).some((suggestion) => suggestion.key === "import_masks"));
 
 const timeline = ui.timelineMarkersForDisplay(
   {
@@ -616,6 +654,26 @@ const validatedExportSummary = ui.buildExportPanelSummary({
 assert.deepEqual(validatedExportSummary.includedIds, ["object_0"]);
 assert.deepEqual(validatedExportSummary.pendingIds, ["manual_object"]);
 assert.deepEqual(validatedExportSummary.excludedIds, ["manual_object"]);
+assert.deepEqual(
+  ui.exportGateSummary({
+    includedIds: ["object_0"],
+    excludedIds: ["object_1"],
+    pendingIds: ["manual_object"],
+    status: { ok: false, issueCount: 1, checked: 3 },
+  }).map((row) => row.key),
+  ["reviewed_selected_only", "excluded", "pending_corrections", "validation"],
+);
+assert.deepEqual(ui.exportActionState({ job: null, includedIds: ["object_0"] }), {
+  disabled: true,
+  label: "Export MotionJSON",
+  reason: "Select a completed run before exporting.",
+});
+assert.deepEqual(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["object_0"], status: { ok: false } }), {
+  disabled: true,
+  label: "Resolve validation first",
+  reason: "Fix or validate the reviewed export state before writing MotionJSON.",
+});
+assert.equal(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["object_0"], status: { ok: true } }).disabled, false);
 
 const repairMessage = ui.correctionResponseMessage({
   repairDiagnostics: {
@@ -636,6 +694,13 @@ const repairMessage = ui.correctionResponseMessage({
 });
 assert.match(repairMessage, /repair_provider_unavailable/);
 assert.match(repairMessage, /sam2-local/);
+const correctionGuidance = ui.correctionGuidanceForTrack(
+  { id: "red_ball", objectId: "red_ball", label: "red ball", exportStatus: "review_pending" },
+  { promptCount: 0, mergeSelectionSize: 1, status: "loaded" },
+);
+assert.equal(correctionGuidance.tone, "warn");
+assert.ok(correctionGuidance.items.some((item) => item.includes("will not export")));
+assert.ok(correctionGuidance.items.some((item) => item.includes("Draw a point")));
 
 console.log(
   JSON.stringify(
@@ -649,6 +714,7 @@ console.log(
         "api-review-timeline",
         "review-track-gating",
         "correction-state",
+        "review-ux-guidance",
         "model-setup-flow",
         "model-plan-confirmation",
         "python-config-validation",
