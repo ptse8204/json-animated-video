@@ -52,8 +52,8 @@ Use this checklist before sharing a MotionJSON backend beyond a local machine.
 - Enable Dependabot alerts and grouped updates for Python, npm, GitHub Actions,
   and Docker manifests.
 - Protect the default branch with required reviews and required CI checks.
-- Require a license file before publishing a reusable release or advertising
-  redistribution/commercial rights.
+- Keep the Apache-2.0 `LICENSE` and package metadata in sync before publishing
+  reusable releases or advertising redistribution/commercial rights.
 - Use protected or signed release tags for release candidates when available.
 - Keep Codex/GitHub automation from pushing commits, publishing packages,
   changing provider settings, or making hosted calls without human review.

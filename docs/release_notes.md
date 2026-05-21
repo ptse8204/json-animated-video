@@ -66,11 +66,15 @@ and export. Heavyweight ML providers remain optional and capability-gated.
   metadata. They do not create a public marketplace, billing flow, or hosted
   commerce surface in this release candidate.
 
-## License boundary
+## License
 
-No `LICENSE` file is present in this repository snapshot. Reuse,
-redistribution, and commercial rights are not granted until the project adds an
-explicit license.
+MotionJSON is licensed under the Apache License, Version 2.0. See the root
+`LICENSE` file and package metadata.
+
+Generated MotionJSON output remains subject to the user's source-media rights,
+attribution, creator approval, provider terms, and export metadata. The project
+license does not grant rights to third-party videos, images, model checkpoints,
+provider outputs, or other media supplied by users.
 
 ## Release gate
 

@@ -42,6 +42,6 @@ For non-sensitive bugs, use a normal GitHub issue.
 Maintainers should enable private vulnerability reporting, secret scanning,
 push protection, Dependabot alerts, grouped dependency updates, protected
 branches, required CI checks, and protected or signed release tags before
-publishing release candidates. A reusable public release also needs an explicit
-`LICENSE` file; this repository snapshot does not grant reuse, redistribution,
-or commercial rights without one.
+publishing release candidates. A reusable public release should keep the root
+Apache-2.0 `LICENSE` file and package metadata in sync, and should continue to
+distinguish project source-code rights from user-supplied media rights.

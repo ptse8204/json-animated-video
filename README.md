@@ -414,9 +414,9 @@ Current release-candidate boundaries:
   implemented as local-first, opt-in, review-gated workflows;
 - SAM2, detector, hosted segmentation, OpenRouter, FFmpeg video rendering, and
   public hosted demos remain optional or environment-dependent;
-- no license file is present in this repository snapshot, so reuse,
-  redistribution, and commercial rights are not granted until the project adds
-  an explicit license.
+- MotionJSON source code and package metadata are licensed under Apache-2.0;
+  generated output rights still depend on the user's source videos, media
+  rights, and export metadata.
 
 ## Contributing with Codex
 
@@ -439,6 +439,10 @@ The old root README planning packet was preserved at
 
 ## License
 
-No license file is present in this repository snapshot. Reuse,
-redistribution, and commercial rights are not granted until the project adds an
-explicit license.
+MotionJSON is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE).
+
+Generated MotionJSON assets retain the source-media rights and attribution
+metadata recorded by the user or pipeline; the project license does not grant
+rights to videos, images, model checkpoints, provider outputs, or third-party
+media that users supply.

@@ -16,11 +16,12 @@ new build.
 
 ## License And Release Status Gate
 
-- Confirm a `LICENSE` file exists before publishing a reusable release,
-  package, or commercial-use claim.
-- If no `LICENSE` file exists, keep README, release notes, repository status,
-  and issue templates clear that reuse, redistribution, and commercial rights
-  are not granted yet.
+- Confirm the root `LICENSE`, `pyproject.toml`, root `package.json`, and
+  workspace package manifests all declare Apache-2.0 before publishing a
+  reusable release or package.
+- Confirm generated MotionJSON outputs still explain source-media rights,
+  attribution, creator approval, provider terms, and commercial-use review
+  separately from the project source license.
 - Confirm the release is described as a local-first release candidate, not a
   production hosted service or public marketplace.
 - Use signed or protected release tags for release candidates when repository

@@ -70,8 +70,9 @@ slower and depend on local Docker/build tooling.
 
 ## Remaining Risks
 
-- No license file is present. Do not publish a reuse/redistribution/commercial
-  release until a license is chosen and added.
+- Apache-2.0 source licensing is now explicit, but generated asset rights still
+  depend on the user's source videos, provider terms, attribution metadata, and
+  commercial-use review.
 - No first release tag exists yet. Package versions should be checked before
   tagging.
 - SAM2, detector, hosted segmentation, OpenRouter, and advanced model workflows
@@ -87,14 +88,13 @@ slower and depend on local Docker/build tooling.
 
 ## Next Release Milestones
 
-1. Choose and add a license file.
-2. Run the complete release checklist, including package build and Docker
+1. Run the complete release checklist, including package build and Docker
    smoke, in a clean environment.
-3. Refresh README screenshots only if the visible UI changes.
-4. Tag `v0.1.0-rc1` after release checklist completion.
-5. Open a pinned demo issue or project with no-model setup commands, red-ball
+2. Refresh README screenshots only if the visible UI changes.
+3. Tag `v0.1.0-rc1` after release checklist completion.
+4. Open a pinned demo issue or project with no-model setup commands, red-ball
    demo steps, screenshots, limitations, and troubleshooting links.
-6. Decide whether to publish a hosted docs page before linking a website URL in
+5. Decide whether to publish a hosted docs page before linking a website URL in
    the GitHub About box.
 
 ## Recommended GitHub Settings
@@ -118,5 +118,6 @@ slower and depend on local Docker/build tooling.
   GitHub Actions, and Docker when those manifests are present.
 - Add issue templates for bug reports, provider setup failures, docs fixes, and
   feature requests.
-- Require a license file before tagging or advertising redistribution rights.
+- Keep Apache-2.0 license metadata in sync before tagging or advertising
+  redistribution rights.
 - Use signed or protected release tags for public release candidates.

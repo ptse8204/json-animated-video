@@ -79,12 +79,12 @@ def test_security_docs_cover_hosted_model_and_repo_safeguards() -> None:
         "push protection",
         "Dependabot",
         "required CI checks",
-        "No `LICENSE` file",
+        "Apache-2.0",
     ]:
         assert expected in combined
 
 
-def test_public_docs_state_current_roadmap_and_no_license_boundary() -> None:
+def test_public_docs_state_current_roadmap_and_apache_license_boundary() -> None:
     readme = read("README.md")
     repo_status = read("docs/repo_status.md")
     release_notes = read("docs/release_notes.md")
@@ -92,8 +92,9 @@ def test_public_docs_state_current_roadmap_and_no_license_boundary() -> None:
     assert "docs/roadmap/ui_model_connector_plan.md" in readme
     assert "docs/roadmap/ui_model_connector_plan.md` before making Local UI" in readme
     assert "Treat `docs/codex_future_plan.md` as historical context" in readme
-    assert "no license file is present" in readme.lower()
-    assert "reuse, redistribution, and commercial rights are not granted" in normalized(readme)
+    assert "Apache License, Version 2.0" in readme
+    assert "[LICENSE](LICENSE)" in readme
+    assert "source-media rights" in normalized(readme)
 
     for expected in [
         "UI-MODEL-10",
@@ -102,6 +103,7 @@ def test_public_docs_state_current_roadmap_and_no_license_boundary() -> None:
         "Optional OpenAI planning connector",
         "not a production hosted service",
         "Keep issue templates current",
+        "Apache-2.0",
     ]:
         assert expected in repo_status
 
@@ -110,8 +112,8 @@ def test_public_docs_state_current_roadmap_and_no_license_boundary() -> None:
         "Server-side model planning connector",
         "hosted-call gated",
         "No model API keys are sent to browser code",
-        "No `LICENSE` file",
+        "Apache License, Version 2.0",
+        "source-media rights",
         "npm run ui:layout",
     ]:
         assert expected in release_notes
-    assert "reuse, redistribution, and commercial rights are not granted" in normalized(release_notes).lower()

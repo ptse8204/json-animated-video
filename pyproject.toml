@@ -7,8 +7,13 @@ name = "motionjson"
 version = "0.1.0"
 description = "AI object-layer editing for video and web graphics with reusable JSON-controlled motion layers"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = ["numpy", "opencv-python", "Pillow", "tqdm", "jsonschema>=4.22", "attrs>=23.1"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+]
 
 [project.optional-dependencies]
 ui = []

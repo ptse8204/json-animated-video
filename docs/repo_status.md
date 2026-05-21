@@ -35,6 +35,7 @@ remains optional, environment-dependent, or future work.
 | Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, troubleshooting links, and current launch risks. `docs/index.md` links first-run, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
 | Screenshot and demo assets | Real local mock-UI screenshots and deterministic red-ball preview/GIF assets exist under `docs/assets/`, with regeneration commands in `docs/assets/README_ASSETS.md`. |
 | Free and low-install run paths | Codespaces, Colab CLI demo, and Hugging Face Space planning docs exist. The Colab path is a checked-in notebook; Hugging Face remains a documented plan, not a production hosted service. |
+| License metadata | Root `LICENSE`, Python project metadata, and npm workspace/package metadata declare Apache-2.0. Generated asset rights still depend on source-media rights and recorded export metadata. |
 | Advanced Phase 11 slices | Text-guided mock discovery, automatic proposal mocks, motion-only discovery, detector class presets, export quality routing, rights lineage warnings, and local Asset Library workflows are implemented with CPU/mock tests and phase reports. |
 | OD roadmap reports | `docs/roadmap/phase-od-00-report.md` through `docs/roadmap/phase-od-14-report.md` record the API-first object discovery work. |
 | Prior implementation reports | `docs/roadmap/phase-0-report.md` through `docs/roadmap/phase-14-report.md` and `docs/roadmap/final-qa-release-report.md` exist. |
@@ -46,7 +47,7 @@ remains optional, environment-dependent, or future work.
 | Generated output policy | `out/demo/**` is intentionally tracked as the small runtime/web demo; `.gitignore` ignores new generated `out/*` runs, `.motionjson/`, `output/`, local databases, and env files while allowing the tracked demo exception. | New generated assets should be committed only when they are deterministic, documented, small, and required by tests or public docs. |
 | Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available, and `npm run ui:layout` captures the Local UI responsive matrix for layout phases. | CI has static shell and docs asset checks; full screenshot refresh and release-specific layout matrices remain local/docs maintenance commands. |
 | Hosted demos | Codespaces and Colab CLI paths are documented and low-install. Hugging Face Space scope is specified. | No public Space is shipped or operated from this repository snapshot. |
-| License and release tag | Release notes, checklist, final QA report, and final audit exist. | No license file or signed release tag exists in this repository snapshot. Do not advertise redistribution rights until that is resolved. |
+| Release tag | Release notes, checklist, final QA report, final audit, and Apache-2.0 license metadata exist. | No signed release tag exists in this repository snapshot. Complete the release checklist before publishing a release candidate. |
 
 ## Planned Or Not Bundled By Default
 
@@ -69,7 +70,7 @@ remains optional, environment-dependent, or future work.
 | Website | Link to the README or hosted docs page for the release tag; do not link a public demo until persistence/privacy limits are tested. |
 | Topics | `motionjson`, `video-editing`, `computer-vision`, `segmentation`, `sam2`, `local-first`, `motion-graphics`, `web-animation`, `python`, `javascript`. |
 | Pinned demo issue/project | Pin a “Try MotionJSON locally in 5 minutes” issue or project item with the no-model UI command, red-ball CLI demo, docs assets, and known limitations. |
-| First release tag | Use `v0.1.0-rc1` only after choosing a license, updating package versions if needed, and completing the release checklist. |
+| First release tag | Use `v0.1.0-rc1` only after reviewing package versions and completing the release checklist. |
 | Release status | Mark as release candidate, not production hosted service. Heavy ML, hosted planner/provider, and hosted demo paths remain optional. |
 
 ## Repo Safeguard Recommendations
@@ -83,6 +84,6 @@ remains optional, environment-dependent, or future work.
   and Docker manifests.
 - Keep issue templates current for bug reports, provider setup failures, docs
   fixes, and feature requests.
-- Require a license file before publishing a reusable release or advertising
-  redistribution rights.
+- Keep the Apache-2.0 `LICENSE` and package metadata in sync before publishing
+  reusable releases or advertising redistribution rights.
 - Use signed or protected release tags for release candidates.

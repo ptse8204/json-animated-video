@@ -82,6 +82,8 @@ planner output is a proposed run plan, not trusted extraction truth.
 
 ## License Boundary
 
-No `LICENSE` file is present in this repository snapshot. Do not publish a
-reusable release, package distribution, public demo claim, or commercial-rights
-claim until maintainers choose and add an explicit license.
+MotionJSON source code is licensed under Apache-2.0. Keep the root `LICENSE`,
+Python metadata, and npm package metadata aligned when preparing a release.
+Do not present user-supplied videos, model checkpoints, provider outputs, or
+generated assets as Apache-licensed unless their own rights metadata supports
+that claim.

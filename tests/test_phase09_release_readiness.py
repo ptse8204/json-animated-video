@@ -44,16 +44,24 @@ def test_ci_workflow_covers_python_js_docs_packaging_and_docker() -> None:
 
 
 def test_package_versions_and_publish_metadata_are_release_ready() -> None:
+    license_text = read("LICENSE")
     pyproject = tomllib.loads(read("pyproject.toml"))
+    root_package = json.loads(read("package.json"))
     runtime = json.loads(read("packages/motionjson-runtime/package.json"))
     sdk = json.loads(read("packages/motionjson-sdk/package.json"))
 
+    assert "Apache License" in license_text
+    assert "Version 2.0, January 2004" in license_text
     assert pyproject["project"]["version"] == motionjson.__version__
     assert pyproject["project"]["readme"] == "README.md"
+    assert pyproject["project"]["license"] == {"file": "LICENSE"}
+    assert "License :: OSI Approved :: Apache Software License" in pyproject["project"]["classifiers"]
     assert pyproject["project"]["urls"]["Repository"] == "https://github.com/ptse8204/json-animated-video"
+    assert root_package["license"] == "Apache-2.0"
 
     for package in [runtime, sdk]:
         assert package["version"] == motionjson.__version__
+        assert package["license"] == "Apache-2.0"
         assert package["homepage"].startswith("https://github.com/ptse8204/json-animated-video")
         assert package["repository"]["url"] == "git+https://github.com/ptse8204/json-animated-video.git"
         assert package["bugs"]["url"] == "https://github.com/ptse8204/json-animated-video/issues"

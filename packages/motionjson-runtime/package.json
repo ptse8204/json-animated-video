@@ -2,6 +2,7 @@
   "name": "@motionjson/runtime",
   "version": "0.1.0",
   "description": "Dependency-light MotionJSON browser runtime for cached raster/alpha motion layers.",
+  "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://github.com/ptse8204/json-animated-video#readme",
