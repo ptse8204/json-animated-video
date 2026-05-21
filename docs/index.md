@@ -115,6 +115,9 @@ Use this path when continuing the phase-based roadmap:
 - [UI model connector roadmap](roadmap/ui_model_connector_plan.md) is the
   active phase plan for the guided Local UI, browser-verified layout work, safe
   server-side model planning connector, guided review, and export handoff.
+- [UI/model Codex operational prompts](codex/ui_model_operational_prompts.md)
+  provides copy-ready master-agent, screenshot review, model connector review,
+  release audit, and read-only scout prompts for continuing that roadmap safely.
 - [Codex future plan](codex_future_plan.md) preserves the completed
   public-onboarding phase plan and remains useful historical context.
 - [Repository status](repo_status.md) records what is implemented, partial, or

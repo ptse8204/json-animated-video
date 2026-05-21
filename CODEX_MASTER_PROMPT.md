@@ -10,6 +10,7 @@ Read these files first:
 - `docs/repo_status.md`
 - `docs/local_ui.md`
 - `docs/design/local-ui-audit.md`
+- `docs/codex/ui_model_operational_prompts.md`
 - `docs/codex_motionjson_context.md`
 - `docs/codex_motionjson_architecture.md`
 - `docs/codex_motionjson_ui_spec.md`
@@ -82,6 +83,13 @@ Scout restrictions:
   commit, or spawn other agents.
 - Use at most one or two scouts per phase unless the user explicitly asks for
   more.
+
+Use `docs/codex/ui_model_operational_prompts.md` for reusable prompt bodies for
+layout review, browser screenshot review, model connector review, release
+audit, and review-only scouts. Those prompts are guardrails, not permission to
+delegate implementation. Do not add automation that can push commits, publish
+packages, mutate provider settings, or call hosted providers without human
+review.
 
 Every scout must return only:
 

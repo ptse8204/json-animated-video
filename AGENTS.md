@@ -31,6 +31,9 @@ For each phase:
 
 1. Start from a clean working tree or record why it is not clean.
 2. Read the active phase requirements in `docs/roadmap/ui_model_connector_plan.md`, `docs/codex_motionjson_roadmap.md`, and `codex_tasks.yaml`.
+   For UI/model roadmap phases, also use
+   `docs/codex/ui_model_operational_prompts.md` for Codex prompt templates,
+   scout prompts, and review-only operating guardrails.
 3. The master Codex agent owns planning, implementation, validation, review synthesis, and commits. Use bounded read-only scouts only when independent critique materially improves quality.
 4. Implement the smallest coherent slice that satisfies the phase.
 5. Run relevant tests and smoke commands.
@@ -65,6 +68,16 @@ Every scout must return only:
 Use at most one or two scouts per phase unless the user explicitly asks for
 more. The master agent makes the final decision and is responsible for the
 commit.
+
+When a scout is used, prefer the matching prompt template in
+`docs/codex/ui_model_operational_prompts.md`. Scouts must remain read-only by
+default: they may inspect files, screenshots, diffs, tests, and validation
+output, but they may not edit files, install dependencies, change provider
+settings, commit, push, publish packages, or spawn other agents unless the user
+explicitly changes that scope.
+
+Do not add Codex or GitHub automation that can push commits, publish packages,
+mutate provider settings, or call hosted providers without human review.
 
 ## Browser evidence for UI phases
 
