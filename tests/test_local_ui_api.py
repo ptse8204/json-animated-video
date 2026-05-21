@@ -1331,6 +1331,7 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
         "export_validation_report",
         "export_quality_routing",
         "object_layer_pack",
+        "remotion_plan",
         "preview_overlay",
         "contours_boxes",
         "website_package",
@@ -1366,7 +1367,15 @@ def test_local_ui_exports_valid_motionjson_from_corrected_review_state_and_impor
     assert headers["content-type"] == "application/zip"
     with zipfile.ZipFile(io.BytesIO(zip_body)) as archive:
         names = archive.namelist()
-    assert {"scene_graph.json", "final_export_manifest.json", "validation_report.json", "quality_routing.json", "object_layer_pack.json", "website_package.zip"}.issubset(set(names))
+    assert {
+        "scene_graph.json",
+        "final_export_manifest.json",
+        "validation_report.json",
+        "quality_routing.json",
+        "object_layer_pack.json",
+        "remotion_export_plan.json",
+        "website_package.zip",
+    }.issubset(set(names))
     if exported["qualityRouting"]["preview"]["mp4Preview"]["status"] == "ready":
         assert "preview/preview.mp4" in names
     assert all(not Path(name).is_absolute() and ".." not in Path(name).parts for name in names)

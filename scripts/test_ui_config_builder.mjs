@@ -674,6 +674,37 @@ assert.deepEqual(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["obj
   reason: "Fix or validate the reviewed export state before writing MotionJSON.",
 });
 assert.equal(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["object_0"], status: { ok: true } }).disabled, false);
+const handoffCards = ui.exportHandoffCards({
+  job: { id: "job_1" },
+  includedIds: ["object_0"],
+  status: { ok: true },
+  copiedId: "runtime-snippet",
+  assets: [
+    { kind: "website_package", contentUrl: "/api/artifacts/website_package/content", path: "website_package.zip" },
+    { kind: "validated_motionjson_scene", contentUrl: "/api/artifacts/scene_graph/content", path: "scene_graph.json" },
+    { kind: "remotion_plan", contentUrl: "/api/artifacts/remotion/content", path: "remotion_export_plan.json" },
+    { kind: "motionjson_export_zip", contentUrl: "/api/artifacts/bundle/content", path: "motionjson_export.zip" },
+  ],
+  objectLayerPack: { snippets: { plainJs: "mountMotionJSON();", remotion: "<MotionJSONComposition />" } },
+});
+assert.deepEqual(handoffCards.map((card) => card.id), [
+  "website-package",
+  "motionjson-scene",
+  "runtime-snippet",
+  "remotion-plan",
+  "developer-handoff",
+]);
+assert.equal(handoffCards.find((card) => card.id === "runtime-snippet").action, "copy");
+assert.equal(handoffCards.find((card) => card.id === "runtime-snippet").actionLabel, "Copied");
+assert.equal(handoffCards.find((card) => card.id === "remotion-plan").action, "open");
+assert.match(
+  ui.exportNextStepText({
+    exportState: { includedObjectIds: ["object_0"] },
+    assets: [{ kind: "website_package", contentUrl: "/api/artifacts/website_package/content" }],
+    objectLayerPack: { snippets: { plainJs: "mountMotionJSON();" } },
+  }),
+  /Runtime snippet/,
+);
 
 const repairMessage = ui.correctionResponseMessage({
   repairDiagnostics: {

@@ -74,6 +74,50 @@ const MotionJSONUI = (() => {
     "vector-heavy": { includeMasks: false, includeContours: true, includePreview: true },
     "raster-fallback": { includeMasks: true, includeContours: false, includePreview: true },
   };
+  const EXPORT_HANDOFF_DEFS = [
+    {
+      id: "website-package",
+      title: "Website package",
+      kind: "website_package",
+      description: "A ZIP with the selected reviewed objects, runtime files, and a ready browser example.",
+      readyAction: "Open ZIP",
+      pendingAction: "Create package",
+    },
+    {
+      id: "motionjson-scene",
+      title: "MotionJSON scene",
+      kind: "validated_motionjson_scene",
+      description: "A cleaned scene graph with only reviewed export objects and public-safe paths.",
+      readyAction: "Open scene",
+      pendingAction: "Create scene",
+    },
+    {
+      id: "runtime-snippet",
+      title: "Runtime snippet",
+      kind: "object_layer_pack",
+      snippetKey: "plainJs",
+      description: "Copy a plain JavaScript snippet for embedding the reviewed object layer.",
+      readyAction: "Copy snippet",
+      pendingAction: "Create snippet",
+    },
+    {
+      id: "remotion-plan",
+      title: "Remotion plan",
+      kind: "remotion_plan",
+      snippetKey: "remotion",
+      description: "A no-network adapter plan for wiring reviewed objects into an existing Remotion project.",
+      readyAction: "Open plan",
+      pendingAction: "Create plan",
+    },
+    {
+      id: "developer-handoff",
+      title: "Developer handoff",
+      kind: "motionjson_export_zip",
+      description: "A complete bundle with scene, manifest, validation, quality routing, snippets, and website package.",
+      readyAction: "Open bundle",
+      pendingAction: "Create bundle",
+    },
+  ];
 
   const PRESETS = {
     auto_object_proposals: {
@@ -209,6 +253,8 @@ const MotionJSONUI = (() => {
     correctionState: emptyCorrectionState(),
     exportValidation: null,
     exportResult: null,
+    exportCopyPayloads: {},
+    exportCopiedHandoffId: "",
     libraryAssets: [],
     libraryCollections: [],
     libraryPacks: [],
@@ -2169,6 +2215,57 @@ const MotionJSONUI = (() => {
     return { disabled: false, label: "Export MotionJSON", reason: "" };
   }
 
+  function assetByKind(assets, kind) {
+    return asArray(assets).find((asset) => String(asset?.kind || "") === kind) || null;
+  }
+
+  function exportHandoffCards({ job = null, includedIds = [], assets = [], objectLayerPack = null, status = null, copiedId = "" } = {}) {
+    const exportAction = exportActionState({ job, includedIds, status });
+    const snippets = objectLayerPack?.snippets || {};
+    return EXPORT_HANDOFF_DEFS.map((definition) => {
+      const asset = assetByKind(assets, definition.kind);
+      const url = safeLocalContentUrl(asset?.contentUrl);
+      const snippet = definition.snippetKey ? String(snippets[definition.snippetKey] || "") : "";
+      const ready = Boolean(url || snippet);
+      const action = ready ? (definition.id === "runtime-snippet" || (!url && snippet) ? "copy" : "open") : "export";
+      const disabled = ready ? false : exportAction.disabled;
+      const copied = action === "copy" && copiedId === definition.id;
+      return {
+        ...definition,
+        ready,
+        action,
+        disabled,
+        copied,
+        url,
+        copyText: snippet,
+        status: copied ? "Copied" : ready ? "Ready" : exportAction.disabled ? "Needs review" : "Ready to create",
+        tone: ready ? "ready" : exportAction.disabled ? "warn" : "neutral",
+        actionLabel: copied ? "Copied" : ready ? definition.readyAction : definition.pendingAction,
+        detail: ready
+          ? asset?.metadata?.rel_path || asset?.path || "handoff ready"
+          : exportAction.reason || "Creates the reviewed MotionJSON handoff bundle.",
+      };
+    });
+  }
+
+  function exportNextStepText({ exportState = {}, assets = [], objectLayerPack = null } = {}) {
+    const includedIds = uniqueIds(exportState.includedObjectIds || objectLayerPack?.selectedObjectIds);
+    const scene = assetByKind(assets, "validated_motionjson_scene");
+    const website = assetByKind(assets, "website_package");
+    const handoff = assetByKind(assets, "motionjson_export_zip");
+    const remotion = assetByKind(assets, "remotion_plan");
+    const plainJs = objectLayerPack?.snippets?.plainJs || "";
+    const lines = [
+      `Reviewed objects: ${includedIds.length ? includedIds.join(", ") : "none reported"}`,
+      plainJs ? `Runtime snippet:\n${plainJs}` : "",
+      website ? "Website package: open website_package.zip and deploy its contents with your site." : "",
+      scene ? "MotionJSON scene: use scene_graph.json as the reviewed animation source." : "",
+      handoff ? "Developer handoff: share motionjson_export.zip with the scene, manifests, validation, and package artifacts." : "",
+      remotion ? "Remotion plan: open remotion_export_plan.json and wire it into your application-owned Remotion project." : "",
+    ].filter(Boolean);
+    return lines.join("\n\n");
+  }
+
   function correctionDiagnosticMessages(entry) {
     const messages = [];
     const repair = entry?.repairDiagnostics || {};
@@ -3792,8 +3889,10 @@ const MotionJSONUI = (() => {
       $("#exportIncludeMasks").checked = defaults.includeMasks === true;
       $("#exportIncludeContours").checked = defaults.includeContours === true;
       $("#exportIncludePreview").checked = defaults.includePreview !== false;
+      const captureMode = document.documentElement.dataset.capture || "";
       state.exportValidation = null;
-      state.exportResult = null;
+      if (captureMode !== "export-success" && captureMode !== "copyable-snippet") state.exportResult = null;
+      if (captureMode !== "copyable-snippet") state.exportCopiedHandoffId = "";
       renderExportPanel();
     }
 
@@ -3903,6 +4002,7 @@ const MotionJSONUI = (() => {
     function clearExportPreflightState() {
       state.exportValidation = null;
       state.exportResult = null;
+      state.exportCopiedHandoffId = "";
       renderExportPanel();
     }
 
@@ -3919,6 +4019,7 @@ const MotionJSONUI = (() => {
         "mp4_preview",
         "contours_boxes",
         "object_layer_pack",
+        "remotion_plan",
         "website_package",
         "motionjson_export_zip",
       ];
@@ -3948,6 +4049,58 @@ const MotionJSONUI = (() => {
       $("#exportMotionJsonButton").dataset.tooltip = exportAction.reason || "Write validated MotionJSON artifacts";
 
       const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : storedExportArtifacts;
+      const objectLayerPack = exportState.objectLayerPack || exported?.objectLayerPack || validation?.objectLayerPack || null;
+      const handoffCards = exportHandoffCards({
+        job,
+        includedIds,
+        assets: exportArtifacts,
+        objectLayerPack,
+        status,
+        copiedId: state.exportCopiedHandoffId,
+      });
+      state.exportCopyPayloads = {};
+      for (const card of handoffCards) {
+        if (card.copyText) state.exportCopyPayloads[card.id] = card.copyText;
+      }
+      $("#exportHandoffCards").innerHTML = job
+        ? handoffCards
+            .map(
+              (card) => `
+                <div class="handoff-card is-${escapeAttribute(card.tone)}">
+                  <div class="handoff-card-topline">
+                    <strong>${escapeHtml(card.title)}</strong>
+                    <span class="status-chip is-${escapeAttribute(card.tone)}">${escapeHtml(card.status)}</span>
+                  </div>
+                  <span class="row-meta">${escapeHtml(card.description)}</span>
+                  <span class="row-meta">${escapeHtml(card.detail)}</span>
+                  ${card.copied ? `<span class="copy-status">Copied to clipboard.</span>` : ""}
+                  <button
+                    type="button"
+                    class="${card.ready ? "" : "primary-action"}"
+                    data-export-handoff-action="${escapeAttribute(card.action)}"
+                    data-export-handoff-id="${escapeAttribute(card.id)}"
+                    ${card.url ? `data-export-handoff-url="${escapeAttribute(card.url)}"` : ""}
+                    ${card.disabled ? "disabled" : ""}
+                  >${escapeHtml(card.actionLabel)}</button>
+                </div>
+              `,
+            )
+            .join("")
+        : "";
+      const nextStepsText = exported ? exportNextStepText({ exportState, assets: exportArtifacts, objectLayerPack }) : "";
+      if (nextStepsText) state.exportCopyPayloads.nextSteps = nextStepsText;
+      $("#exportNextSteps").innerHTML = nextStepsText
+        ? `
+            <div class="export-next-steps-card">
+              <div class="handoff-card-topline">
+                <strong>Next steps</strong>
+                <button class="mini-action" type="button" data-export-handoff-action="copy" data-export-handoff-id="nextSteps">${state.exportCopiedHandoffId === "nextSteps" ? "Copied" : "Copy"}</button>
+              </div>
+              ${state.exportCopiedHandoffId === "nextSteps" ? `<span class="copy-status">Next steps copied to clipboard.</span>` : ""}
+              <textarea readonly>${escapeHtml(nextStepsText)}</textarea>
+            </div>
+          `
+        : "";
       const artifactLinks = exportArtifacts
         .map((asset) => {
           const relPath = asset.metadata?.rel_path || asset.path || asset.kind || asset.id;
@@ -3983,7 +4136,7 @@ const MotionJSONUI = (() => {
             ${validationMessageRows}
             ${rightsRows}
             ${routingRows}
-            ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta">${artifactLinks}</span></div>` : ""}
+            ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta export-artifact-links">${artifactLinks}</span></div>` : ""}
           `
         : `<div class="empty-state">Select a completed run before validating or exporting MotionJSON.</div>`;
     }
@@ -5469,7 +5622,55 @@ const MotionJSONUI = (() => {
               exportWarnings: [{ code: "commercial_use_review_required", severity: "warn", message: "Confirm source rights before public distribution." }],
             }
           : null;
-      state.exportResult = null;
+      if (capture === "export-success" || capture === "copyable-snippet") {
+        const assets = [
+          { id: "asset_scene_layout", kind: "validated_motionjson_scene", contentUrl: "/api/artifacts/asset_scene_layout/content", path: "scene_graph.json", metadata: { rel_path: "exports/layout/scene_graph.json" } },
+          { id: "asset_pack_layout", kind: "object_layer_pack", contentUrl: "/api/artifacts/asset_pack_layout/content", path: "object_layer_pack.json", metadata: { rel_path: "exports/layout/object_layer_pack.json" } },
+          { id: "asset_remotion_layout", kind: "remotion_plan", contentUrl: "/api/artifacts/asset_remotion_layout/content", path: "remotion_export_plan.json", metadata: { rel_path: "exports/layout/remotion_export_plan.json" } },
+          { id: "asset_website_layout", kind: "website_package", contentUrl: "/api/artifacts/asset_website_layout/content", path: "website_package.zip", metadata: { rel_path: "exports/layout/website_package.zip" } },
+          { id: "asset_bundle_layout", kind: "motionjson_export_zip", contentUrl: "/api/artifacts/asset_bundle_layout/content", path: "motionjson_export.zip", metadata: { rel_path: "exports/layout/motionjson_export.zip" } },
+        ];
+        const objectLayerPack = {
+          format: "motionjson.object_layer_pack.v0.1",
+          selectedObjectIds: ["red_ball"],
+          excludedObjectIds: ["duplicate_ball"],
+          objectCount: 1,
+          snippets: {
+            plainJs: 'import { mountMotionJSON } from "./runtime/index.js";\n\nawait mountMotionJSON("#motion", "./scene_graph.json", { objectId: "red_ball" });',
+            remotion: 'const selectedObjectIds = ["red_ball"];\n<MotionJSONComposition sceneGraphPath="./scene_graph.json" objectIds={selectedObjectIds} assetBasePath="." />',
+          },
+        };
+        state.exportResult = {
+          jobId: job.id,
+          validation: { ok: true, issueCount: 0, checked: 4 },
+          includedObjectIds: ["red_ball"],
+          excludedObjectIds: ["duplicate_ball"],
+          assets,
+          objectLayerPack,
+          rightsSummary: state.jobReview.rightsSummary,
+          exportWarnings: state.jobReview.rightsSummary.warnings,
+          qualityRouting: {
+            format: "motionjson.export_quality_routing.v0.1",
+            preset: "compact",
+            includeMasks: false,
+            includeContours: false,
+            includePreview: true,
+            objects: [{ objectId: "red_ball", selectedOutput: "hybrid_vector_silhouette_plus_raster", selectedDelivery: { route: "sprite_atlas_webp" } }],
+            preview: { mp4Preview: { status: "ready", reason: "preview route available" } },
+          },
+        };
+        state.exportValidation = {
+          jobId: job.id,
+          validation: state.exportResult.validation,
+          includedObjectIds: state.exportResult.includedObjectIds,
+          excludedObjectIds: state.exportResult.excludedObjectIds,
+        };
+        state.jobArtifacts = assets;
+        state.exportCopiedHandoffId = capture === "copyable-snippet" ? "runtime-snippet" : "";
+      } else {
+        state.exportResult = null;
+        state.exportCopiedHandoffId = "";
+      }
       renderJobs();
       renderJobReview();
     }
@@ -5559,7 +5760,7 @@ const MotionJSONUI = (() => {
           rightRail.style.gap = "16px";
           rightRail.style.borderLeft = "0";
         }
-        document.querySelectorAll(".right-rail details").forEach((details) => {
+        document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
           details.open = showRunMonitor && summary === "run monitor";
         });
@@ -5733,7 +5934,7 @@ const MotionJSONUI = (() => {
           rightRail.style.borderLeft = "0";
           rightRail.style.minHeight = "100vh";
         }
-        document.querySelectorAll(".right-rail details").forEach((details) => {
+        document.querySelectorAll(".right-rail > details").forEach((details) => {
           details.open = details.querySelector("#providerSettingsPanel") !== null;
         });
       } else if (capture === "new-project") {
@@ -5758,7 +5959,7 @@ const MotionJSONUI = (() => {
         if (configPanel) configPanel.style.order = "-1";
         if (localPathDisclosure) localPathDisclosure.open = true;
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
-      } else if (["candidate-review", "correction-tools", "export-gate"].includes(capture)) {
+      } else if (["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture)) {
         if (shell) {
           shell.style.display = "block";
           shell.style.minHeight = "100vh";
@@ -5780,12 +5981,15 @@ const MotionJSONUI = (() => {
           if (duplicateFilter) duplicateFilter.checked = false;
           renderCandidateSummary();
         }
-        document.querySelectorAll(".right-rail details").forEach((details) => {
+        document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
           const openSummaries = {
             "candidate-review": ["run monitor", "review"],
             "correction-tools": ["review", "corrections"],
             "export-gate": ["review", "artifacts and exports"],
+            "export-handoff": ["review", "artifacts and exports"],
+            "export-success": ["artifacts and exports"],
+            "copyable-snippet": ["artifacts and exports"],
           }[capture];
           const open = openSummaries.includes(summary);
           details.open = open;
@@ -5805,7 +6009,7 @@ const MotionJSONUI = (() => {
           rightRail.style.borderLeft = "0";
           rightRail.style.minHeight = "100vh";
         }
-        document.querySelectorAll(".right-rail details").forEach((details) => {
+        document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
           details.open = ["run monitor", "review", "artifacts and exports"].includes(summary);
         });
@@ -6158,6 +6362,47 @@ const MotionJSONUI = (() => {
       });
     }
 
+    async function copyTextToClipboard(text) {
+      if (!text) return false;
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      return copied;
+    }
+
+    async function handleExportHandoffAction(event) {
+      const button = event.target.closest("[data-export-handoff-action]");
+      if (!button) return;
+      const action = button.dataset.exportHandoffAction || "";
+      const id = button.dataset.exportHandoffId || "";
+      if (action === "export") {
+        await exportSelectedMotionJson();
+        return;
+      }
+      if (action === "open") {
+        const url = safeLocalContentUrl(button.dataset.exportHandoffUrl);
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (action === "copy") {
+        const copied = await copyTextToClipboard(state.exportCopyPayloads[id] || "");
+        state.exportCopiedHandoffId = copied ? id : "";
+        renderExportPanel();
+        $("#exportStatus").textContent = copied ? "Copied" : "Copy failed";
+        $("#exportStatus").className = `status-chip ${copied ? "is-ready" : "is-bad"}`;
+      }
+    }
+
     async function validateSelectedExport() {
       if (!state.selectedJobId) return;
       const payload = exportPayloadFromControls();
@@ -6380,6 +6625,8 @@ const MotionJSONUI = (() => {
     $("#validateExportButton").addEventListener("click", validateSelectedExport);
     $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
+    $("#exportHandoffCards").addEventListener("click", handleExportHandoffAction);
+    $("#exportNextSteps").addEventListener("click", handleExportHandoffAction);
     ["exportIncludeMasks", "exportIncludeContours", "exportIncludePreview"].forEach((id) => {
       $(`#${id}`).addEventListener("change", clearExportPreflightState);
     });
@@ -6931,6 +7178,8 @@ const MotionJSONUI = (() => {
     correctionResponseMessage,
     exportActionState,
     exportGateSummary,
+    exportHandoffCards,
+    exportNextStepText,
     filterReviewCandidates,
     modelConnectorsForSetup,
     modelPlanConfirmPayload,

@@ -23,6 +23,7 @@ from motionjson.backend.jobs import create_completed_job, get_job, record_job_ev
 from motionjson.backend.rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from motionjson.exporters.final_render import build_final_export_manifest, final_export_entry, render_frames
 from motionjson.exporters.object_layer_pack import OBJECT_LAYER_PACK_FORMAT, write_object_layer_pack
+from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
 from motionjson.providers.base import StorageProvider
 from motionjson.rights import build_rights_review_report
@@ -912,6 +913,9 @@ def _build_export_tree(
         "sourceJob": _sanitize_value({"type": job.get("type"), "payload": payload}),
         "correctionState": _sanitize_value(correction_state),
     }
+    remotion_plan_path = export_dir / "remotion_export_plan.json"
+    remotion_plan_entry = write_remotion_plan(out_dir=export_dir, output_path=remotion_plan_path)
+    exports.append(remotion_plan_entry)
     object_layer_pack_path = export_dir / "object_layer_pack.json"
     object_layer_pack = write_object_layer_pack(
         object_layer_pack_path,
@@ -922,6 +926,7 @@ def _build_export_tree(
         validation_messages=export_validation_messages,
         source_scene_graph="scene_graph.json",
         website_package_path="website_package.zip",
+        remotion_plan_path="remotion_export_plan.json",
     )
     exports.append(
         final_export_entry(
@@ -1195,6 +1200,8 @@ def _export_asset_specs(export_dir: Path) -> list[tuple[Path, str, str]]:
             kind = "export_quality_routing"
         elif name == "object_layer_pack.json":
             kind = "object_layer_pack"
+        elif name == "remotion_export_plan.json":
+            kind = "remotion_plan"
         elif name == "website_package.zip":
             kind = "website_package"
             content_type = "application/zip"

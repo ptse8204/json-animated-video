@@ -39,6 +39,9 @@ const CAPTURE_STATES = [
   "candidate-review",
   "correction-tools",
   "export-gate",
+  "export-handoff",
+  "export-success",
+  "copyable-snippet",
 ];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
 
@@ -388,6 +391,13 @@ async function captureScreenshot(cdp, path, { captureBeyondViewport = false } = 
   await writeFile(path, Buffer.from(result.data, "base64"));
 }
 
+async function closeTarget(cdp, targetId) {
+  await Promise.race([
+    cdp.send("Target.closeTarget", { targetId }),
+    new Promise((resolvePromise) => setTimeout(resolvePromise, 1500)),
+  ]).catch(() => {});
+}
+
 async function checkState({ port, baseUrl, viewport, state, screenshotDir, failures }) {
   const isRealState = REAL_STATES.includes(state);
   const capture = isRealState ? "" : state;
@@ -422,7 +432,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
-      if (["job-review", "candidate-review", "correction-tools", "export-gate"].includes(state) && viewport.name === "mobile-390") {
+      if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
     }
@@ -430,7 +440,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       failures.push(`${viewport.name}/${state}: ${failure}`);
     }
   } finally {
-    await cdp.send("Target.closeTarget", { targetId: page.id }).catch(() => {});
+    await closeTarget(cdp, page.id);
     cdp.close();
   }
 }

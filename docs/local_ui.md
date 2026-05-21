@@ -434,12 +434,21 @@ unreviewed auto-discovery gates, source attribution, creator approval, license,
 and commercial-use status are visible before handoff.
 `POST /api/jobs/JOB_ID/exports` writes a validated MotionJSON handoff from the
 corrected review state, registers the generated artifacts on the selected job,
-and returns public content links for export files. The local UI supports these
-presets:
+and returns public content links for export files. The export panel now starts
+with one-click handoff cards for the common destinations: website package,
+reviewed MotionJSON scene, runtime snippet, Remotion plan, and developer
+handoff bundle. Cards stay disabled with plain-language review/validation
+reasons until a completed run has reviewed objects that are marked for export.
+After export, the same cards become Open or Copy actions and the panel shows
+copyable next steps that include the reviewed object IDs and runtime snippet.
+Preset and mask/contour/preview switches remain available under Advanced
+export settings for technical users.
+
+The local UI supports these presets:
 
 - `compact`: corrected `scene_graph.json`, final export manifest, validation
-  report, `object_layer_pack.json`, selected-object website package ZIP, and
-  SVG overlay preview.
+  report, `object_layer_pack.json`, `remotion_export_plan.json`,
+  selected-object website package ZIP, and SVG overlay preview.
 - `debug`: compact output plus contour/box JSON and copied cached mask PNGs.
 - `vector-heavy`: corrected MotionJSON plus contour/box JSON for downstream
   vector tooling.

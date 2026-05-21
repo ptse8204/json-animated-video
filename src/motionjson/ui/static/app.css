@@ -769,6 +769,14 @@ input[type="range"] {
   cursor: not-allowed;
 }
 
+.export-artifact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  line-height: 1.45;
+}
+
 .warning-box {
   color: #72470b;
   background: var(--warn-soft);
@@ -1187,6 +1195,86 @@ input[type="range"] {
   align-items: end;
 }
 
+.export-handoff-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.handoff-card,
+.export-next-steps-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-muted);
+}
+
+.handoff-card.is-ready {
+  border-color: #7ab9b1;
+  background: var(--ready-soft);
+}
+
+.handoff-card.is-warn {
+  border-color: #e5be5f;
+  background: var(--warn-soft);
+}
+
+.handoff-card-topline {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.handoff-card button {
+  justify-self: start;
+  min-height: 32px;
+}
+
+.copy-status {
+  min-width: 0;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.export-next-steps {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.export-next-steps-card textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 10px;
+  color: var(--ink);
+  background: var(--surface);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.advanced-export-disclosure {
+  margin-top: 10px;
+}
+
+.advanced-export-disclosure summary {
+  color: var(--ink);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.advanced-export-disclosure[open] {
+  padding-top: 8px;
+}
+
 .export-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1334,6 +1422,7 @@ input[type="range"] {
   }
 
   .export-panel,
+  .export-handoff-grid,
   .export-actions {
     grid-template-columns: 1fr;
   }
@@ -2440,6 +2529,7 @@ button,
   grid-template-columns: minmax(0, 1fr);
 }
 
+.export-handoff-grid,
 .export-actions {
   grid-template-columns: 1fr;
 }
@@ -2670,6 +2760,7 @@ button,
     .model-plan-actions,
     .model-plan-facts,
     .config-actions,
+    .export-handoff-grid,
     .export-actions {
     grid-template-columns: 1fr;
   }

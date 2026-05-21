@@ -594,45 +594,50 @@
           <summary>Artifacts and exports</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
-              <h2>Artifacts</h2>
-              <span id="artifactCount" class="subtle-chip">0 files</span>
-            </div>
-            <div id="artifactBrowser" class="artifact-list"></div>
-          </section>
-          <section class="compact-panel">
-            <div class="panel-heading compact-heading">
               <h2>Export</h2>
               <span id="exportStatus" class="status-chip is-muted">Not validated</span>
             </div>
             <p class="panel-note">Only reviewed tracks kept in Review and marked for export are included by default.</p>
-            <div class="export-panel">
-              <label>
-                <span>Preset</span>
-                <select id="exportPresetSelect">
-                  <option value="compact">compact</option>
-                  <option value="debug">debug</option>
-                  <option value="vector-heavy">vector-heavy</option>
-                  <option value="raster-fallback">raster-fallback</option>
-                </select>
-              </label>
-              <label class="track-toggle">
-                <input id="exportIncludeMasks" type="checkbox" />
-                <span>masks</span>
-              </label>
-              <label class="track-toggle">
-                <input id="exportIncludeContours" type="checkbox" />
-                <span>contours</span>
-              </label>
-              <label class="track-toggle">
-                <input id="exportIncludePreview" type="checkbox" checked />
-                <span>preview</span>
-              </label>
-            </div>
-            <div class="export-actions">
-              <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate</button>
-              <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
-            </div>
+            <div id="exportHandoffCards" class="export-handoff-grid"></div>
+            <div id="exportNextSteps" class="export-next-steps"></div>
+            <details class="advanced-export-disclosure">
+              <summary>Advanced export settings</summary>
+              <div class="export-panel">
+                <label>
+                  <span>Preset</span>
+                  <select id="exportPresetSelect">
+                    <option value="compact">compact</option>
+                    <option value="debug">debug</option>
+                    <option value="vector-heavy">vector-heavy</option>
+                    <option value="raster-fallback">raster-fallback</option>
+                  </select>
+                </label>
+                <label class="track-toggle">
+                  <input id="exportIncludeMasks" type="checkbox" />
+                  <span>masks</span>
+                </label>
+                <label class="track-toggle">
+                  <input id="exportIncludeContours" type="checkbox" />
+                  <span>contours</span>
+                </label>
+                <label class="track-toggle">
+                  <input id="exportIncludePreview" type="checkbox" checked />
+                  <span>preview</span>
+                </label>
+              </div>
+              <div class="export-actions">
+                <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate</button>
+                <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
+              </div>
+            </details>
             <div id="exportSummary" class="export-summary"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Artifacts</h2>
+              <span id="artifactCount" class="subtle-chip">0 files</span>
+            </div>
+            <div id="artifactBrowser" class="artifact-list"></div>
           </section>
         </details>
 

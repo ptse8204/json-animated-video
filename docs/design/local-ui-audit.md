@@ -351,3 +351,46 @@ Findings and changes:
   history without unrelated right-rail sections competing for the first screen.
 - Export evidence shows reviewed-selected-only inclusion, excluded/pending
   counts, validation issues, and rights warnings in plain language.
+
+## UI-MODEL-08 Evidence
+
+UI-MODEL-08 simplified the final handoff path. The export rail now opens with
+destination cards instead of advanced toggles, so less technical users can
+create or open the website package, reviewed scene, runtime snippet, Remotion
+plan, or developer bundle without reading raw manifests first.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-08-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-08
+python3 scripts/capture_docs_assets.py --out-dir docs/design/screenshots/ui-model-08-docs
+```
+
+Representative captures:
+
+![UI-MODEL-08 desktop export handoff](screenshots/ui-model-08/desktop-1440-export-handoff.png)
+
+![UI-MODEL-08 mobile export success](screenshots/ui-model-08/mobile-390-export-success-full.png)
+
+![UI-MODEL-08 mobile copyable snippet](screenshots/ui-model-08/mobile-390-copyable-snippet-full.png)
+
+Findings and changes:
+
+- The before state placed raw artifact lists and advanced export switches ahead
+  of the handoff choices, so the primary export outcome was low in the rail.
+- The after state moves Export above the raw artifact browser and keeps preset,
+  mask, contour, and preview options inside Advanced export settings.
+- Handoff cards clearly distinguish Ready to create, Needs review, and Ready
+  states, and reuse the reviewed-selected validation gate from UI-MODEL-07.
+- Successful exports show copyable next steps with the reviewed object IDs and
+  runtime snippet, while still listing rights warnings, quality routing, and
+  raw artifacts for developer inspection.
+- Screenshot coverage now includes `export-handoff`, `export-success`, and
+  `copyable-snippet` states across the required viewport matrix, with full-page
+  mobile captures to verify the long handoff and artifact stacks.
