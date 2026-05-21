@@ -17,6 +17,7 @@ const MotionJSONUI = (() => {
     "/api/model-runs/{runId}",
     "/api/model-runs/{runId}/events",
     "/api/model-runs/{runId}/cancel",
+    "/api/model-runs/{runId}/confirm-job",
     "/api/projects",
     "/api/run-config/defaults",
     "/api/run-config/validate",
@@ -219,6 +220,12 @@ const MotionJSONUI = (() => {
     selectedModelSetupProviderId: "fake-local-planner",
     modelSetupMessage: "",
     modelSetupTone: "neutral",
+    modelPlanRun: null,
+    modelPlanValidation: null,
+    modelPlanMessage: "",
+    modelPlanTone: "neutral",
+    modelPlanConfirmedJobId: "",
+    modelPlanConfirming: false,
     selectedCorrectionTrackId: "",
     mergeSelection: new Set(),
     candidateSelection: {},
@@ -787,6 +794,100 @@ const MotionJSONUI = (() => {
       warnings,
       steps,
       nextSteps,
+    };
+  }
+
+  function modelPlanGoalForPreset(preset) {
+    return (
+      {
+        trace_one_object: "trace_one_object",
+        auto_object_proposals: "trace_one_object",
+        text_detector: "find_objects_from_text",
+        class_detector: "find_objects_from_text",
+        sam_auto_masks: "trace_one_object",
+        motion_foreground: "find_moving_things",
+        external_masks: "import_masks",
+        review_existing: "review_existing_result",
+      }[preset] || "trace_one_object"
+    );
+  }
+
+  function modelPlanRequestFromInput(input = {}, providerId = "fake-local-planner") {
+    const preset = input.preset || "trace_one_object";
+    const prompt = String(input.modelIntent || input.textPrompt || input.objectLabel || RUN_PLAN_GOALS[preset]?.summary || "").trim();
+    return {
+      providerId: providerId || "fake-local-planner",
+      request: {
+        goal: modelPlanGoalForPreset(preset),
+        prompt,
+        projectId: input.projectId || null,
+        videoId: input.videoId || null,
+        sourcePath: input.sourcePath || input.videoPath || null,
+        outputDirectory: input.outputDirectory || null,
+        objectLabel: input.objectLabel || "selected_object",
+        objectId: input.objectId || "object_0",
+        textPrompt: input.textPrompt || prompt,
+        maskDir: input.externalMaskDir || "masks/object_0",
+        sampleFps: toNumber(input.sampleFps, 12),
+        maxFrames: toInteger(input.maxFrames, 48),
+        maxObjects: toInteger(input.maxObjects, 12),
+        metadata: {
+          preset,
+          previewName: input.previewName || "",
+        },
+      },
+    };
+  }
+
+  function modelPlanValidationMessages(validation = {}) {
+    const errors = asArray(validation.errors).map((item) => item.message || String(item));
+    const warnings = asArray(validation.warnings).map((item) => item.message || String(item));
+    const blockers = asArray(validation.warnings)
+      .filter((item) => typeof item === "object" && String(item.severity || "").toLowerCase() === "error")
+      .map((item) => item.message || String(item));
+    return { errors, warnings, blockers };
+  }
+
+  function modelPlanProviderFacts(modelPlan = null, validation = null) {
+    const providerPlan = modelPlan?.providerPlan || {};
+    const privacy = modelPlan?.privacy || {};
+    const estimatedCost = modelPlan?.estimatedCost || {};
+    const effectiveValidation = validation || modelPlan?.validation || {};
+    const messages = modelPlanValidationMessages(effectiveValidation);
+    const valid = effectiveValidation.valid === true && !messages.errors.length && !messages.blockers.length;
+    return {
+      plannerProvider: modelPlan?.providerId || providerPlan.reasoningProvider || "not generated",
+      discoveryProvider: providerPlan.discoveryProvider || modelPlan?.runConfig?.discovery?.mode || "not reported",
+      maskProvider: providerPlan.maskProvider || modelPlan?.runConfig?.provider?.name || "not reported",
+      trackingMode: providerPlan.trackingMode || "selected_only",
+      privacy: privacy.summary || (privacy.hostedCallsRequired ? "Hosted planning required confirmation." : "Frames stay on this machine."),
+      cost: estimatedCost.message || estimatedCost.label || estimatedCost.status || "not reported",
+      validationLabel: valid ? (messages.warnings.length ? "Valid with warnings" : "Ready to confirm") : "Blocked",
+      valid,
+      errors: messages.errors,
+      warnings: messages.warnings,
+      blockers: messages.blockers,
+      requiresUserConfirmation: modelPlan?.requiresUserConfirmation !== false,
+    };
+  }
+
+  function modelPlanConfirmPayload({ projectId = "", videoId = "", run = true } = {}) {
+    if (!projectId) throw new Error("Create or select a project before starting extraction from a model plan.");
+    if (!videoId) throw new Error("Register or select a video before starting extraction from a model plan.");
+    return {
+      confirmed: true,
+      projectId,
+      videoId,
+      run: Boolean(run),
+    };
+  }
+
+  function modelPlanSourceIds(modelPlan = null) {
+    const path = String(modelPlan?.runConfig?.input?.path || "");
+    const assetMatch = path.match(/^local-ui:\/\/assets\/([^/?#]+)/);
+    return {
+      projectId: modelPlan?.request?.projectId || "",
+      videoId: modelPlan?.runConfig?.rights?.source_asset_id || (assetMatch ? assetMatch[1] : "") || modelPlan?.request?.videoId || "",
     };
   }
 
@@ -2312,6 +2413,167 @@ const MotionJSONUI = (() => {
             <button type="button" data-model-setup-action="reset">Reset</button>
           </div>
         </form>
+      `;
+    }
+
+    function currentModelPlanResult() {
+      return state.modelPlanRun?.result || null;
+    }
+
+    function currentModelPlanValidation() {
+      return state.modelPlanValidation || currentModelPlanResult()?.validation || null;
+    }
+
+    function setModelPlanMessage(message, tone = "neutral") {
+      state.modelPlanMessage = message || "";
+      state.modelPlanTone = tone || "neutral";
+      renderModelPlanPanel();
+    }
+
+    function renderModelPlanPanel() {
+      const status = $("#modelPlanStatus");
+      const detail = $("#modelPlanDetail");
+      const validateButton = $("#validateModelPlanButton");
+      const confirmButton = $("#confirmModelPlanButton");
+      const generateButton = $("#generateModelPlanButton");
+      if (!status || !detail || !validateButton || !confirmButton || !generateButton) return;
+
+      const selectedProvider = modelConnectorById(state.selectedModelSetupProviderId);
+      generateButton.textContent = selectedProvider?.hostedCallsRequired ? "Generate hosted plan" : "Generate local plan";
+
+      const run = state.modelPlanRun;
+      const result = currentModelPlanResult();
+      const validation = currentModelPlanValidation();
+      const facts = modelPlanProviderFacts(result, validation);
+      const hasProject = Boolean(state.selectedProjectId);
+      const hasVideo = Boolean(state.selectedVideoId);
+      const sourceIds = modelPlanSourceIds(result);
+      const projectMatches = !sourceIds.projectId || !state.selectedProjectId || sourceIds.projectId === state.selectedProjectId;
+      const videoMatches = !sourceIds.videoId || !state.selectedVideoId || sourceIds.videoId === state.selectedVideoId;
+      const alreadyConfirmed = Boolean(state.modelPlanConfirmedJobId);
+      const canConfirm = Boolean(
+        run?.id &&
+          result &&
+          facts.valid &&
+          hasProject &&
+          hasVideo &&
+          projectMatches &&
+          videoMatches &&
+          !alreadyConfirmed &&
+          !state.modelPlanConfirming,
+      );
+
+      validateButton.disabled = !result;
+      confirmButton.disabled = !canConfirm;
+
+      if (!run) {
+        status.textContent = "No model plan";
+        status.className = "status-chip is-muted";
+        detail.innerHTML = `
+          <div class="empty-state">Generate a local/mock plan from the selected goal. Nothing is enqueued until you confirm it.</div>
+        `;
+        return;
+      }
+
+      if (run.status === "failed") {
+        status.textContent = "Plan failed";
+        status.className = "status-chip is-bad";
+        detail.innerHTML = `<div class="error-state">${escapeHtml(run.error || state.modelPlanMessage || "Model planning failed.")}</div>`;
+        return;
+      }
+
+      if (!result) {
+        status.textContent = run.status || "Planning";
+        status.className = "status-chip is-neutral";
+        detail.innerHTML = `<div class="empty-state">Planning is ${escapeHtml(run.status || "pending")}.</div>`;
+        return;
+      }
+
+      status.textContent = alreadyConfirmed ? "Started" : facts.validationLabel;
+      status.className = `status-chip ${facts.valid ? (facts.warnings.length ? "is-warn" : "is-ready") : "is-bad"}`;
+      const runtime = [
+        result.runConfig?.sampling?.sample_fps ? `${result.runConfig.sampling.sample_fps} fps sample` : "",
+        result.runConfig?.sampling?.max_frames ? `${result.runConfig.sampling.max_frames} frame limit` : "",
+        result.requiresUserConfirmation === false ? "" : "manual confirmation required",
+      ].filter(Boolean);
+      const planPreset = presetNameForRunPlan(result.runConfig || {}, result.request || {});
+      const planGoal = RUN_PLAN_GOALS[planPreset] || RUN_PLAN_GOALS.auto_object_proposals;
+      const factRows = [
+        ["Planner", facts.plannerProvider],
+        ["Discovery", facts.discoveryProvider],
+        ["Mask provider", facts.maskProvider],
+        ["Tracking", facts.trackingMode],
+        ["Privacy", facts.privacy],
+        ["Cost", facts.cost],
+        ["Runtime", runtime.join(" - ") || "not estimated"],
+        ["Source", hasVideo ? "registered local video" : "register a video before starting"],
+      ]
+        .map(
+          ([label, value]) => `
+            <div class="model-plan-fact">
+              <span>${escapeHtml(label)}</span>
+              <strong>${escapeHtml(value)}</strong>
+            </div>
+          `,
+        )
+        .join("");
+
+      const messages = [
+        ...facts.errors.map((message) => ({ tone: "bad", message: `Error: ${message}` })),
+        ...facts.blockers.map((message) => ({ tone: "bad", message })),
+        ...facts.warnings.filter((message) => !facts.blockers.includes(message)).map((message) => ({ tone: "warn", message })),
+        ...asArray(result.messages).map((message) => ({ tone: "neutral", message })),
+        state.modelPlanMessage ? { tone: state.modelPlanTone, message: state.modelPlanMessage } : null,
+      ].filter(Boolean);
+
+      if (!hasProject) messages.push({ tone: "bad", message: "Create or select a project before confirming this plan." });
+      if (!hasVideo) messages.push({ tone: "bad", message: "Register or select a local video before confirming this plan." });
+      if (!projectMatches) messages.push({ tone: "bad", message: "The selected project changed after this plan was generated. Generate a fresh plan." });
+      if (!videoMatches) messages.push({ tone: "bad", message: "The selected video changed after this plan was generated. Generate a fresh plan." });
+
+      const eventRows = asArray(run.events)
+        .slice(-4)
+        .map(
+          (event) => `
+            <div class="model-run-event">
+              <strong>${escapeHtml(event.eventType || event.event_type || "event")}</strong>
+              <span>${escapeHtml(event.message || event.status || "")}</span>
+            </div>
+          `,
+        )
+        .join("");
+
+      detail.innerHTML = `
+        <div class="model-plan-card">
+          <div class="model-plan-card-header">
+            <div>
+              <h3>${escapeHtml(planGoal.title || "Model-generated plan")}</h3>
+              <p>${escapeHtml(result.request?.prompt || result.request?.textPrompt || "Review the generated run plan before starting extraction.")}</p>
+            </div>
+            ${statusChip(result.status || "planned", result.status || "planned", facts.valid)}
+          </div>
+          <div class="model-plan-facts">${factRows}</div>
+          ${
+            messages.length
+              ? `<div class="model-plan-messages">${messages
+                  .map((item) => `<div class="model-plan-message is-${escapeAttribute(item.tone)}">${escapeHtml(item.message)}</div>`)
+                  .join("")}</div>`
+              : ""
+          }
+          <div class="model-plan-confirm-row">
+            <span class="row-meta">${escapeHtml(
+              canConfirm
+                ? "This generated config has passed backend validation. Confirming will enqueue extraction and attach the model plan to the run log."
+                : alreadyConfirmed
+                  ? `Plan already started as ${state.modelPlanConfirmedJobId}. Watch progress in the run monitor.`
+                : state.modelPlanConfirming
+                  ? "Confirmation is in progress."
+                : "Confirmation stays disabled until the generated config validates and a matching local project/video are selected.",
+            )}</span>
+            ${statusChip(alreadyConfirmed ? "Started" : canConfirm ? "Ready to start" : "Confirmation blocked", alreadyConfirmed || canConfirm ? "ready" : "blocked", alreadyConfirmed || canConfirm)}
+          </div>
+          ${eventRows ? `<div class="model-run-event-list">${eventRows}</div>` : ""}
+        </div>
       `;
     }
 
@@ -3918,6 +4180,7 @@ const MotionJSONUI = (() => {
       );
       renderPromptList();
       renderCorrectionPanel();
+      renderModelPlanPanel();
       scheduleDrawOverlay();
     }
 
@@ -3943,6 +4206,7 @@ const MotionJSONUI = (() => {
       const config = validation.runConfig || buildRunConfig(collectFormState($));
       $("#configPreview").textContent = JSON.stringify(config, null, 2);
       renderRunPlanSummary(buildRunPlan(config, collectFormState($), validation));
+      renderModelPlanPanel();
     }
 
     async function validateConfigWithBackend() {
@@ -3972,6 +4236,124 @@ const MotionJSONUI = (() => {
         $("#configStatus").className = "status-chip is-bad";
         $("#providerWarning").textContent = error.message;
         $("#providerWarning").className = "warning-box is-bad";
+      }
+    }
+
+    async function validateCurrentModelPlan() {
+      const result = currentModelPlanResult();
+      if (!result?.runConfig) {
+        setModelPlanMessage("Generate a model plan before validating its config.", "bad");
+        return null;
+      }
+      state.modelPlanValidation = await api("/api/run-config/validate", {
+        method: "POST",
+        body: JSON.stringify({ runConfig: result.runConfig }),
+      });
+      const facts = modelPlanProviderFacts(result, state.modelPlanValidation);
+      setModelPlanMessage(
+        facts.valid ? "Backend validation accepted the generated config. Review details before confirming." : "Backend validation blocked this generated config.",
+        facts.valid ? (facts.warnings.length ? "warn" : "ready") : "bad",
+      );
+      return state.modelPlanValidation;
+    }
+
+    async function generateModelPlanFromIntent() {
+      const providerId = state.selectedModelSetupProviderId || state.modelProviders?.defaultProviderId || "fake-local-planner";
+      const formState = {
+        ...collectFormState($),
+        modelIntent: $("#modelIntent")?.value.trim() || "",
+      };
+      const payload = modelPlanRequestFromInput(formState, providerId);
+      state.modelPlanRun = { id: "", providerId, status: "running", request: payload.request, result: null, events: [] };
+      state.modelPlanValidation = null;
+      state.modelPlanConfirmedJobId = "";
+      state.modelPlanConfirming = false;
+      state.modelPlanMessage = "Generating a plan. No extraction job has been created.";
+      state.modelPlanTone = "neutral";
+      renderModelPlanPanel();
+      try {
+        const response = await api("/api/model-runs", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.modelPlanRun = response.modelRun || null;
+        state.modelPlanValidation = null;
+        if (state.modelPlanRun?.result?.runConfig) {
+          await validateCurrentModelPlan();
+        } else {
+          renderModelPlanPanel();
+        }
+      } catch (error) {
+        state.modelPlanRun = { id: "", providerId, status: "failed", result: null, error: error.message, events: [] };
+        state.modelPlanValidation = null;
+        state.modelPlanMessage = error.message;
+        state.modelPlanTone = "bad";
+        renderModelPlanPanel();
+      }
+    }
+
+    async function confirmModelPlanAndStart() {
+      const run = state.modelPlanRun;
+      const result = currentModelPlanResult();
+      if (state.modelPlanConfirming) return;
+      if (!run?.id || !result) {
+        setModelPlanMessage("Generate a model plan before confirming extraction.", "bad");
+        return;
+      }
+      let validation = currentModelPlanValidation();
+      if (!validation) validation = await validateCurrentModelPlan();
+      const facts = modelPlanProviderFacts(result, validation);
+      if (!facts.valid) {
+        setModelPlanMessage("Fix validation blockers before starting extraction.", "bad");
+        return;
+      }
+
+      let payload;
+      try {
+        payload = modelPlanConfirmPayload({
+          projectId: state.selectedProjectId,
+          videoId: state.selectedVideoId,
+          run: true,
+        });
+      } catch (error) {
+        setModelPlanMessage(error.message, "bad");
+        return;
+      }
+
+      setModelPlanMessage("Starting extraction from the confirmed model plan...", "neutral");
+      state.modelPlanConfirming = true;
+      renderModelPlanPanel();
+      try {
+        const response = await api(`/api/model-runs/${encodeURIComponent(run.id)}/confirm-job`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        state.modelPlanRun = response.modelRun || state.modelPlanRun;
+        state.modelPlanValidation = response.validation || validation;
+        const job = response.job;
+        const id = jobIdentifier(job);
+        if (id) {
+          state.modelPlanConfirmedJobId = id;
+          state.runConfigsByJob[id] = response.validation?.runConfig || response.modelPlan?.runConfig || result.runConfig;
+          state.selectedJobId = id;
+          state.selectedJob = job;
+          state.jobs = [job, ...state.jobs.filter((item) => jobIdentifier(item) !== id)];
+          state.jobEvents = asArray(job.events);
+          state.jobArtifacts = [];
+          state.correctionState = emptyCorrectionState(id);
+          state.reviewTracks = buildReviewTracks({ job, config: state.runConfigsByJob[id], artifacts: [] });
+          for (const track of state.reviewTracks) state.trackVisibility[track.id] = true;
+          renderJobs();
+          renderJobReview();
+          await refreshSelectedJobReview();
+          startPolling();
+        }
+        setModelPlanMessage("Extraction started from the confirmed plan. The run monitor now includes the attached model plan.", "ready");
+      } catch (error) {
+        setModelPlanMessage(error.message, "bad");
+      } finally {
+        state.modelPlanConfirming = false;
+        renderModelPlanPanel();
       }
     }
 
@@ -4585,6 +4967,7 @@ const MotionJSONUI = (() => {
       renderCapabilities();
       renderProviderSettings();
       renderModelSetup();
+      renderModelPlanPanel();
       renderCommercialReadiness();
       renderFirstRunChecklist();
       renderRunDefaults();
@@ -4618,6 +5001,7 @@ const MotionJSONUI = (() => {
       const viewerPanel = document.querySelector(".viewer-panel");
       const configPanel = document.querySelector(".config-panel");
       const modelSetupPanel = document.querySelector("#modelSetupPanel");
+      const modelPlanPanel = document.querySelector("#modelPlanPanel");
       const localPathDisclosure = document.querySelector("#localPathDisclosure");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
 
@@ -4659,6 +5043,179 @@ const MotionJSONUI = (() => {
             if (hostedToggle) hostedToggle.checked = capture === "model-setup-missing";
           }
         }
+      } else if (capture.startsWith("model-plan")) {
+        const showRunMonitor = ["model-plan-queued", "model-plan-running", "model-plan-succeeded"].includes(capture);
+        if (shell) {
+          shell.style.display = showRunMonitor && window.innerWidth >= 980 ? "grid" : "block";
+          if (showRunMonitor && window.innerWidth >= 980) {
+            shell.style.gridTemplateColumns = "minmax(0, 1fr) 420px";
+          }
+          shell.style.minHeight = "100vh";
+        }
+        if (sidebar) sidebar.style.display = "none";
+        if (guidedStart) guidedStart.style.display = "none";
+        if (workflowSteps) workflowSteps.style.display = "none";
+        if (modelSetupPanel) modelSetupPanel.style.display = "none";
+        if (workspaceGrid) workspaceGrid.style.display = "none";
+        if (modelPlanPanel) {
+          modelPlanPanel.style.display = "grid";
+          modelPlanPanel.style.maxWidth = "1040px";
+        }
+        if (rightRail) {
+          rightRail.style.display = showRunMonitor ? "grid" : "none";
+          rightRail.style.gridTemplateColumns = "1fr";
+          rightRail.style.gap = "16px";
+          rightRail.style.borderLeft = "0";
+        }
+        document.querySelectorAll(".right-rail details").forEach((details) => {
+          const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
+          details.open = showRunMonitor && summary === "run monitor";
+        });
+
+        state.selectedProjectId = "project_layout";
+        state.selectedVideoId = capture === "model-plan-preview" ? "" : "video_layout";
+        const runConfig = buildRunConfig({
+          preset: "text_detector",
+          discoveryMode: "text_detector",
+          projectId: state.selectedProjectId,
+          videoId: state.selectedVideoId,
+          sourcePath: state.selectedVideoId ? `local-ui://assets/${state.selectedVideoId}` : "examples/demo_red_ball.mp4",
+          videoPath: state.selectedVideoId ? `local-ui://assets/${state.selectedVideoId}` : "examples/demo_red_ball.mp4",
+          outputDirectory: "out/ui-runs/project_layout",
+          objectLabel: "red ball",
+          objectId: "red_ball",
+          currentFrame: 0,
+          keyframes: new Set([0]),
+          prompts: [],
+          strokes: [],
+          maskProvider: "mock",
+          device: "auto",
+          sampleFps: "12",
+          maxFrames: "48",
+          minArea: "100",
+          maxAreaRatio: "0.65",
+          stabilityThreshold: "0.82",
+          overlapThreshold: "0.72",
+          boxThreshold: "0.35",
+          textThreshold: "0.25",
+          motionSensitivity: "32",
+          maxObjects: "3",
+          modelName: "auto",
+          outputMode: "authoring",
+          qualityPreset: "balanced",
+          traceEverythingMode: false,
+          traceEverythingAcknowledged: false,
+          textPrompt: "red ball",
+          classPreset: "common_objects",
+          classList: "",
+          externalMaskDir: "masks/object_0",
+        });
+        const warningRunConfig =
+          capture === "model-plan-warning"
+            ? { ...runConfig, provider: { ...runConfig.provider, name: "sam2-local" } }
+            : runConfig;
+        const warningValidation = {
+          valid: true,
+          errors: [],
+          warnings: [
+            {
+              severity: "error",
+              message: "sam2-local is not available on this machine. Choose mock/local before starting.",
+              action: "Choose a ready no-model provider before confirming.",
+            },
+          ],
+          runConfig: warningRunConfig,
+        };
+        const validation =
+          capture === "model-plan-warning"
+            ? warningValidation
+            : { valid: true, errors: [], warnings: [], runConfig };
+        const modelPlan = {
+          providerId: "fake-local-planner",
+          status: "planned",
+          goal: "find_objects_from_text",
+          request: {
+            goal: "find_objects_from_text",
+            prompt: "Find the red ball and keep only reviewed tracks.",
+            projectId: state.selectedProjectId,
+            videoId: state.selectedVideoId || null,
+            objectLabel: "red ball",
+            objectId: "red_ball",
+            textPrompt: "red ball",
+          },
+          providerPlan: {
+            reasoningProvider: "fake-local-planner",
+            discoveryProvider: "text_detector",
+            maskProvider: warningRunConfig.provider.name,
+            trackingMode: "selected_only",
+            reviewRequired: true,
+          },
+          privacy: {
+            framesLeaveDevice: false,
+            hostedCallsRequired: false,
+            summary: "Fake/local planning keeps frames and prompts on this machine.",
+          },
+          estimatedCost: {
+            status: "zero_local",
+            message: "No hosted provider cost.",
+          },
+          requiresUserConfirmation: true,
+          runConfig: warningRunConfig,
+          validation,
+          messages: ["Review the generated plan, then confirm before extraction starts."],
+        };
+        state.modelPlanRun = {
+          id: "model_run_layout",
+          providerId: "fake-local-planner",
+          status: "succeeded",
+          result: modelPlan,
+          events: [
+            { eventType: "queued", message: "model planning request queued" },
+            { eventType: "running", message: "fake local planner generated a run plan" },
+            { eventType: "planned", message: "run plan ready for confirmation" },
+          ],
+        };
+        state.modelPlanValidation = validation;
+        state.modelPlanConfirmedJobId = "";
+        state.modelPlanMessage =
+          capture === "model-plan-warning"
+            ? "Backend validation found a provider blocker before any job was started."
+            : capture === "model-plan-confirmation"
+              ? "Generated config validated. Confirmation will create the extraction job."
+              : "";
+        state.modelPlanTone = capture === "model-plan-warning" ? "bad" : "ready";
+        const jobStatus = {
+          "model-plan-queued": ["queued", 0, "model plan attached; worker waiting"],
+          "model-plan-running": ["running", 42, "extracting object tracks"],
+          "model-plan-succeeded": ["succeeded", 100, "job completed"],
+        }[capture];
+        if (jobStatus) {
+          const [status, progress, message] = jobStatus;
+          const job = {
+            id: "job_model_plan_layout",
+            type: "extract",
+            status,
+            progress,
+            percent: progress,
+            payload: { mask_provider: "mock", run_config: runConfig },
+            result: status === "succeeded" ? { objects: 1 } : {},
+            updated_at: "2026-05-20T12:00:00Z",
+            message,
+          };
+          state.jobs = [job];
+          state.selectedJobId = job.id;
+          state.modelPlanConfirmedJobId = job.id;
+          state.selectedJob = job;
+          state.jobEvents = [
+            { event_type: "model_plan_attached", message: "model-generated plan attached for user review", metadata: { modelRunId: state.modelPlanRun.id } },
+            { event_type: "worker_start_requested", message: "local UI worker start requested after model-plan confirmation", metadata: { progress: { overallRatio: progress / 100 } } },
+          ];
+          state.jobArtifacts = [];
+          state.reviewTracks = buildReviewTracks({ job, config: runConfig, artifacts: [] });
+          renderJobs();
+          renderJobReview();
+        }
+        renderModelPlanPanel();
       } else if (capture === "first-run") {
         if (shell) {
           shell.style.display = "block";
@@ -5695,6 +6252,7 @@ const MotionJSONUI = (() => {
         state.modelSetupMessage = "";
         state.modelSetupTone = "neutral";
         renderModelSetup();
+        renderModelPlanPanel();
         return;
       }
 
@@ -5801,6 +6359,9 @@ const MotionJSONUI = (() => {
     $("#validateConfigButton").addEventListener("click", validateConfigWithBackend);
     $("#guidedPreviewButton").addEventListener("click", () => $("#videoFileInput").click());
     $("#guidedValidateButton").addEventListener("click", validateConfigWithBackend);
+    $("#generateModelPlanButton").addEventListener("click", generateModelPlanFromIntent);
+    $("#validateModelPlanButton").addEventListener("click", validateCurrentModelPlan);
+    $("#confirmModelPlanButton").addEventListener("click", confirmModelPlanAndStart);
 
     $("#loadConfigInput").addEventListener("change", async () => {
       const file = $("#loadConfigInput").files?.[0];
@@ -5841,6 +6402,11 @@ const MotionJSONUI = (() => {
     correctionResponseMessage,
     filterReviewCandidates,
     modelConnectorsForSetup,
+    modelPlanConfirmPayload,
+    modelPlanGoalForPreset,
+    modelPlanProviderFacts,
+    modelPlanRequestFromInput,
+    modelPlanSourceIds,
     modelSetupPayloadFromValues,
     modelSetupProviderSummary,
     normalizeCorrectionState,

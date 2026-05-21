@@ -465,6 +465,11 @@ storage, and exposes the imported scene through the normal job review routes.
    overlay. Prompt coordinates are native video pixels, not CSS canvas pixels.
 8. Review the generated config and use `Validate config` to run backend
    validation plus provider availability checks before saving or starting work.
+   The `Generate plan` panel can also create a server-side model plan from the
+   selected goal and plain-language intent. The generated `runConfig` is
+   revalidated by the backend, and `Confirm and start` stays disabled until a
+   local project/video are selected and validation has no blocking provider
+   errors.
 9. After a run succeeds, correct track labels/visibility/export inclusion if
    needed, validate the export preset, then use `Export MotionJSON` to write a
    validated local handoff with preview and optional contour/mask artifacts.
@@ -496,6 +501,13 @@ CPU/no-model `motion_foreground` workflow: frame differences become candidate
 masks, candidate scores become track confidence, and low-quality/background
 fragments remain visible through fallback diagnostics. External mask imports
 use `external_masks` plus the `external` mask provider.
+
+Model-generated plans are review artifacts, not trusted extraction truth. The
+browser never receives raw hosted API keys, and hosted planners still require
+server-side settings plus per-run network/cost confirmation before a hosted
+request can run. The default fake/local planner makes no network call, returns
+privacy and estimated-cost notes, and records `model_plan_attached` in the job
+event log after the user confirms extraction.
 
 ## Build And Smoke
 

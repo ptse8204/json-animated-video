@@ -159,6 +159,31 @@
           <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
         </section>
 
+        <section id="modelPlanPanel" class="model-plan-panel panel" aria-label="Model generated run plan">
+          <div class="model-plan-heading">
+            <div>
+              <p class="section-kicker">Confirm plan</p>
+              <h2>Generate a plan before running</h2>
+              <p class="panel-note">Describe the target in plain language, validate the generated extraction config, then start only after confirmation.</p>
+            </div>
+            <span id="modelPlanStatus" class="status-chip is-muted">No model plan</span>
+          </div>
+          <div class="model-plan-compose">
+            <label class="model-intent-field">
+              <span>What should MotionJSON trace?</span>
+              <textarea id="modelIntent" rows="3">Cut out the selected object and keep export review required.</textarea>
+            </label>
+            <div class="model-plan-actions">
+              <button id="generateModelPlanButton" type="button">Generate plan</button>
+              <button id="validateModelPlanButton" type="button" disabled>Validate generated config</button>
+              <button id="confirmModelPlanButton" class="primary-action" type="button" disabled>Confirm and start</button>
+            </div>
+          </div>
+          <div id="modelPlanDetail" class="model-plan-detail" aria-live="polite">
+            <div class="empty-state">Generate a local/mock plan when the goal, project, and video setup look right.</div>
+          </div>
+        </section>
+
         <section class="workspace-grid">
           <article class="panel viewer-panel" aria-label="Video viewer">
             <div class="panel-heading">

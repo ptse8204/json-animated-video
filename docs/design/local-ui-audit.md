@@ -263,3 +263,46 @@ Findings and changes:
 - The headless layout script now closes Chrome targets between states and waits
   longer for capture readiness so the expanded model setup matrix can run
   repeatably.
+
+## UI-MODEL-06 Evidence
+
+UI-MODEL-06 added a model-plan confirmation panel between model setup and
+manual extraction settings. The panel keeps model output reviewable: users
+generate a plan, inspect planner/discovery/mask/privacy/cost/runtime facts,
+see backend validation warnings, and only then confirm extraction.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-06-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-model-06
+python3 scripts/capture_docs_assets.py --out-dir docs/design/screenshots/ui-model-06-docs
+```
+
+Representative captures:
+
+![UI-MODEL-06 desktop plan confirmation](screenshots/ui-model-06/desktop-1440-model-plan-confirmation.png)
+
+![UI-MODEL-06 desktop validation warning](screenshots/ui-model-06/desktop-1440-model-plan-warning.png)
+
+![UI-MODEL-06 desktop running plan job](screenshots/ui-model-06/desktop-1440-model-plan-running.png)
+
+Findings and changes:
+
+- The before state had a human-authored run preview but no server model-plan
+  lifecycle in the main workflow.
+- The after state adds model plan preview, validation warning, confirmation,
+  queued, running, and succeeded capture states to the layout matrix.
+- Confirmation remains disabled until the server-generated `runConfig` passes
+  backend validation and a local project/video are selected.
+- The job-state captures show the model plan panel beside the run monitor so
+  `model_plan_attached`, worker start, and extraction progress are visually
+  checked together.
+- Probe screenshots exposed disabled primary buttons that still looked active
+  and run-monitor cards that became too narrow beside the plan panel. Disabled
+  button styling and the capture grid were adjusted before the final matrix.

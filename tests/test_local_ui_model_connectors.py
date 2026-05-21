@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from motionjson.model_connectors import (
     FakeModelConnector,
     ModelConnectorRegistry,
+    ModelPlanResult,
+    ModelPlanRequest,
     OpenAIPlanningConnector,
     OpenRouterSettingsModelConnector,
 )
@@ -54,6 +57,7 @@ def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
     assert status == 200
     assert "/api/model-providers" in health["routes"]
     assert "/api/model-runs/{runId}/cancel" in health["routes"]
+    assert "/api/model-runs/{runId}/confirm-job" in health["routes"]
     assert "/api/jobs/{jobId}/model-plan" in health["routes"]
 
     status, providers = api(app, "GET", "/api/model-providers")
@@ -393,3 +397,159 @@ def test_local_ui_attaches_model_plan_to_job_as_redacted_event(tmp_path):
     event_types = [event["event_type"] for event in attached["job"]["events"]]
     assert "model_plan_attached" in event_types
     assert "apiKey" not in json.dumps(attached)
+
+
+def test_local_ui_confirms_model_plan_before_creating_extraction_job(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "sk-model-confirm-secret-123456"
+    status, project_body = api(app, "POST", "/api/projects", {"name": "Confirmed Plan Project"})
+    assert status == 200
+    project = project_body["project"]
+    status, video_body = api(app, "POST", "/api/videos", {"projectId": project["id"], "path": str(demo_video())})
+    assert status == 200
+    video = video_body["video"]
+
+    status, run_body = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "fake-local-planner",
+            "request": {"goal": "Cut out one object", "prompt": f"red ball api_key={secret}", "projectId": project["id"], "videoId": video["id"]},
+        },
+    )
+    assert status == 200
+    model_run = run_body["modelRun"]
+    assert model_run["status"] == "succeeded"
+
+    status, jobs_before = api(app, "GET", f"/api/jobs?projectId={project['id']}")
+    assert status == 200
+    assert jobs_before["jobs"] == []
+
+    status, unconfirmed = api(
+        app,
+        "POST",
+        f"/api/model-runs/{model_run['id']}/confirm-job",
+        {"projectId": project["id"], "videoId": video["id"], "run": True},
+    )
+    assert status == 400
+    assert "confirmation is required" in unconfirmed["error"]
+
+    status, confirmed = api(
+        app,
+        "POST",
+        f"/api/model-runs/{model_run['id']}/confirm-job",
+        {"confirmed": True, "projectId": project["id"], "videoId": video["id"], "run": True},
+    )
+    assert status == 200
+    assert confirmed["validation"]["valid"] is True
+    assert confirmed["job"]["id"]
+    event_types = [event["event_type"] for event in confirmed["job"]["events"]]
+    assert "model_plan_attached" in event_types
+    assert "worker_start_requested" in event_types
+    assert event_types.index("model_plan_attached") < event_types.index("worker_start_requested")
+    assert "apiKey" not in json.dumps(confirmed)
+    assert secret not in json.dumps(confirmed)
+
+    status, repeated = api(
+        app,
+        "POST",
+        f"/api/model-runs/{model_run['id']}/confirm-job",
+        {"confirmed": True, "projectId": project["id"], "videoId": video["id"], "run": True},
+    )
+    assert status == 200
+    assert repeated["job"]["id"] == confirmed["job"]["id"]
+    assert repeated["worker"]["status"] == "not_started"
+    status, jobs_after_repeat = api(app, "GET", f"/api/jobs?projectId={project['id']}")
+    assert status == 200
+    assert len(jobs_after_repeat["jobs"]) == 1
+
+    for _ in range(80):
+        status, job_body = api(app, "GET", f"/api/jobs/{confirmed['job']['id']}")
+        assert status == 200
+        if job_body["job"]["status"] in {"succeeded", "failed", "canceled"}:
+            break
+        time.sleep(0.05)
+
+
+def test_local_ui_confirm_model_plan_rejects_changed_video_selection(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, project_body = api(app, "POST", "/api/projects", {"name": "Mismatched Plan Project"})
+    assert status == 200
+    project = project_body["project"]
+    status, video_body = api(app, "POST", "/api/videos", {"projectId": project["id"], "path": str(demo_video())})
+    assert status == 200
+    video = video_body["video"]
+    status, second_video_body = api(app, "POST", "/api/videos", {"projectId": project["id"], "path": str(demo_video())})
+    assert status == 200
+    second_video = second_video_body["video"]
+
+    status, run_body = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "fake-local-planner",
+            "request": {"goal": "Cut out one object", "prompt": "red ball", "projectId": project["id"], "videoId": video["id"]},
+        },
+    )
+    assert status == 200
+    model_run = run_body["modelRun"]
+
+    status, blocked = api(
+        app,
+        "POST",
+        f"/api/model-runs/{model_run['id']}/confirm-job",
+        {"confirmed": True, "projectId": project["id"], "videoId": second_video["id"], "run": True},
+    )
+    assert status == 400
+    assert "selected video does not match" in blocked["error"]
+    status, jobs = api(app, "GET", f"/api/jobs?projectId={project['id']}")
+    assert status == 200
+    assert jobs["jobs"] == []
+
+
+def test_local_ui_confirm_model_plan_revalidates_and_blocks_nonlocal_provider(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, project_body = api(app, "POST", "/api/projects", {"name": "Blocked Plan Project"})
+    assert status == 200
+    project = project_body["project"]
+    status, video_body = api(app, "POST", "/api/videos", {"projectId": project["id"], "path": str(demo_video())})
+    assert status == 200
+    video = video_body["video"]
+
+    request = ModelPlanRequest.from_dict(
+        {"goal": "Find by description", "prompt": "red ball", "projectId": project["id"], "videoId": video["id"]}
+    )
+    run = app.model_runs.create(provider_id="fake-local-planner", request=request)
+    local_plan = FakeModelConnector().plan(request)
+    bad_run_config = {
+        **local_plan.run_config,
+        "provider": {**local_plan.run_config["provider"], "name": "sam2-local"},
+    }
+    bad_plan = ModelPlanResult(
+        provider_id=local_plan.provider_id,
+        request=local_plan.request,
+        goal=local_plan.goal,
+        provider_plan={**local_plan.provider_plan, "maskProvider": "sam2-local"},
+        privacy=local_plan.privacy,
+        estimated_cost=local_plan.estimated_cost,
+        run_config=bad_run_config,
+        validation=local_plan.validation,
+        requires_user_confirmation=True,
+        messages=local_plan.messages,
+    )
+    app.model_runs.mark_running(run.id)
+    app.model_runs.mark_succeeded(run.id, bad_plan)
+
+    status, blocked = api(
+        app,
+        "POST",
+        f"/api/model-runs/{run.id}/confirm-job",
+        {"confirmed": True, "projectId": project["id"], "videoId": video["id"], "run": True},
+    )
+    assert status == 400
+    assert "did not pass backend validation" in blocked["error"] or "cannot start extraction" in blocked["error"]
+    status, jobs = api(app, "GET", f"/api/jobs?projectId={project['id']}")
+    assert status == 200
+    assert jobs["jobs"] == []

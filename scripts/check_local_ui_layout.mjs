@@ -29,6 +29,12 @@ const CAPTURE_STATES = [
   "model-setup-missing",
   "model-setup-invalid",
   "model-setup-success",
+  "model-plan-preview",
+  "model-plan-warning",
+  "model-plan-confirmation",
+  "model-plan-queued",
+  "model-plan-running",
+  "model-plan-succeeded",
   "job-review",
 ];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
@@ -407,6 +413,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (state.startsWith("model-setup") && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
+      if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
     }

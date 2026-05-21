@@ -10,6 +10,7 @@ assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
+assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
 
 const sortedModelProviders = ui.modelConnectorsForSetup({
   providers: [
@@ -80,6 +81,64 @@ assert.deepEqual(modelSetupPayload, {
 });
 const noSecretPayload = ui.modelSetupPayloadFromValues("openai", { selectedModel: "gpt-5.4-mini", apiKey: " " });
 assert.equal(Object.hasOwn(noSecretPayload, "apiKey"), false);
+
+assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
+assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
+const modelPlanPayload = ui.modelPlanRequestFromInput(
+  {
+    preset: "text_detector",
+    modelIntent: "Find the red ball",
+    projectId: "project_1",
+    videoId: "video_1",
+    sourcePath: "local-ui://assets/video_1",
+    outputDirectory: "out/ui-runs/project_1",
+    objectLabel: "red ball",
+    objectId: "red_ball",
+    textPrompt: "red ball",
+    sampleFps: "8",
+    maxFrames: "16",
+    maxObjects: "3",
+  },
+  "fake-local-planner",
+);
+assert.equal(modelPlanPayload.providerId, "fake-local-planner");
+assert.equal(modelPlanPayload.request.goal, "find_objects_from_text");
+assert.equal(modelPlanPayload.request.prompt, "Find the red ball");
+assert.equal(modelPlanPayload.request.videoId, "video_1");
+assert.equal(modelPlanPayload.request.sampleFps, 8);
+assert.equal(modelPlanPayload.request.maxFrames, 16);
+assert.equal(modelPlanPayload.request.maxObjects, 3);
+
+const blockedPlanFacts = ui.modelPlanProviderFacts(
+  {
+    providerId: "fake-local-planner",
+    providerPlan: { discoveryProvider: "text_detector", maskProvider: "sam2-local", trackingMode: "selected_only" },
+    privacy: { summary: "Local only" },
+    estimatedCost: { message: "Zero local" },
+    requiresUserConfirmation: true,
+  },
+  {
+    valid: true,
+    errors: [],
+    warnings: [{ severity: "error", message: "sam2-local is unavailable" }],
+  },
+);
+assert.equal(blockedPlanFacts.valid, false);
+assert.deepEqual(blockedPlanFacts.blockers, ["sam2-local is unavailable"]);
+assert.deepEqual(ui.modelPlanConfirmPayload({ projectId: "project_1", videoId: "video_1", run: true }), {
+  confirmed: true,
+  projectId: "project_1",
+  videoId: "video_1",
+  run: true,
+});
+assert.throws(() => ui.modelPlanConfirmPayload({ projectId: "", videoId: "video_1" }), /project/);
+assert.deepEqual(
+  ui.modelPlanSourceIds({
+    request: { projectId: "project_1" },
+    runConfig: { input: { path: "local-ui://assets/video_1" }, rights: {} },
+  }),
+  { projectId: "project_1", videoId: "video_1" },
+);
 
 assert.equal(ui.safeLocalContentUrl("/api/videos/asset_123/content"), "/api/videos/asset_123/content");
 assert.equal(ui.safeLocalContentUrl("/api/artifacts/export_123/content?download=1"), "/api/artifacts/export_123/content?download=1");
@@ -591,6 +650,7 @@ console.log(
         "review-track-gating",
         "correction-state",
         "model-setup-flow",
+        "model-plan-confirmation",
         "python-config-validation",
       ],
     },

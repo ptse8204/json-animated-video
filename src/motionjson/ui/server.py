@@ -488,6 +488,7 @@ class LocalUIApp:
                     "/api/model-runs/{runId}",
                     "/api/model-runs/{runId}/events",
                     "/api/model-runs/{runId}/cancel",
+                    "/api/model-runs/{runId}/confirm-job",
                     "/api/projects",
                     "/api/videos",
                     "/api/videos/{videoId}/content",
@@ -558,6 +559,8 @@ class LocalUIApp:
                 return self._model_run_events_response(parts[2])
             if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
                 return self._cancel_model_run(parts[2], payload)
+            if len(parts) == 4 and parts[3] == "confirm-job" and method == "POST":
+                return self._confirm_model_plan_job(parts[2], payload)
         if path == "/api/run-config/defaults" and method == "GET":
             return {
                 "format": "motionjson.local_ui_run_config_defaults.v0.1",
@@ -1216,6 +1219,149 @@ class LocalUIApp:
                 "modelPlan": plan_snapshot,
             }
         )
+
+    def _validated_model_plan_for_enqueue(self, model_plan: ModelPlanResult) -> tuple[dict[str, Any], dict[str, Any]]:
+        validation = self._validate_run_config({"runConfig": model_plan.run_config})
+        errors = [str(item.get("message") or item) for item in validation.get("errors", [])]
+        blocking_warnings = [
+            str(item.get("message") or item)
+            for item in validation.get("warnings", [])
+            if isinstance(item, dict) and str(item.get("severity") or "").lower() == "error"
+        ]
+        if validation.get("valid") is not True or errors:
+            raise ValueError("model plan runConfig did not pass backend validation: " + "; ".join(errors or ["invalid runConfig"]))
+        if blocking_warnings:
+            raise ValueError("model plan cannot start extraction: " + "; ".join(blocking_warnings))
+        try:
+            run_config = ExtractionRunConfig.from_dict(model_plan.run_config).to_dict()
+        except ConfigValidationError as exc:
+            raise ValueError(f"model plan runConfig did not pass backend validation: {exc}") from exc
+        return run_config, validation
+
+    @staticmethod
+    def _payload_id(payload: dict[str, Any], *keys: str) -> str:
+        for key in keys:
+            value = payload.get(key)
+            if value:
+                return str(value)
+        return ""
+
+    @staticmethod
+    def _model_plan_project_video(model_plan: ModelPlanResult, payload: dict[str, Any]) -> tuple[str, str]:
+        payload_project_id = LocalUIApp._payload_id(payload, "projectId", "project_id")
+        payload_video_id = LocalUIApp._payload_id(payload, "videoId", "assetId", "video_id", "asset_id")
+        config = ExtractionRunConfig.from_dict(model_plan.run_config)
+        config_asset_id = config.rights.source_asset_id or _asset_id_from_uri(config.input_video.path) or ""
+        plan_project_id = model_plan.request.project_id or ""
+        plan_video_id = config_asset_id or model_plan.request.video_id or ""
+
+        if payload_project_id and plan_project_id and payload_project_id != plan_project_id:
+            raise ValueError("selected project does not match the model plan project")
+        if payload_video_id and plan_video_id and payload_video_id != plan_video_id:
+            raise ValueError("selected video does not match the model plan source video")
+
+        project_id = plan_project_id or payload_project_id
+        video_id = plan_video_id or payload_video_id
+        if not project_id:
+            raise ValueError("projectId is required before confirming a model plan")
+        if not video_id:
+            raise ValueError("videoId is required before confirming a model plan")
+        return project_id, video_id
+
+    @staticmethod
+    def _confirmed_job_for_model_run(conn: sqlite3.Connection, *, user_id: str, run_id: str) -> dict[str, Any] | None:
+        rows = conn.execute(
+            """
+            SELECT job_id, metadata_json
+            FROM job_events
+            WHERE event_type = 'model_plan_attached'
+            ORDER BY created_at, id
+            """
+        ).fetchall()
+        for row in rows:
+            try:
+                metadata = json.loads(row["metadata_json"] or "{}")
+            except (TypeError, json.JSONDecodeError):
+                metadata = {}
+            if str(metadata.get("modelRunId") or "") != run_id:
+                continue
+            try:
+                return get_job(conn, user_id=user_id, job_id=row["job_id"])
+            except NotFoundError:
+                continue
+        return None
+
+    def _confirm_model_plan_job(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not _truthy_payload(payload, "confirmed", "userConfirmed", "user_confirmed"):
+            raise ValueError("User confirmation is required before starting extraction from a model plan.")
+
+        run = self.model_runs.get(run_id)
+        if run.result is None:
+            raise ValueError("modelRunId does not reference a completed plan")
+        model_plan = run.result
+        run_config, validation = self._validated_model_plan_for_enqueue(model_plan)
+        project_id, video_id = self._model_plan_project_video(model_plan, payload)
+
+        conn = self.connection()
+        try:
+            user_id = self._local_user(conn)["id"]
+            existing_job = self._confirmed_job_for_model_run(conn, user_id=user_id, run_id=run_id)
+            if existing_job is not None:
+                return _public_value(
+                    {
+                        "format": "motionjson.local_ui_model_plan_confirmed.v0.1",
+                        "modelRun": run.to_dict(include_events=True),
+                        "modelPlan": model_plan.to_dict(),
+                        "validation": validation,
+                        "job": _public_job_snapshot(
+                            existing_job,
+                            events=list_job_events(conn, job_id=existing_job["id"]),
+                            include_events=True,
+                        ),
+                        "worker": {"status": "not_started", "reason": "model plan was already confirmed"},
+                    }
+                )
+            job_payload = {
+                **payload,
+                "projectId": project_id,
+                "videoId": video_id,
+                "runConfig": run_config,
+                "run": False,
+                "start": False,
+                "startWorker": False,
+                "runWorker": False,
+                "runImmediately": False,
+            }
+            job = self._enqueue_extract_from_ui_payload(conn, user_id=user_id, payload=job_payload)
+            self._attach_model_plan_to_job(conn, user_id=user_id, job_id=job["id"], payload={"modelRunId": run_id})
+            response: dict[str, Any] = {
+                "format": "motionjson.local_ui_model_plan_confirmed.v0.1",
+                "modelRun": run.to_dict(include_events=True),
+                "modelPlan": model_plan.to_dict(),
+                "validation": validation,
+                "job": _public_job_snapshot(
+                    get_job(conn, user_id=user_id, job_id=job["id"]),
+                    events=list_job_events(conn, job_id=job["id"]),
+                    include_events=True,
+                ),
+            }
+            if _truthy_payload(payload, "run", "start", "startWorker", "runWorker", "runImmediately"):
+                record_job_event(
+                    conn,
+                    job_id=job["id"],
+                    event_type="worker_start_requested",
+                    message="local UI worker start requested after model-plan confirmation",
+                    metadata={"source": "local_ui", "modelRunId": run_id},
+                )
+                response["worker"] = self._start_worker()
+                response["job"] = _public_job_snapshot(
+                    get_job(conn, user_id=user_id, job_id=job["id"]),
+                    events=list_job_events(conn, job_id=job["id"]),
+                    include_events=True,
+                )
+            return _public_value(response)
+        finally:
+            conn.close()
 
     def _validate_run_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         run_config_payload = payload.get("runConfig", payload)

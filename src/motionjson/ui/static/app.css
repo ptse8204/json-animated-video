@@ -84,6 +84,20 @@ button:active {
   transform: translateY(1px);
 }
 
+button:disabled {
+  border-color: var(--border);
+  color: #819097;
+  background: #edf2f1;
+  cursor: not-allowed;
+  transform: none;
+  opacity: 0.82;
+}
+
+button.primary-action:disabled {
+  color: #607176;
+  background: #dce7e5;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -393,7 +407,8 @@ label,
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 36px;
   border: 1px solid var(--border);
@@ -401,6 +416,12 @@ select {
   padding: 0 10px;
   color: var(--ink);
   background: #ffffff;
+}
+
+textarea {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  line-height: 1.45;
 }
 
 input[type="range"] {
@@ -1643,7 +1664,8 @@ button,
 }
 
 input,
-select {
+select,
+textarea {
   min-height: 38px;
   background: #fff;
 }
@@ -2164,6 +2186,154 @@ button,
   background: var(--bad-soft);
 }
 
+.model-plan-panel {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-md);
+  background: #fbfcfb;
+}
+
+.model-plan-heading,
+.model-plan-compose,
+.model-plan-card-header,
+.model-plan-confirm-row {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.model-plan-heading > *,
+.model-plan-compose > *,
+.model-plan-card-header > *,
+.model-plan-confirm-row > * {
+  min-width: 0;
+}
+
+.model-plan-heading h2 {
+  font-size: 18px;
+}
+
+.model-intent-field {
+  flex: 1 1 440px;
+  min-width: 0;
+}
+
+.model-intent-field textarea {
+  min-height: 86px;
+  resize: vertical;
+}
+
+.model-plan-actions {
+  display: grid;
+  gap: var(--space-xs);
+  flex: 0 0 230px;
+}
+
+.model-plan-detail {
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.model-plan-card {
+  display: grid;
+  gap: var(--space-sm);
+  padding: 13px;
+  border: 1px solid #dbe6e4;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.model-plan-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.model-plan-card p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.model-plan-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-xs);
+}
+
+.model-plan-fact {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #f8fbfa;
+}
+
+.model-plan-fact span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.model-plan-fact strong {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.model-plan-messages {
+  display: grid;
+  gap: 6px;
+}
+
+.model-plan-message {
+  padding: 9px 10px;
+  border: 1px solid #dbe6e4;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  background: #f8fbfa;
+  line-height: 1.45;
+}
+
+.model-plan-message.is-bad {
+  border-color: #f2aea6;
+  color: #7a1c15;
+  background: var(--bad-soft);
+}
+
+.model-plan-message.is-warn {
+  border-color: #e5be5f;
+  color: #62450e;
+  background: #fff8e3;
+}
+
+.model-plan-confirm-row {
+  padding: 11px 12px;
+  border: 1px solid #b9d9d3;
+  border-radius: var(--radius-sm);
+  background: #f4fbfa;
+}
+
+.model-run-event-list {
+  display: grid;
+  gap: 5px;
+}
+
+.model-run-event {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.28fr) minmax(0, 1fr);
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.model-run-event strong {
+  color: #223036;
+}
+
 .rail-section {
   display: block;
   overflow: clip;
@@ -2382,8 +2552,27 @@ button,
     grid-template-columns: 1fr;
   }
 
+  .model-plan-compose,
   .model-setup-summary {
     display: grid;
+  }
+
+  .model-plan-compose {
+    grid-template-columns: 1fr;
+  }
+
+  .model-intent-field,
+  .model-plan-actions {
+    width: 100%;
+  }
+
+  .model-plan-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    flex-basis: auto;
+  }
+
+  .model-plan-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .model-hosted-toggle,
@@ -2418,16 +2607,21 @@ button,
   .advanced-grid,
   .inline-form,
   .timeline-controls,
-  .guided-start-actions,
-  .model-choice-grid,
-  .model-setup-form,
-  .config-actions,
-  .export-actions {
+    .guided-start-actions,
+    .model-choice-grid,
+    .model-setup-form,
+    .model-plan-actions,
+    .model-plan-facts,
+    .config-actions,
+    .export-actions {
     grid-template-columns: 1fr;
   }
 
   .guided-start-header,
   .run-plan-intro,
+  .model-plan-heading,
+  .model-plan-card-header,
+  .model-plan-confirm-row,
   .model-setup-heading,
   .panel-heading {
     display: grid;
