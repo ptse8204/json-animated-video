@@ -41,6 +41,12 @@ Use the checked-in notebooks when you want ready Colab surfaces:
   red-ball video path for UI registration.
 - [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb): runs
   the compact threshold extraction, validation, and ZIP download path.
+- [Colab export and browser preview demo](../notebooks/colab_red_ball_export_preview.ipynb):
+  runs extraction, validates output, exports a website ZIP, and previews
+  `examples/plain_js_embed.html` against generated MotionJSON assets.
+- [Colab provider diagnostics](../notebooks/colab_provider_diagnostics.ipynb):
+  reports provider readiness, defensively redacts diagnostic fields that look
+  credential-related, and runs a no-model smoke extraction.
 
 The UI notebook is intended for active, short, notebook-driven demos. Keep it in
 mock/no-model mode first, avoid secrets in shared notebooks, and prefer

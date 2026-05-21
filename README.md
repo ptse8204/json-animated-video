@@ -197,6 +197,12 @@ Use the checked-in notebooks for the safe first paths:
 - [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb): runs
   the compact CPU/no-model threshold extraction, validation, and ZIP download
   path.
+- [Colab export and browser preview notebook](notebooks/colab_red_ball_export_preview.ipynb):
+  creates a website handoff ZIP and previews the generated runtime assets
+  through Colab's port proxy.
+- [Colab provider diagnostics notebook](notebooks/colab_provider_diagnostics.ipynb):
+  reports provider readiness and saves redacted diagnostics plus a no-model
+  smoke extraction for support.
 
 Keep shared notebooks free of private videos, provider credentials, API keys,
 SAM checkpoints, hosted-service secrets, and other sensitive local artifacts.

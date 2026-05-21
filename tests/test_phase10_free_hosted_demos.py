@@ -11,6 +11,22 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
+PUBLIC_TUNNEL_MARKERS = [
+    "ngrok",
+    "localtunnel",
+    "lt --port",
+    "cloudflared",
+    "trycloudflare",
+    "serveo",
+]
+
+
+def assert_no_public_tunnel_helpers(text: str) -> None:
+    lowered = text.lower()
+    for marker in PUBLIC_TUNNEL_MARKERS:
+        assert marker not in lowered
+
+
 def test_devcontainer_is_cpu_mock_first_and_codespaces_ready() -> None:
     config = json.loads(read(".devcontainer/devcontainer.json"))
     post_create = config["postCreateCommand"]
@@ -34,6 +50,8 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
         "https://codespaces.new/ptse8204/json-animated-video",
         "notebooks/colab_ui_local_demo.ipynb",
         "notebooks/colab_red_ball_cli_demo.ipynb",
+        "notebooks/colab_red_ball_export_preview.ipynb",
+        "notebooks/colab_provider_diagnostics.ipynb",
         "spaces/huggingface/README.md",
         "no paid GPU",
         "no client-side secrets",
@@ -43,11 +61,14 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
     for expected in [
         "../notebooks/colab_ui_local_demo.ipynb",
         "../notebooks/colab_red_ball_cli_demo.ipynb",
+        "../notebooks/colab_red_ball_export_preview.ipynb",
+        "../notebooks/colab_provider_diagnostics.ipynb",
         "../spaces/huggingface/README.md",
         "CPU/mock/no-model",
         "public long-running MotionJSON web service",
         "motionjson.cli ui --no-open --mock",
         "Colab's port proxy",
+        "defensively redacts diagnostic fields",
         "Free instances may reset disks",
         "provider credentials",
     ]:
@@ -102,12 +123,74 @@ def test_colab_ui_notebook_is_valid_mock_local_ui_demo() -> None:
     assert "provider credentials" in joined
     assert "hosted-service secrets" in joined
     assert "OPENROUTER_API_KEY" not in joined
-    assert "ngrok" not in joined.lower()
+    assert_no_public_tunnel_helpers(joined)
     assert "ZipFile" not in joined
     assert "files.download" not in joined
     assert "archive.write" not in joined
     assert "workspace_zip" not in joined
     assert "secret_json" not in joined
+    assert all(not cell.get("outputs") for cell in notebook["cells"])
+
+
+def test_colab_export_preview_notebook_is_valid_browser_handoff_demo() -> None:
+    notebook = json.loads(read("notebooks/colab_red_ball_export_preview.ipynb"))
+    joined = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert notebook["nbformat"] == 4
+    assert "https://github.com/ptse8204/json-animated-video.git" in joined
+    assert "pip\", \"install\", \"-e\", \".[ui]\"" in joined
+    assert "examples/make_demo_video.py" in joined
+    assert "\"extract\"" in joined
+    assert "\"--mask-provider\"" in joined
+    assert "\"threshold\"" in joined
+    assert "\"validate\"" in joined
+    assert "\"export\"" in joined
+    assert "\"website-zip\"" in joined
+    assert "website_package.zip" in joined
+    assert "examples/plain_js_embed.html?manifest=/out/demo_red_ball/web_asset_manifest.json" in joined
+    assert "\"http.server\"" in joined
+    assert "\"127.0.0.1\"" in joined
+    assert "output.serve_kernel_port_as_iframe" in joined
+    assert "files.download(str(export_zip))" in joined
+    assert "provider credentials" in joined
+    assert "OPENROUTER_API_KEY" not in joined
+    assert_no_public_tunnel_helpers(joined)
+    assert all(not cell.get("outputs") for cell in notebook["cells"])
+
+
+def test_colab_provider_diagnostics_notebook_is_redacted_and_no_model() -> None:
+    notebook = json.loads(read("notebooks/colab_provider_diagnostics.ipynb"))
+    joined = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert notebook["nbformat"] == 4
+    assert "https://github.com/ptse8204/json-animated-video.git" in joined
+    assert "pip\", \"install\", \"-e\", \".[ui]\"" in joined
+    assert "backend\", \"diagnostics\", \"--text\"" in joined
+    assert "backend\", \"diagnostics\", \"--json\"" in joined
+    assert "sensitive_key_fragments" in joined
+    assert "redact_diagnostics" in joined
+    assert "safe_diagnostics" in joined
+    assert "secret_value_patterns" in joined
+    assert "redact_string" in joined
+    assert "bearer\\s+" in joined
+    assert "api[_-]?key" in joined
+    assert "sk-[A-Za-z0-9_-]{12,}" in joined
+    assert "report_path.write_text(json.dumps(safe_diagnostics" in joined
+    assert "out/diagnostics_red_ball" in joined
+    assert "\"--mask-provider\"" in joined
+    assert "\"threshold\"" in joined
+    assert "validate\", \"out/diagnostics_red_ball\"" in joined
+    assert "This notebook intentionally does not request API keys" in joined
+    assert "provider secrets" in joined
+    assert "OPENROUTER_API_KEY" not in joined
+    assert "secret_json" not in joined
+    assert_no_public_tunnel_helpers(joined)
     assert all(not cell.get("outputs") for cell in notebook["cells"])
 
 

@@ -8,6 +8,8 @@ optional providers.
 | --- | --- | --- |
 | `colab_ui_local_demo.ipynb` | Launches the local MotionJSON UI inside a Colab runtime using Colab's notebook port proxy. | Mock/no-model local UI with a generated red-ball video path to register. |
 | `colab_red_ball_cli_demo.ipynb` | Existing compact CLI demo that extracts, validates, and downloads red-ball output. | Threshold provider, CPU-only. |
+| `colab_red_ball_export_preview.ipynb` | Runs extraction, validates output, creates a website ZIP, and previews the browser runtime through Colab. | Threshold provider plus static preview server. |
+| `colab_provider_diagnostics.ipynb` | Reports provider readiness and runs a no-model smoke extraction. | Diagnostics plus threshold smoke test. |
 
 Colab is useful for learning and short demos. It is not a production hosting
 surface for a long-running public MotionJSON UI. Do not paste private videos,
