@@ -1,9 +1,10 @@
 # MotionJSON Repository Status
 
-Baseline recorded: 2026-05-20 OD-14 audit
+Baseline recorded: 2026-05-20 UI-MODEL-10 release hardening
 
-This status table reflects the API-first object discovery roadmap through
-Phase OD-14. It separates what is implemented in the repository from what
+This status table reflects the API-first object discovery roadmap through Phase
+OD-14 plus the UI-MODEL guided Local UI/model-connector roadmap through
+UI-MODEL-10. It separates what is implemented in the repository from what
 remains optional, environment-dependent, or future work.
 
 ## Implemented
@@ -25,6 +26,11 @@ remains optional, environment-dependent, or future work.
 | Deterministic mock discovery | Mock automatic object proposals write deterministic accepted/rejected candidates, thumbnails, mask previews, and review payloads without GPU, SAM2/SAM3, hosted credentials, or network access. |
 | Selected-candidate tracking | Local UI and authenticated/headless API routes validate candidate ids, track selected candidates by default, register artifacts, and return updated API review state. |
 | Review-gated exports | Auto-discovered selected-object exports include validation messages, object-layer packs, selected-object website ZIPs, review metadata, and rights/export warnings before handoff. |
+| Guided Local UI workflows | The static Local UI now exposes first-run project/video setup, goal cards, plain-language run plans, provider/model setup, plan confirmation, review/correction cards, and one-click export handoff surfaces while keeping raw config and advanced controls secondary. |
+| Model connector contract | Server-side model connector routes support provider listing, readiness, estimates, deterministic fake runs, run events, cancellation, and model-plan attachment without browser-side credentials. |
+| Optional OpenAI planning connector | The OpenAI planner is server-side, settings-backed, hosted-call gated, tested with mocked transport, and validates model output as a proposed plan before extraction enqueue. It is not a segmentation provider. |
+| Export handoff | The Local UI offers Website package, MotionJSON scene, Runtime snippet, Remotion plan, and Developer handoff cards; validated exports default to reviewed selected objects. |
+| Codex operational prompts | `docs/codex/ui_model_operational_prompts.md` captures master-agent, screenshot review, model connector review, release audit, and read-only scout prompts with no-edit/no-hosted-call guardrails. |
 | Trace Everything safeguards | Trace Everything remains expert/experimental, requires explicit acknowledgement, stays capped, writes rejected candidates, and blocks export until review. |
 | Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, troubleshooting links, and current launch risks. `docs/index.md` links first-run, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
 | Screenshot and demo assets | Real local mock-UI screenshots and deterministic red-ball preview/GIF assets exist under `docs/assets/`, with regeneration commands in `docs/assets/README_ASSETS.md`. |
@@ -38,7 +44,7 @@ remains optional, environment-dependent, or future work.
 | Area | Current state | Gap |
 | --- | --- | --- |
 | Generated output policy | `out/demo/**` is intentionally tracked as the small runtime/web demo; `.gitignore` ignores new generated `out/*` runs, `.motionjson/`, `output/`, local databases, and env files while allowing the tracked demo exception. | New generated assets should be committed only when they are deterministic, documented, small, and required by tests or public docs. |
-| Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available. | CI has static shell and docs asset checks; full screenshot refresh remains a local/docs maintenance command. |
+| Browser screenshots | `scripts/capture_docs_assets.py` captures README UI screenshots with headless Chrome/Chromium when available, and `npm run ui:layout` captures the Local UI responsive matrix for layout phases. | CI has static shell and docs asset checks; full screenshot refresh and release-specific layout matrices remain local/docs maintenance commands. |
 | Hosted demos | Codespaces and Colab CLI paths are documented and low-install. Hugging Face Space scope is specified. | No public Space is shipped or operated from this repository snapshot. |
 | License and release tag | Release notes, checklist, final QA report, and final audit exist. | No license file or signed release tag exists in this repository snapshot. Do not advertise redistribution rights until that is resolved. |
 
@@ -53,7 +59,7 @@ remains optional, environment-dependent, or future work.
 | Text detector discovery | Optional/scaffolded. Diagnostics report `groundingdino` and `TEXT_DETECTOR_MODEL` are unavailable. |
 | Known-class detector discovery | Optional/scaffolded. Diagnostics report `ultralytics` and `CLASS_DETECTOR_MODEL` are unavailable. |
 | OpenRouter/VLM reasoning | Optional. Diagnostics report `OPENROUTER_API_KEY` is unset and OpenRouter is not a segmentation provider. |
-| Production hosted service | Not established in this repository snapshot. Existing backend/UI are local-first and suitable for local smoke checks. |
+| Production hosted service | Not established in this repository snapshot. Existing backend/UI are local-first and suitable for local smoke checks. Hosted planner/provider paths are opt-in setup/runtime integrations, not an operated service. |
 
 ## Repo Metadata Recommendations
 
@@ -64,7 +70,7 @@ remains optional, environment-dependent, or future work.
 | Topics | `motionjson`, `video-editing`, `computer-vision`, `segmentation`, `sam2`, `local-first`, `motion-graphics`, `web-animation`, `python`, `javascript`. |
 | Pinned demo issue/project | Pin a “Try MotionJSON locally in 5 minutes” issue or project item with the no-model UI command, red-ball CLI demo, docs assets, and known limitations. |
 | First release tag | Use `v0.1.0-rc1` only after choosing a license, updating package versions if needed, and completing the release checklist. |
-| Release status | Mark as release candidate, not production hosted service. Heavy ML and hosted demo paths remain optional. |
+| Release status | Mark as release candidate, not production hosted service. Heavy ML, hosted planner/provider, and hosted demo paths remain optional. |
 
 ## Repo Safeguard Recommendations
 
@@ -75,8 +81,8 @@ remains optional, environment-dependent, or future work.
 - Enable private vulnerability reporting, secret scanning, and push protection.
 - Enable Dependabot alerts and grouped updates for Python, npm, GitHub Actions,
   and Docker manifests.
-- Add issue templates for bug reports, provider setup failures, docs fixes, and
-  feature requests.
+- Keep issue templates current for bug reports, provider setup failures, docs
+  fixes, and feature requests.
 - Require a license file before publishing a reusable release or advertising
   redistribution rights.
 - Use signed or protected release tags for release candidates.

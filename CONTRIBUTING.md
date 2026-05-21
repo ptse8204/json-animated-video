@@ -44,8 +44,10 @@ docker compose config
 ## Phase Discipline
 
 For roadmap work, read `AGENTS.md`, `CODEX_MASTER_PROMPT.md`,
-`codex_tasks.yaml`, `docs/codex_future_plan.md`, and the current phase report
-context before editing. Work phase by phase, write a
+`codex_tasks.yaml`, `docs/roadmap/ui_model_connector_plan.md`, and the current
+phase report context before editing. Treat older roadmaps such as
+`docs/codex_future_plan.md` as historical context unless a maintainer
+explicitly selects that track. Work phase by phase, write a
 `docs/roadmap/phase-XX-report.md`, and commit at the end of each phase.
 
 Do not remove or rewrite unrelated local changes. If the tree is dirty, record
@@ -72,3 +74,14 @@ Do not make SAM2, detectors, CUDA, hosted endpoints, OpenRouter, or FFmpeg
 mandatory for the base install. Public API, CLI, schema, and config changes
 need docs and tests. Never commit provider keys, private videos, local database
 files, or storage paths.
+
+Hosted OpenAI/OpenRouter planning, hosted SAM-style providers, detector
+services, and any other network-backed model path must remain server-side,
+redacted, opt-in, and explicitly cost/privacy acknowledged before use. Model
+planner output is a proposed run plan, not trusted extraction truth.
+
+## License Boundary
+
+No `LICENSE` file is present in this repository snapshot. Do not publish a
+reusable release, package distribution, public demo claim, or commercial-rights
+claim until maintainers choose and add an explicit license.

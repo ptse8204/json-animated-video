@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a reproducible MotionJSON problem.
+title: "[Bug]: "
+labels:
+  - bug
+  - needs triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste provider API keys, bearer tokens, private videos, private local paths, SQLite databases, or full `.env` files. Follow `SECURITY.md` for security-sensitive issues and use a private channel when one is available.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Local UI
+        - CLI extraction
+        - Backend API
+        - Provider setup or model planning
+        - Candidate review or correction
+        - Export or handoff
+        - Runtime or SDK
+        - Docs or examples
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, in plain language?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include commands or UI steps. Redact local paths and secrets.
+      placeholder: |
+        1. Run `python3 -m motionjson.cli ui --no-open --mock`
+        2. Open the Local UI
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include visible diagnostics or error messages after redacting secrets.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider_mode
+    attributes:
+      label: Provider or mode
+      options:
+        - no-model or mock
+        - threshold
+        - motion foreground
+        - external masks
+        - sam2-local
+        - sam2-hosted
+        - sam3-local
+        - sam3-hosted
+        - text/class detector
+        - openai/openrouter planner
+        - not applicable
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Paste only redacted output from relevant diagnostics or tests.
+      render: shell
+      placeholder: |
+        python3 -m motionjson.cli backend diagnostics --json
+        npm run build
+        python3 -m pytest -q tests/test_local_ui_api.py
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed provider keys, private media, private full paths, local database files, and credential-bearing logs.
+          required: true

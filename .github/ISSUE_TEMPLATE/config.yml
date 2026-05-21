@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security reporting guidance
+    url: https://github.com/ptse8204/json-animated-video/blob/main/SECURITY.md
+    about: Read the security policy before reporting vulnerabilities. Do not disclose secrets, exploit details, or private media in public issues.
+  - name: Local-first quick start
+    url: https://github.com/ptse8204/json-animated-video#30-second-quick-start-local-ui-no-gpu-no-cloud
+    about: Start here for the CPU/mock Local UI path before filing setup issues.

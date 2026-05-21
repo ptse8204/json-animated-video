@@ -14,6 +14,18 @@ new build.
 - Confirm `docs/migration_and_known_limitations.md` still states current known
   limitations, optional provider boundaries, and raster-only constraints.
 
+## License And Release Status Gate
+
+- Confirm a `LICENSE` file exists before publishing a reusable release,
+  package, or commercial-use claim.
+- If no `LICENSE` file exists, keep README, release notes, repository status,
+  and issue templates clear that reuse, redistribution, and commercial rights
+  are not granted yet.
+- Confirm the release is described as a local-first release candidate, not a
+  production hosted service or public marketplace.
+- Use signed or protected release tags for release candidates when repository
+  settings allow it.
+
 ## Known Limitations
 
 Known limitations must be clear in the release notes, README, and migration
@@ -42,6 +54,29 @@ or Remotion workflows are bundled when they are only configured or planned.
   opt-in before network tests or hosted runs, and secrets are redacted from
   diagnostics, screenshots, API responses, logs, and docs.
 
+## Guided UI And Model Connector Release Gate
+
+- Confirm the default Local UI path remains no-model/mock friendly and readable
+  without CLI knowledge, raw JSON, or provider terminology.
+- Confirm the first-run workflow starts with video/project setup, goal cards,
+  human-readable run plans, provider/privacy status, review, correction, and
+  export handoff.
+- Confirm raw JSON/config previews remain available for technical users behind
+  advanced disclosures.
+- Confirm model connector routes default to deterministic fake/local behavior
+  for tests and do not call hosted providers by default.
+- Confirm the OpenAI planning connector is server-side only, treats model
+  output as a proposed run plan, validates generated configs before enqueue,
+  and routes segmentation/tracking through explicit CV providers.
+- Confirm every hosted provider, including OpenAI/OpenRouter planning and
+  hosted SAM-style providers, requires explicit hosted-call opt-in and
+  per-request cost/privacy acknowledgement before network calls.
+- Never put model API keys, bearer tokens, hosted endpoints with credentials,
+  or provider secrets in browser code, API responses, diagnostics,
+  screenshots, logs, exported settings, test fixtures, or phase reports.
+- Confirm reviewed selected objects are the default export target for
+  automatically discovered candidates.
+
 ## Tests
 
 ```bash
@@ -55,7 +90,7 @@ npm --workspace @motionjson/sdk run test
 git diff --check
 ```
 
-## Docs Screenshots
+## Screenshot Freshness And Layout Gate
 
 Check that screenshot tooling is available:
 
@@ -69,8 +104,37 @@ Regenerate screenshots only when UI changes affect the documented surfaces:
 python3 scripts/capture_docs_assets.py
 ```
 
+For release-bound UI changes, capture the responsive Local UI matrix and keep
+the evidence path in the phase report:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/<release-id>
+```
+
+The release matrix should include 390x844, 768x1024, 1024x768, 1366x768,
+1440x900, and 1920x1080 when tooling supports them. Confirm no horizontal page
+overflow, card/panel overlap, clipped primary button text, unreadably narrow
+card columns, or dense default control walls.
+
 Do not add fake screenshots. If a screenshot cannot be captured, document the
 missing asset in `docs/assets/README_ASSETS.md`.
+
+## Repository Security Settings
+
+- Enable private vulnerability reporting before asking users to report security
+  issues through GitHub.
+- Enable GitHub secret scanning and push protection for the repository.
+- Enable Dependabot alerts and grouped updates for Python, npm, GitHub Actions,
+  and Docker manifests.
+- Protect the default branch with required reviews and required CI checks for
+  Python tests, docs links/assets checks, JavaScript tests/lint/build,
+  packaging dry runs, and Docker smoke.
+- Keep Codex or CI automation review-only unless a maintainer explicitly
+  approves write permissions, package publishing, hosted provider calls, or
+  release-tag creation.
+- Keep issue templates current for bugs, provider setup failures, docs fixes,
+  and feature requests; public templates must warn against posting secrets,
+  private media, local database files, or full local paths.
 
 ## Package Build
 

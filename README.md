@@ -396,9 +396,12 @@ More docs:
 
 ## Roadmap
 
-The current public-onboarding roadmap is in `docs/codex_future_plan.md`.
-Completed implementation history from the earlier roadmap is recorded under
-`docs/roadmap/`. The latest launch-readiness summary is
+The active roadmap for the guided Local UI, server-side model planning
+connector, provider setup, review, export handoff, and Codex operations is
+[`docs/roadmap/ui_model_connector_plan.md`](docs/roadmap/ui_model_connector_plan.md).
+The earlier public-onboarding roadmap in `docs/codex_future_plan.md` and the
+completed implementation history under `docs/roadmap/` remain useful
+historical context. The latest launch-readiness summary is
 [`docs/roadmap/final-audit.md`](docs/roadmap/final-audit.md).
 
 Current release-candidate boundaries:
@@ -406,16 +409,23 @@ Current release-candidate boundaries:
 - the no-model local UI, red-ball CLI demo, benchmark fixtures, docs links,
   JavaScript runtime checks, and local API tests are covered by repeatable
   commands;
+- guided Local UI flows, model setup, fake model planning, server-side OpenAI
+  planning, reviewed-object export handoff, and Codex operational prompts are
+  implemented as local-first, opt-in, review-gated workflows;
 - SAM2, detector, hosted segmentation, OpenRouter, FFmpeg video rendering, and
   public hosted demos remain optional or environment-dependent;
 - no license file is present in this repository snapshot, so reuse,
-  redistribution, and commercial rights are not granted yet.
+  redistribution, and commercial rights are not granted until the project adds
+  an explicit license.
 
 ## Contributing with Codex
 
 Read `AGENTS.md`, `CODEX_MASTER_PROMPT.md`, `codex_tasks.yaml`, and
-`docs/codex_future_plan.md` before making roadmap changes. Work phase by phase,
-run the relevant smoke commands, write a phase report, and commit each phase.
+`docs/roadmap/ui_model_connector_plan.md` before making Local UI, model
+connector, provider setup, guided review, export handoff, or Codex operational
+changes. Treat `docs/codex_future_plan.md` as historical context unless a
+maintainer explicitly selects that track. Work phase by phase, run the relevant
+smoke commands, write a phase report, and commit each phase.
 
 Contributor, release, and security docs:
 
@@ -429,5 +439,6 @@ The old root README planning packet was preserved at
 
 ## License
 
-No license file is present in this repository snapshot. Do not assume reuse,
-redistribution, or commercial rights until the project adds an explicit license.
+No license file is present in this repository snapshot. Reuse,
+redistribution, and commercial rights are not granted until the project adds an
+explicit license.

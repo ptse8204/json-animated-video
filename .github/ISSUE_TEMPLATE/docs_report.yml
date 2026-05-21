@@ -1,0 +1,51 @@
+name: Docs fix
+description: Report documentation that is missing, stale, unclear, or overclaiming.
+title: "[Docs]: "
+labels:
+  - documentation
+  - needs triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Docs reports should avoid private media, raw local paths, credentials, and screenshots that expose provider keys.
+  - type: input
+    id: page
+    attributes:
+      label: Page or file
+      description: Link to the page or name the checked-in file.
+      placeholder: docs/local_ui.md
+    validations:
+      required: true
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: What needs fixing?
+      options:
+        - Missing setup or troubleshooting detail
+        - Stale command or output
+        - Overclaiming an optional provider or hosted workflow
+        - Confusing UI or workflow language
+        - Broken link or missing asset
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or confusing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_fix
+    attributes:
+      label: Suggested fix
+      description: Optional wording, command, or screenshot path that would make the doc accurate.
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Release-boundary check
+      options:
+        - label: This report does not assume SAM2, SAM3, detectors, hosted providers, OpenAI/OpenRouter, FFmpeg, public hosting, redistribution rights, or commercial rights are bundled unless the doc already proves it.
+          required: true

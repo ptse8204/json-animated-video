@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest an improvement while preserving local-first and review-gated workflows.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MotionJSON is local-first. Requests that involve hosted providers, model APIs, or public demos should state the privacy, cost, opt-in, and server-side secret-handling expectations.
+  - type: textarea
+    id: user_goal
+    attributes:
+      label: User goal
+      description: What should a nontechnical user or developer be able to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Guided Local UI
+        - Provider setup or model planning
+        - Candidate review
+        - Track correction
+        - Export or handoff
+        - Runtime or SDK
+        - CLI or backend API
+        - Docs, examples, or onboarding
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: current_gap
+    attributes:
+      label: Current gap
+      description: What is hard, confusing, impossible, or too technical today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_behavior
+    attributes:
+      label: Proposed behavior
+      description: Describe the workflow, output, or API shape.
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: The request can preserve CPU/mock/no-model operation.
+          required: true
+        - label: If hosted calls are involved, they should require explicit opt-in and server-side credentials.
+          required: true
+        - label: Exports should remain review-gated for automatically discovered objects.
+          required: true
