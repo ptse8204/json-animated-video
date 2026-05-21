@@ -58,6 +58,14 @@ from motionjson.backend.worker import worker_once
 from motionjson.capabilities import build_capability_report
 from motionjson.candidate_review import candidate_review_payload
 from motionjson.config import DISCOVERY_MODES, MASK_PROVIDERS, ConfigValidationError, ExtractionRunConfig
+from motionjson.model_connectors import (
+    MODEL_CONNECTOR_FORMAT,
+    MODEL_RUN_FORMAT,
+    ModelConnectorRegistry,
+    ModelPlanRequest,
+    ModelPlanResult,
+    VolatileModelRunStore,
+)
 from motionjson.provider_settings import (
     hosted_sam3_smoke_test,
     provider_settings_for_capabilities,
@@ -410,6 +418,8 @@ class LocalUIApp:
         self.mock_mode = mock_mode
         self._worker_lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
+        self.model_connectors = ModelConnectorRegistry()
+        self.model_runs = VolatileModelRunStore(max_runs=128)
 
     def connection(self) -> sqlite3.Connection:
         return initialize_database(connect(self.db_path))
@@ -469,6 +479,14 @@ class LocalUIApp:
                     "/api/provider-settings/{providerId}",
                     "/api/provider-settings/{providerId}/test",
                     "/api/provider-settings/{providerId}/smoke-test",
+                    "/api/model-providers",
+                    "/api/model-providers/{providerId}",
+                    "/api/model-providers/{providerId}/test",
+                    "/api/model-providers/{providerId}/estimate",
+                    "/api/model-runs",
+                    "/api/model-runs/{runId}",
+                    "/api/model-runs/{runId}/events",
+                    "/api/model-runs/{runId}/cancel",
                     "/api/projects",
                     "/api/videos",
                     "/api/videos/{videoId}/content",
@@ -485,6 +503,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/cancel",
                     "/api/jobs/{jobId}/validate",
                     "/api/jobs/{jobId}/exports",
+                    "/api/jobs/{jobId}/model-plan",
                     "/api/jobs/{jobId}/run",
                     "/api/progress",
                     "/api/artifacts",
@@ -518,6 +537,26 @@ class LocalUIApp:
                 return self._test_provider_settings(parts[2])
             if len(parts) == 4 and parts[3] == "smoke-test" and method == "POST":
                 return self._smoke_test_provider_settings(parts[2], payload)
+        if path == "/api/model-providers" and method == "GET":
+            return self._model_providers_response()
+        if path.startswith("/api/model-providers/"):
+            parts = [part for part in path.split("/") if part]
+            if len(parts) == 3 and method == "GET":
+                return self._model_provider_response(parts[2])
+            if len(parts) == 4 and parts[3] == "test" and method == "POST":
+                return self._test_model_provider(parts[2], payload)
+            if len(parts) == 4 and parts[3] == "estimate" and method == "POST":
+                return self._estimate_model_provider(parts[2], payload)
+        if path == "/api/model-runs" and method == "POST":
+            return self._start_model_run(payload)
+        if path.startswith("/api/model-runs/"):
+            parts = [part for part in path.split("/") if part]
+            if len(parts) == 3 and method == "GET":
+                return self._model_run_response(parts[2])
+            if len(parts) == 4 and parts[3] == "events" and method == "GET":
+                return self._model_run_events_response(parts[2])
+            if len(parts) == 4 and parts[3] == "cancel" and method == "POST":
+                return self._cancel_model_run(parts[2], payload)
         if path == "/api/run-config/defaults" and method == "GET":
             return {
                 "format": "motionjson.local_ui_run_config_defaults.v0.1",
@@ -721,6 +760,8 @@ class LocalUIApp:
                 return {"progress": progress}
             if path.startswith("/api/jobs/") and method == "POST":
                 parts = [part for part in path.split("/") if part]
+                if len(parts) == 4 and parts[3] == "model-plan":
+                    return self._attach_model_plan_to_job(conn, user_id=user_id, job_id=parts[2], payload=payload)
                 if len(parts) == 4 and parts[3] == "cancel":
                     get_job(conn, user_id=user_id, job_id=parts[2])
                     canceled = request_cancel_job(conn, job_id=parts[2], reason=str(payload.get("reason") or "user_canceled"))
@@ -885,6 +926,126 @@ class LocalUIApp:
             raise NotFoundError("route not found")
         finally:
             conn.close()
+
+    def _model_provider_id_from_payload(self, payload: dict[str, Any]) -> str:
+        return str(
+            payload.get("providerId")
+            or payload.get("provider_id")
+            or self.model_connectors.default_provider_id()
+        )
+
+    def _model_plan_request_from_payload(self, payload: dict[str, Any]) -> ModelPlanRequest:
+        request_payload = payload.get("request") if isinstance(payload.get("request"), dict) else payload
+        return ModelPlanRequest.from_dict(request_payload)
+
+    def _model_providers_response(self) -> dict[str, Any]:
+        providers = []
+        for connector in self.model_connectors.list():
+            providers.append({**connector.provider.to_dict(), "readiness": connector.readiness()})
+        return _public_value(
+            {
+                "format": f"{MODEL_CONNECTOR_FORMAT}.providers",
+                "defaultProviderId": self.model_connectors.default_provider_id(),
+                "providers": providers,
+            }
+        )
+
+    def _model_provider_response(self, provider_id: str) -> dict[str, Any]:
+        connector = self.model_connectors.get(provider_id)
+        return _public_value(
+            {
+                "format": MODEL_CONNECTOR_FORMAT,
+                "provider": connector.provider.to_dict(),
+                "readiness": connector.readiness(),
+            }
+        )
+
+    def _test_model_provider(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        connector = self.model_connectors.get(provider_id)
+        return _public_value(connector.test(payload))
+
+    def _estimate_model_provider(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        connector = self.model_connectors.get(provider_id)
+        request = self._model_plan_request_from_payload(payload)
+        return _public_value(connector.estimate(request).to_dict())
+
+    def _start_model_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        provider_id = self._model_provider_id_from_payload(payload)
+        connector = self.model_connectors.get(provider_id)
+        request = self._model_plan_request_from_payload(payload)
+        run = self.model_runs.create(provider_id=provider_id, request=request)
+        auto_start = payload.get("autoStart", payload.get("auto_start", True))
+        if auto_start is not False and not _truthy_payload(payload, "defer", "deferred"):
+            self.model_runs.mark_running(run.id)
+            try:
+                result = connector.plan(request)
+            except Exception as exc:
+                run = self.model_runs.mark_failed(run.id, str(exc) or type(exc).__name__)
+            else:
+                run = self.model_runs.mark_succeeded(run.id, result)
+        return _public_value({"format": MODEL_RUN_FORMAT, "modelRun": run.to_dict(include_events=True)})
+
+    def _model_run_response(self, run_id: str) -> dict[str, Any]:
+        run = self.model_runs.get(run_id)
+        return _public_value({"format": MODEL_RUN_FORMAT, "modelRun": run.to_dict(include_events=True)})
+
+    def _model_run_events_response(self, run_id: str) -> dict[str, Any]:
+        events = [event.to_dict() for event in self.model_runs.events(run_id)]
+        return _public_value({"format": f"{MODEL_RUN_FORMAT}.events", "events": events})
+
+    def _cancel_model_run(self, run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        run = self.model_runs.cancel(run_id, reason=str(payload.get("reason") or "user_canceled"))
+        return _public_value({"format": MODEL_RUN_FORMAT, "modelRun": run.to_dict(include_events=True)})
+
+    def _model_plan_from_payload(self, payload: dict[str, Any]) -> ModelPlanResult:
+        run_id = str(payload.get("modelRunId") or payload.get("model_run_id") or "")
+        if run_id:
+            run = self.model_runs.get(run_id)
+            if run.result is None:
+                raise ValueError("modelRunId does not reference a completed plan")
+            return run.result
+        plan_payload = payload.get("modelPlan") or payload.get("model_plan")
+        if isinstance(plan_payload, dict):
+            return ModelPlanResult.from_dict(plan_payload)
+        raise ValueError("modelRunId or modelPlan is required")
+
+    def _attach_model_plan_to_job(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        user_id: str,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        job = get_job(conn, user_id=user_id, job_id=job_id)
+        model_plan = self._model_plan_from_payload(payload)
+        if model_plan.validation.get("valid") is not True:
+            raise ValueError("model plan runConfig must validate before it can be attached to a job")
+        plan_snapshot = _public_value(model_plan.to_dict())
+        record_job_event(
+            conn,
+            job_id=job_id,
+            event_type="model_plan_attached",
+            message="model-generated plan attached for user review",
+            metadata={
+                "source": "local_ui",
+                "modelRunId": payload.get("modelRunId") or payload.get("model_run_id"),
+                "providerId": model_plan.provider_id,
+                "requiresUserConfirmation": model_plan.requires_user_confirmation,
+                "modelPlan": plan_snapshot,
+            },
+        )
+        return _public_value(
+            {
+                "format": "motionjson.local_ui_model_plan_attachment.v0.1",
+                "job": _public_job_snapshot(
+                    job,
+                    events=list_job_events(conn, job_id=job_id),
+                    include_events=True,
+                ),
+                "modelPlan": plan_snapshot,
+            }
+        )
 
     def _validate_run_config(self, payload: dict[str, Any]) -> dict[str, Any]:
         run_config_payload = payload.get("runConfig", payload)

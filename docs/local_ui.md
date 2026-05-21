@@ -57,6 +57,37 @@ model/provider mode, prompt needs, review gate, and next steps. The generated
 `ExtractionRunConfig` JSON remains available under Advanced for CLI and
 developer users, but it is no longer the default explanation of what will run.
 
+## Model Planning Connector Contract
+
+The Local UI exposes a server-side model planning contract for future
+model-assisted workflows. UI-MODEL-02 includes only `fake-local-planner`, a
+deterministic no-network connector for tests and smoke runs. It does not call
+OpenAI, OpenRouter, SAM2, SAM3, or any hosted service.
+
+The model connector routes are:
+
+- `GET /api/model-providers`
+- `GET /api/model-providers/PROVIDER_ID`
+- `POST /api/model-providers/PROVIDER_ID/test`
+- `POST /api/model-providers/PROVIDER_ID/estimate`
+- `POST /api/model-runs`
+- `GET /api/model-runs/RUN_ID`
+- `GET /api/model-runs/RUN_ID/events`
+- `POST /api/model-runs/RUN_ID/cancel`
+- `POST /api/jobs/JOB_ID/model-plan`
+
+Model runs are process-local and volatile in this phase. They exist to validate
+the API contract and event shapes, not to persist model state across restarts.
+Attaching a model plan to an extraction job records a redacted
+`model_plan_attached` job event and does not enqueue extraction. Extraction
+still starts only through the existing job confirmation path.
+
+The fake connector returns a proposed `ExtractionRunConfig`, validation result,
+privacy summary, zero-local cost estimate, and `requiresUserConfirmation: true`.
+All public model responses pass through the Local UI sanitizer so API keys,
+bearer tokens, local absolute paths, storage keys, and `file://` URIs are not
+returned to browser code.
+
 ## Launch
 
 Use the packaged console command for normal local UI sessions:
