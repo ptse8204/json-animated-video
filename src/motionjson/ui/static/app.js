@@ -51,6 +51,10 @@ const MotionJSONUI = (() => {
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external"]);
+  const SHELL_STORAGE_KEYS = {
+    sidebarCollapsed: "motionjson.localUi.sidebarCollapsed",
+    railCollapsed: "motionjson.localUi.railCollapsed",
+  };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
   const MODEL_SETUP_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
@@ -302,6 +306,23 @@ const MotionJSONUI = (() => {
   });
 
   const state = defaultState();
+
+  const storage = {
+    get(key) {
+      try {
+        return globalThis.localStorage?.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    set(key, value) {
+      try {
+        globalThis.localStorage?.setItem(key, value);
+      } catch {
+        // Local storage can be unavailable in private or embedded contexts.
+      }
+    },
+  };
 
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
@@ -2408,11 +2429,106 @@ const MotionJSONUI = (() => {
     let pollTimer = null;
     let pollInFlight = false;
     let overlayFrame = 0;
+    const shell = $(".app-shell");
+    const sidebarToggle = $("#sidebarToggle");
+    const detailsToggle = $("#detailsToggle");
+    const railCloseButton = $("#railCloseButton");
+
+    function boolFromStorage(key, fallback) {
+      const value = storage.get(key);
+      if (value == null) return fallback;
+      return value === "true";
+    }
+
+    function currentPresetLabel() {
+      return PRESETS[state.selectedPreset]?.label || RUN_PLAN_GOALS[state.selectedPreset]?.title || "Choose goal";
+    }
+
+    function setSidebarCollapsed(collapsed, { persist = true, focusToggle = false } = {}) {
+      shell?.classList.toggle("is-sidebar-collapsed", collapsed);
+      const content = $("#sidebarNavigationContent");
+      if (content) content.setAttribute("aria-hidden", String(collapsed));
+      if (sidebarToggle) {
+        sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+        sidebarToggle.textContent = collapsed ? "Menu" : "Collapse menu";
+        sidebarToggle.setAttribute("aria-label", collapsed ? "Expand workspace navigation" : "Collapse workspace navigation");
+      }
+      if (collapsed && content?.contains(document.activeElement)) {
+        sidebarToggle?.focus();
+      } else if (focusToggle) {
+        sidebarToggle?.focus();
+      }
+      if (persist) storage.set(SHELL_STORAGE_KEYS.sidebarCollapsed, String(collapsed));
+      renderShellIndicators();
+    }
+
+    function setRailCollapsed(collapsed, { persist = true, focusToggle = false } = {}) {
+      shell?.classList.toggle("is-rail-collapsed", collapsed);
+      const rail = $("#diagnosticsRail");
+      if (rail) rail.setAttribute("aria-hidden", String(collapsed));
+      if (detailsToggle) {
+        detailsToggle.setAttribute("aria-expanded", String(!collapsed));
+        detailsToggle.textContent = collapsed ? "Show details" : "Hide details";
+      }
+      if (railCloseButton) {
+        railCloseButton.setAttribute("aria-expanded", String(!collapsed));
+      }
+      if (collapsed && rail?.contains(document.activeElement)) {
+        detailsToggle?.focus();
+      } else if (focusToggle) {
+        (collapsed ? detailsToggle : railCloseButton || detailsToggle)?.focus();
+      }
+      if (persist) storage.set(SHELL_STORAGE_KEYS.railCollapsed, String(collapsed));
+      renderShellIndicators();
+    }
+
+    function shellDiagnosticSummary() {
+      const providerWarning = $("#providerWarning");
+      const providerText = providerWarning?.textContent?.trim() || "";
+      const providerBad = providerWarning?.classList.contains("is-bad");
+      const providerWarn = providerWarning?.classList.contains("is-warn") || (providerText && !providerWarning?.classList.contains("is-ready"));
+      const rootErrors = Object.values(state.errors || {}).filter(Boolean);
+      const diagnostics = collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview).filter(
+        (item) => item.severity !== "ready",
+      );
+      const activeCount = state.jobs.filter(isActiveJob).length;
+      if (rootErrors.length) return { label: `${rootErrors.length} setup issue${rootErrors.length === 1 ? "" : "s"}`, tone: "is-bad" };
+      if (providerBad) return { label: "Provider blocked", tone: "is-bad" };
+      if (diagnostics.some((item) => item.severity === "bad")) return { label: "Run failure details", tone: "is-bad" };
+      if (providerWarn) return { label: "Provider warning", tone: "is-warn" };
+      if (diagnostics.length) return { label: `${diagnostics.length} diagnostic${diagnostics.length === 1 ? "" : "s"}`, tone: "is-warn" };
+      if (activeCount) return { label: `${activeCount} active run${activeCount === 1 ? "" : "s"}`, tone: "is-neutral" };
+      return { label: shell?.classList.contains("is-rail-collapsed") ? "Details hidden" : "Details open", tone: "is-muted" };
+    }
+
+    function renderShellIndicators() {
+      $("#collapsedGoalLabel").textContent = currentPresetLabel();
+      const summary = $("#diagnosticsSummary");
+      if (summary) {
+        const diagnostic = shellDiagnosticSummary();
+        summary.textContent = diagnostic.label;
+        summary.className = `status-chip ${diagnostic.tone}`;
+      }
+    }
+
+    function initShellNavigation() {
+      setSidebarCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.sidebarCollapsed, false), { persist: false });
+      setRailCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.railCollapsed, true), { persist: false });
+      sidebarToggle?.addEventListener("click", () => {
+        setSidebarCollapsed(!shell?.classList.contains("is-sidebar-collapsed"), { focusToggle: true });
+      });
+      detailsToggle?.addEventListener("click", () => {
+        setRailCollapsed(!shell?.classList.contains("is-rail-collapsed"), { focusToggle: true });
+      });
+      railCloseButton?.addEventListener("click", () => setRailCollapsed(true, { focusToggle: true }));
+      renderShellIndicators();
+    }
 
     function renderApiStatus(kind, label) {
       const chip = $("#apiStatus");
       chip.className = `status-chip ${kind}`;
       chip.textContent = label;
+      renderShellIndicators();
     }
 
     function renderHealth() {
@@ -3244,6 +3360,7 @@ const MotionJSONUI = (() => {
     function renderJobs() {
       const activeCount = state.jobs.filter(isActiveJob).length;
       $("#jobSummary").textContent = `${activeCount} active`;
+      renderShellIndicators();
 
       if (state.errors.jobs) {
         $("#jobList").innerHTML = `<div class="error-state">${escapeHtml(state.errors.jobs)}</div>`;
@@ -4153,6 +4270,7 @@ const MotionJSONUI = (() => {
             `)
             .join("")
         : `<div class="empty-state">No selected run diagnostics.</div>`;
+      renderShellIndicators();
     }
 
     function renderJobReview() {
@@ -4548,6 +4666,7 @@ const MotionJSONUI = (() => {
         $("#configStatus").className = "status-chip is-bad";
         $("#configPreview").textContent = error.message;
         renderRunPlanError(error.message);
+        renderShellIndicators();
         return;
       }
 
@@ -4578,6 +4697,7 @@ const MotionJSONUI = (() => {
       renderPromptList();
       renderCorrectionPanel();
       renderModelPlanPanel();
+      renderShellIndicators();
       scheduleDrawOverlay();
     }
 
@@ -4604,6 +4724,7 @@ const MotionJSONUI = (() => {
       $("#configPreview").textContent = JSON.stringify(config, null, 2);
       renderRunPlanSummary(buildRunPlan(config, collectFormState($), validation));
       renderModelPlanPanel();
+      renderShellIndicators();
     }
 
     async function validateConfigWithBackend() {
@@ -4616,6 +4737,7 @@ const MotionJSONUI = (() => {
         $("#configStatus").className = "status-chip is-bad";
         $("#configPreview").textContent = error.message;
         renderRunPlanError(error.message);
+        renderShellIndicators();
         return;
       }
 
@@ -4923,6 +5045,7 @@ const MotionJSONUI = (() => {
       if (!options.keepProvider && preset.maskProvider && $("#maskProviderSelect").querySelector(`option[value="${preset.maskProvider}"]`)) {
         $("#maskProviderSelect").value = preset.maskProvider;
       }
+      renderShellIndicators();
       renderConfigPreview();
     }
 
@@ -7149,6 +7272,7 @@ const MotionJSONUI = (() => {
 
     window.addEventListener("resize", scheduleDrawOverlay);
 
+    initShellNavigation();
     updatePointKind("positive_point");
     updateTool("point");
     renderMaskProviderOptions();

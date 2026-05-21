@@ -10,75 +10,85 @@
   <body>
     <a class="skip-link" href="#workspaceMain">Skip to workspace</a>
     <main class="app-shell">
-      <aside class="sidebar" aria-label="Workspace navigation">
+      <aside id="workspaceSidebar" class="sidebar" aria-label="Workspace navigation">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
             <strong>MotionJSON</strong>
             <span>Local object tracing</span>
           </div>
+          <span id="collapsedGoalLabel" class="collapsed-goal-label">Cut out one object</span>
+          <button
+            id="sidebarToggle"
+            class="shell-toggle sidebar-toggle"
+            type="button"
+            aria-controls="sidebarNavigationContent"
+            aria-expanded="true"
+          >Collapse menu</button>
         </div>
 
-        <section class="sidebar-section">
-          <p class="section-kicker">Choose a goal</p>
-          <nav class="goal-list" aria-label="Extraction wizard presets">
-            <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
-            <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
-            <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
-            <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
-            <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
-            <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
-            <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
-            <button class="goal" type="button" data-preset="review_existing" aria-pressed="false">Review existing result</button>
-          </nav>
-        </section>
+        <div id="sidebarNavigationContent" class="sidebar-content">
+          <section class="sidebar-section">
+            <p class="section-kicker">Choose a goal</p>
+            <nav class="goal-list" aria-label="Extraction wizard presets">
+              <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
+              <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
+              <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
+              <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
+              <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
+              <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
+              <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
+              <button class="goal" type="button" data-preset="review_existing" aria-pressed="false">Review existing result</button>
+            </nav>
+          </section>
 
-        <details class="compact-panel disclosure-panel">
-          <summary>Workspace</summary>
-          <dl id="workspaceSummary" class="facts"></dl>
-          <div id="workspaceRecent" class="workspace-recent"></div>
-          <form id="workspacePreferencesForm" class="workspace-preferences">
-            <label>
-              <span>Default goal</span>
-              <select id="preferenceDefaultGoal">
-                <option value="trace_one_object">Cut out one object</option>
-                <option value="auto_object_proposals">Discover objects</option>
-                <option value="text_detector">Find objects from text</option>
-                <option value="class_detector">Find known classes</option>
-                <option value="motion_foreground">Find moving objects</option>
-                <option value="review_existing">Review existing result</option>
-              </select>
-            </label>
-            <label>
-              <span>Default export</span>
-              <select id="preferenceExportPreset">
-                <option value="compact">compact</option>
-                <option value="debug">debug</option>
-                <option value="vector-heavy">vector-heavy</option>
-                <option value="raster-fallback">raster-fallback</option>
-              </select>
-            </label>
-            <button type="submit">Save preferences</button>
-          </form>
-        </details>
+          <details class="compact-panel disclosure-panel">
+            <summary>Workspace</summary>
+            <dl id="workspaceSummary" class="facts"></dl>
+            <div id="workspaceRecent" class="workspace-recent"></div>
+            <form id="workspacePreferencesForm" class="workspace-preferences">
+              <label>
+                <span>Default goal</span>
+                <select id="preferenceDefaultGoal">
+                  <option value="trace_one_object">Cut out one object</option>
+                  <option value="auto_object_proposals">Discover objects</option>
+                  <option value="text_detector">Find objects from text</option>
+                  <option value="class_detector">Find known classes</option>
+                  <option value="motion_foreground">Find moving objects</option>
+                  <option value="review_existing">Review existing result</option>
+                </select>
+              </label>
+              <label>
+                <span>Default export</span>
+                <select id="preferenceExportPreset">
+                  <option value="compact">compact</option>
+                  <option value="debug">debug</option>
+                  <option value="vector-heavy">vector-heavy</option>
+                  <option value="raster-fallback">raster-fallback</option>
+                </select>
+              </label>
+              <button type="submit">Save preferences</button>
+            </form>
+          </details>
 
-        <details class="compact-panel disclosure-panel first-run-panel">
-          <summary>
-            <span>First Run</span>
-            <span class="subtle-chip">safe path</span>
-          </summary>
-          <div id="firstRunChecklist" class="first-run-list" aria-live="polite"></div>
-        </details>
+          <details class="compact-panel disclosure-panel first-run-panel">
+            <summary>
+              <span>First Run</span>
+              <span class="subtle-chip">safe path</span>
+            </summary>
+            <div id="firstRunChecklist" class="first-run-list" aria-live="polite"></div>
+          </details>
 
-        <details class="compact-panel disclosure-panel">
-          <summary>Local API</summary>
-          <dl id="healthStatus" class="facts"></dl>
-        </details>
+          <details class="compact-panel disclosure-panel">
+            <summary>Local API</summary>
+            <dl id="healthStatus" class="facts"></dl>
+          </details>
 
-        <details class="compact-panel disclosure-panel">
-          <summary>Capabilities</summary>
-          <div id="capabilityList" class="capability-list" aria-live="polite"></div>
-        </details>
+          <details class="compact-panel disclosure-panel">
+            <summary>Capabilities</summary>
+            <div id="capabilityList" class="capability-list" aria-live="polite"></div>
+          </details>
+        </div>
       </aside>
 
       <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1">
@@ -90,6 +100,14 @@
           </div>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
+            <span id="diagnosticsSummary" class="status-chip is-muted">Details hidden</span>
+            <button
+              id="detailsToggle"
+              class="shell-toggle"
+              type="button"
+              aria-controls="diagnosticsRail"
+              aria-expanded="false"
+            >Show details</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
           </div>
         </header>
@@ -473,7 +491,21 @@
         </section>
       </section>
 
-      <aside class="right-rail" aria-label="Jobs and diagnostics">
+      <aside id="diagnosticsRail" class="right-rail" aria-label="Jobs and diagnostics">
+        <div class="rail-heading">
+          <div>
+            <p class="section-kicker">Details</p>
+            <strong>Run, review, diagnostics</strong>
+          </div>
+          <button
+            id="railCloseButton"
+            class="shell-toggle"
+            type="button"
+            aria-controls="diagnosticsRail"
+            aria-expanded="true"
+          >Hide details</button>
+        </div>
+
         <details class="rail-section">
           <summary>Provider settings</summary>
           <section id="providerSettingsPanel" class="compact-panel">

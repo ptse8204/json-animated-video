@@ -17,6 +17,8 @@ const VIEWPORTS = [
 ];
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
 const CAPTURE_STATES = [
+  "nav-collapsed",
+  "diagnostics-open",
   "first-run",
   "new-project",
   "extraction-wizard",
@@ -56,7 +58,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -407,6 +409,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
   try {
     await cdp.send("Page.enable");
     await cdp.send("Runtime.enable");
+    await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `
+        localStorage.removeItem("motionjson.localUi.sidebarCollapsed");
+        localStorage.removeItem("motionjson.localUi.railCollapsed");
+      `,
+    });
     await cdp.send("Emulation.setDeviceMetricsOverride", {
       width: viewport.width,
       height: viewport.height,
@@ -417,10 +425,65 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     await waitForReady(cdp, capture);
     if (state === "real-expanded-shell") {
       await cdp.send("Runtime.evaluate", {
-        expression: `document.querySelectorAll("details").forEach((details) => { details.open = true; })`,
+        expression: `
+          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
+            document.querySelector("#detailsToggle")?.click();
+          }
+          document.querySelectorAll("details").forEach((details) => { details.open = true; });
+        `,
+      });
+    }
+    if (state === "nav-collapsed") {
+      await cdp.send("Runtime.evaluate", {
+        expression: `
+          if (!document.querySelector(".app-shell")?.classList.contains("is-sidebar-collapsed")) {
+            document.querySelector("#sidebarToggle")?.click();
+          }
+        `,
+      });
+    }
+    if (state === "diagnostics-open") {
+      await cdp.send("Runtime.evaluate", {
+        expression: `
+          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
+            document.querySelector("#detailsToggle")?.click();
+          }
+        `,
       });
     }
     const layout = await evaluateLayout(cdp);
+    const stateAssertions = await cdp.send("Runtime.evaluate", {
+      returnByValue: true,
+      expression: `(() => {
+        const shell = document.querySelector(".app-shell");
+        const rightRail = document.querySelector("#diagnosticsRail");
+        const rightRailBox = rightRail?.getBoundingClientRect();
+        const visible = (element) => {
+          if (!element) return false;
+          const box = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+        };
+        return {
+          sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
+          railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
+          railVisible: visible(rightRail),
+          sidebarExpanded: document.querySelector("#sidebarToggle")?.getAttribute("aria-expanded") || "",
+          detailsExpanded: document.querySelector("#detailsToggle")?.getAttribute("aria-expanded") || "",
+          rightRailWidth: Math.round(rightRailBox?.width || 0),
+        };
+      })()`,
+    });
+    const stateValue = stateAssertions.result.value || {};
+    if (state === "nav-collapsed" && (!stateValue.sidebarCollapsed || stateValue.sidebarExpanded !== "false")) {
+      failures.push(`${viewport.name}/${state}: sidebar did not collapse with aria-expanded=false`);
+    }
+    if (state === "diagnostics-open" && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
+      failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
+    }
+    if (state === "real-empty-shell" && !stateValue.railCollapsed) {
+      failures.push(`${viewport.name}/${state}: diagnostics rail should be reduced by default`);
+    }
     if (screenshotDir) {
       await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`));
       if (state === "advanced-config" && viewport.name === "mobile-390") {
@@ -481,7 +544,9 @@ async function run() {
     chromeProcess = await startChrome(chrome, tmp, port);
     if (options.screenshotDir) await mkdir(options.screenshotDir, { recursive: true });
 
-    const preSeedStates = options.states.filter((state) => state === "real-empty-shell" || state === "first-run");
+    const preSeedStates = options.states.filter((state) =>
+      ["real-empty-shell", "first-run", "nav-collapsed", "diagnostics-open"].includes(state),
+    );
     const postSeedStates = options.states.filter((state) => !preSeedStates.includes(state));
 
     for (const viewport of options.viewports) {
