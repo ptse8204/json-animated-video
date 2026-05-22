@@ -3,7 +3,6 @@
 Turn selected video objects into reusable motion layers for editors and websites.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ptse8204/json-animated-video)
-[![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb)
 
 MotionJSON helps you cut a moving object out of a video once, review the result,
 and reuse it as a JSON-controlled layer. The practical output is cached
@@ -102,9 +101,11 @@ python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli ui --no-open --mock
 ```
 
-Open the printed local UI URL. In mock mode the UI still reports real
-capability status; it does not pretend SAM2, CUDA, detectors, FFmpeg, or model
-weights are available.
+Open the printed local UI URL. The workspace guides you through goal, project,
+video, mode/provider, prompts, run, review, correction, and export one step at a
+time. In mock mode the UI still reports real capability status; it does not
+pretend SAM2, CUDA, detectors, FFmpeg, or model weights are available. Use
+`Show details` for diagnostics and `Show all panels` for the advanced dashboard.
 
 Windows PowerShell uses the same module command after activating a venv:
 
@@ -185,12 +186,28 @@ installs Python and Node dependencies after the container starts; then use the
 forwarded UI port from the Codespaces Ports panel. The full low-install guide
 is [docs/run_free_instances.md](docs/run_free_instances.md).
 
-### Google Colab CLI demo
+### Google Colab notebooks
 
-Colab is useful for short CLI demos, not for hosting a long-running public web
-service. The intended path is clone, install CPU dependencies, run the red-ball
-demo, and inspect generated files. Use the checked-in
-[Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb).
+Colab is useful for short interactive demos and generated-file inspection. It
+is not the right place to host a long-running public MotionJSON web service.
+Use the checked-in notebooks for the safe first paths:
+
+- [Colab local UI notebook](notebooks/colab_ui_local_demo.ipynb): clones the
+  repo, installs the lightweight UI extra, creates the deterministic red-ball
+  video, runs provider diagnostics, starts `motionjson ui --no-open --mock`,
+  and displays `/ui/` through Colab's notebook port proxy.
+- [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb): runs
+  the compact CPU/no-model threshold extraction, validation, and ZIP download
+  path.
+- [Colab export and browser preview notebook](notebooks/colab_red_ball_export_preview.ipynb):
+  creates a website handoff ZIP and previews the generated runtime assets
+  through Colab's port proxy.
+- [Colab provider diagnostics notebook](notebooks/colab_provider_diagnostics.ipynb):
+  reports provider readiness and saves redacted diagnostics plus a no-model
+  smoke extraction for support.
+
+Keep shared notebooks free of private videos, provider credentials, API keys,
+SAM checkpoints, hosted-service secrets, and other sensitive local artifacts.
 
 ### Hugging Face Space demo plan
 
@@ -328,6 +345,7 @@ a component today.
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |
+| `openai-planner` | Optional | Text intent to reviewable run plan | Uses server-side OpenAI settings only after hosted opt-in and per-request cost/privacy acknowledgement. Not a segmentation provider. |
 
 Run this before choosing a provider:
 
@@ -396,9 +414,12 @@ More docs:
 
 ## Roadmap
 
-The current public-onboarding roadmap is in `docs/codex_future_plan.md`.
-Completed implementation history from the earlier roadmap is recorded under
-`docs/roadmap/`. The latest launch-readiness summary is
+The active roadmap for the guided Local UI, server-side model planning
+connector, provider setup, review, export handoff, and Codex operations is
+[`docs/roadmap/ui_model_connector_plan.md`](docs/roadmap/ui_model_connector_plan.md).
+The earlier public-onboarding roadmap in `docs/codex_future_plan.md` and the
+completed implementation history under `docs/roadmap/` remain useful
+historical context. The latest launch-readiness summary is
 [`docs/roadmap/final-audit.md`](docs/roadmap/final-audit.md).
 
 Current release-candidate boundaries:
@@ -406,16 +427,23 @@ Current release-candidate boundaries:
 - the no-model local UI, red-ball CLI demo, benchmark fixtures, docs links,
   JavaScript runtime checks, and local API tests are covered by repeatable
   commands;
+- guided Local UI flows, model setup, fake model planning, server-side OpenAI
+  planning, reviewed-object export handoff, and Codex operational prompts are
+  implemented as local-first, opt-in, review-gated workflows;
 - SAM2, detector, hosted segmentation, OpenRouter, FFmpeg video rendering, and
   public hosted demos remain optional or environment-dependent;
-- no license file is present in this repository snapshot, so reuse,
-  redistribution, and commercial rights are not granted yet.
+- MotionJSON source code and package metadata are licensed under Apache-2.0;
+  generated output rights still depend on the user's source videos, media
+  rights, and export metadata.
 
 ## Contributing with Codex
 
 Read `AGENTS.md`, `CODEX_MASTER_PROMPT.md`, `codex_tasks.yaml`, and
-`docs/codex_future_plan.md` before making roadmap changes. Work phase by phase,
-run the relevant smoke commands, write a phase report, and commit each phase.
+`docs/roadmap/ui_model_connector_plan.md` before making Local UI, model
+connector, provider setup, guided review, export handoff, or Codex operational
+changes. Treat `docs/codex_future_plan.md` as historical context unless a
+maintainer explicitly selects that track. Work phase by phase, run the relevant
+smoke commands, write a phase report, and commit each phase.
 
 Contributor, release, and security docs:
 
@@ -429,5 +457,10 @@ The old root README planning packet was preserved at
 
 ## License
 
-No license file is present in this repository snapshot. Do not assume reuse,
-redistribution, or commercial rights until the project adds an explicit license.
+MotionJSON is licensed under the Apache License, Version 2.0. See
+[LICENSE](LICENSE).
+
+Generated MotionJSON assets retain the source-media rights and attribution
+metadata recorded by the user or pipeline; the project license does not grant
+rights to videos, images, model checkpoints, provider outputs, or third-party
+media that users supply.
