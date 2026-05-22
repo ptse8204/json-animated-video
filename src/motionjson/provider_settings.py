@@ -5,7 +5,10 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import uuid
+from importlib.util import find_spec
+from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -28,6 +31,10 @@ SAM2_HOSTED_PROFILES: list[dict[str, Any]] = [
         "defaultModel": "meta/sam-2-video",
         "modelOptions": [{"id": "meta/sam-2-video", "label": "meta/sam-2-video"}],
         "docs": "https://replicate.com/meta/sam-2-video/api",
+        "setupGuide": {
+            "recommendedFor": "Hosted fallback for tracing one prompted object when local SAM2 is not installed.",
+            "setupSummary": "Paste a Replicate API token, keep model meta/sam-2-video, then run the hosted smoke test only after cost/privacy opt-in.",
+        },
         "warning": "Uploads the selected video to Replicate for promptable SAM2 video segmentation.",
     },
     {
@@ -56,6 +63,10 @@ SAM3_HOSTED_PROFILES: list[dict[str, Any]] = [
         "defaultModel": "sam3/sam3_final",
         "modelOptions": [{"id": "sam3/sam3_final", "label": "sam3/sam3_final"}],
         "docs": "https://docs.roboflow.com/deploy/supported-models/sam3",
+        "setupGuide": {
+            "recommendedFor": "Hosted concept segmentation for text prompts like 'red ball' or 'person in white'.",
+            "setupSummary": "Paste a Roboflow API key and use sam3/sam3_final for Promptable Concept Segmentation.",
+        },
         "warning": "Sends sampled frames and text concepts to Roboflow's SAM3 serverless API.",
     },
     {
@@ -68,6 +79,10 @@ SAM3_HOSTED_PROFILES: list[dict[str, Any]] = [
         "defaultModel": "fal-ai/sam-3/image",
         "modelOptions": [{"id": "fal-ai/sam-3/image", "label": "fal-ai/sam-3/image"}],
         "docs": "https://fal.ai/models/fal-ai/sam-3/image/api",
+        "setupGuide": {
+            "recommendedFor": "Hosted frame-by-frame SAM3 image segmentation when you want a Fal-backed fallback.",
+            "setupSummary": "Paste FAL_KEY and keep fal-ai/sam-3/image selected; MotionJSON downloads returned masks server-side.",
+        },
         "warning": "Uploads sampled frames to Fal for SAM3 image segmentation.",
     },
     {
@@ -189,9 +204,14 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "kind": "mask_provider",
         "locality": "local",
         "implemented": True,
-        "runsInLocalWorker": False,
+        "runsInLocalWorker": True,
         "credentialRequired": False,
         "credentialFields": [],
+        "localConfigFields": [
+            {"name": "sam2_checkpoint_path", "label": "SAM2 checkpoint path", "env": "SAM2_LOCAL_CHECKPOINT", "required": True},
+            {"name": "sam2_model_config_path", "label": "SAM2 model config path", "env": "SAM2_LOCAL_CONFIG", "required": True},
+            {"name": "sam2_device", "label": "Device", "env": "SAM2_LOCAL_DEVICE", "required": False},
+        ],
         "modelOptions": [
             {"id": "sam2/hiera-tiny", "label": "SAM2 Hiera tiny"},
             {"id": "sam2/hiera-small", "label": "SAM2 Hiera small"},
@@ -206,6 +226,17 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "cost": {"status": "zero_local", "label": "Free local runtime"},
         "privacy": "Frames stay on this machine when SAM2 is installed locally.",
         "warning": "Requires local SAM2 and model paths. It is not part of the default CPU install.",
+        "setupGuide": {
+            "recommendedFor": "Best default for tracing one prompted object through a video.",
+            "setupSummary": "Install the official SAM2 package, download a SAM2.1 checkpoint, then save the checkpoint and config paths here.",
+            "commands": [
+                "git clone https://github.com/facebookresearch/sam2.git",
+                "cd sam2 && pip install -e .",
+                "cd checkpoints && ./download_ckpts.sh",
+                "export SAM2_LOCAL_CHECKPOINT=/path/to/sam2.1_hiera_large.pt",
+                "export SAM2_LOCAL_CONFIG=configs/sam2.1/sam2.1_hiera_l.yaml",
+            ],
+        },
         "docs": "docs/sam2_segmentation.md",
     },
     {
@@ -244,10 +275,14 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "capabilityName": "sam3-local",
         "kind": "discovery_provider",
         "locality": "local",
-        "implemented": False,
-        "runsInLocalWorker": False,
+        "implemented": True,
+        "runsInLocalWorker": True,
         "credentialRequired": False,
         "credentialFields": [],
+        "localConfigFields": [
+            {"name": "sam3_model_path", "label": "SAM3 model path", "env": "SAM3_LOCAL_MODEL", "required": True},
+            {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
+        ],
         "modelOptions": [
             {"id": "sam3/local-model-path", "label": "Configured local SAM3 model"},
             {"id": CUSTOM_MODEL_ID, "label": "Custom local SAM3 model id"},
@@ -259,6 +294,18 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "cost": {"status": "zero_local", "label": "Free local runtime"},
         "privacy": "Frames stay on this machine when SAM3 is installed locally.",
         "warning": "Requires local SAM3 and model setup. It is not part of the default CPU install.",
+        "setupGuide": {
+            "recommendedFor": "Best local path for concept prompts such as 'red ball' or 'person in white'.",
+            "setupSummary": "Install official SAM3 in a Python 3.12 CUDA environment, request Hugging Face access, authenticate, then save the local model path.",
+            "commands": [
+                "conda create -n sam3 python=3.12",
+                "pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128",
+                "git clone https://github.com/facebookresearch/sam3.git",
+                "cd sam3 && pip install -e .",
+                "hf auth login",
+                "export SAM3_LOCAL_MODEL=/path/to/sam3-model",
+            ],
+        },
         "docs": "docs/provider_capabilities.md",
     },
     {
@@ -575,7 +622,8 @@ def provider_settings_response(
         "catalogFormat": PROVIDER_CATALOG_FORMAT,
         "providers": providers,
         "defaults": {
-            "safeMaskProvider": "mock",
+            "safeMaskProvider": "sam2-local",
+            "debugMaskProvider": "mock",
             "safeReasoningProvider": "none",
             "hostedCallsDefault": "disabled",
             "credentialPrecedence": ["environment", "local_settings", "unset"],
@@ -656,10 +704,60 @@ def provider_runtime_settings(
         "endpoint_source": endpoint_source,
         "selected_model": _runtime_effective_model(definition, settings, environ),
         "allow_hosted": bool(settings.get("allow_hosted", False)),
+        "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
+        "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
+        "sam2_device": str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or ""),
+        "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
+        "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
         "configured": readiness["configured"],
         "readiness": readiness,
         "settings_source": "local_settings" if row is not None else "default",
     }
+
+
+def _apply_settings_payload(
+    definition: Mapping[str, Any],
+    settings: dict[str, Any],
+    secrets: dict[str, str],
+    payload: Mapping[str, Any],
+    *,
+    validate_profile: bool = True,
+) -> None:
+    if "enabled" in payload:
+        settings["enabled"] = bool(payload.get("enabled"))
+    if "selectedModel" in payload or "selected_model" in payload:
+        settings["selected_model"] = _optional_text(payload.get("selectedModel", payload.get("selected_model")))
+    if "customModelId" in payload or "custom_model_id" in payload:
+        settings["custom_model_id"] = _optional_text(payload.get("customModelId", payload.get("custom_model_id")))
+    if "endpoint" in payload:
+        settings["endpoint"] = _optional_url(payload.get("endpoint"), "endpoint")
+    if "baseUrl" in payload or "base_url" in payload:
+        settings["base_url"] = _optional_url(payload.get("baseUrl", payload.get("base_url")), "baseUrl")
+    if "allowHosted" in payload or "allow_hosted" in payload:
+        settings["allow_hosted"] = bool(payload.get("allowHosted", payload.get("allow_hosted")))
+    if "hostedProfileId" in payload or "hosted_profile_id" in payload:
+        profile_id = _optional_text(payload.get("hostedProfileId", payload.get("hosted_profile_id")))
+        if profile_id and validate_profile:
+            _ensure_valid_hosted_profile(definition, profile_id)
+        settings["hosted_profile_id"] = profile_id
+    if "sam2CheckpointPath" in payload or "sam2_checkpoint_path" in payload:
+        settings["sam2_checkpoint_path"] = _optional_text(payload.get("sam2CheckpointPath", payload.get("sam2_checkpoint_path")))
+    if "sam2ModelConfigPath" in payload or "sam2_model_config_path" in payload:
+        settings["sam2_model_config_path"] = _optional_text(payload.get("sam2ModelConfigPath", payload.get("sam2_model_config_path")))
+    if "sam2Device" in payload or "sam2_device" in payload:
+        settings["sam2_device"] = _optional_text(payload.get("sam2Device", payload.get("sam2_device")))
+    if "sam3ModelPath" in payload or "sam3_model_path" in payload:
+        settings["sam3_model_path"] = _optional_text(payload.get("sam3ModelPath", payload.get("sam3_model_path")))
+    if "sam3Device" in payload or "sam3_device" in payload:
+        settings["sam3_device"] = _optional_text(payload.get("sam3Device", payload.get("sam3_device")))
+
+    api_key = payload.get("apiKey", payload.get("api_key"))
+    clear_key = bool(payload.get("clearApiKey") or payload.get("clear_api_key") or payload.get("apiKeyAction") == "clear")
+    if clear_key:
+        secrets.pop("api_key", None)
+    elif isinstance(api_key, str) and api_key.strip():
+        _ensure_accepts_credentials(_profiled_definition(definition, settings))
+        secrets["api_key"] = _clean_api_key(str(definition["id"]), api_key)
 
 
 def save_provider_settings(
@@ -678,31 +776,7 @@ def save_provider_settings(
     if provider_id == "sam3-hosted" and not settings.get("hosted_profile_id") and payload.get("endpoint"):
         settings["hosted_profile_id"] = "custom-sam3-compatible"
 
-    if "enabled" in payload:
-        settings["enabled"] = bool(payload.get("enabled"))
-    if "selectedModel" in payload or "selected_model" in payload:
-        settings["selected_model"] = _optional_text(payload.get("selectedModel", payload.get("selected_model")))
-    if "customModelId" in payload or "custom_model_id" in payload:
-        settings["custom_model_id"] = _optional_text(payload.get("customModelId", payload.get("custom_model_id")))
-    if "endpoint" in payload:
-        settings["endpoint"] = _optional_url(payload.get("endpoint"), "endpoint")
-    if "baseUrl" in payload or "base_url" in payload:
-        settings["base_url"] = _optional_url(payload.get("baseUrl", payload.get("base_url")), "baseUrl")
-    if "allowHosted" in payload or "allow_hosted" in payload:
-        settings["allow_hosted"] = bool(payload.get("allowHosted", payload.get("allow_hosted")))
-    if "hostedProfileId" in payload or "hosted_profile_id" in payload:
-        profile_id = _optional_text(payload.get("hostedProfileId", payload.get("hosted_profile_id")))
-        if profile_id:
-            _ensure_valid_hosted_profile(definition, profile_id)
-        settings["hosted_profile_id"] = profile_id
-
-    api_key = payload.get("apiKey", payload.get("api_key"))
-    clear_key = bool(payload.get("clearApiKey") or payload.get("clear_api_key") or payload.get("apiKeyAction") == "clear")
-    if clear_key:
-        secrets.pop("api_key", None)
-    elif isinstance(api_key, str) and api_key.strip():
-        _ensure_accepts_credentials(_profiled_definition(definition, settings))
-        secrets["api_key"] = _clean_api_key(provider_id, api_key)
+    _apply_settings_payload(definition, settings, secrets, payload)
 
     _validate_model_settings(definition, settings)
     _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
@@ -927,6 +1001,160 @@ def hosted_sam3_smoke_test(
     }
 
 
+def diagnose_provider_settings(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    payload: Mapping[str, Any] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return a provider-specific setup checklist without making network calls."""
+
+    environ = environ or os.environ
+    payload = payload or {}
+    definition = _definition(provider_id)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    settings = dict(settings)
+    _apply_settings_payload(definition, settings, secrets, payload, validate_profile=False)
+    readiness = _readiness(definition, settings, secrets, environ)
+    checklist: list[dict[str, Any]] = []
+    commands: list[str] = []
+    docs = definition.get("docs")
+
+    def item(id_: str, label: str, ok: bool, detail: str, action: str = "") -> None:
+        checklist.append(
+            {
+                "id": id_,
+                "label": label,
+                "status": "ok" if ok else "missing",
+                "ok": ok,
+                "detail": redact_secret_text(detail),
+                "action": action,
+            }
+        )
+
+    if provider_id == "sam2-local":
+        checkpoint = str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or "")
+        model_config = str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or "")
+        item("sam2_package", "SAM2 package", find_spec("sam2") is not None, "Python can import sam2.", "Install official facebookresearch/sam2.")
+        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
+        item("checkpoint", "Checkpoint path", bool(checkpoint and Path(checkpoint).exists()), checkpoint or "SAM2_LOCAL_CHECKPOINT is not configured.", "Download SAM2.1 checkpoints and save the .pt path.")
+        item("model_config", "Model config path", bool(model_config and Path(model_config).exists()), model_config or "SAM2_LOCAL_CONFIG is not configured.", "Use the matching SAM2 config YAML.")
+        item("device", "Device", True, str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or "auto/cpu"), "Choose cpu, mps, cuda, or cuda:0.")
+        commands = list((definition.get("setupGuide") or {}).get("commands") or [])
+    elif provider_id == "sam3-local":
+        model_path = str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or "")
+        py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
+        item("python", "Python >= 3.12", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for local SAM3.")
+        item("sam3_package", "SAM3 package", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3.")
+        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install CUDA-capable torch for local SAM3.")
+        item("model_path", "SAM3 model path", bool(model_path and Path(model_path).exists()), model_path or "SAM3_LOCAL_MODEL is not configured.", "Request Hugging Face access, authenticate, then save the local model path.")
+        item("hf_token", "Hugging Face auth", bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")), "HF_TOKEN/HUGGINGFACE_HUB_TOKEN configured." if environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") else "No Hugging Face token environment variable detected.", "Use hf auth login or set HF_TOKEN after access is granted.")
+        commands = list((definition.get("setupGuide") or {}).get("commands") or [])
+    elif provider_id in {"sam2-hosted", "sam3-hosted"}:
+        profile = _profile_definition(definition, settings)
+        profiled = _profiled_definition(definition, settings)
+        credentials = _credential_states(definition, settings, secrets, environ)
+        api_state = next((entry for entry in credentials if entry.get("name") == "api_key"), None)
+        endpoint_state = next((entry for entry in credentials if entry.get("name") == "endpoint"), None)
+        item("profile", "Hosted profile", True, str(profile.get("name") or profile.get("id") or "selected"), "Pick the provider that matches the workflow.")
+        item("api_key", "API key", bool(api_state and api_state.get("configured")), str(api_state.get("env") if api_state else "API key") + " configured.", "Paste a temporary key or set the provider environment variable.")
+        if profiled.get("endpointField"):
+            required = bool(profiled["endpointField"].get("required"))
+            item("endpoint", "Endpoint", bool(endpoint_state and endpoint_state.get("configured")) or not required, str((endpoint_state or {}).get("display") or "provider default"), "Use the provider default or paste a custom endpoint URL.")
+        item("hosted_opt_in", "Hosted cost/privacy opt-in", bool(settings.get("allow_hosted")), "Hosted calls are enabled in saved settings." if settings.get("allow_hosted") else "Hosted calls remain disabled.", "Check the hosted-cost/privacy box before smoke tests or extraction.")
+        commands = ["Save setup", "Run setup test", "Run hosted smoke after explicit opt-in"]
+    else:
+        item("provider", "Provider registered", True, definition["name"], "No additional setup checklist is defined.")
+
+    ok = all(entry["ok"] for entry in checklist)
+    return {
+        "format": "motionjson.provider_settings_diagnose.v0.1",
+        "providerId": provider_id,
+        "status": "ready" if ok and readiness.get("configured") else "needs_setup",
+        "ready": bool(ok and readiness.get("configured")),
+        "networkAttempted": False,
+        "heavyLocalAttempted": False,
+        "message": readiness.get("message") or ("Ready" if ok else "Setup is incomplete."),
+        "checklist": checklist,
+        "commands": commands,
+        "docs": docs,
+        "setupGuide": definition.get("setupGuide") or {},
+    }
+
+
+def local_sam_smoke_test(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    payload: Mapping[str, Any],
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Run a bounded local SAM setup smoke check without network access."""
+
+    if provider_id not in {"sam2-local", "sam3-local"}:
+        raise ValueError("Local SAM smoke tests are only available for sam2-local or sam3-local.")
+    if not _truthy(payload.get("allowHeavyLocal", payload.get("allow_heavy_local"))):
+        raise ValueError("Local SAM smoke test requires allowHeavyLocal=true before importing heavy local model runtimes.")
+    diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
+    smoke: dict[str, Any] | None = None
+    if diagnosis["ready"]:
+        from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
+
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+        try:
+            if provider_id == "sam2-local":
+                import numpy as np
+
+                from motionjson.providers.sam2 import LocalSAM2AutomaticMaskProposalBackend
+
+                backend = LocalSAM2AutomaticMaskProposalBackend.from_config(
+                    {
+                        "checkpoint": runtime.get("sam2_checkpoint_path"),
+                        "model_config": runtime.get("sam2_model_config_path"),
+                        "device": runtime.get("sam2_device") or "cpu",
+                    }
+                )
+                records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={"max_candidates": 1})
+                smoke = {"providerName": "sam2-local", "recordCount": len(list(records)), "frameShape": [8, 8, 3]}
+            else:
+                from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
+
+                backend = LocalSAM3DiscoveryBackend.from_config(
+                    {
+                        "sam3ModelPath": runtime.get("sam3_model_path"),
+                        "sam3Device": runtime.get("sam3_device") or "cuda",
+                    }
+                )
+                smoke = backend.smoke_test(prompt=str(payload.get("prompt") or "object"))
+        except (ProviderConfigError, ProviderExecutionError, ImportError) as exc:
+            return {
+                "format": "motionjson.provider_local_sam_smoke_test.v0.1",
+                "providerId": provider_id,
+                "status": "failed",
+                "ready": False,
+                "networkAttempted": False,
+                "heavyLocalAttempted": True,
+                "message": redact_secret_text(str(exc)),
+                "diagnosis": diagnosis,
+                "smokeTest": None,
+            }
+    return {
+        "format": "motionjson.provider_local_sam_smoke_test.v0.1",
+        "providerId": provider_id,
+        "status": "ready" if diagnosis["ready"] else "blocked",
+        "ready": bool(diagnosis["ready"]),
+        "networkAttempted": False,
+        "heavyLocalAttempted": True,
+        "message": "Local SAM bounded smoke completed." if diagnosis["ready"] else "Local SAM setup is incomplete; no model run was attempted.",
+        "diagnosis": diagnosis,
+        "smokeTest": redact_secret_payload(smoke),
+    }
+
+
 def _definition(provider_id: str) -> dict[str, Any]:
     if provider_id not in PROVIDER_BY_ID:
         raise ValueError(f"Unknown provider settings id: {provider_id}")
@@ -1034,6 +1262,11 @@ def _public_provider_state(
         "baseUrl": settings.get("base_url") or "",
         "allowHosted": bool(settings.get("allow_hosted", False)),
         "hostedProfileId": _selected_hosted_profile_id(definition, settings),
+        "sam2CheckpointPath": settings.get("sam2_checkpoint_path") or "",
+        "sam2ModelConfigPath": settings.get("sam2_model_config_path") or "",
+        "sam2Device": settings.get("sam2_device") or "",
+        "sam3ModelPath": settings.get("sam3_model_path") or "",
+        "sam3Device": settings.get("sam3_device") or "",
         "updatedAt": row["updated_at"] if row is not None else None,
         "source": "local_settings" if row is not None else "default",
     }
@@ -1096,6 +1329,12 @@ def _capability_override(
         "selected_model": selected_model,
         "hosted_profile_id": _selected_hosted_profile_id(definition, settings),
         "effective_profile": _public_profile(profile),
+        "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
+        "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
+        "sam2_device": str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or ""),
+        "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
+        "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
+        "hf_token_configured": bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")),
         "settings_source": "local_settings" if row is not None else "default",
     }
 
@@ -1163,6 +1402,14 @@ def _readiness(
         name = str(field["name"])
         if field.get("required") and not (environ.get(env) or secrets.get(name)):
             missing.append(env or name)
+    for field in profiled_definition.get("localConfigFields", []):
+        env = str(field.get("env") or "")
+        name = str(field["name"])
+        value = environ.get(env) or settings.get(name)
+        if field.get("required") and not value:
+            missing.append(env or name)
+        elif value and name.endswith("_path") and not os.path.exists(str(value)):
+            missing.append(f"{env or name} existing path")
     endpoint = profiled_definition.get("endpointField")
     if endpoint and endpoint.get("required"):
         env = str(endpoint.get("env") or "")

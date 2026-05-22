@@ -29,7 +29,7 @@ def test_capability_report_is_machine_readable_json() -> None:
     assert isinstance(decoded["summary"]["runnableProviders"], list)
     assert isinstance(decoded["summary"]["localFreeRunnableProviders"], list)
     assert decoded["summary"]["canRunNoModelSmoke"] is True
-    assert decoded["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
+    assert decoded["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
     assert isinstance(decoded["summary"]["firstRun"]["nonBlockingOptionalMissing"], list)
     for provider in decoded["providers"]:
         for field in (
@@ -143,7 +143,7 @@ def test_backend_diagnostics_cli_outputs_human_summary_without_initializing_back
 
     output = capsys.readouterr().out
     assert "MotionJSON diagnostics" in output
-    assert "No-model smoke:" in output
+    assert "Debug smoke:" in output
     assert "Optional providers needing setup:" in output
     assert "Text prompts need detector candidates before SAM2" in output
     assert "--json" in output

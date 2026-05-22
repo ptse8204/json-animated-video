@@ -16,7 +16,8 @@ def test_ui_command_help_documents_local_launcher(capsys):
     assert "Launch the local MotionJSON UI" in output
     assert "--db" in output
     assert "--storage-root" in output
-    assert "--mock" in output
+    assert "--debug-mock" in output
+    assert "--mock" not in output
     assert "--no-open" in output
 
 
@@ -65,14 +66,14 @@ def test_ui_command_launches_server_with_local_defaults(tmp_path, monkeypatch, c
             "--port",
             "0",
             "--no-open",
-            "--mock",
+            "--debug-mock",
         ]
     )
 
     output = capsys.readouterr().out
 
     assert "http://127.0.0.1:0/" not in output
-    assert "Mock mode: on" in output
+    assert "Debug mock mode: on" in output
     assert calls == [
         {
             "db_path": Path(tmp_path / "backend.sqlite"),
@@ -83,3 +84,29 @@ def test_ui_command_launches_server_with_local_defaults(tmp_path, monkeypatch, c
             "mock_mode": True,
         }
     ]
+
+
+def test_ui_command_keeps_deprecated_mock_alias_with_warning(tmp_path, monkeypatch, capsys):
+    calls = []
+
+    def fake_serve_ui(**kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr("motionjson.ui.server.serve_ui", fake_serve_ui)
+
+    main(
+        [
+            "ui",
+            "--db",
+            str(tmp_path / "backend.sqlite"),
+            "--storage-root",
+            str(tmp_path / "storage"),
+            "--no-open",
+            "--mock",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert "Debug mock mode: on" in captured.out
+    assert "--mock is deprecated" in captured.err
+    assert calls[0]["mock_mode"] is True

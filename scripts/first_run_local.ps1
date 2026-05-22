@@ -14,8 +14,8 @@ function Show-Help {
     Write-Host @"
 Usage: .\scripts\first_run_local.ps1 [options]
 
-Set up a local Python virtual environment, install MotionJSON in CPU/mock UI
-mode, run provider diagnostics, and start the local UI unless disabled.
+Set up a local Python virtual environment, install MotionJSON, run provider
+diagnostics, and start the real-provider Local UI unless disabled.
 
 Options:
   -NoLaunch        Install and run diagnostics, but do not start the UI.
@@ -87,9 +87,9 @@ if ($RunDemo) {
 }
 
 if (-not $NoLaunch) {
-    Write-Host "Starting MotionJSON UI in CPU/mock mode"
-    & $VenvPython -m motionjson.cli ui --no-open --mock --host $HostName --port $Port
+    Write-Host "Starting MotionJSON UI"
+    & $VenvPython -m motionjson.cli ui --no-open --host $HostName --port $Port
 } else {
     Write-Host "Setup complete. Start the UI with:"
-    Write-Host "  $VenvPython -m motionjson.cli ui --no-open --mock --host $HostName --port $Port"
+    Write-Host "  $VenvPython -m motionjson.cli ui --no-open --host $HostName --port $Port"
 }

@@ -68,9 +68,9 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
         "../notebooks/colab_provider_diagnostics.ipynb",
         "https://colab.research.google.com/assets/colab-badge.svg",
         "../spaces/huggingface/README.md",
-        "CPU/mock/no-model",
+        "real-provider-oriented",
         "public long-running MotionJSON web service",
-        "motionjson.cli ui --no-open --mock",
+        "motionjson.cli ui --no-open --host",
         "Colab's port proxy",
         "defensively redacts diagnostic fields",
         "Free instances may reset disks",
@@ -135,7 +135,7 @@ def test_colab_ui_notebook_is_valid_mock_local_ui_demo() -> None:
     assert "motionjson.cli" in joined
     assert "\"ui\"" in joined
     assert "\"--no-open\"" in joined
-    assert "\"--mock\"" in joined
+    assert "\"--debug-mock\"" in joined
     assert "\"127.0.0.1\"" in joined
     assert "output.serve_kernel_port_as_iframe" in joined
     assert "output.serve_kernel_port_as_window" in joined
@@ -230,13 +230,19 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "FAL_KEY" in joined
     assert "userdata.get" in joined
     assert "getpass" in joined
-    assert '"motionjson", "ui", "--no-open", "--mock", "--host", "127.0.0.1"' in joined
+    assert '"motionjson", "ui", "--no-open", "--host", "127.0.0.1"' in joined
+    assert '"--mock"' not in joined
+    assert "HF_TOKEN" in joined
+    assert "SAM3_LOCAL_MODEL" in joined
+    assert "RUN_LOCAL_SAM2_SETUP" in joined
+    assert "RUN_LOCAL_SAM3_SETUP" in joined
+    assert "CUDA available" in joined
     assert "output.serve_kernel_port_as_iframe" in joined
     assert "output.serve_kernel_port_as_window" in joined
     assert "Roboflow SAM3" in joined
     assert "Replicate SAM2 video" in joined
     assert "Fal SAM3 image" in joined
-    assert "paste temporary credentials into the UI provider settings form" in joined
+    assert "paste temporary credentials into the UI Model Connections form" in joined
     assert "secret_json" not in joined
     assert_no_public_tunnel_helpers(joined)
     assert all(not cell.get("outputs") for cell in notebook["cells"])

@@ -213,7 +213,8 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--host", type=str, default="127.0.0.1", help="Host interface for the local UI server")
     ui.add_argument("--port", type=int, default=8766, help="Port for the local UI server; use 0 to choose a free port")
     ui.add_argument("--no-open", action="store_true", help="Do not open a browser automatically")
-    ui.add_argument("--mock", action="store_true", help="Start the UI in no-model mock mode for CPU-only smoke checks")
+    ui.add_argument("--debug-mock", action="store_true", help="Start the UI in deterministic debug/no-model mode for contributor smoke checks")
+    ui.add_argument("--mock", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -963,16 +964,19 @@ def run_ui(args: argparse.Namespace) -> None:
 
     db_path = Path(args.db)
     storage_root = Path(args.storage_root)
+    mock_mode = bool(getattr(args, "debug_mock", False) or getattr(args, "mock", False))
+    if getattr(args, "mock", False) and not getattr(args, "debug_mock", False):
+        print("Warning: --mock is deprecated; use --debug-mock for contributor no-model checks.", file=sys.stderr)
     print(f"Database: {db_path}")
     print(f"Storage: {storage_root}")
-    print(f"Mock mode: {'on' if args.mock else 'off'}")
+    print(f"Debug mock mode: {'on' if mock_mode else 'off'}")
     serve_ui(
         db_path=db_path,
         storage_root=storage_root,
         host=args.host,
         port=args.port,
         open_browser=not args.no_open,
-        mock_mode=args.mock,
+        mock_mode=mock_mode,
     )
 
 

@@ -5,7 +5,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/run_local_ui_mock.sh [options]
 
-Start the local MotionJSON UI in CPU/mock mode.
+Start the local MotionJSON UI in explicit debug mock mode.
 
 Options:
   --host HOST           Host interface. Default: 127.0.0.1.
@@ -67,7 +67,7 @@ done
 cd "$ROOT"
 exec "$PYTHON_BIN" -m motionjson.cli ui \
   --no-open \
-  --mock \
+  --debug-mock \
   --db "$DB" \
   --storage-root "$STORAGE_ROOT" \
   --host "$HOST" \

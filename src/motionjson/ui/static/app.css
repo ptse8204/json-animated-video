@@ -2975,8 +2975,41 @@ button,
 
 .provider-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   gap: 8px;
+}
+
+.provider-setup-commands {
+  display: grid;
+  gap: 6px;
+  padding: 10px 11px;
+  border: 1px solid #dbe6e4;
+  border-radius: var(--radius-sm);
+  background: #f8fbfa;
+}
+
+.provider-setup-commands strong,
+.provider-setup-commands a {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.provider-setup-commands a {
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.provider-setup-commands code {
+  display: block;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 7px 8px;
+  border: 1px solid #dbe6e4;
+  border-radius: var(--radius-xs);
+  background: #ffffff;
+  color: #223036;
+  font-size: 11px;
+  white-space: pre;
 }
 
 [data-tooltip]:hover::after,

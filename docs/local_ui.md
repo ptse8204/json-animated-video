@@ -4,8 +4,10 @@ The dependency-light local UI lets you inspect MotionJSON provider readiness,
 create local projects, register source videos, draw prompts, start jobs, review
 tracks, correct extraction results, export validated MotionJSON, and save
 reusable motion layers. It runs against the existing SQLite backend and
-filesystem storage. It does not require GPU, SAM2, hosted services, or network
-access for the mock/no-model smoke path.
+filesystem storage. The normal workflow is real-provider-first: connect local
+SAM2/SAM3 or a hosted SAM provider in Model Connections, diagnose setup, then
+validate the generated run config. Debug mock mode remains available only for
+contributor smoke checks.
 
 ## Commercial Workspace Mode
 
@@ -17,7 +19,7 @@ user needs before running extraction:
   objects, and reviewing an existing result;
 - saved local preferences for default goal, default mask provider, default
   export preset, and last project;
-- provider-settings summary that keeps mock/no-model as the safe default;
+- provider-settings summary that highlights SAM local/hosted readiness;
 - export preset inventory.
 
 The backing API routes are:
@@ -89,22 +91,25 @@ Provider warnings stay visible before a run, failed runs open logs, and
 fallback/raster/vector-unavailable diagnostics open automatically in the review
 step.
 
-## Model Setup Wizard
+## Model Connections
 
-The main workspace includes a nontechnical Mode and model setup panel before
-the extraction controls. It lists the safe `fake-local-planner` first, then
-hosted planning options such as `openai-planner` and the settings-only
-`openrouter-planner`. The local planner is selectable without credentials and
-its test action performs a no-network readiness check.
+The main workspace includes a nontechnical Model Connections panel before the
+extraction controls. It recommends concrete SAM providers by workflow:
 
-Hosted planner cards show missing-key, settings-only, or ready status in plain
-language before the user opens the advanced Provider settings rail. The setup
-form saves model choice, optional base URL, API key replacement, and hosted
-cost/privacy opt-in through `/api/provider-settings`; browser responses never
-echo raw keys. `POST /api/model-providers/PROVIDER_ID/test` checks saved
-server-side settings without making a hosted network call. A hosted model run
-still requires the later per-run `allowNetwork` and cost/privacy
-acknowledgement payload.
+- Trace one object: `sam2-local` when checkpoint/config paths are ready,
+  otherwise Replicate `replicate-sam2-video`.
+- Find objects from text: `sam3-local` when the SAM3 package/model/runtime are
+  ready, otherwise Roboflow `roboflow-sam3-pcs`.
+- Frame-by-frame SAM3 image fallback: Fal `fal-sam3-image`.
+- Custom SAM2/SAM3-compatible endpoints stay in the advanced provider list.
+
+The form saves local model paths, selected profile/model, optional endpoint,
+API key replacement, and hosted cost/privacy opt-in through
+`/api/provider-settings`; browser responses never echo raw keys. Diagnose
+checks use `POST /api/provider-settings/PROVIDER_ID/diagnose` and make no
+hosted network calls. Hosted smoke tests require `allowNetwork`,
+`allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke tests require
+`allowHeavyLocal` before importing heavy model runtimes.
 
 ## Model Planning Connector Contract
 
@@ -150,15 +155,16 @@ Attaching a model plan to an extraction job records a redacted
 still starts only through the existing job confirmation path.
 
 The fake connector returns a proposed `ExtractionRunConfig`, validation result,
-privacy summary, zero-local cost estimate, and `requiresUserConfirmation: true`.
-The OpenAI connector treats model output as an untrusted proposal: MotionJSON
-coerces it into explicit CV providers, generates the `ExtractionRunConfig`
-locally, validates it, and still marks the plan as requiring user confirmation.
-Segmentation and tracking remain routed through `mock`, `motion`, `external`,
-or detector discovery modes; OpenAI does not segment video. All public model
-responses pass through the Local UI sanitizer so API keys, bearer tokens, local
-absolute paths, storage keys, and `file://` URIs are not returned to browser
-code.
+privacy summary, zero-local cost estimate, and `requiresUserConfirmation: true`
+only when the UI is running in explicit debug mode. The OpenAI connector treats
+model output as an untrusted proposal: MotionJSON coerces it into explicit CV
+providers, generates the `ExtractionRunConfig` locally, validates it, and still
+marks the plan as requiring user confirmation. Segmentation and tracking in the
+normal UI are routed through configured SAM2/SAM3, hosted SAM profiles,
+`threshold`, `motion`, `external`, or detector discovery modes; OpenAI does not
+segment video. All public model responses pass through the Local UI sanitizer
+so API keys, bearer tokens, local absolute paths, storage keys, and `file://`
+URIs are not returned to browser code.
 
 ## Launch
 
@@ -168,10 +174,10 @@ Use the packaged console command for normal local UI sessions:
 motionjson ui
 ```
 
-Use the module entry point for deterministic CPU-only smoke checks:
+Use the module entry point for non-opening local sessions:
 
 ```bash
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 ```
 
 By default the UI uses:
@@ -189,32 +195,30 @@ python3 -m motionjson.cli ui \
   --storage-root /tmp/motionjson-local-ui/storage \
   --host 127.0.0.1 \
   --port 8766 \
-  --no-open \
-  --mock
+  --no-open
 ```
 
-The `--mock` flag keeps default run suggestions in no-model mode. It does not
-pretend SAM2, CUDA, detectors, FFmpeg, or model weights are available; those
-statuses still come from provider diagnostics.
+Contributor-only debug smoke checks use `--debug-mock`. The hidden `--mock`
+alias is deprecated and prints a warning. Debug mock mode does not pretend
+SAM2, CUDA, detectors, FFmpeg, or model weights are available; those statuses
+still come from provider diagnostics.
 
 On Windows PowerShell, use the module entry point after activating the virtual
 environment:
 
 ```powershell
-python -m motionjson.cli ui --no-open --mock
+python -m motionjson.cli ui --no-open
 ```
 
-The sidebar First Run checklist summarizes base dependency readiness, no-model
-provider availability, optional model extras, and FFmpeg status from
-`/api/capabilities`. It also shows the recommended no-model command,
-`python3 -m motionjson.cli ui --no-open --mock`, and keeps optional SAM2,
-detector, hosted, and FFmpeg setup clearly marked as diagnostics instead of
-claiming those providers are available in mock mode.
+The sidebar First Run checklist summarizes base dependency readiness, SAM
+provider setup, optional model extras, and FFmpeg status from
+`/api/capabilities`. It keeps optional SAM2, SAM3, detector, hosted, and FFmpeg
+setup clearly marked as diagnostics instead of claiming unavailable providers
+are ready.
 
-The local UI worker starts `mock`, `threshold`, `motion`, and `external`
-extraction jobs, plus mock `auto_object_proposals`, `text_detector`,
-`class_detector`, and `sam_auto_masks` discovery jobs that use generated mask
-handoffs.
+The local UI worker starts `sam2-local`, `sam2-hosted`, `threshold`, `motion`,
+and `external` extraction jobs. SAM3 concept discovery is selected through the
+discovery config and routes through the same review/filter/link/export path.
 `motion_foreground` is CPU/no-model and runs from the `Find moving objects`
 preset.
 
@@ -228,6 +232,8 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `POST /api/provider-settings`
 - `DELETE /api/provider-settings/PROVIDER_ID`
 - `POST /api/provider-settings/PROVIDER_ID/test`
+- `POST /api/provider-settings/PROVIDER_ID/diagnose`
+- `POST /api/provider-settings/PROVIDER_ID/smoke-test`
 - `GET /api/run-config/defaults`
 - `POST /api/run-config/validate`
 - `GET /api/exports/formats`
@@ -332,16 +338,17 @@ state explicitly includes them.
 ## Provider And Model Settings
 
 The right inspector includes a Provider settings panel for choosing providers,
-models, and optional credentials without editing shell profiles. Mock/no-model
-remains the default safe path. Local providers such as `mock`, `threshold`,
+models, local model paths, and optional credentials without editing shell
+profiles. Local providers such as `sam2-local`, `sam3-local`, `threshold`,
 `motion`, and `external` do not accept API keys. Hosted providers show a cost
 and privacy warning before they can be marked as allowed for hosted calls.
 
 The Local UI currently exposes settings for:
 
-- `mock`, `threshold`, `motion`, and `external`: local/free, no key required.
+- `threshold`, `motion`, and `external`: local/free, no key required.
 - `sam2-local`: local SAM2 model selection and diagnostics. Model weights and
-  package setup still come from local environment paths.
+  package setup come from saved local paths or `SAM2_LOCAL_CHECKPOINT` and
+  `SAM2_LOCAL_CONFIG`.
 - `sam2-hosted`: hosted profile, model, API key, optional endpoint, and
   explicit hosted-call opt-in. The built-in Replicate SAM2 video profile uses
   `REPLICATE_API_TOKEN`; custom endpoints use `HOSTED_SEGMENTATION_URL` and
@@ -350,6 +357,8 @@ The Local UI currently exposes settings for:
   explicit hosted-call opt-in for text concept discovery. Built-in profiles
   cover Roboflow SAM3 concept segmentation and Fal SAM3 image, plus a custom
   SAM3-compatible endpoint.
+- `sam3-local`: local SAM3 model path, device, Python/CUDA/Hugging Face access
+  diagnostics, and official setup commands.
 - `openai`: OpenAI model selection and API key for hosted plan generation. It
   is not a mask or segmentation provider.
 - `openrouter`: LLM/VLM model selection and API key for reasoning only. It is
@@ -364,8 +373,8 @@ reserved Local UI user. Raw keys are never returned by `/api/provider-settings`,
 Environment variables take precedence over local UI settings for headless/CLI
 work. Saved hosted keys feed server-side model connector readiness and tests;
 the OpenAI planning connector still requires explicit per-run hosted
-confirmation, and the local extraction worker continues to run only
-deterministic providers until runtime extraction routing is explicitly wired.
+confirmation, and the local extraction worker reports missing SAM/CUDA/model
+dependencies instead of falling back to debug mocks.
 See [Provider API keys](security/api_keys.md) for storage, redaction, deletion,
 and hosted-provider guidance.
 
@@ -530,18 +539,19 @@ storage, and exposes the imported scene through the normal job review routes.
 3. Create or open a local project.
 4. Add or select a source video. A browser preview helps with prompt drawing;
    backend jobs still require a registered local file path.
-5. Choose mode/provider. Mock/local providers are shown first, and provider
-   warnings stay visible before a run.
+5. Choose mode/provider in Model Connections. The UI recommends SAM2 local or
+   Replicate for point/box tracing, SAM3 local or Roboflow for text concepts,
+   and Fal SAM3 image as a hosted frame fallback. Provider warnings stay
+   visible before a run.
 6. Add point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay when the selected goal needs them. Prompt coordinates are native
    video pixels, not CSS canvas pixels.
 7. Validate the generated plan before starting work. The raw
    `ExtractionRunConfig` JSON remains available under `View generated JSON`.
-   The optional model plan panel can create a server-side local/mock plan from
-   the selected goal and plain-language intent; generated configs are
+   The optional advanced model plan panel can create a server-side planner
+   config from the selected goal and plain-language intent; generated configs are
    revalidated before `Confirm and start` can create a job.
-8. Start a mock job for no-model smoke checks or start the configured provider
-   run after validation passes.
+8. Start extraction with the configured provider after validation passes.
 9. Review candidates and tracks. Keep candidates, inspect track coverage and
    warnings, and use timeline markers before export.
 10. Correct tracks if needed: relabel, hide/show, include/exclude from export,
@@ -556,22 +566,17 @@ Video registration copies the selected local file into the configured local
 storage root and records rights source metadata for the upload. Missing paths
 return a visible API error.
 
-Text prompts map to the `text_detector` discovery provider and do not route
-directly to raw SAM2. In local UI mock mode, `Find objects from text` runs the
-text detector mock path end to end: labels become candidate boxes, generated
-mask sequences, object tracks, and a Candidates review panel sourced from
-`candidates.json`. Real detector packages and weights remain optional and
-capability-gated; missing detector diagnostics are still shown before a run.
-Known-class presets map to `class_detector`. In local UI mock mode, `Find
-known classes` records `class_preset`, custom classes, and confidence threshold
-settings, creates generated candidate masks for the selected preset labels,
-and sends those candidates through the same review/export path. Real YOLO or
-known-class detector backends remain optional and capability-gated.
-Automatic segment proposals map to `sam_auto_masks`. In local UI mock mode,
-`Propose all visible segments` creates multiple generated proposal masks from
-the selected keyframes, feeds them through track filtering/dedupe, and shows
-the resulting candidate summary, tracks, fallback diagnostics, and merge
-suggestions for review before export. Moving-object discovery maps to the
+Text prompts do not route directly to raw SAM2. The normal text/concept path is
+`sam3_concept` with `providerPreference: "sam3-local"` or `"sam3-hosted"`.
+Roboflow SAM3 is the recommended hosted concept provider, and Fal SAM3 image is
+available for sampled-frame fallback. Real detector packages and weights remain
+optional and capability-gated for `text_detector`; missing detector diagnostics
+are still shown before a run. Known-class presets map to `class_detector` and
+remain capability-gated until a concrete detector backend is configured.
+Automatic segment proposals map to `sam_auto_masks` or
+`auto_object_proposals`; normal configs prefer local SAM2 automatic masks and
+show checkpoint/config diagnostics when SAM2 is missing. Moving-object discovery
+maps to the
 CPU/no-model `motion_foreground` workflow: frame differences become candidate
 masks, candidate scores become track confidence, and low-quality/background
 fragments remain visible through fallback diagnostics. External mask imports

@@ -14,8 +14,12 @@ one safe path obvious before it exposes expert controls.
 
 ## Product Rules
 
-- Start with mock/no-model mode. It must be clear that no GPU, SAM2, detector,
-  model weights, or cloud key is required for the first run.
+- Start with Model Connections. It must be clear which real SAM provider is
+  recommended for the selected workflow, what setup is missing, and whether the
+  next action is local model setup or hosted API linking.
+- Keep debug mock mode contributor-only. It must be launched explicitly with
+  `--debug-mock` and must never make unavailable SAM/CUDA/provider paths look
+  ready.
 - Keep provider/model failures visible. Do not hide CUDA, FFmpeg, SAM2, detector,
   model-weight, or hosted-provider diagnostics.
 - Show workflow before parameters. Users should see the project/video/provider/

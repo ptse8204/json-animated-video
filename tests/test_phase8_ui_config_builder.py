@@ -74,7 +74,7 @@ const cases = [
       discoveryMaxCandidates: 4,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "mock", discovery: "text_detector", prompts: 0 }},
+    expected: {{ provider: "sam2-local", discovery: "text_detector", prompts: 0 }},
   }},
   {{
     goal: "find_objects_from_text_hosted_sam3",
@@ -89,7 +89,7 @@ const cases = [
       hostedSam3AllowHosted: true,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "mock", discovery: "sam3_concept", prompts: 0 }},
+    expected: {{ provider: "sam2-local", discovery: "sam3_concept", prompts: 0 }},
   }},
   {{
     goal: "find_known_classes",
@@ -103,7 +103,7 @@ const cases = [
       classPreset: "vehicles",
       advanced: {{ ...commonAdvanced, boxThreshold: 0.42 }},
     }},
-    expected: {{ provider: "mock", discovery: "class_detector", prompts: 0 }},
+    expected: {{ provider: "sam2-local", discovery: "class_detector", prompts: 0 }},
   }},
   {{
     goal: "propose_all_visible_segments",
@@ -115,7 +115,7 @@ const cases = [
       discoveryMaxCandidates: 20,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "mock", discovery: "sam_auto_masks", prompts: 0 }},
+    expected: {{ provider: "sam2-local", discovery: "sam_auto_masks", prompts: 0 }},
   }},
   {{
     goal: "find_moving_objects",
@@ -266,9 +266,9 @@ def test_phase8_frontend_config_preserves_native_video_pixel_prompts(frontend_co
 def test_phase8_frontend_config_builds_class_detector_preset(frontend_contract: dict[str, Any]):
     class_config = next(item["config"] for item in frontend_contract["configs"] if item["goal"] == "find_known_classes")
 
-    assert class_config["provider"]["name"] == "mock"
+    assert class_config["provider"]["name"] == "sam2-local"
     assert class_config["discovery"]["mode"] == "class_detector"
-    assert class_config["discovery"]["config"]["mock"] is True
+    assert class_config["discovery"]["config"]["mock"] is False
     assert class_config["discovery"]["config"]["class_preset"] == "vehicles"
     assert class_config["discovery"]["config"]["classes"] == ["forklift", "cart"]
     assert class_config["discovery"]["config"]["confidence_threshold"] == 0.42

@@ -67,7 +67,9 @@ from motionjson.model_connectors import (
     VolatileModelRunStore,
 )
 from motionjson.provider_settings import (
+    diagnose_provider_settings,
     hosted_sam3_smoke_test,
+    local_sam_smoke_test,
     provider_runtime_settings,
     provider_settings_for_capabilities,
     provider_settings_response,
@@ -479,6 +481,7 @@ class LocalUIApp:
                     "/api/provider-settings",
                     "/api/provider-settings/{providerId}",
                     "/api/provider-settings/{providerId}/test",
+                    "/api/provider-settings/{providerId}/diagnose",
                     "/api/provider-settings/{providerId}/smoke-test",
                     "/api/model-providers",
                     "/api/model-providers/{providerId}",
@@ -537,6 +540,8 @@ class LocalUIApp:
                 return self._reset_provider_settings(parts[2])
             if len(parts) == 4 and parts[3] == "test" and method == "POST":
                 return self._test_provider_settings(parts[2])
+            if len(parts) == 4 and parts[3] == "diagnose" and method == "POST":
+                return self._diagnose_provider_settings(parts[2], payload)
             if len(parts) == 4 and parts[3] == "smoke-test" and method == "POST":
                 return self._smoke_test_provider_settings(parts[2], payload)
         if path == "/api/model-providers" and method == "GET":
@@ -568,7 +573,7 @@ class LocalUIApp:
                 "discoveryProviders": sorted(DISCOVERY_MODES),
                 "discoveryProviderSchemas": discovery_provider_schemas(),
                 "defaults": {
-                    "maskProvider": "mock" if self.mock_mode else "threshold",
+                    "maskProvider": "mock" if self.mock_mode else "sam2-local",
                     "discoveryProvider": "manual_prompt",
                     "sampleFps": 12.0,
                     "maxFrames": 48,
@@ -1643,10 +1648,34 @@ class LocalUIApp:
         finally:
             conn.close()
 
+    def _diagnose_provider_settings(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(
+                diagnose_provider_settings(
+                    conn,
+                    user_id=user["id"],
+                    provider_id=provider_id,
+                    payload=payload,
+                )
+            )
+        finally:
+            conn.close()
+
     def _smoke_test_provider_settings(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
             user = self._local_user(conn)
+            if provider_id in {"sam2-local", "sam3-local"}:
+                return _public_value(
+                    local_sam_smoke_test(
+                        conn,
+                        user_id=user["id"],
+                        provider_id=provider_id,
+                        payload=payload,
+                    )
+                )
             return _public_value(
                 hosted_sam3_smoke_test(
                     conn,

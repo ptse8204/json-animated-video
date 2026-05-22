@@ -307,8 +307,15 @@ def provider_capabilities(
     sam3_installed = deps.get("sam3", False)
     torch_info = cuda_status()
     sam3_runtime = sam3_runtime_status()
+    sam2_local_settings = dict((provider_settings or {}).get("sam2-local", {}))
+    sam3_local_settings = dict((provider_settings or {}).get("sam3-local", {}))
+    if sam2_checkpoint is None:
+        sam2_checkpoint = sam2_local_settings.get("sam2_checkpoint_path") or None
+    if sam2_model_config is None:
+        sam2_model_config = sam2_local_settings.get("sam2_model_config_path") or None
     checkpoint = _path_config_status("SAM2_LOCAL_CHECKPOINT", sam2_checkpoint)
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
+    sam3_model_path = sam3_local_settings.get("sam3_model_path") or None
     hosted_settings = dict((provider_settings or {}).get("sam2-hosted", {}))
     sam3_hosted_settings = dict((provider_settings or {}).get("sam3-hosted", {}))
     hosted_profile = str(hosted_settings.get("hosted_profile_id") or "replicate-sam2-video")
@@ -382,7 +389,7 @@ def provider_capabilities(
     openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
-    sam3_model = _path_config_status("SAM3_LOCAL_MODEL")
+    sam3_model = _path_config_status("SAM3_LOCAL_MODEL", sam3_model_path)
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -1291,13 +1298,13 @@ def build_capability_report(
             "localFreeRunnableProviders": local_free_providers,
             "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
             "firstRun": {
-                "ready": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
-                "recommendedCommand": "python3 -m motionjson.cli ui --no-open --mock",
+                "ready": any(name in runnable_providers for name in ("sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted")),
+                "recommendedCommand": "python3 -m motionjson.cli ui --no-open",
                 "recommendedDemoCommand": "python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4 && python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo_red_ball --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12",
                 "nextActions": [
-                    "Launch the local UI in mock mode.",
-                    "Run the red-ball threshold demo.",
-                    "Install optional ML extras only after diagnostics show a workflow needs them.",
+                    "Launch the local UI.",
+                    "Connect a local or hosted SAM provider in Model Connections.",
+                    "Use debug mock mode only for contributor smoke checks.",
                 ],
                 "nonBlockingOptionalMissing": missing_optional,
             },
@@ -1350,11 +1357,11 @@ def format_capability_report(report: dict[str, Any]) -> str:
     if local_free:
         lines.append(f"Runnable local/free providers: {', '.join(local_free)}")
     lines.append(
-        "No-model smoke: "
+        "Debug smoke: "
         + (
-            "ready - run `python3 -m motionjson.cli ui --no-open --mock` or the red-ball demo."
+            "available with `python3 -m motionjson.cli ui --no-open --debug-mock` for contributor checks."
             if summary.get("canRunNoModelSmoke")
-            else "limited - install base dependencies before running the mock UI or red-ball demo."
+            else "limited - install base dependencies before running debug smoke checks."
         )
     )
     lines.append(f"CUDA: {'ready' if cuda.get('available') else 'not available'} ({cuda.get('device', 'cpu')})")

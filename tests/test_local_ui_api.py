@@ -101,6 +101,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/artifacts" in health["routes"]
     assert "/api/videos/{videoId}/content" in health["routes"]
     assert "/api/run-config/validate" in health["routes"]
+    assert "/api/provider-settings/{providerId}/diagnose" in health["routes"]
     assert "/api/jobs/{jobId}/run" in health["routes"]
     assert "/api/jobs/{jobId}/review" in health["routes"]
     assert "/api/jobs/{jobId}/exports" in health["routes"]
@@ -121,7 +122,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "mock" in capabilities["summary"]["readyNoModelProviders"]
     assert "mock" in capabilities["summary"]["runnableProviders"]
     assert "mock" in capabilities["summary"]["localFreeRunnableProviders"]
-    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
+    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
 
     status, _headers, body = app.handle(
         "GET",
@@ -313,7 +314,7 @@ def test_local_ui_capabilities_preserve_provider_failure_details(tmp_path, monke
                 "missingOptional": ["text_detector", "sam_auto_masks"],
                 "firstRun": {
                     "ready": False,
-                    "recommendedCommand": "python3 -m motionjson.cli ui --no-open --mock",
+                    "recommendedCommand": "python3 -m motionjson.cli ui --no-open",
                     "nonBlockingOptionalMissing": ["text_detector", "sam_auto_masks"],
                 },
             },
@@ -366,7 +367,7 @@ def test_local_ui_capabilities_preserve_provider_failure_details(tmp_path, monke
     assert providers["text_detector"]["mockAvailable"] is True
     assert providers["text_detector"]["noModelSafe"] is False
     assert providers["text_detector"]["metadata"]["uiDescription"]
-    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open --mock"
+    assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
 
 
 def test_local_ui_validation_warns_when_configured_provider_is_not_runnable(tmp_path, monkeypatch):

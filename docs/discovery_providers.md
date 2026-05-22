@@ -15,16 +15,16 @@ provider receives boxes or masks.
   boxes, or mask references. No model is required.
 - `auto_object_proposals`: default API-first object discovery mode. It uses
   typed quality presets so a clean run can propose fewer reviewable candidates
-  before users select objects for tracking. It remains mock/no-model by
-  default, with an optional `sam2-local` automatic proposal path when SAM2,
-  torch, checkpoint, and model config are configured.
+  before users select objects for tracking. The normal UI path prefers
+  `sam2-local` automatic proposals when SAM2, torch, checkpoint, and model
+  config are configured; debug mock output exists for tests only.
 - `motion_foreground`: use for simple footage where moving objects separate
   from a mostly stable background. This CPU mode writes generated mask
   sequences under `discovery/motion_foreground/`.
 - `external_masks`: use when masks or boxes already exist from another local
   tool. It imports one candidate per object mask directory or manifest entry.
 - `sam_auto_masks`: automatic keyframe mask proposals. It is capability-gated
-  behind optional SAM2/torch/model configuration and has a mock mode for tests.
+  behind optional SAM2/torch/model configuration and has a debug mock mode for tests.
 - `sam3_concept`: optional SAM3-style concept discovery from a text phrase.
   Mock mode writes deterministic candidates without SAM3, GPU, credentials, or
   network calls.
@@ -48,8 +48,8 @@ provider receives boxes or masks.
 | `auto_object_proposals` | Users should click Discover objects and choose from API-returned candidates. | Clean presets may miss small/occluded objects; recall presets can be noisy. | Start with `clean`, retry with `maximum_recall`, and keep review required. |
 | `motion_foreground` | The camera is mostly still and objects move. | Camera motion or shadows become candidates. | Use `external_masks` or review/delete extra tracks. |
 | `external_masks` | Masks or boxes already exist from another local tool. | Mask sequence is missing frames or points at the wrong object. | Validate each object ID and inspect `fallback_diagnostics.json`. |
-| `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, mock mode, or a detector-first workflow. |
-| `text_detector` | Users describe objects with text labels. | Detector package/model is missing or boxes are semantically wrong. | Use mock smoke tests, class detector, or manual/external masks. |
+| `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, Model Connections diagnostics, or a detector-first workflow. |
+| `text_detector` | Users describe objects with text labels. | Detector package/model is missing or boxes are semantically wrong. | Use SAM3 concept discovery, class detector, or manual/external masks. |
 | `class_detector` | Known classes are enough for the video domain. | YOLO/known-class model is unavailable or returns too many classes. | Limit classes, lower max candidates, or use manual review. |
 
 ## UI vs CLI Support Today
@@ -57,7 +57,7 @@ provider receives boxes or masks.
 | Workflow | CLI support | Local UI job support |
 | --- | --- | --- |
 | `manual_prompt` + `threshold`/`external`/`mock` | Runnable with base CPU dependencies. | Runnable through the local worker. |
-| `auto_object_proposals` | Runnable when `discovery.config.mock` is `true`, with clean, balanced, and maximum-recall presets. With `providerPreference: "sam2-local"` or `"auto"`, it can use configured local SAM2 automatic masks for keyframe proposals and SAM2 propagation for accepted candidate mask sequences. SAM3 remains a later optional provider family. | Runnable in mock mode through the local worker when `discovery.config.mock` is `true`; with local SAM2 configured, the worker can run API-backed SAM2 proposals and return the same review candidate shape. |
+| `auto_object_proposals` | With `providerPreference: "sam2-local"` or `"auto"`, it can use configured local SAM2 automatic masks for keyframe proposals and SAM2 propagation for accepted candidate mask sequences. `discovery.config.mock=true` is a debug/test path. | With local SAM2 configured, the worker can run API-backed SAM2 proposals and return the same review candidate shape. Debug mock mode is available only when explicitly requested. |
 | `motion_foreground` / `motion` | Runnable from the CLI as a CPU/no-model path with frame-difference candidate scores. | Runnable through the local worker; review shows motion candidates, track confidence, fallback diagnostics, and export state. |
 | `external_masks` | Runnable when mask directories or a manifest are supplied. | Runnable when the selected local asset has a mask directory configured. |
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
@@ -128,16 +128,15 @@ python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --max-frames 2
 ```
 
-Local UI text-discovery smoke path:
+Local UI text-discovery setup path:
 
-1. Launch `python3 -m motionjson.cli ui --no-open --mock`.
+1. Launch `python3 -m motionjson.cli ui --no-open`.
 2. Register a source video and choose `Find objects from text`.
-3. Start a mock job. The worker runs `text_detector` mock discovery, writes
-   `candidates.json`, adapts candidate mask sequences into object specs, and
-   writes `tracks.json`.
-4. Review the Candidates and Tracks panels before export. If real detector
-   dependencies or weights are missing, diagnostics still report that status;
-   mock mode does not imply that open-vocabulary detection is installed.
+3. Open Model Connections and choose SAM3 local or Roboflow SAM3. Diagnose
+   setup, then validate the generated config.
+4. Review the Candidates and Tracks panels before export. If real detector or
+   SAM3 dependencies are missing, diagnostics report that status instead of
+   falling back silently.
 
 Known-class preset mock smoke check:
 

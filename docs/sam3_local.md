@@ -41,6 +41,12 @@ Diagnostics should report missing package, unsupported Python, missing CUDA, or
 missing model path explicitly. They must not claim SAM3 is runnable just because
 the mock discovery modes are available.
 
+In the Local UI, open **Model Connections -> SAM3 local**, save the local model
+path and device, then run **Diagnose**. The checklist reports Python, torch,
+CUDA, SAM3 package import, Hugging Face token status, and model-path readiness
+without making hosted network calls. Local SAM3 runs in-process through
+MotionJSON providers; no local API server workaround is used.
+
 ## Config
 
 SAM3 discovery modes are:

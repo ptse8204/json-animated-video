@@ -50,7 +50,7 @@ def test_secret_redaction_helpers_cover_common_provider_shapes():
     }
 
 
-def test_local_ui_provider_settings_defaults_are_redacted_and_mock_safe(tmp_path):
+def test_local_ui_provider_settings_defaults_are_redacted_and_sam_first(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
     status, _headers, body = app.handle("GET", "/api/provider-settings")
@@ -58,7 +58,8 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_mock_safe(tmp_path
 
     assert status == 200
     assert payload["format"] == "motionjson.local_provider_settings.v0.1"
-    assert payload["defaults"]["safeMaskProvider"] == "mock"
+    assert payload["defaults"]["safeMaskProvider"] == "sam2-local"
+    assert payload["defaults"]["debugMaskProvider"] == "mock"
     mock = provider_by_id(payload, "mock")
     assert mock["credentialRequired"] is False
     assert mock["readiness"]["status"] == "ready"
@@ -72,6 +73,66 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_mock_safe(tmp_path
     assert sam3_hosted["settings"]["hostedProfileId"] == "roboflow-sam3-pcs"
     assert {profile["id"] for profile in sam3_hosted["hostedProfiles"]} >= {"roboflow-sam3-pcs", "fal-sam3-image", "custom-sam3-compatible"}
     assert "apiKey" not in json.dumps(payload)
+
+
+def test_local_sam_settings_persist_and_diagnose_without_raw_values(tmp_path):
+    checkpoint = tmp_path / "sam2.pt"
+    config = tmp_path / "sam2.yaml"
+    checkpoint.write_bytes(b"weights")
+    config.write_text("model:\n  type: test\n", encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam2-local",
+                "sam2CheckpointPath": str(checkpoint),
+                "sam2ModelConfigPath": str(config),
+                "sam2Device": "cpu",
+            }
+        ).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    sam2 = provider_by_id(payload, "sam2-local")
+    assert sam2["settings"]["sam2CheckpointPath"] == "[LOCAL_PATH_REDACTED]"
+    assert sam2["settings"]["sam2ModelConfigPath"] == "[LOCAL_PATH_REDACTED]"
+    assert sam2["settings"]["sam2Device"] == "cpu"
+    assert "apiKey" not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/sam2-local/diagnose", body=b"{}")
+    diagnosis = decode(body)
+
+    assert status == 200
+    assert diagnosis["providerId"] == "sam2-local"
+    assert diagnosis["networkAttempted"] is False
+    assert {item["id"] for item in diagnosis["checklist"]} >= {"sam2_package", "checkpoint", "model_config", "device"}
+    checkpoint_row = next(item for item in diagnosis["checklist"] if item["id"] == "checkpoint")
+    assert checkpoint_row["ok"] is True
+    assert "apiKey" not in body.decode("utf-8")
+
+
+def test_local_sam_smoke_requires_explicit_heavy_local_ack(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/sam2-local/smoke-test", body=b"{}")
+    assert status == 400
+    assert "allowHeavyLocal=true" in body.decode("utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-local/smoke-test",
+        body=json.dumps({"allowHeavyLocal": True}).encode("utf-8"),
+    )
+    payload = decode(body)
+    assert status == 200
+    assert payload["providerId"] == "sam2-local"
+    assert payload["networkAttempted"] is False
+    assert payload["heavyLocalAttempted"] is True
+    assert payload["status"] == "blocked"
 
 
 def test_local_ui_provider_settings_persist_key_model_and_capability_source(tmp_path):

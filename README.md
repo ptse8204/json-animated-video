@@ -10,16 +10,18 @@ and reuse it as a JSON-controlled layer. The practical output is cached
 raster/alpha media plus compact JSON for timing, transforms, identity, review
 state, rights metadata, and web playback.
 
-Start with the no-model demo. It runs on CPU and does not need SAM2, CUDA,
-detectors, model weights, cloud APIs, or provider credentials.
+Start with the Local UI and open **Model Connections**. The normal path now
+asks you to connect local SAM2/SAM3 or a hosted SAM provider before extraction.
+CPU-only threshold demos still exist for sanity checks, and debug mock mode is
+reserved for contributor smoke tests.
 
 ![Local UI first-run checklist](docs/assets/local-ui-first-run.png)
 
 ## What it does
 
 - Samples short videos with OpenCV.
-- Extracts object layers with local providers such as HSV thresholding, motion
-  foreground, external mask imports, and deterministic mock providers.
+- Extracts object layers with local providers such as SAM2, HSV thresholding,
+  motion foreground, and external mask imports.
 - Discovers object candidates through an API-first review flow: run a clean
   proposal pass, inspect backend-returned candidates, select desired objects,
   track selected candidates, then export reviewed motion layers.
@@ -78,10 +80,10 @@ tests or hosted runs.
 - Motion designers who want JSON-controlled timing and transforms over cached
   media.
 - Computer-vision experimenters who need visible provider diagnostics and
-  CPU/mock test paths.
+  explicit debug smoke paths.
 - Contributors using Codex to continue the local-first object tracing roadmap.
 
-## 30-second quick start: local UI, no GPU, no cloud
+## 30-second quick start: Local UI and Model Connections
 
 After cloning and entering the repository, the one-script path is:
 
@@ -99,14 +101,22 @@ source .venv/bin/activate
 python3 -m pip install -U pip
 python3 -m pip install -e ".[ui]"
 python3 -m motionjson.cli backend diagnostics --json
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 ```
 
 Open the printed local UI URL. The workspace guides you through goal, project,
 video, mode/provider, prompts, run, review, correction, and export one step at a
-time. In mock mode the UI still reports real capability status; it does not
-pretend SAM2, CUDA, detectors, FFmpeg, or model weights are available. Use
-`Show details` for diagnostics and `Show all panels` for the advanced dashboard.
+time. In **Model Connections**, choose the recommended provider for the goal:
+SAM2 local or Replicate SAM2 video for point/box tracing, SAM3 local or
+Roboflow SAM3 for text concepts, and Fal SAM3 image for frame-by-frame hosted
+fallbacks. Use `Show details` for diagnostics and `Show all panels` for the
+advanced dashboard.
+
+Contributor-only debug smoke checks use:
+
+```bash
+python3 -m motionjson.cli ui --no-open --debug-mock
+```
 
 Windows PowerShell uses the same module command after activating a venv:
 
@@ -115,7 +125,7 @@ py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
 python -m pip install -e ".[ui]"
-python -m motionjson.cli ui --no-open --mock
+python -m motionjson.cli ui --no-open
 ```
 
 ## CLI demo: red ball extraction
@@ -174,12 +184,13 @@ docker compose up --build
 
 ### GitHub Codespaces
 
-Codespaces should use the CPU/mock path first:
+Codespaces should use the real UI first, then connect hosted providers or
+CPU-friendly local paths according to the available hardware:
 
 ```bash
 python3 -m pip install -e ".[ui]"
 python3 -m motionjson.cli backend diagnostics --json
-python3 -m motionjson.cli ui --no-open --mock --host 0.0.0.0
+python3 -m motionjson.cli ui --no-open --host 0.0.0.0
 ```
 
 This repository includes `.devcontainer/devcontainer.json` for Codespaces. It
@@ -197,13 +208,15 @@ Use the checked-in notebooks for the safe first paths:
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_local_demo.ipynb):
   clones the
   repo, installs the lightweight UI extra, creates the deterministic red-ball
-  video, runs provider diagnostics, starts `motionjson ui --no-open --mock`,
-  and displays `/ui/` through Colab's notebook port proxy.
+  video, runs provider diagnostics, starts the debug no-model UI path, and
+  displays `/ui/` through Colab's notebook port proxy.
 - [Colab provider-connect UI notebook](notebooks/colab_ui_provider_connect_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
-  launches the Local UI with optional hosted SAM vendor dependencies and can
-  connect to Roboflow SAM3, Replicate SAM2 video, Fal SAM3 image, or custom
-  SAM-compatible endpoints after explicit cost/privacy opt-in.
+  launches the Local UI without debug mock mode, includes hosted keys from
+  Colab userdata/getpass, checks GPU status, shows optional local SAM2/SAM3
+  setup cells, and can connect to Roboflow SAM3, Replicate SAM2 video, Fal
+  SAM3 image, or custom SAM-compatible endpoints after explicit cost/privacy
+  opt-in.
 - [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
   runs
@@ -223,15 +236,15 @@ SAM checkpoints, hosted-service secrets, and other sensitive local artifacts.
 
 ### Hugging Face Space demo plan
 
-A future Space should start with CPU Basic/mock mode, a tiny deterministic demo
-video, no client-side secrets, and no paid GPU requirement. Real SAM2 or
-detector demos should stay optional and clearly labeled. The concrete Space
+A future Space should start with CPU Basic diagnostics, a tiny deterministic
+demo video, no client-side secrets, and no paid GPU requirement. Real SAM2 or
+hosted-provider demos should stay optional and clearly labeled. The concrete Space
 handoff plan lives in [spaces/huggingface/README.md](spaces/huggingface/README.md).
 
 ## Screenshots and demos
 
-These images are generated from the local mock UI and the deterministic
-red-ball extraction. Regenerate them with:
+These images are generated from explicit debug UI smoke checks and the
+deterministic red-ball extraction. Regenerate them with:
 
 ```bash
 python3 scripts/capture_docs_assets.py --check
@@ -346,14 +359,14 @@ a component today.
 
 | Provider or mode | Local/free? | Best for | Notes |
 | --- | --- | --- | --- |
-| `mock` | Yes | UI and test smoke checks | Deterministic no-model behavior. |
+| `mock` | Yes | Contributor debug smoke checks | Deterministic no-model behavior when launched with `--debug-mock`. |
 | `threshold` | Yes | Simple color demos | Good for the red-ball example. |
 | `motion` / `motion_foreground` | Yes | Moving objects on simple backgrounds | CPU-friendly, rough by design. |
 | `external` / `external_masks` | Yes | Masks from another tool | Import mask PNG/JPG/WebP sequences. |
-| `auto_object_proposals` | Mock or optional SAM2 | Clean candidate gallery before selected tracking | Mock mode is no-model; real local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
+| `auto_object_proposals` | Local SAM2 or hosted/profiled SAM flow | Clean candidate gallery before selected tracking | Real local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
 | `sam2-local` | Optional | Promptable segmentation/tracking | Requires SAM2 package, torch, checkpoint, and config. |
 | `sam2-hosted` | Optional | Explicit hosted segmentation experiments | Requires endpoint/auth and opt-in network use. |
-| `sam3-local` / `sam3-hosted` | Optional | Concept, exemplar, and higher-recall discovery | Mock modes are no-model; real local SAM3 uses the optional adapter only when Python/CUDA/model diagnostics pass. Hosted SAM3 requires endpoint/auth plus explicit network and cost/privacy acknowledgement. |
+| `sam3-local` / `sam3-hosted` | Optional | Concept, exemplar, and higher-recall discovery | Local SAM3 uses the optional adapter only when Python/CUDA/model diagnostics pass. Hosted SAM3 requires endpoint/auth plus explicit network and cost/privacy acknowledgement. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |
@@ -368,10 +381,10 @@ python3 -m motionjson.cli backend diagnostics --json
 
 Diagnostics now separate `installed`, `configured`, and `runnable`. A provider
 can be configured but not runnable, for example hosted segmentation with
-credentials present but no explicit network opt-in. The local UI worker starts
-`mock`, `threshold`, `motion`, and `external` jobs, plus mock discovery jobs
-and configured local SAM2 automatic proposals that feed generated mask handoffs
-through the shared review/export path.
+credentials present but no explicit network opt-in. The normal Local UI worker
+starts real configured providers such as local SAM2/SAM3, hosted SAM profiles,
+`threshold`, `motion`, and `external` jobs. Mock jobs are available only when
+the UI is launched with explicit `--debug-mock` for contributor smoke checks.
 
 The Local UI Provider settings panel lets users bring their own hosted keys and
 choose provider models without editing shell files. Raw keys are stored only in
@@ -392,8 +405,9 @@ Common first checks:
   candidate filters, and track selected candidates only.
 - Trace Everything is blocked: acknowledge the advanced cost/noise warning and
   expect review-required output before export.
-- SAM2 is missing: use `mock`, `threshold`, `motion`, or `external`, or install
-  optional SAM2 dependencies and configure checkpoint/model paths.
+- SAM2 is missing: open Model Connections, install/configure local SAM2, link
+  Replicate SAM2 video, or choose a CPU fallback such as `threshold`, `motion`,
+  or `external`.
 - Text/class detectors are missing: install and configure the relevant detector
   only if you need those workflows.
 - FFmpeg is missing: JSON and website assets can still work; MP4/WebM rendering

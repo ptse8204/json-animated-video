@@ -1,8 +1,9 @@
 # Run MotionJSON on Free or Low-install Instances
 
-This guide keeps the first path CPU/mock/no-model. Do not assume free hosted
-instances have GPUs, persistent disks, model weights, or safe long-running web
-service hosting.
+This guide keeps the first path local-first and real-provider-oriented. Do not
+assume free hosted instances have GPUs, persistent disks, model weights, or safe
+long-running web service hosting. Use debug mock mode only for contributor
+smoke checks.
 
 ## GitHub Codespaces
 
@@ -11,13 +12,13 @@ a terminal, a forwarded port, and a disposable Linux environment.
 
 1. Open the repository in Codespaces.
 2. Let the devcontainer build if prompted, or run the manual setup below.
-3. Start the mock UI:
+3. Start the Local UI:
 
 ```bash
 python3 -m pip install -U pip
 python3 -m pip install -e ".[ui]"
 python3 -m motionjson.cli backend diagnostics --json
-python3 -m motionjson.cli ui --no-open --mock --host 0.0.0.0 --port 8766
+python3 -m motionjson.cli ui --no-open --host 0.0.0.0 --port 8766
 ```
 
 4. Open the forwarded `8766` port in the browser.
@@ -38,14 +39,16 @@ Use the checked-in notebooks when you want ready Colab surfaces:
 - [Colab local UI demo](../notebooks/colab_ui_local_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_local_demo.ipynb):
   launches
-  `python3 -m motionjson.cli ui --no-open --mock` in the notebook runtime,
-  displays `/ui/` through Colab's port proxy, and provides the generated
-  red-ball video path for UI registration.
+  launches the contributor debug no-model UI in the notebook runtime, displays
+  `/ui/` through Colab's port proxy, and provides the generated red-ball video
+  path for UI registration.
 - [Colab provider-connect UI demo](../notebooks/colab_ui_provider_connect_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
-  installs hosted SAM vendor dependencies, launches the UI through Colab's port
-  proxy, and supports Roboflow SAM3, Replicate SAM2 video, Fal SAM3 image, and
-  custom SAM-compatible provider profiles after explicit opt-in.
+  installs hosted SAM vendor dependencies, checks GPU status, includes optional
+  local SAM2/SAM3 setup cells, launches the UI through Colab's port proxy
+  without debug mock mode, and supports Roboflow SAM3, Replicate SAM2 video,
+  Fal SAM3 image, and custom SAM-compatible provider profiles after explicit
+  opt-in.
 - [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
   runs
@@ -59,9 +62,10 @@ Use the checked-in notebooks when you want ready Colab surfaces:
   reports provider readiness, defensively redacts diagnostic fields that look
   credential-related, and runs a no-model smoke extraction.
 
-The UI notebook is intended for active, short, notebook-driven demos. Keep it in
-mock/no-model mode first, avoid secrets in shared notebooks, and prefer
-Codespaces or a local machine for sustained UI sessions.
+The UI notebooks are intended for active, short, notebook-driven demos. Avoid
+secrets in shared notebooks, use Colab userdata or temporary UI credentials for
+hosted keys, and prefer Codespaces or a local machine for sustained UI
+sessions.
 
 Notebook cells can still use the manual CLI path:
 
@@ -97,13 +101,13 @@ The concrete proof-of-concept handoff plan is
 
 Recommended scope:
 
-- start the local UI or a minimal wrapper in `--mock` mode;
+- start the local UI or a minimal wrapper with real provider diagnostics;
 - include `examples/demo_red_ball.mp4` or generate it at startup;
 - show provider diagnostics so missing SAM2/detectors are visible;
 - avoid client-side secrets;
 - store generated files only in the Space's expected ephemeral or configured
   storage path;
-- clearly label any SAM2, detector, or hosted-provider path as optional.
+- clearly label any SAM2, SAM3, detector, or hosted-provider path as optional.
 
 Do not advertise a Space as production hosting until persistence, privacy,
 artifact cleanup, credentials, and model download behavior are explicitly

@@ -1,8 +1,9 @@
 # Run MotionJSON Locally
 
-Use this guide when you want a copy-paste local setup. The default path is
-CPU/mock/no-model and does not require SAM2, CUDA, hosted services, detector
-weights, or cloud API keys.
+Use this guide when you want a copy-paste local setup. The default UI path is
+real-provider-first: connect local SAM2/SAM3 or a hosted SAM profile in Model
+Connections, then validate before extraction. Debug mock mode is reserved for
+contributor smoke checks.
 
 ## One-script UI setup
 
@@ -13,7 +14,7 @@ scripts/first_run_local.sh
 ```
 
 The script creates `.venv`, installs the local package with the `ui` extra, runs
-provider diagnostics, and starts the local UI in mock mode.
+provider diagnostics, and starts the local UI.
 
 For CI or documentation checks where a blocking server is not useful:
 
@@ -43,7 +44,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install -U pip
 python3 -m pip install -e ".[ui]"
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 ```
 
 Run diagnostics before choosing a provider:
@@ -55,13 +56,15 @@ python3 -m motionjson.cli backend diagnostics --json
 Missing optional providers should be shown as diagnostics, not treated as base
 install failures.
 
-## Start the mock UI again
+## Contributor Debug UI
 
 ```bash
-scripts/run_local_ui_mock.sh
+python3 -m motionjson.cli ui --no-open --debug-mock
 ```
 
-Useful overrides:
+The legacy `scripts/run_local_ui_mock.sh` helper remains for layout/tests. Use
+it only when you specifically need the deterministic debug no-model UI. Useful
+overrides:
 
 ```bash
 scripts/run_local_ui_mock.sh \

@@ -1,8 +1,10 @@
 # Provider API Keys
 
-MotionJSON runs without provider credentials by default. The mock/no-model
-Local UI path, red-ball CLI demo, local project review, and MotionJSON export
-do not need SAM2, OpenRouter, hosted segmentation, or paid APIs.
+MotionJSON runs without hosted provider credentials by default. The normal
+Local UI path asks users to connect local SAM model files or a hosted provider
+profile before model-backed extraction. CPU threshold demos, local project
+review, and MotionJSON export do not need OpenRouter, hosted segmentation, or
+paid APIs.
 
 Use provider keys only when you intentionally configure a hosted or optional
 model-backed workflow.
@@ -11,9 +13,9 @@ model-backed workflow.
 
 The Local UI Provider settings panel currently covers:
 
-- `mock`, `threshold`, `motion`, and `external`: local/free, no API key.
-- `sam2-local`: local model choice only. SAM2 package and model paths still
-  come from local installation and environment variables.
+- `threshold`, `motion`, and `external`: local/free, no API key.
+- `sam2-local`: local model choice, checkpoint path, config path, and device.
+  SAM2 package/model setup is diagnosed locally and does not use an API key.
 - `sam2-hosted`: hosted profile, model choice, API key, optional endpoint, and
   hosted-call opt-in. Built-in profiles include Replicate SAM2 video and a
   custom SAM2-compatible endpoint.
@@ -24,9 +26,11 @@ The Local UI Provider settings panel currently covers:
   a segmentation provider.
 - `text_detector` and `class_detector`: local model-choice surfaces for
   scaffolded detector workflows.
-- `auto_object_proposals`: no key in mock mode; optional local SAM2 automatic
-  proposals use local package/checkpoint/config/device diagnostics, not a
-  browser-supplied secret.
+- `auto_object_proposals`: no API key for local SAM2 automatic proposals;
+  package/checkpoint/config/device diagnostics are local and not
+  browser-supplied secrets.
+- `sam3-local`: local model path and device. SAM3 package, Python/CUDA runtime,
+  and Hugging Face access are diagnosed locally and do not use a hosted API key.
 - `sam3-hosted`: hosted profile, model choice, API key, optional endpoint, and
   hosted-call opt-in. Built-in profiles include Roboflow SAM3 concept
   segmentation, Fal SAM3 image, and a custom SAM3-compatible endpoint. Setup

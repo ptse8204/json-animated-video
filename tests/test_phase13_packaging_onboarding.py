@@ -55,7 +55,7 @@ def test_provider_optional_extras_align_with_packaging_metadata():
     }
 
     assert advertised <= set(extras)
-    assert {"sam2", "sam3", "detectors", "yolo", "hosted-segmentation", "hosted-sam3", "openrouter"} <= advertised
+    assert {"sam2", "sam3", "detectors", "yolo", "hosted-sam-vendors", "openrouter"} <= advertised
 
 
 def test_first_run_docs_cover_install_launch_demos_and_powershell():
@@ -67,7 +67,7 @@ def test_first_run_docs_cover_install_launch_demos_and_powershell():
     assert 'python -m pip install -e ".[ui]"' in first_run
     assert "Windows PowerShell" in first_run
     assert "backend diagnostics --json" in first_run
-    assert "python3 -m motionjson.cli ui --no-open --mock" in first_run
+    assert "python3 -m motionjson.cli ui --no-open" in first_run
     assert "examples/demo_red_ball.mp4" in first_run
     assert "--fixtures multi_object" in first_run
     assert "--object-mask-dir red_ball=" in first_run
@@ -84,8 +84,8 @@ def test_local_ui_exposes_first_run_diagnostics_panel():
     assert 'id="firstRunChecklist"' in index
     assert "First Run" in index
     assert "function renderFirstRunChecklist" in app
-    assert "No-model smoke" in app
-    assert "Optional models" in app
+    assert "Debug smoke" in app
+    assert "SAM models" in app
     assert "Next action" in app
     assert "recommendedCommand" in app
     assert "local/free" in app

@@ -23,7 +23,7 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "modelSetupChoices",
         "Provider settings",
         "Providers and models",
-        "Choose how planning works",
+        "Connect SAM for extraction",
         "textDiscoveryProviderSelect",
     ]:
         assert expected in html
@@ -39,13 +39,17 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "data-model-setup-field=\"apiKey\"",
         "allowHosted",
         "hostedProfileId",
+        "sam2CheckpointPath",
+        "sam3ModelPath",
         "textDiscoveryProvider",
         "providerSettingsById",
         "saveProviderSettingsFromRow",
         "/api/provider-settings/${encodeURIComponent(providerId)}/test",
+        "/api/provider-settings/${encodeURIComponent(providerId)}/diagnose",
         "/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test",
-        "/api/model-providers/${encodeURIComponent(provider.id)}/test",
+        "Run local smoke",
         "Run hosted smoke",
+        'state.health?.mockMode || provider.id !== "mock"',
     ]:
         assert expected in js
 

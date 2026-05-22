@@ -183,18 +183,18 @@
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
         </section>
 
-        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status">Selected providers are ready or no-model safe.</div>
+        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status">Selected real model providers are ready or waiting for setup.</div>
 
         <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup">
           <div class="model-setup-heading">
             <div>
-              <p class="section-kicker">Mode and model</p>
-              <h2>Choose how planning works</h2>
-              <p class="panel-note">Mock/local planning is ready without an API key. Hosted planners need a saved server-side key and a separate cost/privacy confirmation before any network call.</p>
+              <p class="section-kicker">Model connections</p>
+              <h2>Connect SAM for extraction</h2>
+              <p class="panel-note">Choose a local or hosted SAM provider for the selected workflow. Planning models are advanced-only; segmentation and discovery come from the providers below.</p>
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
-          <div id="modelSetupChoices" class="model-choice-grid" aria-label="Planning model choices"></div>
+          <div id="modelSetupChoices" class="model-choice-grid" aria-label="SAM model connection choices"></div>
           <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
         </section>
 
@@ -328,7 +328,7 @@
             <div class="panel-heading">
               <div>
                 <h2 id="wizardPanelTitle">Choose extraction mode</h2>
-                <p id="wizardPanelNote" class="panel-note">Mock/no-model is the safe default. Hosted or heavy providers stay gated by diagnostics.</p>
+                <p id="wizardPanelNote" class="panel-note">Pick a workflow, then connect a SAM provider before running. Hosted or heavy local providers stay gated by diagnostics.</p>
               </div>
               <span id="presetSummary" class="status-chip is-neutral">Discover objects</span>
             </div>
@@ -359,8 +359,9 @@
               <label id="textDiscoveryProviderField" data-workflow-fragment="provider_settings">
                 <span>Text discovery provider</span>
                 <select id="textDiscoveryProviderSelect">
-                  <option value="mock">Mock text detector</option>
+                  <option value="sam3-local">Local SAM3</option>
                   <option value="sam3-hosted">Hosted SAM3</option>
+                  <option value="detector">Configured detector</option>
                 </select>
               </label>
               <label id="classPresetField" data-workflow-fragment="provider_settings">
@@ -482,14 +483,14 @@
             <div class="panel-heading">
               <div>
                 <h2 id="configPanelTitle">Validate then run</h2>
-                <p id="configPanelNote" class="panel-note">Start with the no-model smoke run when you want to test the workflow without GPU or model setup.</p>
+                <p id="configPanelNote" class="panel-note">Validate provider setup before starting extraction. Debug mock runs are only visible when the UI is launched in debug mock mode.</p>
               </div>
               <span id="configStatus" class="status-chip is-neutral">Ready</span>
             </div>
             <div class="config-actions">
-              <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job" data-tooltip="Start no-model smoke job">Start mock job</button>
-              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate plan</button>
-              <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start provider run</button>
+              <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job" data-tooltip="Start debug no-model smoke job" hidden>Start debug mock job</button>
+              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate config</button>
+              <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start extraction</button>
             </div>
             <div id="runPlanSummary" class="run-plan-summary" aria-live="polite"></div>
             <details class="advanced-panel compact-advanced-actions">
@@ -512,9 +513,9 @@
         <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">
           <div class="model-plan-heading">
             <div>
-              <p class="section-kicker">Optional model plan</p>
-              <h2>Generate a plan before running</h2>
-              <p class="panel-note">Use this when you want the local/mock planner to propose a run config before extraction. Nothing starts until you confirm.</p>
+              <p class="section-kicker">Advanced planning</p>
+              <h2>Generate a run config before extraction</h2>
+              <p class="panel-note">Use this advanced path only when you want a planner to draft a config. The normal workflow should connect SAM providers directly.</p>
             </div>
             <span id="modelPlanStatus" class="status-chip is-muted">No model plan</span>
           </div>
@@ -524,13 +525,13 @@
               <textarea id="modelIntent" rows="3">Cut out the selected object and keep export review required.</textarea>
             </label>
             <div class="model-plan-actions">
-              <button id="generateModelPlanButton" type="button">Generate local plan</button>
+              <button id="generateModelPlanButton" type="button">Generate planner config</button>
               <button id="validateModelPlanButton" type="button" disabled>Validate generated config</button>
               <button id="confirmModelPlanButton" class="primary-action" type="button" disabled>Confirm and start</button>
             </div>
           </div>
           <div id="modelPlanDetail" class="model-plan-detail" aria-live="polite">
-            <div class="empty-state">Generate a local/mock plan after the goal, project, and video setup look right.</div>
+            <div class="empty-state">Generate a planner config after the goal, project, and video setup look right.</div>
           </div>
         </section>
       </section>

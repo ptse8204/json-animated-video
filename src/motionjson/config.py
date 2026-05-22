@@ -917,7 +917,10 @@ class ExtractionRunConfig:
             raise ConfigValidationError("objects: object_id values must be unique")
         if self.provider.name == "external" and not self.provider.external.mask_dir and not any(obj.mask_dir for obj in self.objects):
             raise ConfigValidationError("provider.external.mask_dir: required when provider is external")
-        if self.provider.name in {"sam2-local", "sam2-hosted"} and not any(prompt.kind in {"point", "positive_point", "box"} for prompt in self.prompts):
+        sam2_prompt_required = self.discovery.mode == "manual_prompt"
+        if self.provider.name in {"sam2-local", "sam2-hosted"} and sam2_prompt_required and not any(
+            prompt.kind in {"point", "positive_point", "box"} for prompt in self.prompts
+        ):
             raise ConfigValidationError(f"prompts: {self.provider.name} requires a point or box prompt")
 
     @property

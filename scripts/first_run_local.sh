@@ -5,8 +5,8 @@ usage() {
   cat <<'EOF'
 Usage: scripts/first_run_local.sh [options]
 
-Set up a local Python virtual environment, install MotionJSON in CPU/mock UI
-mode, run provider diagnostics, and start the local UI unless disabled.
+Set up a local Python virtual environment, install MotionJSON, run provider
+diagnostics, and start the real-provider Local UI unless disabled.
 
 Options:
   --no-launch       Install and run diagnostics, but do not start the UI.
@@ -103,13 +103,13 @@ if [[ "$RUN_DEMO" -eq 1 ]]; then
 fi
 
 if [[ "$LAUNCH" -eq 1 ]]; then
-  echo "Starting MotionJSON UI in CPU/mock mode"
-  exec "$PYTHON_CMD" -m motionjson.cli ui --no-open --mock --host "$HOST" --port "$PORT"
+  echo "Starting MotionJSON UI"
+  exec "$PYTHON_CMD" -m motionjson.cli ui --no-open --host "$HOST" --port "$PORT"
 fi
 
 echo "Setup complete. Start the UI with:"
 if [[ -x "$VENV_DIR/bin/python" ]]; then
-  echo "  ${VENV_DIR}/bin/python -m motionjson.cli ui --no-open --mock --host ${HOST} --port ${PORT}"
+  echo "  ${VENV_DIR}/bin/python -m motionjson.cli ui --no-open --host ${HOST} --port ${PORT}"
 else
-  echo "  ${PYTHON_BIN} -m motionjson.cli ui --no-open --mock --host ${HOST} --port ${PORT}"
+  echo "  ${PYTHON_BIN} -m motionjson.cli ui --no-open --host ${HOST} --port ${PORT}"
 fi

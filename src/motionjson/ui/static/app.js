@@ -8,6 +8,7 @@ const MotionJSONUI = (() => {
     "/api/provider-settings",
     "/api/provider-settings/{providerId}",
     "/api/provider-settings/{providerId}/test",
+    "/api/provider-settings/{providerId}/diagnose",
     "/api/provider-settings/{providerId}/smoke-test",
     "/api/model-providers",
     "/api/model-providers/{providerId}",
@@ -50,7 +51,7 @@ const MotionJSONUI = (() => {
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
-  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external"]);
+  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted"]);
   const SHELL_STORAGE_KEYS = {
     sidebarCollapsed: "motionjson.localUi.sidebarCollapsed",
     railCollapsed: "motionjson.localUi.railCollapsed",
@@ -59,7 +60,54 @@ const MotionJSONUI = (() => {
   };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
-  const MODEL_SETUP_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
+  const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
+  const MODEL_CONNECTIONS = [
+    {
+      id: "sam2-local",
+      providerId: "sam2-local",
+      workflow: "Trace one object",
+      title: "SAM2 local",
+      recommendation: "Best first choice for a point or box prompt when SAM2 is installed on this machine.",
+      nextAction: "Save checkpoint and config paths",
+      profileId: "",
+    },
+    {
+      id: "sam2-hosted:replicate-sam2-video",
+      providerId: "sam2-hosted",
+      profileId: "replicate-sam2-video",
+      workflow: "Trace one object",
+      title: "Replicate SAM2 video",
+      recommendation: "Hosted fallback for promptable SAM2 video tracking when local SAM2 is not ready.",
+      nextAction: "Link Replicate API token",
+    },
+    {
+      id: "sam3-local",
+      providerId: "sam3-local",
+      workflow: "Find objects from text",
+      title: "SAM3 local",
+      recommendation: "Best local path for concept prompts and exemplar-style discovery when SAM3 is installed.",
+      nextAction: "Save SAM3 model path",
+      profileId: "",
+    },
+    {
+      id: "sam3-hosted:roboflow-sam3-pcs",
+      providerId: "sam3-hosted",
+      profileId: "roboflow-sam3-pcs",
+      workflow: "Find objects from text",
+      title: "Roboflow SAM3",
+      recommendation: "Recommended hosted concept segmentation provider for prompts like red ball or person in white.",
+      nextAction: "Link Roboflow API key",
+    },
+    {
+      id: "sam3-hosted:fal-sam3-image",
+      providerId: "sam3-hosted",
+      profileId: "fal-sam3-image",
+      workflow: "Frame-by-frame SAM3",
+      title: "Fal SAM3 image",
+      recommendation: "Hosted frame-by-frame fallback for sampled images when a Fal workflow is preferred.",
+      nextAction: "Link FAL_KEY",
+    },
+  ];
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
     "final_render_mp4",
@@ -129,31 +177,31 @@ const MotionJSONUI = (() => {
     auto_object_proposals: {
       label: "Discover objects",
       discoveryMode: "auto_object_proposals",
-      maskProvider: "mock",
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
     trace_one_object: {
       label: "Cut out one object",
       discoveryMode: "manual_prompt",
-      maskProvider: null,
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
     text_detector: {
-      label: "Find objects from text (mock)",
+      label: "Find objects from text",
       discoveryMode: "text_detector",
-      maskProvider: "mock",
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
     class_detector: {
-      label: "Find known classes (mock)",
+      label: "Find known classes",
       discoveryMode: "class_detector",
-      maskProvider: "mock",
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
     sam_auto_masks: {
-      label: "Propose visible segments (mock)",
+      label: "Propose visible segments",
       discoveryMode: "sam_auto_masks",
-      maskProvider: "mock",
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
     motion_foreground: {
@@ -171,7 +219,7 @@ const MotionJSONUI = (() => {
     review_existing: {
       label: "Review existing result",
       discoveryMode: "manual_prompt",
-      maskProvider: "mock",
+      maskProvider: "sam2-local",
       outputMode: "authoring",
     },
   };
@@ -237,7 +285,7 @@ const MotionJSONUI = (() => {
       id: "provider_settings",
       title: "Choose mode and provider",
       label: "Mode",
-      description: "Keep mock/local providers as the safe default, or inspect advanced provider setup.",
+      description: "Choose the tracing workflow and connect the recommended SAM local or hosted provider.",
       nextHint: "Resolve provider blockers before continuing.",
     },
     {
@@ -251,7 +299,7 @@ const MotionJSONUI = (() => {
       id: "validate_run",
       title: "Validate and run",
       label: "Run",
-      description: "Review the generated plan, validate provider readiness, then start a local or mock run.",
+      description: "Review the generated config, validate provider readiness, then start extraction.",
       nextHint: "Validate the plan and start a run before review.",
     },
     {
@@ -336,7 +384,7 @@ const MotionJSONUI = (() => {
     selectedLibraryCollectionId: "",
     libraryStatus: "Not loaded",
     importStatus: "",
-    selectedModelSetupProviderId: "fake-local-planner",
+    selectedModelSetupProviderId: "sam2-local",
     modelSetupMessage: "",
     modelSetupTone: "neutral",
     modelPlanRun: null,
@@ -517,10 +565,10 @@ const MotionJSONUI = (() => {
           ? step("needs-action", "Browser preview is loaded; register a local path before extraction.", { tone: "is-warn", complete: false })
           : step("needs-action", "Add a browser preview or register a local video path.", { complete: false }),
       provider_settings: providerBlocked
-        ? step("blocked", "Provider setup has a blocker. Use mock/local or open diagnostics.", { complete: false })
+        ? step("blocked", "Provider setup has a blocker. Open Model Connections or diagnostics.", { complete: false })
         : providerWarn
-          ? step("ready", "Provider warning is visible; mock/local workflows can continue.", { tone: "is-warn", complete: true })
-          : step("done", "Provider choice is ready or no-model safe."),
+          ? step("ready", "Provider warning is visible; diagnose setup before running.", { tone: "is-warn", complete: true })
+          : step("done", "Provider choice is ready."),
       prompt_preview: manualPromptRequired && !promptCount
         ? step("needs-action", "Add at least one point, box, or brush prompt for this goal.", { complete: false })
         : step("done", promptCount ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"} ready.` : "This discovery mode can run without manual prompts."),
@@ -529,8 +577,8 @@ const MotionJSONUI = (() => {
         : hasJob
           ? step("done", "Run selected. Review results next.")
           : configValid
-            ? step("needs-action", "Plan is validated. Start a mock or provider run to continue.", { tone: "is-ready", complete: false })
-            : step("needs-action", "Validate the plan, then start a mock or provider run.", { complete: false }),
+            ? step("needs-action", "Config is validated. Start extraction to continue.", { tone: "is-ready", complete: false })
+            : step("needs-action", "Validate the config, then start extraction.", { complete: false }),
       review_candidates: hasRunData
         ? step("done", trackCount ? `${trackCount} track${trackCount === 1 ? "" : "s"} available for review.` : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} ready to review.`)
         : step("needs-action", "Start or select a run before reviewing candidates.", { complete: false }),
@@ -834,10 +882,13 @@ const MotionJSONUI = (() => {
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
     return {
-      mock: true,
+      mock: Boolean(input.debugMockMode),
       qualityPreset,
       intent: defaults.intent,
-      providerPreference: "auto",
+      providerPreference: input.debugMockMode ? "mock" : "sam2-local",
+      sam2Checkpoint: input.localSam2CheckpointPath || null,
+      sam2ModelConfig: input.localSam2ModelConfigPath || null,
+      sam2Device: input.localSam2Device || input.device || "auto",
       keyframePolicy: defaults.keyframePolicy,
       keyframes,
       maxKeyframes: defaults.maxKeyframes,
@@ -892,38 +943,45 @@ const MotionJSONUI = (() => {
         max_candidates: toInteger(input.maxObjects, 12),
         deduplicate: true,
         send_candidates_to_sam: input.sendCandidatesToSam !== false,
-        mock: true,
+        mock: Boolean(input.debugMockMode),
       };
     }
     if (input.discoveryMode === "sam3_concept") {
+      const hosted = input.textDiscoveryProvider === "sam3-hosted";
       return {
         concept: input.textPrompt || "",
         text: input.textPrompt || "",
         labels: parseCsv(input.textPrompt),
-        providerPreference: "sam3-hosted",
-        hosted: true,
-        hostedProfile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
-        model: input.hostedSam3Model || null,
+        providerPreference: hosted ? "sam3-hosted" : "sam3-local",
+        hosted,
+        hostedProfile: hosted ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : null,
+        model: hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || null,
+        sam3ModelPath: input.localSam3ModelPath || null,
+        sam3Device: input.localSam3Device || input.device || "cuda",
         keyframes,
         max_candidates: toInteger(input.maxObjects, 12),
         box_threshold: toNumber(input.boxThreshold, 0.35),
         text_threshold: toNumber(input.textThreshold, 0.25),
         deduplicate: true,
-        allowNetwork: Boolean(input.hostedSam3AllowHosted),
-        acknowledgeCostPrivacy: Boolean(input.hostedSam3AllowHosted),
+        allowNetwork: hosted ? Boolean(input.hostedSam3AllowHosted) : false,
+        acknowledgeCostPrivacy: hosted ? Boolean(input.hostedSam3AllowHosted) : false,
         mock: false,
       };
     }
     if (input.discoveryMode === "sam_auto_masks") {
       return {
         keyframes,
+        providerPreference: input.debugMockMode ? "mock" : "sam2-local",
+        sam2Checkpoint: input.localSam2CheckpointPath || null,
+        sam2ModelConfig: input.localSam2ModelConfigPath || null,
+        sam2Device: input.localSam2Device || input.device || "auto",
         min_area: toNumber(input.minArea, 100),
         max_area_ratio: toNumber(input.maxAreaRatio, 0.65),
         stability_threshold: toNumber(input.stabilityThreshold, 0.82),
         overlap_threshold: toNumber(input.overlapThreshold, 0.72),
         max_candidates: toInteger(input.maxObjects, 12),
         reject_background: true,
-        mock: true,
+        mock: Boolean(input.debugMockMode),
       };
     }
     if (input.discoveryMode === "motion_foreground") {
@@ -956,7 +1014,7 @@ const MotionJSONUI = (() => {
         confidence_threshold: toNumber(input.boxThreshold, 0.35),
         max_candidates: toInteger(input.maxObjects, 12),
         keyframes,
-        mock: true,
+        mock: Boolean(input.debugMockMode),
       };
     }
     return {
@@ -970,7 +1028,7 @@ const MotionJSONUI = (() => {
     const objectId = slugObjectId(input.objectId, "object_0");
     const objectLabel = String(input.objectLabel || objectId || "selected_object").trim() || objectId;
     let discoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
-    if (input.preset === "text_detector" && input.textDiscoveryProvider === "sam3-hosted") {
+    if (input.preset === "text_detector" && ["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
       discoveryMode = "sam3_concept";
     }
     const maskProvider = input.maskProvider || preset.maskProvider || "threshold";
@@ -1014,6 +1072,8 @@ const MotionJSONUI = (() => {
         sam2: {
           ...EMPTY_SAM2,
           device,
+          checkpoint: input.localSam2CheckpointPath || null,
+          model_config: input.localSam2ModelConfigPath || null,
           prompt_frame: frameIndex,
           hosted_config: {
             ...(modelName ? { model: modelName } : {}),
@@ -1090,7 +1150,7 @@ const MotionJSONUI = (() => {
   function buildRunPlan(config, input = {}, validation = null) {
     const presetName = presetNameForRunPlan(config, input);
     const goal = RUN_PLAN_GOALS[presetName] || RUN_PLAN_GOALS.auto_object_proposals;
-    const providerName = config?.provider?.name || "mock";
+    const providerName = config?.provider?.name || "sam2-local";
     const discoveryMode = config?.discovery?.mode || PRESETS[presetName]?.discoveryMode || "manual_prompt";
     const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network || config?.discovery?.config?.allowNetwork);
     const localOrMock = LOCAL_JOB_PROVIDERS.has(providerName) || providerName === "threshold";
@@ -1150,7 +1210,7 @@ const MotionJSONUI = (() => {
     if (discoveryMode === "manual_prompt" && !hasPrompts) nextSteps.push("Add a point, box, or brush prompt for the object.");
     if (warnings.length) nextSteps.push("Review backend warnings before running.");
     if (errors.length) nextSteps.push("Fix validation errors before starting extraction.");
-    if (!nextSteps.length) nextSteps.push("Start a mock job or validate again before a real extraction run.");
+    if (!nextSteps.length) nextSteps.push("Start extraction or validate again before running.");
 
     return {
       preset: presetName,
@@ -1395,8 +1455,12 @@ const MotionJSONUI = (() => {
     const frameIndex = state.video.currentFrame || toInteger($("#frameSlider").value, 0);
     const hostedSam2Provider = providerSettingsById("sam2-hosted");
     const hostedSam3Provider = providerSettingsById("sam3-hosted");
+    const localSam2Provider = providerSettingsById("sam2-local");
+    const localSam3Provider = providerSettingsById("sam3-local");
     const hostedSam2Settings = hostedSam2Provider?.settings || {};
     const hostedSam3Settings = hostedSam3Provider?.settings || {};
+    const localSam2Settings = localSam2Provider?.settings || {};
+    const localSam3Settings = localSam3Provider?.settings || {};
     return {
       preset: state.selectedPreset,
       discoveryMode: preset.discoveryMode,
@@ -1413,7 +1477,8 @@ const MotionJSONUI = (() => {
       prompts: state.prompts,
       strokes: state.strokes,
       maskProvider: $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold",
-      textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "mock",
+      textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "sam3-hosted",
+      debugMockMode: Boolean(state.health?.mockMode),
       device: $("#deviceSelect").value,
       sampleFps: $("#sampleFps").value,
       maxFrames: $("#maxFrames").value,
@@ -1440,6 +1505,11 @@ const MotionJSONUI = (() => {
       hostedSam3ProfileId: hostedSam3Settings.hostedProfileId || "roboflow-sam3-pcs",
       hostedSam3AllowHosted: Boolean(hostedSam3Settings.allowHosted),
       hostedSam3Model: providerEffectiveModel(hostedSam3Provider),
+      localSam2CheckpointPath: localSam2Settings.sam2CheckpointPath || "",
+      localSam2ModelConfigPath: localSam2Settings.sam2ModelConfigPath || "",
+      localSam2Device: localSam2Settings.sam2Device || "",
+      localSam3ModelPath: localSam3Settings.sam3ModelPath || "",
+      localSam3Device: localSam3Settings.sam3Device || "",
     };
   }
 
@@ -1458,11 +1528,55 @@ const MotionJSONUI = (() => {
     return provider.effectiveModel || provider.settings?.customModelId || provider.settings?.selectedModel || provider.defaultModel || "";
   }
 
+  function modelConnectionById(id) {
+    return MODEL_CONNECTIONS.find((connection) => connection.id === id) || MODEL_CONNECTIONS[0];
+  }
+
+  function capabilityForConnection(connection) {
+    const provider = providerSettingsById(connection.providerId);
+    const capabilityName = provider?.capabilityName || connection.providerId;
+    return providerByName(capabilityName, provider?.kind || null) || providerByName(capabilityName);
+  }
+
+  function connectionReadiness(connection) {
+    const provider = providerSettingsById(connection.providerId);
+    const capability = capabilityForConnection(connection);
+    const readiness = provider?.readiness || {};
+    const hosted = provider?.locality === "hosted";
+    const profileOk = !connection.profileId || provider?.settings?.hostedProfileId === connection.profileId || provider?.defaultHostedProfile === connection.profileId;
+    const runnable = capability?.runnable === true || (readiness.configured && !hosted);
+    const configured = readiness.configured === true || capability?.configured === true;
+    const hostedAllowed = !hosted || provider?.settings?.allowHosted === true;
+    if (runnable && hostedAllowed && profileOk) {
+      return { tone: "ready", status: "ready", label: "Ready", message: "Ready for this workflow." };
+    }
+    if (configured && hosted && !hostedAllowed) {
+      return { tone: "warn", status: "needs_opt_in", label: "Confirm", message: "Key is saved; hosted calls need cost/privacy opt-in." };
+    }
+    if (configured || capability?.installed) {
+      return { tone: "warn", status: "check_setup", label: "Check setup", message: readiness.message || capability?.reasons?.[0] || "Review diagnostics before running." };
+    }
+    return { tone: "bad", status: "needs_setup", label: "Setup needed", message: readiness.message || capability?.reasons?.[0] || connection.recommendation };
+  }
+
+  function recommendedConnectionIdForPreset(presetId = state.selectedPreset) {
+    if (presetId === "text_detector") {
+      const local = connectionReadiness(modelConnectionById("sam3-local"));
+      return local.tone === "ready" ? "sam3-local" : "sam3-hosted:roboflow-sam3-pcs";
+    }
+    if (presetId === "sam_auto_masks" || presetId === "auto_object_proposals") {
+      const localSam3 = connectionReadiness(modelConnectionById("sam3-local"));
+      return localSam3.tone === "ready" ? "sam3-local" : "sam3-hosted:roboflow-sam3-pcs";
+    }
+    const localSam2 = connectionReadiness(modelConnectionById("sam2-local"));
+    return localSam2.tone === "ready" ? "sam2-local" : "sam2-hosted:replicate-sam2-video";
+  }
+
   function modelConnectorsForSetup(payload = state.modelProviders) {
     const providers = asArray(payload?.providers);
-    const order = new Map(MODEL_SETUP_PROVIDER_ORDER.map((id, index) => [id, index]));
+    const order = new Map(MODEL_CONNECTOR_PROVIDER_ORDER.map((id, index) => [id, index]));
     return providers
-      .filter((provider) => MODEL_SETUP_PROVIDER_ORDER.includes(provider.id))
+      .filter((provider) => MODEL_CONNECTOR_PROVIDER_ORDER.includes(provider.id))
       .sort(
         (a, b) =>
           (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99) ||
@@ -1578,23 +1692,33 @@ const MotionJSONUI = (() => {
     };
   }
 
-  function modelSetupPayloadFromValues(providerId, values = {}) {
-    const payload = {
-      providerId,
-      selectedModel: String(values.selectedModel || "").trim(),
-      customModelId: String(values.customModelId || "").trim(),
-      baseUrl: String(values.baseUrl || "").trim(),
-      endpoint: String(values.endpoint || "").trim(),
-      allowHosted: Boolean(values.allowHosted),
-    };
+    function modelSetupPayloadFromValues(providerId, values = {}) {
+      const payload = {
+        providerId,
+        hostedProfileId: String(values.hostedProfileId || "").trim(),
+        selectedModel: String(values.selectedModel || "").trim(),
+        customModelId: String(values.customModelId || "").trim(),
+        baseUrl: String(values.baseUrl || "").trim(),
+        endpoint: String(values.endpoint || "").trim(),
+        allowHosted: Boolean(values.allowHosted),
+        sam2CheckpointPath: String(values.sam2CheckpointPath || "").trim(),
+        sam2ModelConfigPath: String(values.sam2ModelConfigPath || "").trim(),
+        sam2Device: String(values.sam2Device || "").trim(),
+        sam3ModelPath: String(values.sam3ModelPath || "").trim(),
+        sam3Device: String(values.sam3Device || "").trim(),
+      };
     const apiKey = String(values.apiKey || "").trim();
     if (apiKey) payload.apiKey = apiKey;
+    for (const optional of ["hostedProfileId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam3ModelPath", "sam3Device"]) {
+      if (!payload[optional] || payload[optional] === "[LOCAL_PATH_REDACTED]") delete payload[optional];
+    }
     return payload;
   }
 
   function selectedCapabilityWarnings(config, $) {
     const warnings = [];
-    const discoveryName = config.discovery.config?.providerPreference === "sam3-hosted" ? "sam3-hosted" : config.discovery.mode;
+    const preference = config.discovery.config?.providerPreference;
+    const discoveryName = preference === "sam3-hosted" || preference === "sam3-local" ? preference : config.discovery.mode;
     const discovery = providerByName(discoveryName, "discovery_provider") || providerByName(String(config.discovery.mode || "").replaceAll("_", "-"), "discovery_provider");
     const mask = providerByName(config.provider.name, "mask_provider");
     const device = $("#deviceSelect").value;
@@ -1604,10 +1728,10 @@ const MotionJSONUI = (() => {
       if (!provider.available || provider.runnable === false) {
         const reasons = asArray(provider.reasons).join(" ");
         const setup = provider.available && provider.runnable === false ? "configured but not runnable yet" : provider.status || "unavailable";
+        const debugMockHint =
+          state.health?.mockMode && provider.mockAvailable ? " Debug mock mode is available for contributor UI checks." : "";
         warnings.push(
-          `${provider.name}: ${setup}${reasons ? ` - ${reasons}` : ""}${
-            provider.mockAvailable ? " Mock/no-model mode is available for UI checks." : ""
-          }`,
+          `${provider.name}: ${setup}${reasons ? ` - ${reasons}` : ""}${debugMockHint}`,
         );
       }
     }
@@ -2857,11 +2981,11 @@ const MotionJSONUI = (() => {
             }
           : {
               title: "Choose extraction mode",
-              note: "Use mock/local providers first. Heavy or hosted providers stay gated by diagnostics and setup checks.",
+              note: "Choose the SAM workflow and connect a local or hosted provider before starting extraction.",
             };
       const configCopy = {
         title: "Validate then run",
-        note: "Start with the no-model smoke run when you want to test the workflow without GPU or model setup.",
+        note: "Validation blocks runs when selected SAM providers are missing setup, credentials, or explicit hosted consent.",
       };
       const copyTargets = [
         ["#setupPanelTitle", setupCopy.title],
@@ -2875,6 +2999,8 @@ const MotionJSONUI = (() => {
         const element = $(selector);
         if (element) element.textContent = text;
       }
+      const debugButton = $("#startMockRunButton");
+      if (debugButton) debugButton.hidden = !state.health?.mockMode;
     }
 
     function postRunSnapshot() {
@@ -3246,7 +3372,7 @@ const MotionJSONUI = (() => {
           status: state.health.status,
           version: state.health.version,
           local: state.health.localFirst ? "yes" : "not reported",
-          mock: state.health.mockMode ? "on" : state.health.mockModeAvailable ? "available" : "unavailable",
+          debugMock: state.health.mockMode ? "on" : "off",
         });
       }
 
@@ -3276,7 +3402,7 @@ const MotionJSONUI = (() => {
         projects: asArray(state.workspace.projects).length,
         recent: `${asArray(state.workspace.recentVideos).length} videos, ${asArray(state.workspace.recentJobs).length} jobs`,
         providers: `${providerSummary.configuredCount || 0} configured`,
-        "safe default": providerSummary.mockNoModelDefault ? "mock/no-model" : "check settings",
+        "default path": "SAM provider setup",
       });
       $("#preferenceDefaultGoal").value = preferences.defaultGoal || "auto_object_proposals";
       $("#preferenceExportPreset").value = preferences.defaultExportPreset || "compact";
@@ -3312,7 +3438,7 @@ const MotionJSONUI = (() => {
       if (provider.needsModelPath === true) details.push("model path");
       if (provider.runnable === true) details.push("runnable");
       if (provider.configured === true && provider.runnable === false) details.push("configured, not runnable");
-      if (provider.mockAvailable === true) details.push("mock available");
+      if (state.health?.mockMode && provider.mockAvailable === true) details.push("debug mock available");
       return details;
     }
 
@@ -3326,6 +3452,7 @@ const MotionJSONUI = (() => {
       const priority = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted", "sam3-concept", "sam3-exemplar", "sam3-auto-masks", "openai", "openrouter", "text_detector", "class_detector", "sam_auto_masks", "motion_foreground"]);
       const providers = asArray(state.capabilities.providers)
         .filter((provider) => priority.has(provider.name))
+        .filter((provider) => state.health?.mockMode || provider.name !== "mock")
         .sort((a, b) => a.name.localeCompare(b.name));
 
       list.innerHTML = providers.length
@@ -3359,9 +3486,9 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const providers = asArray(state.providerSettings.providers);
+      const providers = asArray(state.providerSettings.providers).filter((provider) => state.health?.mockMode || provider.id !== "mock");
       const configuredHosted = providers.filter((provider) => provider.locality === "hosted" && provider.readiness?.configured).length;
-      status.textContent = configuredHosted ? `${configuredHosted} hosted configured` : "Mock default";
+      status.textContent = configuredHosted ? `${configuredHosted} hosted configured` : "SAM setup";
       status.className = `status-chip ${configuredHosted ? "is-warn" : "is-ready"}`;
       list.innerHTML = providers.map(renderProviderSettingsRow).join("");
     }
@@ -3372,88 +3499,104 @@ const MotionJSONUI = (() => {
       const detail = $("#modelSetupDetail");
       if (!status || !choices || !detail) return;
 
-      if (!state.modelProviders) {
-        status.textContent = state.errors.modelProviders ? "Unavailable" : "Not loaded";
-        status.className = `status-chip ${state.errors.modelProviders ? "is-bad" : "is-muted"}`;
+      if (!state.providerSettings) {
+        status.textContent = state.errors.providerSettings ? "Unavailable" : "Not loaded";
+        status.className = `status-chip ${state.errors.providerSettings ? "is-bad" : "is-muted"}`;
         choices.innerHTML = "";
-        detail.innerHTML = `<div class="${state.errors.modelProviders ? "error-state" : "empty-state"}">${escapeHtml(state.errors.modelProviders || "Model provider information has not loaded yet.")}</div>`;
+        detail.innerHTML = `<div class="${state.errors.providerSettings ? "error-state" : "empty-state"}">${escapeHtml(state.errors.providerSettings || "Provider information has not loaded yet.")}</div>`;
         return;
       }
 
-      const providers = modelConnectorsForSetup();
-      if (!providers.length) {
-        status.textContent = "No planners";
-        status.className = "status-chip is-bad";
-        choices.innerHTML = "";
-        detail.innerHTML = `<div class="error-state">No planning providers were reported by the local API.</div>`;
-        return;
+      if (!MODEL_CONNECTIONS.some((connection) => connection.id === state.selectedModelSetupProviderId)) {
+        state.selectedModelSetupProviderId = recommendedConnectionIdForPreset();
       }
+      const selected = modelConnectionById(state.selectedModelSetupProviderId);
+      const selectedReadiness = connectionReadiness(selected);
+      status.textContent = selectedReadiness.label;
+      status.className = `status-chip is-${selectedReadiness.tone}`;
 
-      if (!providers.some((provider) => provider.id === state.selectedModelSetupProviderId)) {
-        state.selectedModelSetupProviderId = state.modelProviders.defaultProviderId || providers[0].id;
-      }
-      const selected = modelConnectorById(state.selectedModelSetupProviderId) || providers[0];
-      const selectedSettingsProvider = selected.readiness?.settingsProviderId ? providerSettingsById(selected.readiness.settingsProviderId) : null;
-      const selectedSummary = modelSetupProviderSummary(selected, selectedSettingsProvider);
-      status.textContent = selectedSummary.label;
-      status.className = `status-chip is-${selectedSummary.tone}`;
-
-      choices.innerHTML = providers
-        .map((provider) => {
-          const settingsProvider = provider.readiness?.settingsProviderId ? providerSettingsById(provider.readiness.settingsProviderId) : null;
-          const summary = modelSetupProviderSummary(provider, settingsProvider);
-          const active = provider.id === selected.id;
-          const hosted = Boolean(provider.hostedCallsRequired || provider.readiness?.hostedCallsRequired || settingsProvider?.locality === "hosted");
-          const configuredText = summary.status === "ready" || provider.readiness?.configured ? "configured" : "setup needed";
+      choices.innerHTML = MODEL_CONNECTIONS.map((connection) => {
+          const provider = providerSettingsById(connection.providerId);
+          const summary = connectionReadiness(connection);
+          const active = connection.id === selected.id;
+          const hosted = provider?.locality === "hosted";
+          const profile = connection.profileId
+            ? asArray(provider?.hostedProfiles).find((item) => item.id === connection.profileId)
+            : null;
           return `
-            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(provider.id)}" aria-pressed="${active}">
+            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" aria-pressed="${active}">
               <span class="model-choice-topline">
-                <strong>${escapeHtml(provider.label || provider.name || provider.id)}</strong>
+                <strong>${escapeHtml(connection.title)}</strong>
                 ${statusChip(summary.label, summary.status, summary.tone === "ready")}
               </span>
-              <span class="model-choice-copy">${escapeHtml(summary.message)}</span>
-              <span class="model-choice-meta">${escapeHtml(hosted ? `${summary.cost} - ${configuredText}` : "No key required - local/mock")}</span>
+              <span class="model-choice-copy">${escapeHtml(connection.recommendation)}</span>
+              <span class="model-choice-meta">${escapeHtml(`${connection.workflow} - ${profile?.name || provider?.name || connection.providerId}`)}</span>
             </button>
           `;
         })
         .join("");
 
-      detail.innerHTML = renderModelSetupDetail(selected, selectedSettingsProvider, selectedSummary);
+      detail.innerHTML = renderModelSetupDetail(selected, selectedReadiness);
     }
 
-    function renderModelSetupDetail(provider, settingsProvider, summary) {
-      const hosted = Boolean(provider.hostedCallsRequired || provider.readiness?.hostedCallsRequired || settingsProvider?.locality === "hosted");
+    function renderModelSetupDetail(connection, summary) {
+      const settingsProvider = providerSettingsById(connection.providerId);
+      const hosted = settingsProvider?.locality === "hosted";
       const resultTone = state.modelSetupTone || summary.tone || "neutral";
       const resultMessage = state.modelSetupMessage || summary.message;
-      const readiness = provider.readiness || {};
-      const readinessDetails = [
-        summary.cost,
-        hosted ? "hosted planner" : "mock/local planner",
-        readiness.networkAttempted ? "network attempted" : "no network check",
-        readiness.effectiveModel || settingsProvider?.effectiveModel || provider.defaultModel,
-      ].filter(Boolean);
-
-      if (!hosted) {
-        return `
-          <div class="model-setup-summary">
-            <div class="model-setup-copy">
-              <h3>${escapeHtml(provider.label || provider.name || "Mock planner")}</h3>
-              <p>${escapeHtml(summary.message)}</p>
-              <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
-            </div>
-            <div class="model-setup-actions">
-              <button type="button" data-model-setup-action="test">Test setup</button>
-            </div>
-          </div>
-          <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status">${escapeHtml(resultMessage)}</div>
-        `;
-      }
-
+      const readiness = settingsProvider?.readiness || {};
       const settings = settingsProvider?.settings || {};
       const credentials = asArray(settingsProvider?.credentials);
       const modelOptions = asArray(settingsProvider?.modelOptions);
-      const selectedModel = settings.selectedModel || settingsProvider?.defaultModel || provider.defaultModel || "";
+      const selectedModel = settings.selectedModel || settingsProvider?.defaultModel || "";
+      const selectedProfile = connection.profileId || settings.hostedProfileId || settingsProvider?.defaultHostedProfile || "";
       const customHidden = selectedModel !== "__custom__";
+      const guide = connection.profileId
+        ? asArray(settingsProvider?.hostedProfiles).find((item) => item.id === connection.profileId)?.setupGuide || {}
+        : settingsProvider?.setupGuide || {};
+      const readinessDetails = [
+        hosted ? "hosted API" : "local model",
+        readiness.status || summary.status,
+        providerEffectiveModel(settingsProvider),
+        connection.profileId || "",
+      ].filter(Boolean);
+      const commandRows = asArray(guide.commands)
+        .map((command) => `<code>${escapeHtml(command)}</code>`)
+        .join("");
+      const profileField =
+        hosted && asArray(settingsProvider?.hostedProfiles).length
+          ? `<label>
+              <span>API provider</span>
+              <select data-model-setup-field="hostedProfileId">
+                ${asArray(settingsProvider.hostedProfiles)
+                  .map((profile) => `<option value="${escapeAttribute(profile.id)}" ${profile.id === selectedProfile ? "selected" : ""}>${escapeHtml(profile.name || profile.id)}</option>`)
+                  .join("")}
+              </select>
+            </label>`
+          : "";
+      const localFields = asArray(settingsProvider?.localConfigFields)
+        .map((field) => {
+          const fieldName = field.name || "";
+          const camelName =
+            fieldName === "sam2_checkpoint_path"
+              ? "sam2CheckpointPath"
+              : fieldName === "sam2_model_config_path"
+                ? "sam2ModelConfigPath"
+                : fieldName === "sam2_device"
+                  ? "sam2Device"
+                  : fieldName === "sam3_model_path"
+                    ? "sam3ModelPath"
+                    : fieldName === "sam3_device"
+                      ? "sam3Device"
+                      : fieldName;
+          const value = settings[camelName] || "";
+          const type = fieldName.endsWith("_device") ? "text" : "text";
+          return `<label>
+            <span>${escapeHtml(field.label || fieldName)}</span>
+            <input data-model-setup-field="${escapeAttribute(camelName)}" type="${type}" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(field.env || "")}" />
+          </label>`;
+        })
+        .join("");
       const credentialSummary = credentials.length
         ? credentials
             .map((credential) => {
@@ -3462,12 +3605,6 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<span class="row-meta">No API key required.</span>`;
-      const baseUrlField = settingsProvider?.baseUrlField
-        ? `<label>
-            <span>${escapeHtml(settingsProvider.baseUrlField.label || "Base URL")}</span>
-            <input data-model-setup-field="baseUrl" type="url" value="${escapeAttribute(settings.baseUrl || "")}" placeholder="${escapeAttribute(settingsProvider.baseUrlField.env || "")}" />
-          </label>`
-        : "";
       const endpointField = settingsProvider?.endpointField
         ? `<label>
             <span>${escapeHtml(settingsProvider.endpointField.label || "Endpoint URL")}</span>
@@ -3477,22 +3614,24 @@ const MotionJSONUI = (() => {
       const credentialField = credentials.some((credential) => credential.name === "api_key")
         ? `<label>
             <span>API key</span>
-            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || provider.label || provider.name)} API key" />
+            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || connection.title)} API key" />
           </label>`
         : "";
 
       return `
         <div class="model-setup-summary">
           <div class="model-setup-copy">
-            <h3>${escapeHtml(provider.label || provider.name || "Hosted planner")}</h3>
-            <p>${escapeHtml(summary.message)}</p>
+            <h3>${escapeHtml(connection.title)}</h3>
+            <p>${escapeHtml(guide.setupSummary || connection.recommendation)}</p>
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
           <div class="model-setup-credentials">${credentialSummary}</div>
         </div>
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status">${escapeHtml(resultMessage)}</div>
-        <div class="warning-box is-warn">${escapeHtml(summary.privacy)} Hosted planning is reasoning only; it cannot segment video and every hosted run still requires a separate confirmation.</div>
-        <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || provider.readiness?.settingsProviderId || "")}">
+        ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
+        ${commandRows ? `<div class="provider-setup-commands">${commandRows}</div>` : ""}
+        <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
+          ${profileField}
           <label>
             <span>Model</span>
             <select data-model-setup-field="selectedModel">
@@ -3509,16 +3648,22 @@ const MotionJSONUI = (() => {
                 </label>`
               : ""
           }
-          ${baseUrlField}
+          ${localFields}
           ${endpointField}
           ${credentialField}
-          <label class="track-toggle model-hosted-toggle">
-            <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
-            <span>I understand hosted calls can send redacted planning context off-device and may cost money</span>
-          </label>
+          ${
+            hosted
+              ? `<label class="track-toggle model-hosted-toggle">
+                  <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+                  <span>I understand hosted calls can send frames off-device and may cost money</span>
+                </label>`
+              : ""
+          }
           <div class="model-setup-actions">
             <button type="button" data-model-setup-action="save">Save setup</button>
-            <button type="button" data-model-setup-action="test">Test setup</button>
+            <button type="button" data-model-setup-action="diagnose">Diagnose</button>
+            <button type="button" data-model-setup-action="test">Setup test</button>
+            <button type="button" data-model-setup-action="smoke">Smoke test</button>
             <button type="button" data-model-setup-action="reset">Reset</button>
           </div>
         </form>
@@ -3547,7 +3692,7 @@ const MotionJSONUI = (() => {
       const generateButton = $("#generateModelPlanButton");
       if (!status || !detail || !validateButton || !confirmButton || !generateButton) return;
 
-      const selectedProvider = modelConnectorById(state.selectedModelSetupProviderId);
+      const selectedProvider = modelConnectorById(state.modelProviders?.defaultProviderId || "fake-local-planner");
       generateButton.textContent = selectedProvider?.hostedCallsRequired ? "Generate hosted plan" : "Generate local plan";
 
       const run = state.modelPlanRun;
@@ -3579,7 +3724,7 @@ const MotionJSONUI = (() => {
         status.textContent = "No model plan";
         status.className = "status-chip is-muted";
         detail.innerHTML = `
-          <div class="empty-state">Generate a local/mock plan from the selected goal. Nothing is enqueued until you confirm it.</div>
+          <div class="empty-state">Generate a planner config from the selected goal. Nothing is enqueued until you confirm it.</div>
         `;
         return;
       }
@@ -3787,9 +3932,35 @@ const MotionJSONUI = (() => {
             <input data-provider-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(provider.name)} API key" />
           </label>`
         : "";
-      const hostedSmokeButton =
-        provider.id === "sam2-hosted" || provider.id === "sam3-hosted"
-          ? `<button type="button" data-provider-action="smoke-test">Run hosted smoke</button>`
+      const localConfigFields = asArray(provider.localConfigFields)
+        .map((field) => {
+          const fieldName = String(field.name || "");
+          const uiName =
+            {
+              sam2_checkpoint_path: "sam2CheckpointPath",
+              sam2_model_config_path: "sam2ModelConfigPath",
+              sam2_device: "sam2Device",
+              sam3_model_path: "sam3ModelPath",
+              sam3_device: "sam3Device",
+            }[fieldName] || fieldName;
+          const placeholder = field.env || (fieldName.includes("device") ? "auto, cpu, mps, cuda, or cuda:0" : "");
+          return `<label>
+            <span>${escapeHtml(field.label || uiName)}</span>
+            <input data-provider-field="${escapeAttribute(uiName)}" type="text" value="${escapeAttribute(settings[uiName] || "")}" placeholder="${escapeAttribute(placeholder)}" />
+          </label>`;
+        })
+        .join("");
+      const setupGuide = provider.setupGuide || {};
+      const setupGuideMarkup = asArray(setupGuide.commands).length
+        ? `<div class="provider-setup-commands" aria-label="${escapeAttribute(provider.name)} setup commands">
+            <strong>${escapeHtml(setupGuide.title || "Setup commands")}</strong>
+            ${setupGuide.docs ? `<a href="${escapeAttribute(setupGuide.docs)}" target="_blank" rel="noreferrer">Official docs</a>` : ""}
+            ${asArray(setupGuide.commands).map((command) => `<code>${escapeHtml(command)}</code>`).join("")}
+          </div>`
+        : "";
+      const smokeButton =
+        provider.id === "sam2-hosted" || provider.id === "sam3-hosted" || provider.id === "sam2-local" || provider.id === "sam3-local"
+          ? `<button type="button" data-provider-action="smoke-test">${hosted ? "Run hosted smoke" : "Run local smoke"}</button>`
           : "";
       return `
         <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}">
@@ -3822,6 +3993,7 @@ const MotionJSONUI = (() => {
             ${customModelField}
             ${endpointField}
             ${baseUrlField}
+            ${localConfigFields}
             ${credentialField}
             ${
               hosted
@@ -3834,10 +4006,12 @@ const MotionJSONUI = (() => {
           </div>
           <div class="provider-actions">
             <button type="button" data-provider-action="save">Save</button>
+            <button type="button" data-provider-action="diagnose">Diagnose</button>
             <button type="button" data-provider-action="test">Test setup</button>
-            ${hostedSmokeButton}
+            ${smokeButton}
             <button type="button" data-provider-action="reset">Reset</button>
           </div>
+          ${setupGuideMarkup}
           <div class="provider-test-result" role="status">${escapeHtml(readiness.message || "Review provider settings before use.")}</div>
         </article>
       `;
@@ -3882,24 +4056,24 @@ const MotionJSONUI = (() => {
           label: "Local UI",
           status: state.health && !state.errors.health ? "ready" : "check",
           available: Boolean(state.health && !state.errors.health),
-          detail: state.health?.mockMode ? "Mock mode is on for no-model checks." : "Use motionjson ui or module launch.",
+          detail: state.health?.mockMode ? "Debug mock mode is on for contributor checks." : "Use motionjson ui or module launch.",
         },
         {
-          label: "No-model smoke",
+          label: "Debug smoke",
           status: summary.canRunNoModelSmoke ? "ready" : "limited",
           available: Boolean(summary.canRunNoModelSmoke),
           detail: summary.canRunNoModelSmoke
-            ? `Ready now: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}. Try Start mock job or run the red-ball demo.`
-            : "Install base CPU dependencies before using mock, threshold, motion, or external masks.",
+            ? `Contributor smoke providers are importable: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}.`
+            : "Install base CPU dependencies before using debug smoke providers.",
         },
         {
-          label: "Optional models",
+          label: "SAM models",
           status: missingOptional.length ? "optional" : optionalMissing.length ? "optional" : "ready",
           available: !(missingOptional.length || optionalMissing.length),
           detail: missingOptional.length
-            ? `Non-blocking setup needed for: ${missingOptional.slice(0, 6).join(", ")}. Mock mode does not claim these are available.`
+            ? `Setup needed for real extraction: ${missingOptional.slice(0, 6).join(", ")}. Open Model Connections for local paths or hosted keys.`
             : optionalMissing.length
-              ? `Optional provider setup: ${optionalMissing.join("; ")}. Install extras only when needed.`
+              ? `Provider setup: ${optionalMissing.join("; ")}. Install only the SAM extras you plan to use.`
             : "Configured optional providers reported ready.",
         },
         {
@@ -3913,7 +4087,7 @@ const MotionJSONUI = (() => {
           status: summary.canRunNoModelSmoke ? "ready" : "check",
           available: Boolean(summary.canRunNoModelSmoke),
           detail: summary.canRunNoModelSmoke
-            ? `Create a project, register examples/demo_red_ball.mp4, then choose Start mock job. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open --mock"}`
+            ? `Create a project, register a video, then open Model Connections. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open"}`
             : "Run backend diagnostics --text and fix base dependency blockers first.",
         },
       ];
@@ -3971,9 +4145,17 @@ const MotionJSONUI = (() => {
         endpoint: value("[data-provider-field='endpoint']"),
         baseUrl: value("[data-provider-field='baseUrl']"),
         allowHosted: checked("[data-provider-field='allowHosted']"),
+        sam2CheckpointPath: value("[data-provider-field='sam2CheckpointPath']"),
+        sam2ModelConfigPath: value("[data-provider-field='sam2ModelConfigPath']"),
+        sam2Device: value("[data-provider-field='sam2Device']"),
+        sam3ModelPath: value("[data-provider-field='sam3ModelPath']"),
+        sam3Device: value("[data-provider-field='sam3Device']"),
       };
       const key = value("[data-provider-field='apiKey']");
       if (key) payload.apiKey = key;
+      for (const localPathField of ["sam2CheckpointPath", "sam2ModelConfigPath", "sam3ModelPath"]) {
+        if (payload[localPathField] === "[LOCAL_PATH_REDACTED]") delete payload[localPathField];
+      }
       return payload;
     }
 
@@ -3981,12 +4163,18 @@ const MotionJSONUI = (() => {
       const value = (selector) => form.querySelector(selector)?.value?.trim() || "";
       const checked = (selector) => Boolean(form.querySelector(selector)?.checked);
       return modelSetupPayloadFromValues(form.dataset.providerSettingsId, {
+        hostedProfileId: value("[data-model-setup-field='hostedProfileId']"),
         selectedModel: value("[data-model-setup-field='selectedModel']"),
         customModelId: value("[data-model-setup-field='customModelId']"),
         endpoint: value("[data-model-setup-field='endpoint']"),
         baseUrl: value("[data-model-setup-field='baseUrl']"),
         allowHosted: checked("[data-model-setup-field='allowHosted']"),
         apiKey: value("[data-model-setup-field='apiKey']"),
+        sam2CheckpointPath: value("[data-model-setup-field='sam2CheckpointPath']"),
+        sam2ModelConfigPath: value("[data-model-setup-field='sam2ModelConfigPath']"),
+        sam2Device: value("[data-model-setup-field='sam2Device']"),
+        sam3ModelPath: value("[data-model-setup-field='sam3ModelPath']"),
+        sam3Device: value("[data-model-setup-field='sam3Device']"),
       });
     }
 
@@ -5021,11 +5209,15 @@ const MotionJSONUI = (() => {
     function renderMaskProviderOptions() {
       const select = $("#maskProviderSelect");
       const defaults = state.runDefaults?.defaults || {};
-      const providerNames = state.runDefaults?.maskProviders || ["external", "mock", "motion", "sam2", "sam2-hosted", "sam2-local", "threshold"];
+      const debugMock = Boolean(state.health?.mockMode);
+      const providerNames = (state.runDefaults?.maskProviders || ["external", "mock", "motion", "sam2", "sam2-hosted", "sam2-local", "threshold"]).filter(
+        (provider) => debugMock || provider !== "mock",
+      );
+      const fallbackDefault = debugMock ? "mock" : "sam2-local";
       const current =
         select.dataset.userSelected === "true"
           ? select.value
-          : PRESETS[state.selectedPreset]?.maskProvider || defaults.maskProvider || "threshold";
+          : PRESETS[state.selectedPreset]?.maskProvider || (defaults.maskProvider === "mock" && !debugMock ? fallbackDefault : defaults.maskProvider) || fallbackDefault;
       select.innerHTML = providerNames
         .map((provider) => {
           const capability = providerByName(provider, "mask_provider");
@@ -5033,7 +5225,7 @@ const MotionJSONUI = (() => {
           return `<option value="${escapeAttribute(provider)}">${escapeHtml(provider + suffix)}</option>`;
         })
         .join("");
-      select.value = providerNames.includes(current) ? current : defaults.maskProvider || providerNames[0] || "threshold";
+      select.value = providerNames.includes(current) ? current : providerNames.includes(fallbackDefault) ? fallbackDefault : defaults.maskProvider || providerNames[0] || "threshold";
     }
 
     function renderPresetFields() {
@@ -5045,6 +5237,12 @@ const MotionJSONUI = (() => {
       $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
       $("#textDiscoveryProviderField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
+      if (state.selectedPreset === "text_detector") {
+        const textProviderSelect = $("#textDiscoveryProviderSelect");
+        if (textProviderSelect && (!textProviderSelect.value || textProviderSelect.value === "mock")) {
+          textProviderSelect.value = "sam3-hosted";
+        }
+      }
       $("#classPresetField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#classListField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#externalMaskField").classList.toggle("is-hidden", state.selectedPreset !== "external_masks");
@@ -5406,7 +5604,7 @@ const MotionJSONUI = (() => {
         const blocked = warnings.some((warning) => /requires|needs|unavailable|missing|not_configured|not runnable/.test(warning));
         setRunAlert(warnings.join(" "), `warning-box ${blocked ? "is-bad" : "is-warn"}`);
       } else {
-        setRunAlert("Selected providers are ready or no-model safe.", "warning-box is-ready");
+        setRunAlert("Selected providers are ready.", "warning-box is-ready");
       }
 
       const configWarnings = [];
@@ -5509,7 +5707,7 @@ const MotionJSONUI = (() => {
     }
 
     async function generateModelPlanFromIntent() {
-      const providerId = state.selectedModelSetupProviderId || state.modelProviders?.defaultProviderId || "fake-local-planner";
+      const providerId = state.modelProviders?.defaultProviderId || "fake-local-planner";
       const formState = {
         ...collectFormState($),
         modelIntent: $("#modelIntent")?.value.trim() || "",
@@ -5615,7 +5813,7 @@ const MotionJSONUI = (() => {
         config.provider.fallback_mask_provider = null;
       }
       if (!LOCAL_JOB_PROVIDERS.has(config.provider.name)) {
-        throw new Error(`${config.provider.name} cannot run in the local UI worker yet. Use Start mock job for a no-model smoke run.`);
+        throw new Error(`${config.provider.name} cannot run in the local UI worker yet. Choose a configured SAM2 local/hosted provider, motion, threshold, or external masks.`);
       }
       return config;
     }
@@ -6628,12 +6826,12 @@ const MotionJSONUI = (() => {
           modelSetupPanel.style.maxWidth = "1040px";
         }
         const captureState = {
-          "model-setup": ["fake-local-planner", "", "neutral"],
-          "model-setup-local": ["fake-local-planner", "Mock/local planning is selected. No API key or hosted call is needed.", "ready"],
-          "model-setup-hosted-warning": ["openai-planner", "Hosted setup is optional. Save a key only when you are ready to allow billed provider planning.", "warn"],
-          "model-setup-missing": ["openai-planner", "Paste a server-side API key before this hosted planner can be used.", "bad"],
-          "model-setup-invalid": ["openai-planner", "openai API key is invalid or too short. Paste the key without spaces.", "bad"],
-          "model-setup-success": ["fake-local-planner", "Test setup passed. No hosted network request was made.", "ready"],
+          "model-setup": ["sam2-local", "", "neutral"],
+          "model-setup-local": ["sam2-local", "Local SAM2 is selected. Save checkpoint and model config paths, then diagnose setup.", "warn"],
+          "model-setup-hosted-warning": ["sam2-hosted:replicate-sam2-video", "Replicate SAM2 is selected. Save a token and confirm hosted cost/privacy before smoke tests or extraction.", "warn"],
+          "model-setup-missing": ["sam3-hosted:roboflow-sam3-pcs", "Paste a server-side Roboflow API key before hosted SAM3 concept discovery can run.", "bad"],
+          "model-setup-invalid": ["sam3-hosted:roboflow-sam3-pcs", "Roboflow API key is invalid or too short. Paste the key without spaces.", "bad"],
+          "model-setup-success": ["sam2-local", "Diagnose found the local SAM2 paths and package imports needed for extraction.", "ready"],
         }[capture];
         if (captureState) {
           state.selectedModelSetupProviderId = captureState[0];
@@ -6971,7 +7169,7 @@ const MotionJSONUI = (() => {
 
       if (!forceMock && !LOCAL_JOB_PROVIDERS.has(requestedProvider)) {
         setRunAlert(
-          `Local UI job execution currently accepts deterministic providers only: mock, threshold, motion, or external. ${requestedProvider} remains capability-gated.`,
+          `Local UI job execution currently accepts SAM2 local/hosted, threshold, motion, or external providers. ${requestedProvider} remains capability-gated.`,
           "warning-box is-bad",
         );
         $("#runStatus").textContent = "Provider gated";
@@ -6979,7 +7177,7 @@ const MotionJSONUI = (() => {
         $("#fallbackDiagnostics").innerHTML = `
           <div class="diagnostic-row is-bad">
             <strong>${escapeHtml(requestedProvider)}</strong>
-            <span class="row-meta">Local UI job execution currently accepts deterministic providers only: mock, threshold, motion, or external. Other model-backed providers stay capability-gated.</span>
+            <span class="row-meta">Choose a configured SAM2 local/hosted provider, motion, threshold, or external masks before starting this job.</span>
           </div>
         `;
         return;
@@ -7911,24 +8109,45 @@ const MotionJSONUI = (() => {
         if (action === "save") {
           await saveProviderSettingsFromRow(row);
           if (result) result.textContent = "Provider settings saved.";
+        } else if (action === "diagnose") {
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/diagnose`, {
+            method: "POST",
+            body: JSON.stringify(providerSettingsPayloadFromRow(row)),
+          });
+          const missing = asArray(payload.checklist)
+            .filter((item) => !item.ok)
+            .map((item) => item.label)
+            .join(", ");
+          if (result) result.textContent = payload.message || (payload.ready ? "Provider setup is ready." : `Needs setup: ${missing || "review checklist"}`);
         } else if (action === "test") {
           const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/test`, { method: "POST", body: JSON.stringify({}) });
           if (result) result.textContent = payload.message || payload.status || "Provider setup checked.";
         } else if (action === "smoke-test") {
-          if (!window.confirm("Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost.")) {
-            if (result) result.textContent = "Hosted smoke test canceled.";
+          const provider = providerSettingsById(providerId);
+          const hosted = provider?.locality === "hosted";
+          const confirmMessage = hosted
+            ? "Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost."
+            : "Run a local SAM smoke test? This can import heavy local model packages and touch configured model files.";
+          if (!window.confirm(confirmMessage)) {
+            if (result) result.textContent = hosted ? "Hosted smoke test canceled." : "Local smoke test canceled.";
             return;
           }
+          const body = hosted
+            ? {
+                allowNetwork: true,
+                allowHosted: true,
+                acknowledgeCostPrivacy: true,
+                prompt: "object",
+              }
+            : {
+                allowHeavyLocal: true,
+                videoPath: selectedVideoPath(),
+              };
           const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test`, {
             method: "POST",
-            body: JSON.stringify({
-              allowNetwork: true,
-              allowHosted: true,
-              acknowledgeCostPrivacy: true,
-              prompt: "object",
-            }),
+            body: JSON.stringify(body),
           });
-          if (result) result.textContent = payload.message || "Hosted SAM smoke test completed.";
+          if (result) result.textContent = payload.message || (hosted ? "Hosted SAM smoke test completed." : "Local SAM smoke test completed.");
         } else if (action === "reset") {
           await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
           await refreshAll();
@@ -7955,14 +8174,15 @@ const MotionJSONUI = (() => {
       const button = event.target.closest("[data-model-setup-action]");
       if (!button) return;
       const action = button.dataset.modelSetupAction;
-      const provider = modelConnectorById(state.selectedModelSetupProviderId);
-      if (!provider) return;
+      const connection = modelConnectionById(state.selectedModelSetupProviderId);
+      if (!connection) return;
       const form = $("#modelSetupForm");
+      const providerId = form?.dataset.providerSettingsId || connection.providerId;
       button.disabled = true;
       setModelSetupMessage(`${action} in progress...`, "neutral");
       try {
         if (action === "save") {
-          if (!form) throw new Error("Select a hosted planner before saving setup.");
+          if (!form) throw new Error("Select a SAM provider before saving setup.");
           const response = await api("/api/provider-settings", {
             method: "POST",
             body: JSON.stringify(modelSetupPayloadFromForm(form)),
@@ -7971,23 +8191,49 @@ const MotionJSONUI = (() => {
           form.querySelectorAll("[data-model-setup-field='apiKey']").forEach((input) => {
             input.value = "";
           });
-          state.modelSetupMessage = "Model setup saved. Test setup checks saved settings without making a hosted network call.";
+          state.modelSetupMessage = "Model connection saved. Diagnose checks saved settings without making a hosted network call.";
           state.modelSetupTone = "ready";
           await refreshAll();
+        } else if (action === "diagnose") {
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/diagnose`, {
+            method: "POST",
+            body: JSON.stringify(form ? modelSetupPayloadFromForm(form) : {}),
+          });
+          const ready = payload.ready === true || payload.status === "ready";
+          const missing = asArray(payload.checklist).filter((item) => !item.ok).map((item) => item.label).join(", ");
+          setModelSetupMessage(payload.message || (ready ? "Provider setup is ready." : `Needs setup: ${missing}`), ready ? "ready" : "warn");
         } else if (action === "test") {
-          const payload = await api(`/api/model-providers/${encodeURIComponent(provider.id)}/test`, {
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/test`, {
             method: "POST",
             body: JSON.stringify({}),
           });
-          const ready = payload.ready === true || payload.status === "ready";
-          setModelSetupMessage(payload.message || payload.status || "Model setup checked without a hosted network call.", ready ? "ready" : "warn");
+          const ready = payload.ready === true || payload.status === "ready" || payload.status === "configured";
+          setModelSetupMessage(payload.message || payload.status || "Provider setup checked without a hosted network call.", ready ? "ready" : "warn");
           await refreshAll();
-          setModelSetupMessage(payload.message || payload.status || "Model setup checked without a hosted network call.", ready ? "ready" : "warn");
+          setModelSetupMessage(payload.message || payload.status || "Provider setup checked without a hosted network call.", ready ? "ready" : "warn");
+        } else if (action === "smoke") {
+          const provider = providerSettingsById(providerId);
+          const hosted = provider?.locality === "hosted";
+          const confirmed = window.confirm(
+            hosted
+              ? "Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost."
+              : "Run a local SAM smoke test? This can import heavy local model packages and touch configured model files.",
+          );
+          if (!confirmed) {
+            setModelSetupMessage(hosted ? "Hosted smoke test canceled." : "Local smoke test canceled.", "neutral");
+            return;
+          }
+          const body = hosted
+            ? { allowNetwork: true, allowHosted: true, acknowledgeCostPrivacy: true, prompt: $("#textPrompt")?.value || "object" }
+            : { allowHeavyLocal: true, videoPath: selectedVideoPath() };
+          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test`, {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+          setModelSetupMessage(payload.message || payload.status || "Smoke test completed.", payload.ready ? "ready" : "warn");
         } else if (action === "reset") {
-          const settingsProviderId = provider.readiness?.settingsProviderId || form?.dataset.providerSettingsId;
-          if (!settingsProviderId) throw new Error("The mock/local planner has no server-side credentials to reset.");
-          await api(`/api/provider-settings/${encodeURIComponent(settingsProviderId)}`, { method: "DELETE", body: JSON.stringify({}) });
-          state.modelSetupMessage = "Hosted model setup reset. Mock/local planning remains ready.";
+          await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
+          state.modelSetupMessage = "Model connection reset.";
           state.modelSetupTone = "neutral";
           await refreshAll();
         }

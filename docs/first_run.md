@@ -45,7 +45,7 @@ Run diagnostics before choosing a provider:
 python3 -m motionjson.cli backend diagnostics --text
 python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out out/benchmarks
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 ```
 
 PowerShell:
@@ -54,7 +54,7 @@ PowerShell:
 python -m motionjson.cli backend diagnostics --text
 python -m motionjson.cli backend diagnostics --json
 python -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --modes external --out out\benchmarks
-python -m motionjson.cli ui --no-open --mock
+python -m motionjson.cli ui --no-open
 ```
 
 The UI sidebar includes a First Run checklist backed by the same capability
@@ -134,15 +134,15 @@ object, and no duplicate-overlap rejection.
 
 ## UI Project Flow
 
-1. Launch `motionjson ui` or `python3 -m motionjson.cli ui --no-open --mock`.
+1. Launch `motionjson ui` or `python3 -m motionjson.cli ui --no-open`.
 2. Start at the guided stepper. Choose a goal, then move through Project,
    Video, Mode, Prompts, Run, Review, Correct, and Export.
 3. Keep the left menu collapsed when you want more workspace; reopen it with
    Menu. Open `Show details` only when you need diagnostics, jobs, review,
    corrections, export, or library panels.
-4. Confirm the First Run and Capabilities panels show the no-model providers as
-   ready. Missing SAM2, CUDA, detectors, FFmpeg, model weights, or hosted
-   settings remain visible as diagnostics.
+4. Open Model Connections and diagnose the recommended SAM provider for the
+   selected goal. Missing SAM2, SAM3, CUDA, detectors, FFmpeg, model weights,
+   or hosted settings remain visible as diagnostics.
 5. Create a local project.
 6. Register `examples/demo_red_ball.mp4` or the generated multi-object fixture.
 7. Use `Cut out one object`, `Find moving objects`, `Import external masks`, or

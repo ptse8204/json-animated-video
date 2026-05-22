@@ -72,7 +72,7 @@ function parseArgs(argv) {
     } else if (arg === "--help" || arg === "-h") {
       console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-keyboard,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
-Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
+Starts the Local UI in explicit debug mock mode, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
 across the commercial UI viewport matrix.`);
       process.exit(0);
@@ -137,7 +137,7 @@ async function startUi(tmp) {
       "motionjson.cli",
       "ui",
       "--no-open",
-      "--mock",
+      "--debug-mock",
       "--host",
       "127.0.0.1",
       "--port",

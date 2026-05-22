@@ -65,6 +65,11 @@ python3 -m motionjson.cli extract input.mp4 \
   --prompt-point 410,230
 ```
 
+In the Local UI, open **Model Connections -> SAM2 local**, paste the checkpoint
+and model config paths, choose the device, run **Diagnose**, then validate the
+run config. The UI never uses a local SAM API sidecar; SAM2 is imported inside
+the MotionJSON process only after setup is explicit.
+
 The provider lazy-imports SAM2 only when no predictor or predictor factory is injected. Tests inject a fake predictor, so CI does not need SAM2, torch, GPUs, credentials, or network.
 
 The local provider follows the SAM2 video flow:
@@ -90,7 +95,7 @@ python3 -m motionjson.cli extract input.mp4 \
   --out out/sam2-auto \
   --discovery-provider auto_object_proposals \
   --discovery-config '{"providerPreference":"sam2-local","qualityPreset":"clean"}' \
-  --mask-provider mock
+  --mask-provider sam2-local
 ```
 
 The adapter:

@@ -10,6 +10,7 @@ assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
+assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
 assert.equal(ui.WORKFLOW_STEPS.length, 9);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
@@ -40,7 +41,7 @@ const previewOnlyWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "motion_foreground",
   selectedProjectId: "project_1",
   previewName: "browser-preview.mp4",
-  providerWarning: "Selected providers are ready or no-model safe.",
+  providerWarning: "Selected providers are ready.",
   providerTone: "is-ready",
 });
 assert.equal(previewOnlyWorkflow.source_video.complete, false);
@@ -362,6 +363,7 @@ const autoObjectConfig = ui.buildRunConfig({
   objectLabel: "discovered object",
   keyframes: new Set([0]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 8,
   maxFrames: 24,
   minArea: 90,
@@ -398,6 +400,7 @@ const maximumRecallConfig = ui.buildRunConfig({
   objectLabel: "discovered object",
   keyframes: new Set([0]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 8,
   maxFrames: 24,
   minArea: 90,
@@ -424,6 +427,7 @@ const traceEverythingConfig = ui.buildRunConfig({
   objectLabel: "discovered object",
   keyframes: new Set([0]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 8,
   maxFrames: 24,
   minArea: 90,
@@ -451,6 +455,7 @@ const textConfig = ui.buildRunConfig({
   objectLabel: "selected_object",
   keyframes: new Set([0]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 8,
   maxFrames: 24,
   minArea: 90,
@@ -478,6 +483,7 @@ const classConfig = ui.buildRunConfig({
   objectLabel: "known class",
   keyframes: new Set([0]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 8,
   maxFrames: 24,
   minArea: 90,
@@ -509,6 +515,7 @@ const autoMasksConfig = ui.buildRunConfig({
   objectLabel: "auto segment",
   keyframes: new Set([0, 12]),
   maskProvider: "mock",
+  debugMockMode: true,
   sampleFps: 12,
   maxFrames: 48,
   minArea: 120,

@@ -54,7 +54,7 @@ report `available_cpu_only`, `missing_dependency`, or `not_configured`.
 Use a CPU-safe workflow:
 
 ```bash
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 python3 -m motionjson.cli extract examples/demo_red_ball.mp4 \
   --out out/demo_red_ball \
   --mask-provider threshold \
@@ -200,7 +200,7 @@ Try the bundled demo first:
 
 ```bash
 python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open
 ```
 
 Then register `examples/demo_red_ball.mp4` in the UI.
