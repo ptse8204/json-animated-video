@@ -513,6 +513,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           rightRailWidth: Math.round(rightRailBox?.width || 0),
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
+          workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
+          setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
+          wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
+          rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
+          configSaveLoadOpen: document.querySelector(".compact-advanced-actions")?.open === true,
+          startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
+          videoFormVisible: visible(document.querySelector("#videoForm")),
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -558,6 +565,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && !stateValue.runPlanAlertVisible) {
       failures.push(`${viewport.name}/${state}: run-step provider/config alert should be visible`);
     }
+    if (state === "workflow-project" && stateValue.setupPanelTitle !== "Create or open a project") {
+      failures.push(`${viewport.name}/${state}: project step title did not simplify the setup card`);
+    }
+    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Add or select a video" || !stateValue.videoFormVisible)) {
+      failures.push(`${viewport.name}/${state}: video step should expose the local video path form as the primary action`);
+    }
+    if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Choose extraction mode") {
+      failures.push(`${viewport.name}/${state}: provider step title should focus on mode/provider choice`);
+    }
+    if (state === "workflow-prompts" && stateValue.wizardPanelTitle !== "Add prompt details") {
+      failures.push(`${viewport.name}/${state}: prompt step title should focus on prompt details`);
+    }
+    if (state === "workflow-run" && (stateValue.rawConfigOpen || stateValue.configSaveLoadOpen || stateValue.startMockText !== "Start mock job")) {
+      failures.push(`${viewport.name}/${state}: run step should keep raw config/save actions collapsed and promote the safe mock job`);
+    }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
@@ -569,6 +591,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       const inactiveFragments = stateValue.workflowFragments.filter((fragment) => !fragment.steps.includes(expectedWorkflowStep));
       if (!activePanels.some((panel) => panel.visible && !panel.hidden && panel.ariaHidden === "false" && !panel.inert)) {
         failures.push(`${viewport.name}/${state}: no active workflow panel is visible and interactive`);
+      }
+      const expectedSummaryCount = Math.max(0, Object.values(workflowStates).indexOf(expectedWorkflowStep));
+      if (stateValue.workflowSummaryCount !== expectedSummaryCount) {
+        failures.push(`${viewport.name}/${state}: expected ${expectedSummaryCount} prior-step summary card(s), found ${stateValue.workflowSummaryCount}`);
       }
       const leakingInactive = inactivePanels.filter((panel) => panel.visible || !panel.hidden || panel.ariaHidden !== "true" || !panel.inert);
       if (leakingInactive.length) {

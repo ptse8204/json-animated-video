@@ -396,6 +396,11 @@ h2 {
   margin-bottom: 12px;
 }
 
+.primary-form {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  align-items: end;
+}
+
 label,
 .compact-field,
 .file-control {
@@ -1881,6 +1886,54 @@ h3 {
   flex: 1 1 220px;
 }
 
+.workflow-step-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-xs);
+  min-height: 0;
+}
+
+.workflow-step-summary:empty {
+  display: none;
+}
+
+.step-summary-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.step-summary-card.is-ready,
+.step-summary-card.is-done {
+  border-left-color: var(--ready);
+}
+
+.step-summary-card.is-warning,
+.step-summary-card.is-needs-action {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.step-summary-card.is-blocked {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.step-summary-card strong,
+.step-summary-card span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.step-summary-card .row-meta {
+  font-size: 11px;
+}
+
 [data-workflow-panel][hidden] {
   display: none !important;
 }
@@ -1995,6 +2048,10 @@ h3 {
 .setup-panel .inline-form,
 .right-rail .inline-form {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.setup-panel .primary-form {
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
 }
 
 label,
@@ -2282,10 +2339,44 @@ button,
   line-height: 1.45;
 }
 
+.step-leading-note {
+  margin: 0;
+}
+
 .advanced-stack {
   display: grid;
   gap: var(--space-xs);
   padding: 0 var(--space-sm) var(--space-sm);
+}
+
+.step-action-card {
+  display: grid;
+  gap: 4px;
+  margin-bottom: var(--space-xs);
+  padding: 11px 12px;
+  border: 1px solid #d6e6e3;
+  border-radius: var(--radius-sm);
+  background: #f7fbfa;
+}
+
+.step-action-card strong {
+  font-size: 13px;
+}
+
+.step-action-card .form-hint {
+  margin-top: 3px;
+}
+
+.advanced-action-row {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0 var(--space-sm) var(--space-sm);
+}
+
+.compact-advanced-actions {
+  margin-bottom: 0;
 }
 
 .run-plan-summary {
@@ -2538,7 +2629,7 @@ button,
 .model-plan-panel {
   display: grid;
   gap: var(--space-sm);
-  margin: 0 0 var(--space-md);
+  margin: var(--space-md) 0 0;
   background: #fbfcfb;
 }
 
@@ -3055,6 +3146,10 @@ button,
 
   .config-actions {
     display: grid;
+  }
+
+  .setup-panel .primary-form {
+    grid-template-columns: 1fr;
   }
 
   .compact-field {

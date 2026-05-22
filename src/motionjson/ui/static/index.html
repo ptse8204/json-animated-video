@@ -180,6 +180,7 @@
             <span id="workflowNextHint" class="row-meta">Choose a tracing goal to continue.</span>
             <button id="workflowNextButton" class="primary-action" type="button">Next</button>
           </div>
+          <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
         </section>
 
         <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status">Selected providers are ready or no-model safe.</div>
@@ -195,31 +196,6 @@
           </div>
           <div id="modelSetupChoices" class="model-choice-grid" aria-label="Planning model choices"></div>
           <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
-        </section>
-
-        <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">
-          <div class="model-plan-heading">
-            <div>
-              <p class="section-kicker">Confirm plan</p>
-              <h2>Generate a plan before running</h2>
-              <p class="panel-note">Describe the target in plain language, validate the generated extraction config, then start only after confirmation.</p>
-            </div>
-            <span id="modelPlanStatus" class="status-chip is-muted">No model plan</span>
-          </div>
-          <div class="model-plan-compose">
-            <label class="model-intent-field">
-              <span>What should MotionJSON trace?</span>
-              <textarea id="modelIntent" rows="3">Cut out the selected object and keep export review required.</textarea>
-            </label>
-            <div class="model-plan-actions">
-              <button id="generateModelPlanButton" type="button">Generate plan</button>
-              <button id="validateModelPlanButton" type="button" disabled>Validate generated config</button>
-              <button id="confirmModelPlanButton" class="primary-action" type="button" disabled>Confirm and start</button>
-            </div>
-          </div>
-          <div id="modelPlanDetail" class="model-plan-detail" aria-live="polite">
-            <div class="empty-state">Generate a local/mock plan when the goal, project, and video setup look right.</div>
-          </div>
         </section>
 
         <section class="workspace-grid">
@@ -283,18 +259,24 @@
           <article class="panel setup-panel" data-workflow-panel="project_video source_video" aria-label="Project and video setup">
             <div class="panel-heading">
               <div>
-                <h2>Project and video</h2>
-                <p class="panel-note">Keep work local. Register a path for backend jobs and optionally load a browser preview for drawing.</p>
+                <h2 id="setupPanelTitle">Create or open a project</h2>
+                <p id="setupPanelNote" class="panel-note">Keep every run, correction, and export artifact in a local project folder.</p>
               </div>
               <span id="projectCount" class="subtle-chip">0 projects</span>
             </div>
             <div class="workflow-fragment" data-workflow-fragment="project_video">
-              <form id="projectForm" class="inline-form">
+              <div class="step-action-card">
+                <div>
+                  <strong>Start a local workspace</strong>
+                  <p class="form-hint">Use a short name you will recognize when reviewing runs later.</p>
+                </div>
+              </div>
+              <form id="projectForm" class="inline-form primary-form">
                 <label>
                   <span>Project name</span>
                   <input id="projectName" type="text" value="MotionJSON local project" required />
                 </label>
-                <button type="submit">Create</button>
+                <button class="primary-action" type="submit">Create project</button>
               </form>
             </div>
             <select id="projectSelect" data-workflow-fragment="project_video source_video" aria-label="Project"></select>
@@ -304,22 +286,23 @@
                 <h3>Source Video</h3>
                 <span id="videoCount" class="subtle-chip">0 videos</span>
               </div>
-              <label class="file-control">
-                <span>Browser preview</span>
-                <input id="videoFileInput" type="file" accept="video/*" />
-              </label>
-              <p class="form-hint">Browser previews are local to this tab. Register a local path when you are ready to run backend extraction.</p>
-              <details id="localPathDisclosure" class="advanced-panel">
-                <summary>Advanced: register a local path for backend jobs</summary>
+              <p class="form-hint step-leading-note">A registered local path is required before extraction starts. The file stays on this machine.</p>
+              <form id="videoForm" class="inline-form primary-form">
+                <label>
+                  <span>Local video path</span>
+                  <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
+                </label>
+                <button class="primary-action" type="submit">Add video</button>
+              </form>
+              <select id="videoSelect" aria-label="Registered video"></select>
+              <details class="advanced-panel">
+                <summary>Optional browser preview for drawing</summary>
                 <div class="advanced-stack">
-                  <form id="videoForm" class="inline-form">
-                    <label>
-                      <span>Local video path</span>
-                      <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
-                    </label>
-                    <button type="submit">Add video</button>
-                  </form>
-                  <select id="videoSelect" aria-label="Registered video"></select>
+                  <label class="file-control">
+                    <span>Browser preview</span>
+                    <input id="videoFileInput" type="file" accept="video/*" />
+                  </label>
+                  <p class="form-hint">Browser previews stay in this tab and help you place prompts on native video pixels.</p>
                 </div>
               </details>
               <div id="videoList" class="artifact-list"></div>
@@ -344,8 +327,8 @@
           <article class="panel wizard-panel" data-workflow-panel="provider_settings prompt_preview" aria-label="Extraction wizard">
             <div class="panel-heading">
               <div>
-                <h2>Extraction settings</h2>
-                <p class="panel-note">Mock/no-model is the safe default. Hosted or heavy providers stay gated by diagnostics.</p>
+                <h2 id="wizardPanelTitle">Choose extraction mode</h2>
+                <p id="wizardPanelNote" class="panel-note">Mock/no-model is the safe default. Hosted or heavy providers stay gated by diagnostics.</p>
               </div>
               <span id="presetSummary" class="status-chip is-neutral">Discover objects</span>
             </div>
@@ -353,15 +336,15 @@
             <div id="providerWarning" class="warning-box" role="status"></div>
 
             <div class="wizard-fields">
-              <label>
+              <label data-workflow-fragment="prompt_preview">
                 <span>Object label</span>
                 <input id="objectLabel" type="text" value="selected_object" />
               </label>
-              <label>
+              <label data-workflow-fragment="prompt_preview">
                 <span>Object ID</span>
                 <input id="objectId" type="text" value="object_0" />
               </label>
-              <label id="qualityPresetField">
+              <label id="qualityPresetField" data-workflow-fragment="provider_settings">
                 <span>Discovery quality</span>
                 <select id="discoveryQualityPreset">
                   <option value="clean">Clean</option>
@@ -369,11 +352,11 @@
                   <option value="maximum_recall">Maximum recall</option>
                 </select>
               </label>
-              <label id="textPromptField">
+              <label id="textPromptField" data-workflow-fragment="prompt_preview">
                 <span>Text prompt</span>
                 <input id="textPrompt" type="text" value="red ball . hand . cup" />
               </label>
-              <label id="classPresetField">
+              <label id="classPresetField" data-workflow-fragment="provider_settings">
                 <span>Class preset</span>
                 <select id="classPreset">
                   <option value="common_objects">Common objects</option>
@@ -384,19 +367,19 @@
                   <option value="custom">Custom</option>
                 </select>
               </label>
-              <label id="classListField">
+              <label id="classListField" data-workflow-fragment="prompt_preview">
                 <span>Classes</span>
                 <input id="classList" type="text" value="" />
               </label>
-              <label id="externalMaskField">
+              <label id="externalMaskField" data-workflow-fragment="prompt_preview">
                 <span>Mask directory</span>
                 <input id="externalMaskDir" type="text" value="masks/object_0" />
               </label>
-              <label>
+              <label data-workflow-fragment="provider_settings">
                 <span>Mask provider</span>
                 <select id="maskProviderSelect"></select>
               </label>
-              <label>
+              <label data-workflow-fragment="provider_settings">
                 <span>Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>
@@ -407,7 +390,7 @@
               </label>
             </div>
 
-            <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel">
+            <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel" data-workflow-fragment="provider_settings">
               <summary>Trace Everything</summary>
               <div class="trace-everything-controls">
                 <label class="track-toggle">
@@ -421,7 +404,7 @@
               </div>
             </details>
 
-            <details class="advanced-panel">
+            <details class="advanced-panel" data-workflow-fragment="provider_settings prompt_preview">
               <summary>Advanced parameters</summary>
               <div class="advanced-grid">
                 <label>
@@ -479,7 +462,7 @@
               </div>
             </details>
 
-            <div class="prompt-summary">
+            <div class="prompt-summary" data-workflow-fragment="prompt_preview">
               <div class="panel-heading compact-heading">
                 <h2>Prompts</h2>
                 <span id="promptCount" class="subtle-chip">0 prompts</span>
@@ -491,27 +474,57 @@
           <article class="panel config-panel" data-workflow-panel="validate_run" aria-label="Config preview">
             <div class="panel-heading">
               <div>
-                <h2>Run preview</h2>
-                <p class="panel-note">Validate the plain-language plan before running. Technical users can inspect the raw JSON under Advanced.</p>
+                <h2 id="configPanelTitle">Validate then run</h2>
+                <p id="configPanelNote" class="panel-note">Start with the no-model smoke run when you want to test the workflow without GPU or model setup.</p>
               </div>
               <span id="configStatus" class="status-chip is-neutral">Ready</span>
             </div>
             <div class="config-actions">
-              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate plan</button>
-              <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start run</button>
               <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job" data-tooltip="Start no-model smoke job">Start mock job</button>
-              <button id="saveConfigButton" type="button" data-tooltip="Save the current config JSON">Save config</button>
-              <label class="load-config-button">
-                <span>Load config</span>
-                <input id="loadConfigInput" type="file" accept="application/json,.json" />
-              </label>
+              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate plan</button>
+              <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start provider run</button>
             </div>
             <div id="runPlanSummary" class="run-plan-summary" aria-live="polite"></div>
+            <details class="advanced-panel compact-advanced-actions">
+              <summary>Save or load generated config</summary>
+              <div class="advanced-action-row">
+                <button id="saveConfigButton" type="button" data-tooltip="Save the current config JSON">Save config</button>
+                <label class="load-config-button">
+                  <span>Load config</span>
+                  <input id="loadConfigInput" type="file" accept="application/json,.json" />
+                </label>
+              </div>
+            </details>
             <details id="rawConfigDisclosure" class="advanced-panel raw-config-panel">
-              <summary>Advanced: raw config JSON</summary>
+              <summary>View generated JSON</summary>
               <pre id="configPreview" class="config-preview" aria-live="polite"></pre>
             </details>
           </article>
+        </section>
+
+        <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">
+          <div class="model-plan-heading">
+            <div>
+              <p class="section-kicker">Optional model plan</p>
+              <h2>Generate a plan before running</h2>
+              <p class="panel-note">Use this when you want the local/mock planner to propose a run config before extraction. Nothing starts until you confirm.</p>
+            </div>
+            <span id="modelPlanStatus" class="status-chip is-muted">No model plan</span>
+          </div>
+          <div class="model-plan-compose">
+            <label class="model-intent-field">
+              <span>What should MotionJSON trace?</span>
+              <textarea id="modelIntent" rows="3">Cut out the selected object and keep export review required.</textarea>
+            </label>
+            <div class="model-plan-actions">
+              <button id="generateModelPlanButton" type="button">Generate local plan</button>
+              <button id="validateModelPlanButton" type="button" disabled>Validate generated config</button>
+              <button id="confirmModelPlanButton" class="primary-action" type="button" disabled>Confirm and start</button>
+            </div>
+          </div>
+          <div id="modelPlanDetail" class="model-plan-detail" aria-live="polite">
+            <div class="empty-state">Generate a local/mock plan after the goal, project, and video setup look right.</div>
+          </div>
         </section>
       </section>
 

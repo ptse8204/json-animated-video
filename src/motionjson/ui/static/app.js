@@ -534,6 +534,43 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function workflowSummaryCardsFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
+    const activeIndex = workflowStepIndex(activeStep);
+    if (activeIndex <= 0) return [];
+    const readiness = workflowReadinessFromSnapshot(snapshot);
+    const promptCount = toInteger(snapshot.promptCount, 0) + toInteger(snapshot.strokeCount, 0);
+    const candidateCount = toInteger(snapshot.candidateCount, 0);
+    const trackCount = toInteger(snapshot.trackCount, 0);
+    const correctionCount = toInteger(snapshot.correctionCount, 0);
+    const providerName = snapshot.providerName || "selected provider";
+    const providerDevice = snapshot.providerDevice ? ` on ${snapshot.providerDevice}` : "";
+    const values = {
+      choose_goal: snapshot.presetLabel || "Goal selected",
+      project_video: snapshot.projectName || (snapshot.selectedProjectId ? "Project selected" : "No project yet"),
+      source_video: snapshot.videoName || (snapshot.selectedVideoId ? "Registered video" : snapshot.previewName ? "Preview only" : "No video yet"),
+      provider_settings: `${providerName}${providerDevice}`,
+      prompt_preview: promptCount ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"}` : "No manual prompts",
+      validate_run: snapshot.selectedJobStatus || (snapshot.backendValidated || snapshot.configValid ? "Plan validated" : "Not run yet"),
+      review_candidates: trackCount
+        ? `${trackCount} track${trackCount === 1 ? "" : "s"}`
+        : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"}`,
+      correct_tracks: correctionCount ? `${correctionCount} edit${correctionCount === 1 ? "" : "s"}` : "No corrections",
+      export: snapshot.exportOk ? "Export valid" : snapshot.exportValidated ? "Export needs review" : "Not exported",
+    };
+    return WORKFLOW_STEPS.slice(0, activeIndex).map((step) => {
+      const stepReadiness = readiness[step.id] || {};
+      return {
+        id: step.id,
+        label: step.label,
+        value: values[step.id] || step.label,
+        detail: stepReadiness.message || step.nextHint || "",
+        status: stepReadiness.status || "not-started",
+        tone: stepReadiness.tone || "is-muted",
+        complete: Boolean(stepReadiness.complete),
+      };
+    });
+  }
+
   function containedVideoRect(containerWidth, containerHeight, videoWidth, videoHeight) {
     if (!containerWidth || !containerHeight || !videoWidth || !videoHeight) {
       return { x: 0, y: 0, width: 0, height: 0, scale: 1 };
@@ -956,7 +993,7 @@ const MotionJSONUI = (() => {
       ? "The backend can run against the registered local asset."
       : hasBrowserPreview
         ? "The browser preview is ready for drawing. Register a local path before starting a backend job."
-        : "Use Choose video preview for drawing, or register a local path under Advanced before running.";
+        : "Register a local video path for backend jobs, and optionally add a browser preview for drawing.";
 
     const steps = [
       {
@@ -998,7 +1035,7 @@ const MotionJSONUI = (() => {
 
     const nextSteps = [];
     if (!hasBrowserPreview && !hasRegisteredVideo) nextSteps.push("Choose a video preview or register a local video path.");
-    if (!hasRegisteredVideo) nextSteps.push("Register a local path under Advanced before starting a backend run.");
+    if (!hasRegisteredVideo) nextSteps.push("Register a local video path before starting a backend run.");
     if (discoveryMode === "manual_prompt" && !hasPrompts) nextSteps.push("Add a point, box, or brush prompt for the object.");
     if (warnings.length) nextSteps.push("Review backend warnings before running.");
     if (errors.length) nextSteps.push("Fix validation errors before starting extraction.");
@@ -2611,6 +2648,8 @@ const MotionJSONUI = (() => {
     function workflowSnapshot() {
       const providerWarning = $("#providerWarning");
       const configStatus = $("#configStatus");
+      const project = state.projects.find((item) => item.id === state.selectedProjectId) || null;
+      const video = selectedVideo();
       const candidates = reviewCandidates();
       const selectedCount = candidates.filter((candidate) => {
         const id = candidateId(candidate);
@@ -2621,8 +2660,12 @@ const MotionJSONUI = (() => {
         selectedPreset: state.selectedPreset,
         presetLabel: currentPresetLabel(),
         selectedProjectId: state.selectedProjectId,
+        projectName: project?.name || "",
         selectedVideoId: state.selectedVideoId,
+        videoName: video?.metadata?.filename || video?.filename || video?.path || video?.id || "",
         previewName: state.video.loadedName,
+        providerName: $("#maskProviderSelect")?.value || "",
+        providerDevice: $("#deviceSelect")?.value || "",
         providerWarning: providerWarning?.textContent?.trim() || "",
         providerTone: providerWarning?.classList.contains("is-bad")
           ? "is-bad"
@@ -2645,6 +2688,64 @@ const MotionJSONUI = (() => {
         promptCount: state.prompts.length,
         strokeCount: state.strokes.length,
       };
+    }
+
+    function renderWorkflowStepSummary(snapshot, activeStep) {
+      const container = $("#workflowStepSummary");
+      if (!container) return;
+      const cards = workflowSummaryCardsFromSnapshot(snapshot, activeStep);
+      container.innerHTML = cards.length
+        ? cards
+            .map(
+              (card) => `
+                <div class="step-summary-card is-${escapeAttribute(card.status || "not-started")}">
+                  <span class="section-kicker">${escapeHtml(card.label)}</span>
+                  <strong>${escapeHtml(card.value)}</strong>
+                  <span class="row-meta">${escapeHtml(card.detail)}</span>
+                </div>
+              `,
+            )
+            .join("")
+        : "";
+    }
+
+    function renderWorkflowContextCopy(activeStep) {
+      const setupCopy =
+        activeStep === "source_video"
+          ? {
+              title: "Add or select a video",
+              note: "Register the local file path backend jobs should read. Add a browser preview when you need to draw prompts.",
+            }
+          : {
+              title: "Create or open a project",
+              note: "Keep every run, correction, and export artifact in a local project folder.",
+            };
+      const wizardCopy =
+        activeStep === "prompt_preview"
+          ? {
+              title: "Add prompt details",
+              note: "Name the object, add text/class/mask inputs when this goal needs them, then draw points or boxes in the viewer.",
+            }
+          : {
+              title: "Choose extraction mode",
+              note: "Use mock/local providers first. Heavy or hosted providers stay gated by diagnostics and setup checks.",
+            };
+      const configCopy = {
+        title: "Validate then run",
+        note: "Start with the no-model smoke run when you want to test the workflow without GPU or model setup.",
+      };
+      const copyTargets = [
+        ["#setupPanelTitle", setupCopy.title],
+        ["#setupPanelNote", setupCopy.note],
+        ["#wizardPanelTitle", wizardCopy.title],
+        ["#wizardPanelNote", wizardCopy.note],
+        ["#configPanelTitle", configCopy.title],
+        ["#configPanelNote", configCopy.note],
+      ];
+      for (const [selector, text] of copyTargets) {
+        const element = $(selector);
+        if (element) element.textContent = text;
+      }
     }
 
     function setRunAlert(message, className = "warning-box", { html = false } = {}) {
@@ -2712,7 +2813,8 @@ const MotionJSONUI = (() => {
       const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
       const activeIndex = workflowStepIndex(activeStep);
       const activeModel = WORKFLOW_STEPS[activeIndex];
-      const readiness = workflowReadinessFromSnapshot(workflowSnapshot());
+      const snapshot = workflowSnapshot();
+      const readiness = workflowReadinessFromSnapshot(snapshot);
       const activeReadiness = readiness[activeStep] || {};
       const title = $("#workflowTitle");
       const description = $("#workflowDescription");
@@ -2754,6 +2856,8 @@ const MotionJSONUI = (() => {
         button.dataset.workflowStatus = stepReadiness.status || "";
       });
 
+      renderWorkflowContextCopy(activeStep);
+      renderWorkflowStepSummary(snapshot, activeStep);
       syncWorkflowPanels();
     }
 
@@ -6179,7 +6283,6 @@ const MotionJSONUI = (() => {
       const configPanel = document.querySelector(".config-panel");
       const modelSetupPanel = document.querySelector("#modelSetupPanel");
       const modelPlanPanel = document.querySelector("#modelPlanPanel");
-      const localPathDisclosure = document.querySelector("#localPathDisclosure");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
       const reviewCaptureStates = ["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet", "job-review"];
 
@@ -6454,7 +6557,6 @@ const MotionJSONUI = (() => {
           workspaceGrid.style.gridTemplateAreas = '"config" "setup" "wizard"';
         }
         if (configPanel) configPanel.style.order = "-1";
-        if (localPathDisclosure) localPathDisclosure.open = true;
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
       } else if (["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture)) {
         if (shell) {
@@ -7711,6 +7813,7 @@ const MotionJSONUI = (() => {
     trackSelectedPayload,
     workflowNextStepId,
     workflowReadinessFromSnapshot,
+    workflowSummaryCardsFromSnapshot,
   };
 
   globalThis.MotionJSONUI = publicApi;

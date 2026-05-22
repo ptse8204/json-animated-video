@@ -61,6 +61,26 @@ assert.equal(readyWorkflow.source_video.complete, true);
 assert.equal(readyWorkflow.prompt_preview.complete, true);
 assert.equal(readyWorkflow.validate_run.complete, true);
 assert.equal(readyWorkflow.export.status, "done");
+const progressCards = ui.workflowSummaryCardsFromSnapshot(
+  {
+    selectedPreset: "motion_foreground",
+    presetLabel: "Find moving objects",
+    selectedProjectId: "project_1",
+    projectName: "Demo project",
+    selectedVideoId: "video_1",
+    videoName: "demo_red_ball.mp4",
+    providerName: "mock",
+    providerDevice: "cpu",
+    configValid: true,
+  },
+  "validate_run",
+);
+assert.deepEqual(progressCards.map((card) => card.id), ["choose_goal", "project_video", "source_video", "provider_settings", "prompt_preview"]);
+assert.equal(progressCards[0].value, "Find moving objects");
+assert.equal(progressCards[1].value, "Demo project");
+assert.equal(progressCards[2].value, "demo_red_ball.mp4");
+assert.equal(progressCards[3].value, "mock on cpu");
+assert.equal(ui.workflowSummaryCardsFromSnapshot({}, "choose_goal").length, 0);
 
 const sortedModelProviders = ui.modelConnectorsForSetup({
   providers: [
