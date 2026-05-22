@@ -236,6 +236,22 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "SAM3_LOCAL_MODEL" in joined
     assert "RUN_LOCAL_SAM2_SETUP" in joined
     assert "RUN_LOCAL_SAM3_SETUP" in joined
+    assert "RUN_DOWNLOAD_SAM3_CHECKPOINT = False" in joined
+    assert "MANUAL_SAM3_CHECKPOINT_PATH" in joined
+    assert "hf_hub_download(repo_id=SAM3_HF_REPO_ID, filename=SAM3_CHECKPOINT_FILENAME, token=token)" in joined
+    assert "SAM3_HF_REPO_ID = \"facebook/sam3\"" in joined
+    assert "SAM3_CHECKPOINT_FILENAME = \"sam3.pt\"" in joined
+    assert "is_probably_hf_repo_id" in joined
+    assert "find_sam3_checkpoint_candidates" in joined
+    assert "set_and_validate_sam3_local_model" in joined
+    assert "/content/sam3 is the official SAM3 source/package directory, not the checkpoint path" in joined
+    assert "facebook/sam3 is the Hugging Face repo id, not a local model path" in joined
+    assert "SAM3_LOCAL_MODEL must be a local checkpoint file path ending in sam3.pt" in joined
+    assert "Copy these values into Model Connections -> SAM3 local" in joined
+    assert "model path:" in joined
+    assert "device:" in joined
+    assert "Path(model_path).exists()" not in joined
+    assert "SAM3_LOCAL_MODEL path (leave blank to skip)" not in joined
     assert "CUDA available" in joined
     assert "output.serve_kernel_port_as_iframe" in joined
     assert "output.serve_kernel_port_as_window" in joined
@@ -243,6 +259,9 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "Replicate SAM2 video" in joined
     assert "Fal SAM3 image" in joined
     assert "paste temporary credentials into the UI Model Connections form" in joined
+    assert "values hidden" in joined
+    assert "print(os.environ[\"HF_TOKEN\"])" not in joined
+    assert "print(token)" not in joined
     assert "secret_json" not in joined
     assert_no_public_tunnel_helpers(joined)
     assert all(not cell.get("outputs") for cell in notebook["cells"])
