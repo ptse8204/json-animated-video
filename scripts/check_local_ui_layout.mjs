@@ -26,6 +26,7 @@ const CAPTURE_STATES = [
   "workflow-prompts",
   "workflow-run",
   "workflow-review",
+  "workflow-review-failure",
   "workflow-correct",
   "workflow-export",
   "workflow-dashboard",
@@ -68,7 +69,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -473,9 +474,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "workflow-prompts": "prompt_preview",
       "workflow-run": "validate_run",
       "workflow-review": "review_candidates",
+      "workflow-review-failure": "review_candidates",
       "workflow-correct": "correct_tracks",
       "workflow-export": "export",
     };
+    const workflowStepOrder = [
+      "choose_goal",
+      "project_video",
+      "source_video",
+      "provider_settings",
+      "prompt_preview",
+      "validate_run",
+      "review_candidates",
+      "correct_tracks",
+      "export",
+    ];
     if (workflowStates[state]) {
       await cdp.send("Runtime.evaluate", {
         expression: `
@@ -520,6 +533,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           configSaveLoadOpen: document.querySelector(".compact-advanced-actions")?.open === true,
           startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
           videoFormVisible: visible(document.querySelector("#videoForm")),
+          postRunGuideVisible: visible(document.querySelector("#postRunGuide")),
+          postRunStageCount: document.querySelectorAll("#postRunGuideList .post-run-stage").length,
+          runMonitorSummaryCount: document.querySelectorAll("#runMonitorSummary .status-summary-card").length,
+          reviewStatusSummaryCount: document.querySelectorAll("#reviewStatusSummary .status-summary-card").length,
+          correctionStatusSummaryCount: document.querySelectorAll("#correctionStatusSummary .status-summary-card").length,
+          exportStatusSummaryCount: document.querySelectorAll("#exportStatusSummary .status-summary-card").length,
+          runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true,
+          fallbackDiagnosticsOpen: document.querySelector("#fallbackDiagnosticsDisclosure")?.open === true,
+          fallbackDiagnosticBadCount: document.querySelectorAll("#fallbackDiagnostics .diagnostic-row.is-bad").length,
+          exportArtifactsOpen: document.querySelector("#exportArtifactsDisclosure")?.open === true,
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -580,6 +603,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && (stateValue.rawConfigOpen || stateValue.configSaveLoadOpen || stateValue.startMockText !== "Start mock job")) {
       failures.push(`${viewport.name}/${state}: run step should keep raw config/save actions collapsed and promote the safe mock job`);
     }
+    if (["workflow-review", "workflow-review-failure", "workflow-correct", "workflow-export"].includes(state)) {
+      if (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5) {
+        failures.push(`${viewport.name}/${state}: post-run guide should be visible with five guided stages`);
+      }
+    }
+    if (state === "workflow-review" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || stateValue.runLogsOpen)) {
+      failures.push(`${viewport.name}/${state}: review step should show run/review summaries while keeping logs collapsed unless the run failed`);
+    }
+    if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || !stateValue.runLogsOpen || !stateValue.fallbackDiagnosticsOpen || stateValue.fallbackDiagnosticBadCount < 1)) {
+      failures.push(`${viewport.name}/${state}: failed review state should surface logs and fallback diagnostics without extra discovery`);
+    }
+    if (state === "workflow-correct" && stateValue.correctionStatusSummaryCount < 1) {
+      failures.push(`${viewport.name}/${state}: correction step should summarize correction readiness`);
+    }
+    if (state === "workflow-export" && (stateValue.exportStatusSummaryCount < 1 || stateValue.exportArtifactsOpen)) {
+      failures.push(`${viewport.name}/${state}: export step should summarize export readiness while keeping artifact browser collapsed`);
+    }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
@@ -592,7 +632,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (!activePanels.some((panel) => panel.visible && !panel.hidden && panel.ariaHidden === "false" && !panel.inert)) {
         failures.push(`${viewport.name}/${state}: no active workflow panel is visible and interactive`);
       }
-      const expectedSummaryCount = Math.max(0, Object.values(workflowStates).indexOf(expectedWorkflowStep));
+      const expectedSummaryCount = Math.max(0, workflowStepOrder.indexOf(expectedWorkflowStep));
       if (stateValue.workflowSummaryCount !== expectedSummaryCount) {
         failures.push(`${viewport.name}/${state}: expected ${expectedSummaryCount} prior-step summary card(s), found ${stateValue.workflowSummaryCount}`);
       }

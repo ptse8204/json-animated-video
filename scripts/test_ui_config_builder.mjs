@@ -81,6 +81,44 @@ assert.equal(progressCards[1].value, "Demo project");
 assert.equal(progressCards[2].value, "demo_red_ball.mp4");
 assert.equal(progressCards[3].value, "mock on cpu");
 assert.equal(ui.workflowSummaryCardsFromSnapshot({}, "choose_goal").length, 0);
+const postRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
+  selectedJobStatus: "succeeded",
+  hasSelectedJob: true,
+  candidateCount: 3,
+  selectedCandidateCount: 2,
+  trackCount: 2,
+  exportIncludedCount: 1,
+  correctionCount: 1,
+  exportValidated: false,
+});
+assert.deepEqual(postRunSummary.map((stage) => stage.id), ["run", "candidates", "tracks", "corrections", "export"]);
+assert.equal(postRunSummary.find((stage) => stage.id === "run").status, "done");
+assert.equal(postRunSummary.find((stage) => stage.id === "candidates").value, "2/3 kept");
+assert.equal(postRunSummary.find((stage) => stage.id === "tracks").value, "2 tracks");
+assert.equal(postRunSummary.find((stage) => stage.id === "corrections").status, "done");
+assert.equal(postRunSummary.find((stage) => stage.id === "export").status, "needs-action");
+const failedPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
+  selectedJobStatus: "failed",
+  hasFailure: true,
+  diagnosticCount: 2,
+});
+assert.equal(failedPostRunSummary.find((stage) => stage.id === "run").status, "blocked");
+assert.match(failedPostRunSummary.find((stage) => stage.id === "run").detail, /failure|diagnostics|logs/i);
+const fallbackPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
+  selectedJobStatus: "succeeded",
+  diagnosticCount: 2,
+  attentionDiagnosticCount: 1,
+});
+assert.equal(fallbackPostRunSummary.find((stage) => stage.id === "run").status, "warning");
+assert.match(fallbackPostRunSummary.find((stage) => stage.id === "run").detail, /fallback|provider diagnostic/i);
+const validExportSummary = ui.postRunWorkflowSummaryFromSnapshot({
+  selectedJobStatus: "succeeded",
+  trackCount: 1,
+  exportIncludedCount: 1,
+  exportValidated: true,
+  exportOk: true,
+});
+assert.equal(validExportSummary.find((stage) => stage.id === "export").status, "done");
 
 const sortedModelProviders = ui.modelConnectorsForSetup({
   providers: [

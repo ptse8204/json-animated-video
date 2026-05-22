@@ -571,6 +571,77 @@ const MotionJSONUI = (() => {
     });
   }
 
+  function postRunWorkflowSummaryFromSnapshot(snapshot = {}) {
+    const activeJobs = toInteger(snapshot.activeJobs, 0);
+    const selectedJobStatus = String(snapshot.selectedJobStatus || "").toLowerCase();
+    const hasSelectedJob = Boolean(snapshot.hasSelectedJob || selectedJobStatus);
+    const candidateCount = toInteger(snapshot.candidateCount, 0);
+    const selectedCandidateCount = toInteger(snapshot.selectedCandidateCount, 0);
+    const trackCount = toInteger(snapshot.trackCount, 0);
+    const exportIncludedCount = toInteger(snapshot.exportIncludedCount, 0);
+    const correctionCount = toInteger(snapshot.correctionCount, 0);
+    const exportValidated = Boolean(snapshot.exportValidated);
+    const exportOk = Boolean(snapshot.exportOk);
+    const diagnosticCount = toInteger(snapshot.diagnosticCount, 0);
+    const attentionDiagnosticCount = toInteger(snapshot.attentionDiagnosticCount, 0);
+    const hasFailure = Boolean(snapshot.hasFailure || /failed|error|canceled/.test(selectedJobStatus));
+    const selectedJobComplete = /succeeded|completed|complete/.test(selectedJobStatus);
+    const selectedJobRunning = /queued|running|pending|started/.test(selectedJobStatus) || activeJobs > 0;
+
+    const stage = (id, label, value, detail, status = "needs-action") => ({
+      id,
+      label,
+      value,
+      detail,
+      status,
+      tone: status === "done" || status === "ready" ? "is-ready" : status === "running" ? "is-neutral" : status === "blocked" ? "is-bad" : "is-warn",
+    });
+
+    return [
+      hasFailure
+        ? stage("run", "Run monitor", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked")
+        : selectedJobComplete
+          ? stage(
+              "run",
+              "Run monitor",
+              selectedJobStatus || "Run complete",
+              attentionDiagnosticCount
+                ? `${attentionDiagnosticCount} fallback or provider diagnostic${attentionDiagnosticCount === 1 ? "" : "s"} need review.`
+                : diagnosticCount
+                  ? `${diagnosticCount} diagnostic item${diagnosticCount === 1 ? "" : "s"} available.`
+                  : "Run completed and review data can be checked.",
+              attentionDiagnosticCount ? "warning" : "done",
+            )
+          : selectedJobRunning
+            ? stage("run", "Run monitor", `${activeJobs || 1} active`, "Wait for the local job to finish or cancel it if needed.", "running")
+            : hasSelectedJob
+              ? stage("run", "Run monitor", selectedJobStatus || "Run selected", "Review the selected run status before continuing.", "ready")
+              : stage("run", "Run monitor", "No run selected", "Start or select a run before reviewing candidates."),
+      candidateCount
+        ? stage("candidates", "Candidate review", `${selectedCandidateCount}/${candidateCount} kept`, selectedCandidateCount ? "Track selected candidates when the keep list looks right." : "Keep at least one candidate before tracking.", selectedCandidateCount ? "done" : "needs-action")
+        : hasSelectedJob
+          ? stage("candidates", "Candidate review", "No candidates", "Inspect diagnostics or retry with clearer prompts.", "needs-action")
+          : stage("candidates", "Candidate review", "Not loaded", "Candidates appear after a run writes review data."),
+      trackCount
+        ? stage("tracks", "Track review", `${trackCount} track${trackCount === 1 ? "" : "s"}`, `${exportIncludedCount} marked for export.`, "done")
+        : selectedCandidateCount
+          ? stage("tracks", "Track review", "Track selected", "Turn kept candidates into object tracks.", "needs-action")
+          : stage("tracks", "Track review", "No tracks", "Tracks appear after selected candidates are tracked."),
+      correctionCount
+        ? stage("corrections", "Corrections", `${correctionCount} edit${correctionCount === 1 ? "" : "s"}`, "Correction edits are saved locally before export.", "done")
+        : trackCount
+          ? stage("corrections", "Corrections", "Optional", "Repair, relabel, merge, split, or skip to export.", "ready")
+          : stage("corrections", "Corrections", "No tracks", "Create a track before correction tools matter."),
+      exportOk
+        ? stage("export", "Export", "Validated", "Export validation passed; handoff packages can be created.", "done")
+        : exportValidated
+          ? stage("export", "Export", "Needs review", "Resolve validation issues before writing MotionJSON.", "blocked")
+          : exportIncludedCount
+            ? stage("export", "Export", `${exportIncludedCount} included`, "Validate export settings before writing artifacts.", "needs-action")
+            : stage("export", "Export", "Not ready", "Reviewed tracks marked for export are required."),
+    ];
+  }
+
   function containedVideoRect(containerWidth, containerHeight, videoWidth, videoHeight) {
     if (!containerWidth || !containerHeight || !videoWidth || !videoHeight) {
       return { x: 0, y: 0, width: 0, height: 0, scale: 1 };
@@ -2603,6 +2674,14 @@ const MotionJSONUI = (() => {
     return diagnostics;
   }
 
+  function diagnosticNeedsImmediateAttention(diagnostic) {
+    const severity = String(diagnostic?.severity || "").toLowerCase();
+    if (severity === "bad") return true;
+    if (severity !== "warn") return false;
+    const text = `${diagnostic?.kind || ""} ${diagnostic?.message || ""}`.toLowerCase();
+    return /fallback|raster|vector|unavailable|whole_frame|too_large|failure_diagnostics/.test(text);
+  }
+
   function setFacts(element, facts) {
     element.innerHTML = Object.entries(facts)
       .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value ?? "not reported")}</dd>`)
@@ -2748,6 +2827,95 @@ const MotionJSONUI = (() => {
       }
     }
 
+    function postRunSnapshot() {
+      const candidates = reviewCandidates();
+      const selectedCandidateCount = candidates.filter((candidate) => {
+        const id = candidateId(candidate);
+        return id && state.candidateSelection[id] === true;
+      }).length;
+      const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
+      const diagnostics = collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview).filter(
+        (item) => item.severity !== "ready",
+      );
+      const attentionDiagnostics = diagnostics.filter(diagnosticNeedsImmediateAttention);
+      return {
+        activeJobs: state.jobs.filter(isActiveJob).length,
+        hasSelectedJob: Boolean(state.selectedJobId),
+        selectedJobStatus: selectedJob()?.status || "",
+        candidateCount: candidates.length,
+        selectedCandidateCount,
+        trackCount: state.reviewTracks.length,
+        exportIncludedCount: state.reviewTracks.filter(isTrackExportIncluded).length,
+        correctionCount: asArray(state.correctionState?.history).length,
+        exportValidated: Boolean(exportValidation),
+        exportOk: exportValidation?.ok === true,
+        diagnosticCount: diagnostics.length,
+        attentionDiagnosticCount: attentionDiagnostics.length,
+        hasAttentionDiagnostics: Boolean(attentionDiagnostics.length),
+        hasFailure: diagnostics.some((item) => item.severity === "bad"),
+      };
+    }
+
+    function postRunStageCards(stages) {
+      return stages
+        .map(
+          (stage) => `
+            <div class="post-run-stage is-${escapeAttribute(stage.status || "needs-action")}">
+              <span class="section-kicker">${escapeHtml(stage.label)}</span>
+              <strong>${escapeHtml(stage.value)}</strong>
+              <span class="row-meta">${escapeHtml(stage.detail)}</span>
+            </div>
+          `,
+        )
+        .join("");
+    }
+
+    function summaryCards(stages) {
+      return stages
+        .map(
+          (stage) => `
+            <div class="status-summary-card is-${escapeAttribute(stage.status || "needs-action")}">
+              <strong>${escapeHtml(stage.value)}</strong>
+              <span class="row-meta">${escapeHtml(stage.detail)}</span>
+            </div>
+          `,
+        )
+        .join("");
+    }
+
+    function renderPostRunFlow() {
+      const snapshot = postRunSnapshot();
+      const stages = postRunWorkflowSummaryFromSnapshot(snapshot);
+      const blocking = stages.find((stage) => stage.status === "blocked");
+      const next = blocking || stages.find((stage) => stage.status === "needs-action") || stages.find((stage) => stage.status === "running") || stages[stages.length - 1];
+      const runStage = stages.find((stage) => stage.id === "run");
+      const candidateStage = stages.find((stage) => stage.id === "candidates");
+      const trackStage = stages.find((stage) => stage.id === "tracks");
+      const correctionStage = stages.find((stage) => stage.id === "corrections");
+      const exportStage = stages.find((stage) => stage.id === "export");
+
+      if ($("#postRunGuideList")) $("#postRunGuideList").innerHTML = postRunStageCards(stages);
+      if ($("#postRunGuideStatus")) {
+        $("#postRunGuideStatus").textContent = next?.status === "done" ? "Ready" : next?.value || "Needs review";
+        $("#postRunGuideStatus").className = `status-chip ${next?.tone || "is-muted"}`;
+      }
+      if ($("#postRunGuideNote")) $("#postRunGuideNote").textContent = next?.detail || "Review, correct, and export reviewed object tracks.";
+      if ($("#runMonitorSummary")) $("#runMonitorSummary").innerHTML = summaryCards([runStage].filter(Boolean));
+      if ($("#runMonitorStatus") && runStage) {
+        $("#runMonitorStatus").textContent = runStage.value;
+        $("#runMonitorStatus").className = `status-chip ${runStage.tone}`;
+      }
+      if ($("#reviewStatusSummary")) $("#reviewStatusSummary").innerHTML = summaryCards([candidateStage, trackStage].filter(Boolean));
+      if ($("#reviewFlowStatus") && trackStage) {
+        $("#reviewFlowStatus").textContent = trackStage.value;
+        $("#reviewFlowStatus").className = `status-chip ${trackStage.tone}`;
+      }
+      if ($("#correctionStatusSummary")) $("#correctionStatusSummary").innerHTML = summaryCards([correctionStage].filter(Boolean));
+      if ($("#exportStatusSummary")) $("#exportStatusSummary").innerHTML = summaryCards([exportStage].filter(Boolean));
+      if (snapshot.hasFailure && $("#runLogsDisclosure")) $("#runLogsDisclosure").open = true;
+      if (snapshot.hasAttentionDiagnostics && $("#fallbackDiagnosticsDisclosure")) $("#fallbackDiagnosticsDisclosure").open = true;
+    }
+
     function setRunAlert(message, className = "warning-box", { html = false } = {}) {
       for (const selector of ["#providerWarning", "#runPlanAlert"]) {
         const element = $(selector);
@@ -2858,6 +3026,7 @@ const MotionJSONUI = (() => {
 
       renderWorkflowContextCopy(activeStep);
       renderWorkflowStepSummary(snapshot, activeStep);
+      renderPostRunFlow();
       syncWorkflowPanels();
     }
 
@@ -5969,6 +6138,7 @@ const MotionJSONUI = (() => {
 
     function applyReviewCaptureFixture(capture) {
       const jobId = `job_${capture}_layout`;
+      const failedCapture = capture === "workflow-review-failure";
       const runConfig = buildRunConfig({
         preset: "auto_object_proposals",
         discoveryMode: "auto_object_proposals",
@@ -6002,13 +6172,14 @@ const MotionJSONUI = (() => {
       const job = {
         id: jobId,
         type: "extract",
-        status: "succeeded",
-        progress: 100,
-        percent: 100,
+        status: failedCapture ? "failed" : "succeeded",
+        progress: failedCapture ? 64 : 100,
+        percent: failedCapture ? 64 : 100,
         payload: { mask_provider: "mock", run_config: runConfig },
-        result: { objects: 2, frames: 48 },
+        result: failedCapture ? { objects: 0, frames: 48, rasterFallback: true } : { objects: 2, frames: 48 },
         updated_at: "2026-05-20T12:00:00Z",
-        message: "review fixture ready",
+        message: failedCapture ? "SAM2 model weights unavailable; vector tracks were not produced." : "review fixture ready",
+        error: failedCapture ? "SAM2 model weights unavailable; use mock/local provider or install model weights before retrying." : "",
       };
       const candidates = [
         {
@@ -6139,29 +6310,59 @@ const MotionJSONUI = (() => {
       state.jobs = [job];
       state.selectedJobId = job.id;
       state.selectedJob = job;
-      state.jobEvents = [
-        { event_type: "candidate_discovery", message: "5 candidates proposed for review" },
-        { event_type: "track_linking", message: "2 selected candidates tracked" },
-        { event_type: "review_gate", message: "export includes reviewed selected objects only" },
-      ];
-      state.jobArtifacts = [];
+      state.jobEvents = failedCapture
+        ? [
+            {
+              event_type: "mask_provider_failed",
+              status: "failed",
+              stage: "mask_provider",
+              message: "SAM2 model weights unavailable; vector tracks were not produced.",
+              metadata: {
+                reasonCode: "sam2_unavailable",
+                message: "SAM2 model weights unavailable; vector tracks were not produced.",
+                suggestedFixes: ["Switch to mock provider for no-model review.", "Install model weights before retrying SAM2."],
+              },
+            },
+            {
+              event_type: "raster_fallback",
+              status: "warning",
+              stage: "export",
+              message: "Raster fallback output was retained because object tracks were unavailable.",
+              metadata: {
+                reasonCode: "raster_fallback",
+                message: "Raster-only fallback explains why object/vector tracks are unavailable.",
+                suggestedFixes: ["Open fallback diagnostics before export.", "Add prompts or choose a ready local provider."],
+              },
+            },
+          ]
+        : [
+            { event_type: "candidate_discovery", message: "5 candidates proposed for review" },
+            { event_type: "track_linking", message: "2 selected candidates tracked" },
+            { event_type: "review_gate", message: "export includes reviewed selected objects only" },
+          ];
+      state.jobArtifacts = failedCapture
+        ? [
+            { id: "failure_diag_layout", kind: "failure_diagnostics", path: "failure_diagnostics.json" },
+            { id: "fallback_diag_layout", kind: "fallback_diagnostics", path: "fallback_diagnostics.json" },
+          ]
+        : [];
       state.jobReview = {
-        candidates,
+        candidates: failedCapture ? [] : candidates,
         candidateSummary: {
           provider: "auto_object_proposals",
           providerName: "mock detector",
           qualityPreset: "balanced",
-          candidateCount: candidates.length,
-          acceptedCandidateCount: 1,
-          rejectedCandidateCount: 2,
-          defaultSelectedCount: 1,
-          rejectionReasons: { background_like: 1, duplicate_mask: 1 },
+          candidateCount: failedCapture ? 0 : candidates.length,
+          acceptedCandidateCount: failedCapture ? 0 : 1,
+          rejectedCandidateCount: failedCapture ? 0 : 2,
+          defaultSelectedCount: failedCapture ? 0 : 1,
+          rejectionReasons: failedCapture ? {} : { background_like: 1, duplicate_mask: 1 },
         },
-        tracks: reviewTracks,
-        objects: [{ objectId: "red_ball", id: "red_ball", label: "Red ball" }],
+        tracks: failedCapture ? [] : reviewTracks,
+        objects: failedCapture ? [] : [{ objectId: "red_ball", id: "red_ball", label: "Red ball" }],
         export: {
-          includedObjectIds: ["red_ball", "manual_prompt_pending"],
-          excludedObjectIds: ["duplicate_ball", "floor_patch", "soft_shadow"],
+          includedObjectIds: failedCapture ? [] : ["red_ball", "manual_prompt_pending"],
+          excludedObjectIds: failedCapture ? [] : ["duplicate_ball", "floor_patch", "soft_shadow"],
           exportReviewRequired: true,
         },
         rightsSummary: {
@@ -6169,34 +6370,53 @@ const MotionJSONUI = (() => {
           summary: { commercialUseApproved: false, commercialUseReviewRequired: ["red_ball"] },
           warnings: [{ code: "commercial_use_review_required", message: "Review source rights before publishing." }],
         },
+        fallbackDiagnostics: failedCapture
+          ? [
+              {
+                reasonCode: "sam2_unavailable",
+                severity: "error",
+                message: "SAM2 model weights unavailable, so vector/object tracks were not produced.",
+                suggestedFixes: ["Switch to mock provider for a no-model smoke run.", "Install SAM2 weights and rerun."],
+              },
+            ]
+          : [],
+        vectorUnavailableReason: failedCapture ? "Vector/object tracks are unavailable because the mask provider failed." : "",
+        rasterFallbackReason: failedCapture ? "Raster-only fallback was retained so the failed run still has inspectable output." : "",
+        failure: failedCapture ? { message: "SAM2 model weights unavailable; vector tracks were not produced." } : null,
       };
-      state.reviewTracks = reviewTracks;
-      state.trackVisibility = { red_ball: true, duplicate_ball: true };
-      state.candidateSelection = { cand_red_ball: true };
+      state.reviewTracks = failedCapture ? [] : reviewTracks;
+      state.trackVisibility = failedCapture ? {} : { red_ball: true, duplicate_ball: true };
+      state.candidateSelection = failedCapture ? {} : { cand_red_ball: true };
       state.candidateSelectionJobId = job.id;
-      state.candidateTrackingStatus = "1 reviewed candidate tracked; export remains reviewed-only.";
-      state.selectedCorrectionTrackId = "red_ball";
-      state.mergeSelection = capture === "correction-tools" ? new Set(["red_ball", "duplicate_ball"]) : new Set();
-      state.prompts = [
-        { id: "prompt_layout_point", kind: "positive_point", frame_index: 12, object_id: "red_ball", label: "Red ball", data: { x: 350, y: 198 } },
-      ];
+      state.candidateTrackingStatus = failedCapture ? "" : "1 reviewed candidate tracked; export remains reviewed-only.";
+      state.selectedCorrectionTrackId = failedCapture ? "" : "red_ball";
+      state.mergeSelection = !failedCapture && capture === "correction-tools" ? new Set(["red_ball", "duplicate_ball"]) : new Set();
+      state.prompts = failedCapture
+        ? []
+        : [
+            { id: "prompt_layout_point", kind: "positive_point", frame_index: 12, object_id: "red_ball", label: "Red ball", data: { x: 350, y: 198 } },
+          ];
       state.strokes = [];
       state.correctionState = {
         ...emptyCorrectionState(job.id),
         loaded: true,
         persistenceStatus: "loaded",
-        persistenceMessage: "Correction state loaded from the local backend. Edits are saved locally before export.",
-        mergeSuggestions: [{ keepObjectId: "red_ball", mergeObjectId: "duplicate_ball", meanIou: 0.82 }],
-        history: [
-          {
-            type: "relabel_track",
-            trackId: "red_ball",
-            label: "Red ball",
-            frameRange: [1, 48],
-            createdAt: "2026-05-20T12:00:00Z",
-            persistenceStatus: "saved",
-          },
-        ],
+        persistenceMessage: failedCapture
+          ? "No correction state is available because the run did not produce object tracks."
+          : "Correction state loaded from the local backend. Edits are saved locally before export.",
+        mergeSuggestions: failedCapture ? [] : [{ keepObjectId: "red_ball", mergeObjectId: "duplicate_ball", meanIou: 0.82 }],
+        history: failedCapture
+          ? []
+          : [
+              {
+                type: "relabel_track",
+                trackId: "red_ball",
+                label: "Red ball",
+                frameRange: [1, 48],
+                createdAt: "2026-05-20T12:00:00Z",
+                persistenceStatus: "saved",
+              },
+            ],
       };
       state.exportValidation =
         capture === "export-gate"
@@ -6290,6 +6510,8 @@ const MotionJSONUI = (() => {
         setWorkflowStep("provider_settings", { persist: false });
       } else if (capture.startsWith("model-plan")) {
         setWorkflowStep("validate_run", { persist: false });
+      } else if (capture === "workflow-review-failure") {
+        setWorkflowStep("review_candidates", { persist: false });
       } else if (reviewCaptureStates.includes(capture) || capture === "advanced-config") {
         setWorkflowDashboard(true, { persist: false });
       } else if (capture === "new-project") {
@@ -6558,6 +6780,9 @@ const MotionJSONUI = (() => {
         }
         if (configPanel) configPanel.style.order = "-1";
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
+      } else if (capture === "workflow-review-failure") {
+        applyReviewCaptureFixture(capture);
+        setWorkflowStep("review_candidates", { persist: false });
       } else if (["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture)) {
         if (shell) {
           shell.style.display = "block";
@@ -6583,12 +6808,12 @@ const MotionJSONUI = (() => {
         document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
           const openSummaries = {
-            "candidate-review": ["run monitor", "review"],
-            "correction-tools": ["review", "corrections"],
-            "export-gate": ["review", "artifacts and exports"],
-            "export-handoff": ["review", "artifacts and exports"],
-            "export-success": ["artifacts and exports"],
-            "copyable-snippet": ["artifacts and exports"],
+            "candidate-review": ["run monitor", "review", "review candidates and tracks"],
+            "correction-tools": ["review", "review candidates and tracks", "corrections"],
+            "export-gate": ["review", "review candidates and tracks", "artifacts and exports", "preview and export"],
+            "export-handoff": ["review", "review candidates and tracks", "artifacts and exports", "preview and export"],
+            "export-success": ["artifacts and exports", "preview and export"],
+            "copyable-snippet": ["artifacts and exports", "preview and export"],
           }[capture];
           const open = openSummaries.includes(summary);
           details.open = open;
@@ -6610,7 +6835,7 @@ const MotionJSONUI = (() => {
         }
         document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
-          details.open = ["run monitor", "review", "artifacts and exports"].includes(summary);
+          details.open = ["run monitor", "review", "review candidates and tracks", "artifacts and exports", "preview and export"].includes(summary);
         });
       }
 
@@ -7805,6 +8030,7 @@ const MotionJSONUI = (() => {
     normalizePrompt,
     parseCsv,
     parseKeyframes,
+    postRunWorkflowSummaryFromSnapshot,
     reviewCandidates,
     safeLocalContentUrl,
     slugObjectId,

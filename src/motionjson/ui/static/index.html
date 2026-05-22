@@ -543,6 +543,18 @@
           >Hide details</button>
         </div>
 
+        <section id="postRunGuide" class="compact-panel post-run-guide" data-workflow-panel="review_candidates correct_tracks export" aria-label="Post-run review flow">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="section-kicker">Post-run flow</p>
+              <h2>Review before export</h2>
+            </div>
+            <span id="postRunGuideStatus" class="status-chip is-muted">No run</span>
+          </div>
+          <p id="postRunGuideNote" class="panel-note">Start a run, review object tracks, correct mistakes, then export reviewed objects.</p>
+          <div id="postRunGuideList" class="post-run-guide-list" aria-live="polite"></div>
+        </section>
+
         <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Provider settings</summary>
           <section id="providerSettingsPanel" class="compact-panel">
@@ -570,11 +582,21 @@
           <summary>Run monitor</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
-              <h2>Run Defaults</h2>
-              <span class="subtle-chip">No-model safe</span>
+              <h2>Run status</h2>
+              <span id="runMonitorStatus" class="status-chip is-muted">No run</span>
             </div>
-            <dl id="runDefaults" class="facts"></dl>
+            <div id="runMonitorSummary" class="status-summary-grid" aria-live="polite"></div>
           </section>
+          <details class="nested-rail-disclosure">
+            <summary>Run defaults</summary>
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h2>Run Defaults</h2>
+                <span class="subtle-chip">No-model safe</span>
+              </div>
+              <dl id="runDefaults" class="facts"></dl>
+            </section>
+          </details>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Jobs</h2>
@@ -590,17 +612,27 @@
             <dl id="selectedJobFacts" class="facts"></dl>
             <button id="cancelJobButton" class="danger-action" type="button" data-tooltip="Request cooperative cancellation for the selected run" disabled>Cancel run</button>
           </section>
-          <section class="compact-panel">
-            <div class="panel-heading compact-heading">
-              <h2>Logs</h2>
-              <span id="eventCount" class="subtle-chip">0 events</span>
-            </div>
-            <div id="jobEventLog" class="event-log" aria-live="polite"></div>
-          </section>
+          <details id="runLogsDisclosure" class="nested-rail-disclosure">
+            <summary>Logs and events</summary>
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h2>Logs</h2>
+                <span id="eventCount" class="subtle-chip">0 events</span>
+              </div>
+              <div id="jobEventLog" class="event-log" aria-live="polite"></div>
+            </section>
+          </details>
         </details>
 
         <details class="rail-section" data-workflow-panel="review_candidates correct_tracks">
-          <summary>Review</summary>
+          <summary>Review candidates and tracks</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Review status</h2>
+              <span id="reviewFlowStatus" class="status-chip is-muted">No run</span>
+            </div>
+            <div id="reviewStatusSummary" class="status-summary-grid" aria-live="polite"></div>
+          </section>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Candidates</h2>
@@ -653,20 +685,24 @@
             </div>
             <div id="selectedTrackDetail" class="track-detail"></div>
           </section>
-          <section class="compact-panel">
-            <h2>Fallback Diagnostics</h2>
-            <div id="fallbackDiagnostics" class="diagnostic-list" role="status"></div>
-          </section>
+          <details id="fallbackDiagnosticsDisclosure" class="nested-rail-disclosure">
+            <summary>Fallback diagnostics</summary>
+            <section class="compact-panel">
+              <h2>Fallback Diagnostics</h2>
+              <div id="fallbackDiagnostics" class="diagnostic-list" role="status"></div>
+            </section>
+          </details>
         </details>
 
         <details class="rail-section" data-workflow-panel="export">
-          <summary>Artifacts and exports</summary>
+          <summary>Preview and export</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Export</h2>
               <span id="exportStatus" class="status-chip is-muted">Not validated</span>
             </div>
             <p class="panel-note">Only reviewed tracks kept in Review and marked for export are included by default.</p>
+            <div id="exportStatusSummary" class="status-summary-grid" aria-live="polite"></div>
             <div id="exportHandoffCards" class="export-handoff-grid"></div>
             <div id="exportNextSteps" class="export-next-steps"></div>
             <details class="advanced-export-disclosure">
@@ -701,13 +737,16 @@
             </details>
             <div id="exportSummary" class="export-summary"></div>
           </section>
-          <section class="compact-panel">
-            <div class="panel-heading compact-heading">
-              <h2>Artifacts</h2>
-              <span id="artifactCount" class="subtle-chip">0 files</span>
-            </div>
-            <div id="artifactBrowser" class="artifact-list"></div>
-          </section>
+          <details id="exportArtifactsDisclosure" class="nested-rail-disclosure" aria-label="Artifacts and exports">
+            <summary>Generated artifacts</summary>
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h2>Artifacts</h2>
+                <span id="artifactCount" class="subtle-chip">0 files</span>
+              </div>
+              <div id="artifactBrowser" class="artifact-list"></div>
+            </section>
+          </details>
         </details>
 
         <details class="rail-section" data-workflow-panel="correct_tracks">
@@ -718,6 +757,7 @@
               <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
             </div>
             <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
+            <div id="correctionStatusSummary" class="status-summary-grid" aria-live="polite"></div>
             <div id="correctionGuidance" class="correction-guidance" aria-live="polite"></div>
             <div class="correction-editor">
               <label>
