@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from motionjson.backend.usage import utc_now
+from motionjson.providers.sam3 import describe_sam3_model_path
 
 
 PROVIDER_SETTINGS_FORMAT = "motionjson.local_provider_settings.v0.1"
@@ -1047,11 +1048,19 @@ def diagnose_provider_settings(
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id == "sam3-local":
         model_path = str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or "")
+        model_path_source = "environment" if environ.get("SAM3_LOCAL_MODEL") else "local_settings" if settings.get("sam3_model_path") else "unset"
+        model_status = describe_sam3_model_path(model_path, source=model_path_source)
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         item("python", "Python >= 3.12", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for local SAM3.")
         item("sam3_package", "SAM3 package", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3.")
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install CUDA-capable torch for local SAM3.")
-        item("model_path", "SAM3 model path", bool(model_path and Path(model_path).exists()), model_path or "SAM3_LOCAL_MODEL is not configured.", "Request Hugging Face access, authenticate, then save the local model path.")
+        item(
+            "model_path",
+            "SAM3 checkpoint file path",
+            bool(model_status["valid"]),
+            str(model_status.get("resolvedPath") or model_status.get("reason") or "SAM3_LOCAL_MODEL is not configured."),
+            str(model_status.get("action") or "Request Hugging Face access, authenticate, then save the local sam3.pt checkpoint path."),
+        )
         item("hf_token", "Hugging Face auth", bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")), "HF_TOKEN/HUGGINGFACE_HUB_TOKEN configured." if environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") else "No Hugging Face token environment variable detected.", "Use hf auth login or set HF_TOKEN after access is granted.")
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id in {"sam2-hosted", "sam3-hosted"}:
@@ -1409,6 +1418,16 @@ def _readiness(
         value = environ.get(env) or settings.get(name)
         if field.get("required") and not value:
             missing.append(env or name)
+        elif value and name == "sam3_model_path":
+            source = "environment" if environ.get(env) else "local_settings"
+            path_status = describe_sam3_model_path(str(value), env=env or "SAM3_LOCAL_MODEL", source=source)
+            if not path_status["valid"]:
+                if path_status.get("valueKind") in {"huggingface_repo_id", "source_package_directory"}:
+                    missing.append(str(path_status["reason"]))
+                elif path_status.get("valueKind") == "directory_with_checkpoint":
+                    missing.append(f"{env or name} points to a directory; use the sam3.pt file inside it")
+                else:
+                    missing.append(f"{env or name} valid local sam3.pt checkpoint file")
         elif value and name.endswith("_path") and not os.path.exists(str(value)):
             missing.append(f"{env or name} existing path")
     endpoint = profiled_definition.get("endpointField")

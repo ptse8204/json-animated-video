@@ -132,6 +132,45 @@ def test_local_sam_settings_persist_and_diagnose_without_raw_values(tmp_path):
     assert "apiKey" not in body.decode("utf-8")
 
 
+def test_sam3_local_diagnose_explains_invalid_model_paths(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    for value, expected in [
+        ("facebook/sam3", "Hugging Face repo id"),
+        ("/content/sam3", "source/package directory"),
+    ]:
+        status, _headers, body = app.handle(
+            "POST",
+            "/api/provider-settings/sam3-local/diagnose",
+            body=json.dumps({"sam3ModelPath": value}).encode("utf-8"),
+        )
+        diagnosis = decode(body)
+        model_row = next(item for item in diagnosis["checklist"] if item["id"] == "model_path")
+
+        assert status == 200
+        assert model_row["ok"] is False
+        assert expected in model_row["detail"]
+
+    model_dir = tmp_path / "sam3-cache"
+    checkpoint = model_dir / "snapshot" / "sam3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_text("placeholder")
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/diagnose",
+        body=json.dumps({"sam3ModelPath": str(model_dir)}).encode("utf-8"),
+    )
+    diagnosis = decode(body)
+    model_row = next(item for item in diagnosis["checklist"] if item["id"] == "model_path")
+
+    assert status == 200
+    assert model_row["ok"] is False
+    assert "Use this file instead" in model_row["detail"]
+    assert "[LOCAL_PATH_REDACTED]" in model_row["detail"]
+    assert str(checkpoint) not in body.decode("utf-8")
+
+
 def test_local_sam_smoke_requires_explicit_heavy_local_ack(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
 

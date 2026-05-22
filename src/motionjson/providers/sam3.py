@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,128 @@ from PIL import Image
 
 from .base import ProviderConfigError, ProviderExecutionError
 from .mask_cache import normalize_binary_mask
+
+
+SAM3_HF_REPO_ID = "facebook/sam3"
+SAM3_CHECKPOINT_FILENAME = "sam3.pt"
+SAM3_COLAB_SOURCE_DIR = "/content/sam3"
+
+
+def is_probably_hf_repo_id(value: str) -> bool:
+    value = str(value or "").strip()
+    return bool(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value)) and not value.startswith(("/", ".", "~"))
+
+
+def find_sam3_checkpoint_candidates(paths: Sequence[str | Path]) -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+    for root_value in paths:
+        root = Path(root_value).expanduser()
+        if root.is_file() and root.name == SAM3_CHECKPOINT_FILENAME:
+            matches = [root]
+        elif root.exists() and root.is_dir():
+            matches = list(root.rglob(SAM3_CHECKPOINT_FILENAME))
+        else:
+            matches = []
+        for candidate in matches:
+            if not candidate.is_file():
+                continue
+            key = str(candidate.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(candidate)
+    return sorted(candidates, key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
+
+
+def describe_sam3_model_path(
+    value: str | Path | None,
+    *,
+    env: str = "SAM3_LOCAL_MODEL",
+    source: str = "unset",
+) -> dict[str, Any]:
+    raw = str(value or "").strip()
+    status: dict[str, Any] = {
+        "env": env,
+        "configured": bool(raw),
+        "exists": False,
+        "valid": False,
+        "source": source,
+        "path": raw or None,
+        "resolvedPath": None,
+        "valueKind": "unset",
+        "candidates": [],
+        "reason": None,
+        "action": "Set SAM3_LOCAL_MODEL to the local sam3.pt checkpoint file path.",
+    }
+    if not raw:
+        status["reason"] = (
+            "SAM3 local adapter requires SAM3_LOCAL_MODEL or discovery.config.sam3ModelPath. "
+            "Set it to the local sam3.pt checkpoint file path, not facebook/sam3 or /content/sam3."
+        )
+        return status
+    if is_probably_hf_repo_id(raw):
+        status["valueKind"] = "huggingface_repo_id"
+        status["reason"] = (
+            f"{env}={raw} is a Hugging Face repo id, not a local file path. "
+            "Use hf_hub_download(repo_id=\"facebook/sam3\", filename=\"sam3.pt\") and set "
+            f"{env} to the returned local sam3.pt checkpoint path."
+        )
+        status["action"] = "Resolve or download facebook/sam3 sam3.pt, then paste the returned local file path."
+        return status
+
+    model_path = Path(raw).expanduser()
+    status["path"] = str(model_path)
+    if str(model_path).rstrip("/") == SAM3_COLAB_SOURCE_DIR:
+        candidates = find_sam3_checkpoint_candidates([model_path])
+        status.update(
+            {
+                "exists": model_path.exists(),
+                "valueKind": "source_package_directory",
+                "candidates": [str(candidate) for candidate in candidates],
+            }
+        )
+        suggestion = f" Suggested checkpoint file: {candidates[0]}." if candidates else ""
+        status["reason"] = (
+            f"{env}={model_path} is the cloned SAM3 source/package directory, not the checkpoint. "
+            f"Use the downloaded {SAM3_CHECKPOINT_FILENAME} path instead.{suggestion}"
+        )
+        status["action"] = f"Keep installing the package from {SAM3_COLAB_SOURCE_DIR}, but set {env} to the local sam3.pt file."
+        return status
+    if not model_path.exists():
+        status["valueKind"] = "missing_path"
+        status["reason"] = (
+            f"Configured {env} path does not exist: {model_path}. "
+            "Resolve or download facebook/sam3 sam3.pt and set SAM3_LOCAL_MODEL to that local file path."
+        )
+        status["action"] = "Run the checkpoint resolver or paste an existing local sam3.pt path."
+        return status
+    status["exists"] = True
+    if model_path.is_dir():
+        candidates = find_sam3_checkpoint_candidates([model_path])
+        status.update(
+            {
+                "valueKind": "directory_with_checkpoint" if candidates else "directory_without_checkpoint",
+                "candidates": [str(candidate) for candidate in candidates],
+            }
+        )
+        if candidates:
+            status["reason"] = f"{env} points to a directory, not a checkpoint file. Use this file instead: {candidates[0]}"
+            status["action"] = f"Set {env}={candidates[0]}"
+        else:
+            status["reason"] = f"{env} points to a directory and no {SAM3_CHECKPOINT_FILENAME} checkpoint was found inside it."
+            status["action"] = "Paste the exact local sam3.pt checkpoint file path."
+        return status
+    status.update(
+        {
+            "valid": True,
+            "resolvedPath": str(model_path),
+            "valueKind": "checkpoint_file" if model_path.name == SAM3_CHECKPOINT_FILENAME else "file",
+        }
+    )
+    if model_path.name != SAM3_CHECKPOINT_FILENAME:
+        status["warning"] = f"Expected a file named {SAM3_CHECKPOINT_FILENAME}; using existing file {model_path.name}."
+    return status
 
 
 def _to_numpy(value: Any) -> Any:
@@ -298,12 +421,10 @@ class LocalSAM3DiscoveryBackend:
 
     def _validate_model_path(self) -> Path:
         raw_model_path = str(self.model_path or os.environ.get("SAM3_LOCAL_MODEL") or "").strip()
-        if not raw_model_path:
-            raise ProviderConfigError("SAM3 local adapter requires SAM3_LOCAL_MODEL or discovery.config.sam3ModelPath.")
-        model_path = Path(raw_model_path)
-        if not model_path.exists():
-            raise ProviderConfigError("Configured SAM3_LOCAL_MODEL path does not exist.")
-        return model_path
+        status = describe_sam3_model_path(raw_model_path, source="configuration" if self.model_path else "environment")
+        if not status["valid"]:
+            raise ProviderConfigError(str(status["reason"]))
+        return Path(str(status["resolvedPath"]))
 
     def _call_builder(self, builder: Any) -> Any:
         model_path = str(self._validate_model_path())

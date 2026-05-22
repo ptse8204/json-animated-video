@@ -17,7 +17,13 @@ from motionjson.providers.discovery import (
 )
 from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
 from motionjson.providers.hosted_sam import FalSAM3ImageBackend, RoboflowSAM3ConceptBackend
-from motionjson.providers.sam3 import HostedSAM3DiscoveryBackend, LocalSAM3DiscoveryBackend, normalize_sam3_output
+from motionjson.providers.sam3 import (
+    HostedSAM3DiscoveryBackend,
+    LocalSAM3DiscoveryBackend,
+    describe_sam3_model_path,
+    find_sam3_checkpoint_candidates,
+    normalize_sam3_output,
+)
 from motionjson.tracks import RunContext, VideoSource
 from motionjson.video import Frame, VideoInfo
 
@@ -370,6 +376,84 @@ def test_sam3_auto_masks_provider_filters_and_records_rejected_candidates(tmp_pa
 def test_local_sam3_backend_validates_missing_model_path():
     with pytest.raises(ProviderConfigError, match="SAM3 local adapter requires"):
         LocalSAM3DiscoveryBackend().discover_concept(video_source(), {"concept": "object", "useVideoSession": False}, RunContext())
+
+
+def test_sam3_model_path_status_rejects_huggingface_repo_id():
+    status = describe_sam3_model_path("facebook/sam3")
+
+    assert status["valid"] is False
+    assert status["valueKind"] == "huggingface_repo_id"
+    assert "Hugging Face repo id" in status["reason"]
+    assert "hf_hub_download" in status["reason"]
+
+    with pytest.raises(ProviderConfigError, match="Hugging Face repo id"):
+        LocalSAM3DiscoveryBackend(model_path="facebook/sam3").discover_concept(
+            video_source(),
+            {"concept": "object", "useVideoSession": False},
+            RunContext(),
+        )
+
+
+def test_sam3_model_path_status_rejects_colab_source_directory():
+    status = describe_sam3_model_path("/content/sam3")
+
+    assert status["valid"] is False
+    assert status["valueKind"] == "source_package_directory"
+    assert "source/package directory" in status["reason"]
+    assert "sam3.pt" in status["reason"]
+
+    with pytest.raises(ProviderConfigError, match="source/package directory"):
+        LocalSAM3DiscoveryBackend(model_path="/content/sam3").discover_concept(
+            video_source(),
+            {"concept": "object", "useVideoSession": False},
+            RunContext(),
+        )
+
+
+def test_sam3_model_path_status_suggests_checkpoint_inside_directory(tmp_path):
+    model_dir = tmp_path / "sam3-cache"
+    checkpoint = model_dir / "nested" / "sam3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_text("placeholder")
+
+    status = describe_sam3_model_path(model_dir)
+    candidates = find_sam3_checkpoint_candidates([model_dir])
+
+    assert candidates == [checkpoint]
+    assert status["valid"] is False
+    assert status["exists"] is True
+    assert status["valueKind"] == "directory_with_checkpoint"
+    assert status["candidates"] == [str(checkpoint)]
+    assert str(checkpoint) in status["reason"]
+
+    with pytest.raises(ProviderConfigError, match="Use this file instead"):
+        LocalSAM3DiscoveryBackend(model_path=model_dir).discover_concept(
+            video_source(),
+            {"concept": "object", "useVideoSession": False},
+            RunContext(),
+        )
+
+
+def test_sam3_model_path_status_accepts_existing_checkpoint_file(tmp_path):
+    checkpoint = tmp_path / "sam3.pt"
+    checkpoint.write_text("placeholder")
+
+    status = describe_sam3_model_path(checkpoint)
+
+    assert status["valid"] is True
+    assert status["resolvedPath"] == str(checkpoint)
+    assert status["valueKind"] == "checkpoint_file"
+
+
+def test_local_sam3_backend_missing_file_message_is_actionable(tmp_path):
+    missing = tmp_path / "missing-sam3.pt"
+
+    with pytest.raises(ProviderConfigError, match="Resolve or download facebook/sam3 sam3.pt"):
+        LocalSAM3DiscoveryBackend(model_path=missing).discover_concept(
+            video_source(),
+            {"concept": "object", "useVideoSession": False},
+            RunContext(),
+        )
 
 
 def test_local_sam3_backend_lazy_import_failure_after_valid_model_path(tmp_path, monkeypatch):

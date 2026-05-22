@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from motionjson.providers.sam3 import describe_sam3_model_path
+
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
 
@@ -164,10 +166,26 @@ def _path_config_status(name: str, explicit_value: str | Path | None = None) -> 
     }
 
 
+def _sam3_model_path_status(explicit_value: str | Path | None = None) -> dict[str, Any]:
+    env_value = os.environ.get("SAM3_LOCAL_MODEL")
+    if explicit_value is not None:
+        value = str(explicit_value)
+        source = "argument"
+    elif env_value:
+        value = env_value
+        source = "environment"
+    else:
+        value = None
+        source = "unset"
+    return describe_sam3_model_path(value, env="SAM3_LOCAL_MODEL", source=source)
+
+
 def _model_path_reasons(path_status: dict[str, Any], label: str, flag: str) -> list[str]:
     if not path_status["configured"]:
-        return [f"{label} is not configured. Set {path_status['env']} or pass {flag}."]
-    if not path_status["exists"]:
+        return [str(path_status.get("reason") or f"{label} is not configured. Set {path_status['env']} or pass {flag}.")]
+    if not path_status.get("valid", path_status["exists"]):
+        if path_status.get("reason"):
+            return [str(path_status["reason"])]
         return [f"Configured {label.lower()} path does not point to an existing file."]
     return []
 
@@ -389,7 +407,7 @@ def provider_capabilities(
     openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
-    sam3_model = _path_config_status("SAM3_LOCAL_MODEL", sam3_model_path)
+    sam3_model = _sam3_model_path_status(sam3_model_path)
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -452,7 +470,7 @@ def provider_capabilities(
     ]
     sam3_local_ready = bool(
         sam3_installed
-        and sam3_model["exists"]
+        and sam3_model["valid"]
         and torch_info["torchInstalled"]
         and sam3_runtime["pythonSupported"]
         and torch_info["available"]
@@ -461,7 +479,7 @@ def provider_capabilities(
         sam3_local_status = "missing_dependency"
     elif not sam3_runtime["pythonSupported"]:
         sam3_local_status = "unsupported_runtime"
-    elif sam3_model["configured"] and not sam3_model["exists"]:
+    elif sam3_model["configured"] and not sam3_model["valid"]:
         sam3_local_status = "missing_model"
     elif not sam3_model["configured"]:
         sam3_local_status = "not_configured"
@@ -751,7 +769,7 @@ def provider_capabilities(
                     sam3_runtime["pythonSupported"],
                 ),
                 _check("cuda", "ok" if torch_info["available"] else "missing", "SAM3 local execution expects CUDA.", torch_info["available"]),
-                _check("model", "ok" if sam3_model["exists"] else "missing", sam3_model["env"], sam3_model["exists"]),
+                _check("model", "ok" if sam3_model["valid"] else "missing", sam3_model.get("reason") or sam3_model["env"], sam3_model["valid"]),
             ],
             metadata={
                 "model": sam3_model,
@@ -1325,6 +1343,10 @@ def _provider_by_name(report: dict[str, Any], name: str) -> dict[str, Any] | Non
 def _first_reason(provider: dict[str, Any] | None) -> str:
     if not provider:
         return "not reported"
+    if str(provider.get("name") or "").startswith("sam3"):
+        model = dict((provider.get("metadata") or {}).get("model") or {})
+        if model.get("configured") and not model.get("valid") and model.get("reason"):
+            return str(model["reason"])
     reasons = provider.get("reasons") or []
     if reasons:
         return str(reasons[0])

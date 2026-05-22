@@ -14,6 +14,21 @@ def _provider(report: dict, name: str) -> dict:
     return next(provider for provider in report["providers"] if provider["name"] == name)
 
 
+def _pretend_sam3_runtime_ready(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: True)
+    monkeypatch.setattr(
+        capabilities,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": True,
+            "available": True,
+            "device": "cuda",
+            "reasons": [],
+            "devices": [{"name": "cpu", "available": True}, {"name": "cuda", "available": True}],
+        },
+    )
+
+
 def test_capability_report_is_machine_readable_json() -> None:
     report = capabilities.build_capability_report()
 
@@ -371,6 +386,60 @@ def test_sam3_local_requires_cuda_for_real_execution(tmp_path, monkeypatch) -> N
     assert provider["status"] == "available_cpu_only"
     assert provider["needsGpu"] is True
     assert "CUDA-compatible GPU" in " ".join(provider["reasons"])
+
+
+def test_sam3_local_capability_explains_unset_model_path(monkeypatch) -> None:
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    _pretend_sam3_runtime_ready(monkeypatch)
+
+    report = capabilities.build_capability_report()
+    provider = _provider(report, "sam3-local")
+
+    assert provider["status"] == "not_configured"
+    assert provider["metadata"]["model"]["valid"] is False
+    assert "SAM3 local adapter requires SAM3_LOCAL_MODEL" in " ".join(provider["reasons"])
+
+
+def test_sam3_local_capability_explains_huggingface_repo_id(monkeypatch) -> None:
+    monkeypatch.setenv("SAM3_LOCAL_MODEL", "facebook/sam3")
+    _pretend_sam3_runtime_ready(monkeypatch)
+
+    report = capabilities.build_capability_report()
+    provider = _provider(report, "sam3-local")
+
+    assert provider["status"] == "missing_model"
+    assert provider["metadata"]["model"]["valueKind"] == "huggingface_repo_id"
+    assert "Hugging Face repo id" in " ".join(provider["reasons"])
+    assert "Hugging Face repo id" in capabilities.format_capability_report(report)
+
+
+def test_sam3_local_capability_explains_colab_source_directory(monkeypatch) -> None:
+    monkeypatch.setenv("SAM3_LOCAL_MODEL", "/content/sam3")
+    _pretend_sam3_runtime_ready(monkeypatch)
+
+    report = capabilities.build_capability_report()
+    provider = _provider(report, "sam3-local")
+
+    assert provider["status"] == "missing_model"
+    assert provider["metadata"]["model"]["valueKind"] == "source_package_directory"
+    assert "source/package directory" in " ".join(provider["reasons"])
+
+
+def test_sam3_local_capability_suggests_checkpoint_in_directory(tmp_path, monkeypatch) -> None:
+    model_dir = tmp_path / "sam3-cache"
+    checkpoint = model_dir / "snapshot" / "sam3.pt"
+    checkpoint.parent.mkdir(parents=True)
+    checkpoint.write_text("placeholder")
+    monkeypatch.setenv("SAM3_LOCAL_MODEL", str(model_dir))
+    _pretend_sam3_runtime_ready(monkeypatch)
+
+    report = capabilities.build_capability_report()
+    provider = _provider(report, "sam3-local")
+
+    assert provider["status"] == "missing_model"
+    assert provider["metadata"]["model"]["valueKind"] == "directory_with_checkpoint"
+    assert provider["metadata"]["model"]["candidates"] == [str(checkpoint)]
+    assert str(checkpoint) in " ".join(provider["reasons"])
 
 
 def test_sam3_hosted_credentials_are_redacted_and_need_network_opt_in(monkeypatch) -> None:
