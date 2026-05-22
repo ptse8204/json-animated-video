@@ -34,6 +34,12 @@ Keep these paths distinct:
   downloaded `sam3.pt` in the Hugging Face cache, for example
   `/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt`.
 
+Local `facebook/sam3` model use is gated by Meta approval. MotionJSON does not
+provide a way to bypass that approval. If you already have an approved
+`sam3.pt` file from a channel allowed by Meta, you can avoid Hugging Face token
+setup by pointing `SAM3_LOCAL_MODEL` directly at that local file, for example a
+Google Drive path mounted in Colab.
+
 The optional package extra only prepares MotionJSON-side dependencies:
 
 ```bash
@@ -53,6 +59,19 @@ python3 -m motionjson.cli backend diagnostics --json
 
 Do not paste `facebook/sam3` or `/content/sam3` into `SAM3_LOCAL_MODEL`.
 Paste the local `sam3.pt` file path printed by the resolver command.
+
+To avoid Hugging Face token setup in Colab, put an approved checkpoint at a
+stable path such as `/content/drive/MyDrive/motionjson-models/sam3.pt`, then
+set:
+
+```bash
+export SAM3_LOCAL_MODEL=/content/drive/MyDrive/motionjson-models/sam3.pt
+```
+
+This avoids Hugging Face token setup, but it does not remove the requirement
+for Meta-approved access to the local checkpoint. If you do not want local
+gated-model setup at all, use Roboflow SAM3 or Fal SAM3 image from Model
+Connections instead.
 
 Diagnostics should report missing package, unsupported Python, missing CUDA, or
 missing model path explicitly. They must not claim SAM3 is runnable just because
@@ -92,8 +111,9 @@ print(checkpoint)
 
 The Colab notebook `notebooks/colab_ui_provider_connect_demo.ipynb` keeps this
 download disabled by default with `RUN_DOWNLOAD_SAM3_CHECKPOINT = False`. It
-also searches the Hugging Face cache and lets you paste an existing `sam3.pt`
-path before downloading anything.
+also searches the Hugging Face cache, supports a Google Drive
+`GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH`, and lets you paste an existing approved
+`sam3.pt` path before downloading anything.
 
 ## Troubleshooting
 
@@ -102,6 +122,7 @@ path before downloading anything.
 | `SAM3_LOCAL_MODEL=facebook/sam3` | This is a Hugging Face repo id, not a local checkpoint path. | Use `hf_hub_download(repo_id="facebook/sam3", filename="sam3.pt")` and paste the returned local file path. |
 | `SAM3_LOCAL_MODEL=/content/sam3` | This is the cloned source/package directory, not the checkpoint. | Install from `/content/sam3`, but set `SAM3_LOCAL_MODEL` to the downloaded `sam3.pt` file. |
 | Missing `HF_TOKEN` | The gated Hugging Face file cannot be resolved. | Request/confirm access, then set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` without printing it. |
+| User does not want Hugging Face token setup | Local SAM3 still needs an approved checkpoint, but it does not have to be downloaded through the notebook. | Mount Google Drive or paste a local path to an already-approved `sam3.pt`; otherwise use hosted Roboflow SAM3 or Fal SAM3 image. |
 | Access not approved | Hugging Face rejects the checkpoint download. | Open the model page while signed in, accept the access terms, then rerun the resolver. |
 | Path does not exist | MotionJSON cannot find the local checkpoint file. | Rerun the resolver or paste the exact `sam3.pt` path printed by Hugging Face Hub. |
 | CPU runtime | Local SAM3 expects CUDA and will not be ready. | Switch Colab to a GPU runtime or use Roboflow SAM3/Fal SAM3 image. |

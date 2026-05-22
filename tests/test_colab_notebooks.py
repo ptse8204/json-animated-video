@@ -118,13 +118,20 @@ def test_provider_connect_sam3_checkpoint_download_is_opt_in_and_validated() -> 
     resolver_cell = _cell_with(PROVIDER_NOTEBOOK, "MANUAL_SAM3_CHECKPOINT_PATH = \"\"")
 
     assert "RUN_DOWNLOAD_SAM3_CHECKPOINT = False" in resolver_cell
+    assert "RUN_USE_GOOGLE_DRIVE_SAM3_CHECKPOINT = False" in resolver_cell
+    assert "GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH" in resolver_cell
     assert "MANUAL_SAM3_CHECKPOINT_PATH" in resolver_cell
     assert "find_sam3_checkpoint_candidates(search_roots)" in resolver_cell
+    assert "drive.mount(\"/content/drive\")" in resolver_cell
     assert "elif RUN_DOWNLOAD_SAM3_CHECKPOINT:" in resolver_cell
     assert resolver_cell.index("elif RUN_DOWNLOAD_SAM3_CHECKPOINT:") < resolver_cell.index("hf_hub_download")
     assert "hf_hub_download(repo_id=SAM3_HF_REPO_ID, filename=SAM3_CHECKPOINT_FILENAME, token=token)" in resolver_cell
     assert "set_and_validate_sam3_local_model(downloaded_path)" in resolver_cell
     assert "Checkpoint size:" in resolver_cell
+    assert "No Hugging Face token is needed for a manual local path" in resolver_cell
+    assert "No Hugging Face token is required for this path" in resolver_cell
+    assert "To avoid Hugging Face tokens, use MANUAL_SAM3_CHECKPOINT_PATH or RUN_USE_GOOGLE_DRIVE_SAM3_CHECKPOINT" in resolver_cell
+    assert "Or skip local SAM3 and use Roboflow SAM3 or Fal SAM3 image in Model Connections." in resolver_cell
     assert "The Hugging Face token is passed directly and is not printed." in resolver_cell
     assert "Only continue if Meta has approved your access to facebook/sam3" in resolver_cell
     assert "print(token)" not in resolver_cell

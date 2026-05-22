@@ -172,6 +172,9 @@ def test_od08_sam3_local_adapter_docs_are_truthful():
         "facebook/sam3",
         "sam3.pt",
         "hf_hub_download",
+        "Meta approval",
+        "GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH",
+        "avoid Hugging Face token setup",
     ):
         assert phrase in sam3
     assert "unsupported_runtime" in capabilities_doc

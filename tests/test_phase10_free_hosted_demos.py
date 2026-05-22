@@ -245,6 +245,8 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "/content/sam2 is the official SAM2 source/package directory, not the checkpoint path" in joined
     assert "Copy these values into Model Connections -> SAM2 local" in joined
     assert "RUN_DOWNLOAD_SAM3_CHECKPOINT = False" in joined
+    assert "RUN_USE_GOOGLE_DRIVE_SAM3_CHECKPOINT = False" in joined
+    assert "GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH" in joined
     assert "MANUAL_SAM3_CHECKPOINT_PATH" in joined
     assert "hf_hub_download(repo_id=SAM3_HF_REPO_ID, filename=SAM3_CHECKPOINT_FILENAME, token=token)" in joined
     assert "SAM3_HF_REPO_ID = \"facebook/sam3\"" in joined
@@ -255,6 +257,8 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "/content/sam3 is the official SAM3 source/package directory, not the checkpoint path" in joined
     assert "facebook/sam3 is the Hugging Face repo id, not a local model path" in joined
     assert "Use of the local `facebook/sam3` model is allowed only after Meta has approved your access" in joined
+    assert "This avoids Hugging Face token setup, but it does not bypass Meta approval." in joined
+    assert "No Hugging Face token is required for this path" in joined
     assert "Only continue if Meta has approved your access to facebook/sam3" in joined
     assert "SAM3_LOCAL_MODEL must be a local checkpoint file path ending in sam3.pt" in joined
     assert "Copy these values into Model Connections -> SAM3 local" in joined
