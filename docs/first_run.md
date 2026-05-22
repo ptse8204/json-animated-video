@@ -135,16 +135,24 @@ object, and no duplicate-overlap rejection.
 ## UI Project Flow
 
 1. Launch `motionjson ui` or `python3 -m motionjson.cli ui --no-open --mock`.
-2. Confirm the First Run and Capabilities panels show the no-model providers as
-   ready.
-3. Create a local project.
-4. Register `examples/demo_red_ball.mp4` or the generated multi-object fixture.
-5. Use `Trace one object`, `Find moving objects`, `Import external masks`, or
+2. Start at the guided stepper. Choose a goal, then move through Project,
+   Video, Mode, Prompts, Run, Review, Correct, and Export.
+3. Keep the left menu collapsed when you want more workspace; reopen it with
+   Menu. Open `Show details` only when you need diagnostics, jobs, review,
+   corrections, export, or library panels.
+4. Confirm the First Run and Capabilities panels show the no-model providers as
+   ready. Missing SAM2, CUDA, detectors, FFmpeg, model weights, or hosted
+   settings remain visible as diagnostics.
+5. Create a local project.
+6. Register `examples/demo_red_ball.mp4` or the generated multi-object fixture.
+7. Use `Cut out one object`, `Find moving objects`, `Import external masks`, or
    `Review existing result` for the CPU/no-model path. Use mock `Find objects
    from text`, `Find known classes`, or `Propose all visible segments` to smoke
    test detector-style review flows without installing model weights.
-6. Validate the config before starting the run, then review tracks before
-   export.
+8. Validate the plan before starting the run. Use `Start mock job` for a
+   no-model smoke run.
+9. Review candidates/tracks before export, optionally correct tracks, then
+   validate export settings and export reviewed MotionJSON.
 
 ## Troubleshooting
 

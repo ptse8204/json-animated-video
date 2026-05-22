@@ -57,6 +57,38 @@ model/provider mode, prompt needs, review gate, and next steps. The generated
 `ExtractionRunConfig` JSON remains available under Advanced for CLI and
 developer users, but it is no longer the default explanation of what will run.
 
+## Guided Workspace Flow
+
+The Local UI now uses a progressive workflow instead of showing every setup,
+diagnostic, review, correction, and export card at once. The main stepper
+guides users through:
+
+1. Choose goal.
+2. Create or open project.
+3. Add or select video.
+4. Choose mode/provider.
+5. Add prompts/keyframes.
+6. Validate and run.
+7. Review candidates/tracks.
+8. Correct tracks.
+9. Preview/export.
+
+Only the active step's main panels are shown by default. Completed prior steps
+appear as compact summary cards, and each step shows a next-action hint. The
+`Show all panels` control restores the advanced dashboard view for power users
+and debugging without removing the guided path.
+
+The left navigation can collapse to a compact rail with the active goal and a
+Menu button. The right details rail is collapsed by default on the first screen
+and can be opened with `Show details`. When closed, hidden regions are removed
+from the focus order. The workflow stepper supports ArrowRight, ArrowDown,
+ArrowLeft, ArrowUp, Home, and End for keyboard navigation.
+
+Diagnostics are quieter on successful runs but are not hidden when they matter.
+Provider warnings stay visible before a run, failed runs open logs, and
+fallback/raster/vector-unavailable diagnostics open automatically in the review
+step.
+
 ## Model Setup Wizard
 
 The main workspace includes a nontechnical Mode and model setup panel before
@@ -334,17 +366,25 @@ and hosted-provider guidance.
 
 The commercial Local UI shell is organized around a stable app frame:
 
-- left goal rail for tracing modes and first-run readiness;
-- main workspace for project/video setup, preview tools, extraction settings,
-  and run config preview;
-- right inspector for run monitor, review, artifacts/export, corrections,
-  asset library, and route diagnostics.
+- collapsible left navigation for tracing goals, workspace, first-run
+  readiness, local API, and capabilities;
+- guided main workspace with a stepper, prior-step summaries, video/prompt
+  preview when relevant, and a `Show all panels` dashboard escape hatch;
+- collapsible right details rail for run monitor, review, corrections, export,
+  asset library, logs, artifacts, and route diagnostics.
 
-The visible workflow is: create or open a project, add video, choose mode/model,
-confirm locality, run, review candidates, correct tracks, preview, and export.
-Advanced parameters, raw routes, library management, review panels, and
-correction history are available through native disclosure panels instead of
-being expanded by default.
+The default visible workflow is: choose a goal, create/open a project, add or
+select video, choose mode/provider, add prompts/keyframes, validate and run,
+review candidates/tracks, correct tracks, then preview/export. Advanced
+parameters, raw config JSON, raw routes, generated artifacts, library
+management, logs, fallback diagnostics, and correction history remain available
+through disclosure panels instead of being expanded by default.
+
+Post-run work is grouped into a compact review sequence: run monitor, candidate
+review, track review, corrections, and export. Clean runs keep logs and
+generated artifacts collapsed. Failed runs and raster/vector fallback states
+surface diagnostics immediately so users can see why object tracks were not
+available.
 
 Design and validation notes live in:
 
@@ -477,27 +517,31 @@ storage, and exposes the imported scene through the normal job review routes.
 ## Project And Video Flow
 
 1. Open the UI command above.
-2. Confirm health and capability diagnostics are visible.
-3. Create a project from the project panel.
-4. Add a source video by entering an existing local file path.
-5. Select the video from the video picker or video list.
-6. Choose a wizard preset: `Trace one object`, `Find objects from text`, `Find
-   known classes`, `Propose all visible segments`, `Find moving objects`, or
-   `Import external masks`. Use `Review existing result` to import a previous
-   MotionJSON file or output directory for inspection.
-7. Draw point, box, brush/erase mask, label, or keyframe prompts on the video
-   overlay. Prompt coordinates are native video pixels, not CSS canvas pixels.
-8. Review the generated config and use `Validate config` to run backend
-   validation plus provider availability checks before saving or starting work.
-   The `Generate plan` panel can also create a server-side model plan from the
-   selected goal and plain-language intent. The generated `runConfig` is
-   revalidated by the backend, and `Confirm and start` stays disabled until a
-   local project/video are selected and validation has no blocking provider
-   errors.
-9. After a run succeeds, correct track labels/visibility/export inclusion if
-   needed, validate the export preset, then use `Export MotionJSON` to write a
-   validated local handoff with preview and optional contour/mask artifacts.
-10. Use the Asset Library panel to save useful generated/export artifacts as
+2. Choose a goal from the first step. `Cut out one object` is the default safe
+   path; `Find moving objects`, `Import external masks`, and `Review existing
+   result` can run without optional ML models.
+3. Create or open a local project.
+4. Add or select a source video. A browser preview helps with prompt drawing;
+   backend jobs still require a registered local file path.
+5. Choose mode/provider. Mock/local providers are shown first, and provider
+   warnings stay visible before a run.
+6. Add point, box, brush/erase mask, label, or keyframe prompts on the video
+   overlay when the selected goal needs them. Prompt coordinates are native
+   video pixels, not CSS canvas pixels.
+7. Validate the generated plan before starting work. The raw
+   `ExtractionRunConfig` JSON remains available under `View generated JSON`.
+   The optional model plan panel can create a server-side local/mock plan from
+   the selected goal and plain-language intent; generated configs are
+   revalidated before `Confirm and start` can create a job.
+8. Start a mock job for no-model smoke checks or start the configured provider
+   run after validation passes.
+9. Review candidates and tracks. Keep candidates, inspect track coverage and
+   warnings, and use timeline markers before export.
+10. Correct tracks if needed: relabel, hide/show, include/exclude from export,
+    merge, split, add object, or request repair with saved prompts.
+11. Validate export settings, then use the export handoff cards or
+    `Export MotionJSON` to write reviewed local artifacts.
+12. Use the Asset Library panel to save useful generated/export artifacts as
     reusable motion layers, add them to brand collections, and assemble
     creator-approved packs when rights metadata permits.
 

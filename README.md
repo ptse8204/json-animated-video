@@ -101,9 +101,11 @@ python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli ui --no-open --mock
 ```
 
-Open the printed local UI URL. In mock mode the UI still reports real
-capability status; it does not pretend SAM2, CUDA, detectors, FFmpeg, or model
-weights are available.
+Open the printed local UI URL. The workspace guides you through goal, project,
+video, mode/provider, prompts, run, review, correction, and export one step at a
+time. In mock mode the UI still reports real capability status; it does not
+pretend SAM2, CUDA, detectors, FFmpeg, or model weights are available. Use
+`Show details` for diagnostics and `Show all panels` for the advanced dashboard.
 
 Windows PowerShell uses the same module command after activating a venv:
 

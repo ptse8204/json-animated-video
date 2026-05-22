@@ -40,7 +40,30 @@ Open:
 - `http://localhost:8080/examples/canvas_player.html?scene=/out/demo/web_asset_manifest.json`
 - `http://localhost:8080/examples/timeline_editor.html?scene=/out/demo/scene_graph.json`
 
-## 4. Local API
+## 4. Guided Local UI
+
+```bash
+python3 -m motionjson.cli ui --no-open --mock
+```
+
+Open the printed local URL. The default workspace is step-by-step:
+
+1. Choose goal.
+2. Create/open project.
+3. Add/select video.
+4. Choose mode/provider.
+5. Add prompts/keyframes.
+6. Validate and run.
+7. Review candidates/tracks.
+8. Correct tracks.
+9. Preview/export.
+
+Use `Start mock job` for a no-model smoke run. The left menu and right details
+rail are collapsible; provider failures, failed runs, and fallback diagnostics
+remain visible when they need attention. `Show all panels` restores the
+advanced dashboard view for debugging.
+
+## 5. Local API
 
 ```bash
 python3 -m motionjson.cli backend init
@@ -54,7 +77,7 @@ python3 -m motionjson.cli backend billing-status
 python3 -m motionjson.cli backend serve-api
 ```
 
-## 5. Validate
+## 6. Validate
 
 ```bash
 pytest -q
