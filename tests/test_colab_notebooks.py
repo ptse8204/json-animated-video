@@ -54,6 +54,49 @@ def test_provider_connect_notebook_has_no_public_tunnel_or_saved_secret_values()
     assert "secret_json" not in source
 
 
+def test_provider_connect_sam2_source_repo_checkpoint_and_config_are_distinct() -> None:
+    source = _joined_source()
+    package_cell = _cell_with(PROVIDER_NOTEBOOK, "RUN_LOCAL_SAM2_SETUP = False")
+
+    assert "SAM2_SOURCE_DIR = Path(\"/content/sam2\")" in source
+    assert "SAM2_CHECKPOINT_FILENAME = \"sam2.1_hiera_large.pt\"" in source
+    assert "SAM2_CONFIG_FILENAME = \"sam2.1_hiera_l.yaml\"" in source
+    assert "/content/sam2 is the official SAM2 source/package directory, not the checkpoint path" in source
+    assert "SAM2_LOCAL_CHECKPOINT must be a local .pt checkpoint file path" in source
+    assert "SAM2_LOCAL_CONFIG must be the matching local YAML config path" in source
+    assert "https://github.com/facebookresearch/sam2.git" in package_cell
+    assert "pip\", \"install\", \"-e\", str(SAM2_SOURCE_DIR)" in package_cell
+    assert "This installs SAM2 code only. It does not download checkpoint .pt files." in package_cell
+    assert "download_ckpts.sh" not in package_cell
+
+
+def test_provider_connect_sam2_checkpoint_download_is_opt_in_and_validated() -> None:
+    resolver_cell = _cell_with(PROVIDER_NOTEBOOK, "MANUAL_SAM2_CHECKPOINT_PATH = \"\"")
+
+    assert "RUN_DOWNLOAD_SAM2_CHECKPOINTS = False" in resolver_cell
+    assert "MANUAL_SAM2_CHECKPOINT_PATH" in resolver_cell
+    assert "MANUAL_SAM2_CONFIG_PATH" in resolver_cell
+    assert "find_sam2_checkpoint_candidates(sam2_search_roots)" in resolver_cell
+    assert "find_sam2_config_candidates([SAM2_SOURCE_DIR, Path.cwd()])" in resolver_cell
+    assert "elif RUN_DOWNLOAD_SAM2_CHECKPOINTS:" in resolver_cell
+    assert resolver_cell.index("elif RUN_DOWNLOAD_SAM2_CHECKPOINTS:") < resolver_cell.index("download_ckpts.sh")
+    assert "set_and_validate_sam2_local_checkpoint(candidates[0])" in resolver_cell
+    assert "set_and_validate_sam2_local_config(config_candidates[0])" in resolver_cell
+    assert "Copy these values into Model Connections -> SAM2 local" in _joined_source()
+
+
+def test_provider_connect_sam2_readiness_validates_paths_before_diagnostics() -> None:
+    readiness_cell = _cell_with(PROVIDER_NOTEBOOK, "current_checkpoint_value = os.environ.get(\"SAM2_LOCAL_CHECKPOINT\", \"\").strip()")
+
+    assert "find_spec(\"sam2\")" in readiness_cell
+    assert "torch.cuda.is_available()" in readiness_cell
+    assert "set_and_validate_sam2_local_checkpoint(current_checkpoint_value)" in readiness_cell
+    assert "set_and_validate_sam2_local_config(current_config_value)" in readiness_cell
+    assert "print_sam2_path_help(resolved_checkpoint_for_ui, resolved_config_for_ui)" in readiness_cell
+    assert "backend\", \"diagnostics\", \"--text\"" in readiness_cell
+    assert readiness_cell.index("set_and_validate_sam2_local_checkpoint(current_checkpoint_value)") < readiness_cell.index("backend\", \"diagnostics\", \"--text\"")
+
+
 def test_provider_connect_sam3_source_repo_and_checkpoint_path_are_distinct() -> None:
     source = _joined_source()
     package_cell = _cell_with(PROVIDER_NOTEBOOK, "RUN_LOCAL_SAM3_SETUP = False")
@@ -68,6 +111,7 @@ def test_provider_connect_sam3_source_repo_and_checkpoint_path_are_distinct() ->
     assert "https://github.com/facebookresearch/sam3.git" in package_cell
     assert "pip\", \"install\", \"-e\", str(SAM3_SOURCE_DIR)" in package_cell
     assert "This installs SAM3 code only. It does not download facebook/sam3 sam3.pt." in package_cell
+    assert "Use of the local `facebook/sam3` model is allowed only after Meta has approved your access" in source
 
 
 def test_provider_connect_sam3_checkpoint_download_is_opt_in_and_validated() -> None:
@@ -82,6 +126,7 @@ def test_provider_connect_sam3_checkpoint_download_is_opt_in_and_validated() -> 
     assert "set_and_validate_sam3_local_model(downloaded_path)" in resolver_cell
     assert "Checkpoint size:" in resolver_cell
     assert "The Hugging Face token is passed directly and is not printed." in resolver_cell
+    assert "Only continue if Meta has approved your access to facebook/sam3" in resolver_cell
     assert "print(token)" not in resolver_cell
 
 
