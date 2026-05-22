@@ -249,6 +249,8 @@ for (const affordance of [
   "Start mock job",
   "workflowSummaryCardsFromSnapshot",
   "postRunWorkflowSummaryFromSnapshot",
+  "diagnosticNeedsImmediateAttention",
+  "statusCardMarkup",
   "Review before export",
   "Logs and events",
   "Artifacts and exports",

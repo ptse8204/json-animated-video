@@ -422,6 +422,19 @@ const MotionJSONUI = (() => {
 
   const escapeAttribute = escapeHtml;
 
+  function statusCardMarkup(card = {}, options = {}) {
+    const className = options.className || "status-summary-card";
+    const status = card.status || options.defaultStatus || "needs-action";
+    const label = options.includeLabel ? `<span class="section-kicker">${escapeHtml(card.label || "")}</span>` : "";
+    return `
+      <div class="${escapeAttribute(className)} is-${escapeAttribute(status)}">
+        ${label}
+        <strong>${escapeHtml(card.value || "")}</strong>
+        <span class="row-meta">${escapeHtml(card.detail || "")}</span>
+      </div>
+    `;
+  }
+
   function safeLocalContentUrl(value) {
     const url = String(value || "").trim();
     return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? url : "";
@@ -2774,17 +2787,7 @@ const MotionJSONUI = (() => {
       if (!container) return;
       const cards = workflowSummaryCardsFromSnapshot(snapshot, activeStep);
       container.innerHTML = cards.length
-        ? cards
-            .map(
-              (card) => `
-                <div class="step-summary-card is-${escapeAttribute(card.status || "not-started")}">
-                  <span class="section-kicker">${escapeHtml(card.label)}</span>
-                  <strong>${escapeHtml(card.value)}</strong>
-                  <span class="row-meta">${escapeHtml(card.detail)}</span>
-                </div>
-              `,
-            )
-            .join("")
+        ? cards.map((card) => statusCardMarkup(card, { className: "step-summary-card", includeLabel: true, defaultStatus: "not-started" })).join("")
         : "";
     }
 
@@ -2857,30 +2860,11 @@ const MotionJSONUI = (() => {
     }
 
     function postRunStageCards(stages) {
-      return stages
-        .map(
-          (stage) => `
-            <div class="post-run-stage is-${escapeAttribute(stage.status || "needs-action")}">
-              <span class="section-kicker">${escapeHtml(stage.label)}</span>
-              <strong>${escapeHtml(stage.value)}</strong>
-              <span class="row-meta">${escapeHtml(stage.detail)}</span>
-            </div>
-          `,
-        )
-        .join("");
+      return stages.map((stage) => statusCardMarkup(stage, { className: "post-run-stage", includeLabel: true })).join("");
     }
 
     function summaryCards(stages) {
-      return stages
-        .map(
-          (stage) => `
-            <div class="status-summary-card is-${escapeAttribute(stage.status || "needs-action")}">
-              <strong>${escapeHtml(stage.value)}</strong>
-              <span class="row-meta">${escapeHtml(stage.detail)}</span>
-            </div>
-          `,
-        )
-        .join("");
+      return stages.map((stage) => statusCardMarkup(stage)).join("");
     }
 
     function renderPostRunFlow() {
@@ -8010,6 +7994,7 @@ const MotionJSONUI = (() => {
     correctionDiagnosticMessages,
     correctionGuidanceForTrack,
     correctionResponseMessage,
+    diagnosticNeedsImmediateAttention,
     exportActionState,
     exportGateSummary,
     exportHandoffCards,

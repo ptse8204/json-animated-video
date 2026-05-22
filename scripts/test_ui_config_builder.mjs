@@ -111,6 +111,10 @@ const fallbackPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
 });
 assert.equal(fallbackPostRunSummary.find((stage) => stage.id === "run").status, "warning");
 assert.match(fallbackPostRunSummary.find((stage) => stage.id === "run").detail, /fallback|provider diagnostic/i);
+assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "bad", kind: "job", message: "provider failed" }), true);
+assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "warn", kind: "fallback_diagnostics", message: "Raster fallback was written." }), true);
+assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "warn", kind: "status", message: "Quality note only." }), false);
+assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "ready", kind: "status", message: "No fallback diagnostics reported." }), false);
 const validExportSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "succeeded",
   trackCount: 1,
