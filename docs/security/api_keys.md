@@ -29,8 +29,11 @@ The Local UI Provider settings panel currently covers:
 - `auto_object_proposals`: no API key for local SAM2 automatic proposals;
   package/checkpoint/config/device diagnostics are local and not
   browser-supplied secrets.
-- `sam3-local`: local model path and device. SAM3 package, Python/CUDA runtime,
-  and Hugging Face access are diagnosed locally and do not use a hosted API key.
+- `sam3-local`: local `sam3.pt` checkpoint file path and device. SAM3 package,
+  Python/CUDA runtime, and Hugging Face access are diagnosed locally and do not
+  use a hosted API key. Do not store `facebook/sam3` or a source checkout such
+  as `/content/sam3` as `SAM3_LOCAL_MODEL`; use the resolved local checkpoint
+  file path.
 - `sam3-hosted`: hosted profile, model choice, API key, optional endpoint, and
   hosted-call opt-in. Built-in profiles include Roboflow SAM3 concept
   segmentation, Fal SAM3 image, and a custom SAM3-compatible endpoint. Setup

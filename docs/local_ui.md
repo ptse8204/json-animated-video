@@ -357,8 +357,10 @@ The Local UI currently exposes settings for:
   explicit hosted-call opt-in for text concept discovery. Built-in profiles
   cover Roboflow SAM3 concept segmentation and Fal SAM3 image, plus a custom
   SAM3-compatible endpoint.
-- `sam3-local`: local SAM3 model path, device, Python/CUDA/Hugging Face access
-  diagnostics, and official setup commands.
+- `sam3-local`: local SAM3 `sam3.pt` checkpoint file path, device,
+  Python/CUDA/Hugging Face access diagnostics, and official setup commands.
+  Use the resolved local checkpoint path for `SAM3_LOCAL_MODEL`, not the
+  `/content/sam3` source checkout or the `facebook/sam3` Hugging Face repo id.
 - `openai`: OpenAI model selection and API key for hosted plan generation. It
   is not a mask or segmentation provider.
 - `openrouter`: LLM/VLM model selection and API key for reasoning only. It is

@@ -9,7 +9,7 @@ from motionjson.backend.api import MotionJSONAPI
 from motionjson.backend.api_keys import create_api_key
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
-from motionjson.provider_settings import hosted_sam3_smoke_test, redact_secret_payload, redact_secret_text
+from motionjson.provider_settings import provider_catalog, hosted_sam3_smoke_test, redact_secret_payload, redact_secret_text
 from motionjson.ui.server import LocalUIApp
 
 
@@ -73,6 +73,23 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_sam_first(tmp_path
     assert sam3_hosted["settings"]["hostedProfileId"] == "roboflow-sam3-pcs"
     assert {profile["id"] for profile in sam3_hosted["hostedProfiles"]} >= {"roboflow-sam3-pcs", "fal-sam3-image", "custom-sam3-compatible"}
     assert "apiKey" not in json.dumps(payload)
+
+
+def test_sam3_local_setup_guide_distinguishes_source_repo_from_checkpoint_path():
+    catalog = provider_catalog()
+    sam3_local = provider_by_id(catalog, "sam3-local")
+    guide_text = json.dumps(sam3_local["setupGuide"])
+
+    assert "SAM3_LOCAL_MODEL" in guide_text
+    assert "sam3.pt" in guide_text
+    assert "facebook/sam3" in guide_text
+    assert "/content/sam3" in guide_text
+    assert "checkpoint file path" in sam3_local["localConfigFields"][0]["label"]
+    assert sam3_local["docs"] == "docs/sam3_local.md"
+    assert "sk-" not in guide_text
+    assert "HF_TOKEN=" not in guide_text
+    assert "<token>" not in guide_text
+    assert "api_key" not in guide_text
 
 
 def test_local_sam_settings_persist_and_diagnose_without_raw_values(tmp_path):

@@ -280,7 +280,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "credentialRequired": False,
         "credentialFields": [],
         "localConfigFields": [
-            {"name": "sam3_model_path", "label": "SAM3 model path", "env": "SAM3_LOCAL_MODEL", "required": True},
+            {"name": "sam3_model_path", "label": "SAM3 checkpoint file path", "env": "SAM3_LOCAL_MODEL", "required": True},
             {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
         ],
         "modelOptions": [
@@ -293,20 +293,21 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "hardware": "CUDA-capable local SAM3 environment",
         "cost": {"status": "zero_local", "label": "Free local runtime"},
         "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Requires local SAM3 and model setup. It is not part of the default CPU install.",
+        "warning": "Requires the official SAM3 package plus a local sam3.pt checkpoint path. /content/sam3 and facebook/sam3 are not valid model paths.",
         "setupGuide": {
             "recommendedFor": "Best local path for concept prompts such as 'red ball' or 'person in white'.",
-            "setupSummary": "Install official SAM3 in a Python 3.12 CUDA environment, request Hugging Face access, authenticate, then save the local model path.",
+            "setupSummary": "Install the official SAM3 source package, separately resolve facebook/sam3 sam3.pt from Hugging Face, then save the returned local checkpoint file path as SAM3_LOCAL_MODEL.",
             "commands": [
                 "conda create -n sam3 python=3.12",
                 "pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128",
-                "git clone https://github.com/facebookresearch/sam3.git",
-                "cd sam3 && pip install -e .",
+                "git clone https://github.com/facebookresearch/sam3.git /content/sam3",
+                "python -m pip install -e /content/sam3",
                 "hf auth login",
-                "export SAM3_LOCAL_MODEL=/path/to/sam3-model",
+                "python -c \"from huggingface_hub import hf_hub_download; print(hf_hub_download(repo_id='facebook/sam3', filename='sam3.pt'))\"",
+                "export SAM3_LOCAL_MODEL=/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt",
             ],
         },
-        "docs": "docs/provider_capabilities.md",
+        "docs": "docs/sam3_local.md",
     },
     {
         "id": "sam3-hosted",

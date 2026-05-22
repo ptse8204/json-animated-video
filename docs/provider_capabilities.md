@@ -135,8 +135,10 @@ Optional SAM2/hosted providers:
   possible but expected to be slower.
 - `sam3-local`: local SAM3 family diagnostics require the optional `sam3`
   package, Python 3.12+, torch with CUDA available, and an existing
-  `SAM3_LOCAL_MODEL` path. The base install and mock modes do not require any
-  of those.
+  `SAM3_LOCAL_MODEL` checkpoint file path. A cloned source checkout such as
+  `/content/sam3` and the Hugging Face repo id `facebook/sam3` are not model
+  paths; use the resolved local `sam3.pt` file. The base install and mock modes
+  do not require any of those.
 - `sam3-hosted`: hosted SAM3-compatible discovery. `roboflow-sam3-pcs` uses
   `ROBOFLOW_API_KEY`, `fal-sam3-image` uses `FAL_KEY` plus the optional
   `fal-client` package, and custom endpoints use `SAM3_HOSTED_URL` and

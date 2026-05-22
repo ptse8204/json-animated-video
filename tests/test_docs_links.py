@@ -163,7 +163,16 @@ def test_od08_sam3_local_adapter_docs_are_truthful():
     capabilities_doc = read("docs/provider_capabilities.md")
     run_config = read("docs/run_config.md")
 
-    for phrase in ("Python 3.12", "CUDA", "SAM3_LOCAL_MODEL", "MOTIONJSON_RUN_REAL_SAM3_TESTS"):
+    for phrase in (
+        "Python 3.12",
+        "CUDA",
+        "SAM3_LOCAL_MODEL",
+        "MOTIONJSON_RUN_REAL_SAM3_TESTS",
+        "/content/sam3",
+        "facebook/sam3",
+        "sam3.pt",
+        "hf_hub_download",
+    ):
         assert phrase in sam3
     assert "unsupported_runtime" in capabilities_doc
     assert "sam3ModelPath" in run_config
