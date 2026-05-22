@@ -112,7 +112,7 @@
           </div>
         </header>
 
-        <section class="guided-start panel" aria-label="Guided first run">
+        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Guided first run">
           <div class="guided-start-header">
             <div>
               <p class="section-kicker">Guided first run</p>
@@ -152,19 +152,39 @@
           </div>
         </section>
 
-        <ol class="workflow-steps" aria-label="Local workflow">
-          <li><span>1</span>Create or open</li>
-          <li><span>2</span>Add video</li>
-          <li><span>3</span>Mode and model</li>
-          <li><span>4</span>Confirm locality</li>
-          <li><span>5</span>Run</li>
-          <li><span>6</span>Review candidates</li>
-          <li><span>7</span>Correct tracks</li>
-          <li><span>8</span>Preview</li>
-          <li><span>9</span>Export</li>
-        </ol>
+        <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow">
+          <div class="workflow-controller-header">
+            <div>
+              <p class="section-kicker">Guided workflow</p>
+              <h2 id="workflowTitle">Choose goal</h2>
+              <p id="workflowDescription" class="panel-note">Pick the tracing goal before setup details appear.</p>
+            </div>
+            <div class="workflow-controller-actions">
+              <span id="workflowStatus" class="status-chip is-muted">Not started</span>
+              <button id="workflowDashboardToggle" type="button" aria-pressed="false">Show all panels</button>
+            </div>
+          </div>
+          <ol id="workflowStepper" class="workflow-steps" aria-label="Local workflow">
+            <li><button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong><small>Choose what to trace</small></button></li>
+            <li><button type="button" data-workflow-step="project_video"><span>2</span><strong>Project</strong><small>Create or open</small></button></li>
+            <li><button type="button" data-workflow-step="source_video"><span>3</span><strong>Video</strong><small>Add source</small></button></li>
+            <li><button type="button" data-workflow-step="provider_settings"><span>4</span><strong>Mode</strong><small>Provider setup</small></button></li>
+            <li><button type="button" data-workflow-step="prompt_preview"><span>5</span><strong>Prompts</strong><small>Keyframes and marks</small></button></li>
+            <li><button type="button" data-workflow-step="validate_run"><span>6</span><strong>Run</strong><small>Validate first</small></button></li>
+            <li><button type="button" data-workflow-step="review_candidates"><span>7</span><strong>Review</strong><small>Candidates and tracks</small></button></li>
+            <li><button type="button" data-workflow-step="correct_tracks"><span>8</span><strong>Correct</strong><small>Repair tracks</small></button></li>
+            <li><button type="button" data-workflow-step="export"><span>9</span><strong>Export</strong><small>Preview and handoff</small></button></li>
+          </ol>
+          <div class="workflow-actions">
+            <button id="workflowBackButton" type="button">Back</button>
+            <span id="workflowNextHint" class="row-meta">Choose a tracing goal to continue.</span>
+            <button id="workflowNextButton" class="primary-action" type="button">Next</button>
+          </div>
+        </section>
 
-        <section id="modelSetupPanel" class="model-setup-panel panel" aria-label="Model setup">
+        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status">Selected providers are ready or no-model safe.</div>
+
+        <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup">
           <div class="model-setup-heading">
             <div>
               <p class="section-kicker">Mode and model</p>
@@ -177,7 +197,7 @@
           <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
         </section>
 
-        <section id="modelPlanPanel" class="model-plan-panel panel" aria-label="Model generated run plan">
+        <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">
           <div class="model-plan-heading">
             <div>
               <p class="section-kicker">Confirm plan</p>
@@ -203,7 +223,7 @@
         </section>
 
         <section class="workspace-grid">
-          <article class="panel viewer-panel" aria-label="Video viewer">
+          <article class="panel viewer-panel" data-workflow-panel="prompt_preview review_candidates correct_tracks export" aria-label="Video viewer">
             <div class="panel-heading">
               <div>
                 <h2>Preview and prompts</h2>
@@ -260,7 +280,7 @@
             </div>
           </article>
 
-          <article class="panel setup-panel" aria-label="Project and video setup">
+          <article class="panel setup-panel" data-workflow-panel="project_video source_video" aria-label="Project and video setup">
             <div class="panel-heading">
               <div>
                 <h2>Project and video</h2>
@@ -268,56 +288,60 @@
               </div>
               <span id="projectCount" class="subtle-chip">0 projects</span>
             </div>
-            <form id="projectForm" class="inline-form">
-              <label>
-                <span>Project name</span>
-                <input id="projectName" type="text" value="MotionJSON local project" required />
-              </label>
-              <button type="submit">Create</button>
-            </form>
-            <select id="projectSelect" aria-label="Project"></select>
-
-            <div class="section-divider">
-              <h3>Source Video</h3>
-              <span id="videoCount" class="subtle-chip">0 videos</span>
-            </div>
-            <label class="file-control">
-              <span>Browser preview</span>
-              <input id="videoFileInput" type="file" accept="video/*" />
-            </label>
-            <p class="form-hint">Browser previews are local to this tab. Register a local path when you are ready to run backend extraction.</p>
-            <details id="localPathDisclosure" class="advanced-panel">
-              <summary>Advanced: register a local path for backend jobs</summary>
-              <div class="advanced-stack">
-                <form id="videoForm" class="inline-form">
-                  <label>
-                    <span>Local video path</span>
-                    <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
-                  </label>
-                  <button type="submit">Add video</button>
-                </form>
-                <select id="videoSelect" aria-label="Registered video"></select>
-              </div>
-            </details>
-            <div id="videoList" class="artifact-list"></div>
-
-            <details class="advanced-panel">
-              <summary>Review existing MotionJSON</summary>
-              <div class="panel-heading secondary-heading">
-                <h2>Existing Result</h2>
-                <span id="importStatus" class="subtle-chip">Not imported</span>
-              </div>
-              <form id="importMotionJsonForm" class="inline-form">
+            <div class="workflow-fragment" data-workflow-fragment="project_video">
+              <form id="projectForm" class="inline-form">
                 <label>
-                  <span>MotionJSON path</span>
-                  <input id="motionJsonImportPath" type="text" value="out/demo" />
+                  <span>Project name</span>
+                  <input id="projectName" type="text" value="MotionJSON local project" required />
                 </label>
-                <button type="submit">Import</button>
+                <button type="submit">Create</button>
               </form>
-            </details>
+            </div>
+            <select id="projectSelect" data-workflow-fragment="project_video source_video" aria-label="Project"></select>
+
+            <div class="workflow-fragment" data-workflow-fragment="source_video">
+              <div class="section-divider">
+                <h3>Source Video</h3>
+                <span id="videoCount" class="subtle-chip">0 videos</span>
+              </div>
+              <label class="file-control">
+                <span>Browser preview</span>
+                <input id="videoFileInput" type="file" accept="video/*" />
+              </label>
+              <p class="form-hint">Browser previews are local to this tab. Register a local path when you are ready to run backend extraction.</p>
+              <details id="localPathDisclosure" class="advanced-panel">
+                <summary>Advanced: register a local path for backend jobs</summary>
+                <div class="advanced-stack">
+                  <form id="videoForm" class="inline-form">
+                    <label>
+                      <span>Local video path</span>
+                      <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
+                    </label>
+                    <button type="submit">Add video</button>
+                  </form>
+                  <select id="videoSelect" aria-label="Registered video"></select>
+                </div>
+              </details>
+              <div id="videoList" class="artifact-list"></div>
+
+              <details class="advanced-panel">
+                <summary>Review existing MotionJSON</summary>
+                <div class="panel-heading secondary-heading">
+                  <h2>Existing Result</h2>
+                  <span id="importStatus" class="subtle-chip">Not imported</span>
+                </div>
+                <form id="importMotionJsonForm" class="inline-form">
+                  <label>
+                    <span>MotionJSON path</span>
+                    <input id="motionJsonImportPath" type="text" value="out/demo" />
+                  </label>
+                  <button type="submit">Import</button>
+                </form>
+              </details>
+            </div>
           </article>
 
-          <article class="panel wizard-panel" aria-label="Extraction wizard">
+          <article class="panel wizard-panel" data-workflow-panel="provider_settings prompt_preview" aria-label="Extraction wizard">
             <div class="panel-heading">
               <div>
                 <h2>Extraction settings</h2>
@@ -464,7 +488,7 @@
             </div>
           </article>
 
-          <article class="panel config-panel" aria-label="Config preview">
+          <article class="panel config-panel" data-workflow-panel="validate_run" aria-label="Config preview">
             <div class="panel-heading">
               <div>
                 <h2>Run preview</h2>
@@ -506,7 +530,7 @@
           >Hide details</button>
         </div>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Provider settings</summary>
           <section id="providerSettingsPanel" class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -517,7 +541,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Commercial readiness</summary>
           <section id="commercialReadinessPanel" class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -529,7 +553,7 @@
           </section>
         </details>
 
-        <details class="rail-section" open>
+        <details class="rail-section" data-workflow-panel="validate_run review_candidates" open>
           <summary>Run monitor</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -562,7 +586,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="review_candidates correct_tracks">
           <summary>Review</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -622,7 +646,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="export">
           <summary>Artifacts and exports</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -673,7 +697,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="correct_tracks">
           <summary>Corrections</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -725,7 +749,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="export">
           <summary>Asset library</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -787,7 +811,7 @@
           </section>
         </details>
 
-        <details class="rail-section">
+        <details class="rail-section" data-workflow-panel="advanced_debug">
           <summary>Routes</summary>
           <section class="compact-panel">
             <h2>Routes</h2>

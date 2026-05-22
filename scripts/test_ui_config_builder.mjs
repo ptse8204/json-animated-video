@@ -11,6 +11,56 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
+assert.equal(ui.WORKFLOW_STEPS.length, 9);
+assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
+  "choose_goal",
+  "project_video",
+  "source_video",
+  "provider_settings",
+  "prompt_preview",
+  "validate_run",
+  "review_candidates",
+  "correct_tracks",
+  "export",
+]);
+assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
+assert.equal(ui.workflowNextStepId("project_video", 1), "source_video");
+assert.equal(ui.workflowNextStepId("project_video", -1), "choose_goal");
+const blockedWorkflow = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "trace_one_object",
+  selectedProjectId: "",
+  selectedVideoId: "",
+  providerBlocked: true,
+  promptCount: 0,
+});
+assert.equal(blockedWorkflow.project_video.status, "needs-action");
+assert.equal(blockedWorkflow.provider_settings.status, "blocked");
+assert.equal(blockedWorkflow.prompt_preview.complete, false);
+const previewOnlyWorkflow = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "motion_foreground",
+  selectedProjectId: "project_1",
+  previewName: "browser-preview.mp4",
+  providerWarning: "Selected providers are ready or no-model safe.",
+  providerTone: "is-ready",
+});
+assert.equal(previewOnlyWorkflow.source_video.complete, false);
+assert.equal(previewOnlyWorkflow.source_video.status, "needs-action");
+assert.equal(previewOnlyWorkflow.provider_settings.status, "done");
+const readyWorkflow = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "motion_foreground",
+  selectedProjectId: "project_1",
+  selectedVideoId: "video_1",
+  configValid: true,
+  selectedJobId: "job_1",
+  candidateCount: 2,
+  trackCount: 1,
+  exportValidated: true,
+  exportOk: true,
+});
+assert.equal(readyWorkflow.source_video.complete, true);
+assert.equal(readyWorkflow.prompt_preview.complete, true);
+assert.equal(readyWorkflow.validate_run.complete, true);
+assert.equal(readyWorkflow.export.status, "done");
 
 const sortedModelProviders = ui.modelConnectorsForSetup({
   providers: [

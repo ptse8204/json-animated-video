@@ -19,6 +19,16 @@ const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-she
 const CAPTURE_STATES = [
   "nav-collapsed",
   "diagnostics-open",
+  "workflow-goal",
+  "workflow-project",
+  "workflow-video",
+  "workflow-provider",
+  "workflow-prompts",
+  "workflow-run",
+  "workflow-review",
+  "workflow-correct",
+  "workflow-export",
+  "workflow-dashboard",
   "first-run",
   "new-project",
   "extraction-wizard",
@@ -58,7 +68,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -413,6 +423,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       source: `
         localStorage.removeItem("motionjson.localUi.sidebarCollapsed");
         localStorage.removeItem("motionjson.localUi.railCollapsed");
+        localStorage.removeItem("motionjson.localUi.workflowStep");
+        localStorage.removeItem("motionjson.localUi.workflowDashboard");
       `,
     });
     await cdp.send("Emulation.setDeviceMetricsOverride", {
@@ -429,6 +441,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
             document.querySelector("#detailsToggle")?.click();
           }
+          const dashboard = document.querySelector("#workflowDashboardToggle");
+          if (dashboard?.getAttribute("aria-pressed") !== "true") dashboard?.click();
           document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
@@ -448,6 +462,32 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
             document.querySelector("#detailsToggle")?.click();
           }
+        `,
+      });
+    }
+    const workflowStates = {
+      "workflow-goal": "choose_goal",
+      "workflow-project": "project_video",
+      "workflow-video": "source_video",
+      "workflow-provider": "provider_settings",
+      "workflow-prompts": "prompt_preview",
+      "workflow-run": "validate_run",
+      "workflow-review": "review_candidates",
+      "workflow-correct": "correct_tracks",
+      "workflow-export": "export",
+    };
+    if (workflowStates[state]) {
+      await cdp.send("Runtime.evaluate", {
+        expression: `
+          document.querySelector('[data-workflow-step="${workflowStates[state]}"]')?.click();
+        `,
+      });
+    }
+    if (state === "workflow-dashboard") {
+      await cdp.send("Runtime.evaluate", {
+        expression: `
+          const toggle = document.querySelector("#workflowDashboardToggle");
+          if (toggle?.getAttribute("aria-pressed") !== "true") toggle?.click();
         `,
       });
     }
@@ -471,6 +511,34 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarExpanded: document.querySelector("#sidebarToggle")?.getAttribute("aria-expanded") || "",
           detailsExpanded: document.querySelector("#detailsToggle")?.getAttribute("aria-expanded") || "",
           rightRailWidth: Math.round(rightRailBox?.width || 0),
+          providerWarningVisible: visible(document.querySelector("#providerWarning")),
+          runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
+          workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
+          workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
+          workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const steps = String(element.dataset.workflowPanel || "").split(/\\s+/).filter(Boolean);
+            return {
+              steps,
+              hidden: element.hidden === true,
+              ariaHidden: element.getAttribute("aria-hidden"),
+              inert: element.inert === true,
+              visible: box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+            };
+          }),
+          workflowFragments: [...document.querySelectorAll("[data-workflow-fragment]")].map((element) => {
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            const steps = String(element.dataset.workflowFragment || "").split(/\\s+/).filter(Boolean);
+            return {
+              steps,
+              hidden: element.hidden === true,
+              ariaHidden: element.getAttribute("aria-hidden"),
+              inert: element.inert === true,
+              visible: box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden",
+            };
+          }),
         };
       })()`,
     });
@@ -483,6 +551,53 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "real-empty-shell" && !stateValue.railCollapsed) {
       failures.push(`${viewport.name}/${state}: diagnostics rail should be reduced by default`);
+    }
+    if (state === "workflow-provider" && !stateValue.providerWarningVisible) {
+      failures.push(`${viewport.name}/${state}: provider warning area should be visible in provider step`);
+    }
+    if (state === "workflow-run" && !stateValue.runPlanAlertVisible) {
+      failures.push(`${viewport.name}/${state}: run-step provider/config alert should be visible`);
+    }
+    const expectedWorkflowStep = workflowStates[state];
+    if (expectedWorkflowStep) {
+      if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
+        failures.push(`${viewport.name}/${state}: active workflow step ${stateValue.workflowActiveStep || "none"} did not match ${expectedWorkflowStep}`);
+      }
+      const activePanels = stateValue.workflowPanels.filter((panel) => panel.steps.includes(expectedWorkflowStep));
+      const inactivePanels = stateValue.workflowPanels.filter((panel) => !panel.steps.includes(expectedWorkflowStep));
+      const activeFragments = stateValue.workflowFragments.filter((fragment) => fragment.steps.includes(expectedWorkflowStep));
+      const inactiveFragments = stateValue.workflowFragments.filter((fragment) => !fragment.steps.includes(expectedWorkflowStep));
+      if (!activePanels.some((panel) => panel.visible && !panel.hidden && panel.ariaHidden === "false" && !panel.inert)) {
+        failures.push(`${viewport.name}/${state}: no active workflow panel is visible and interactive`);
+      }
+      const leakingInactive = inactivePanels.filter((panel) => panel.visible || !panel.hidden || panel.ariaHidden !== "true" || !panel.inert);
+      if (leakingInactive.length) {
+        failures.push(`${viewport.name}/${state}: ${leakingInactive.length} inactive workflow panel(s) remained visible or interactive`);
+      }
+      if (activeFragments.length && !activeFragments.some((fragment) => fragment.visible && !fragment.hidden && fragment.ariaHidden === "false" && !fragment.inert)) {
+        failures.push(`${viewport.name}/${state}: no active workflow fragment is visible and interactive`);
+      }
+      const leakingInactiveFragments = inactiveFragments.filter((fragment) => fragment.visible || !fragment.hidden || fragment.ariaHidden !== "true" || !fragment.inert);
+      if (leakingInactiveFragments.length) {
+        failures.push(`${viewport.name}/${state}: ${leakingInactiveFragments.length} inactive workflow fragment(s) remained visible or interactive`);
+      }
+    }
+    if (state === "workflow-dashboard") {
+      if (!stateValue.workflowDashboard) {
+        failures.push(`${viewport.name}/${state}: show-all workflow dashboard did not activate`);
+      }
+      const hiddenPanels = stateValue.workflowPanels.filter((panel) => panel.hidden || panel.ariaHidden === "true" || panel.inert);
+      const hiddenFragments = stateValue.workflowFragments.filter((fragment) => fragment.hidden || fragment.ariaHidden === "true" || fragment.inert);
+      const visiblePanels = stateValue.workflowPanels.filter((panel) => panel.visible);
+      if (hiddenPanels.length) {
+        failures.push(`${viewport.name}/${state}: ${hiddenPanels.length} workflow panel(s) stayed hidden in dashboard mode`);
+      }
+      if (hiddenFragments.length) {
+        failures.push(`${viewport.name}/${state}: ${hiddenFragments.length} workflow fragment(s) stayed hidden in dashboard mode`);
+      }
+      if (visiblePanels.length < 8) {
+        failures.push(`${viewport.name}/${state}: dashboard mode exposed too few workflow panels (${visiblePanels.length})`);
+      }
     }
     if (screenshotDir) {
       await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`));
@@ -545,7 +660,19 @@ async function run() {
     if (options.screenshotDir) await mkdir(options.screenshotDir, { recursive: true });
 
     const preSeedStates = options.states.filter((state) =>
-      ["real-empty-shell", "first-run", "nav-collapsed", "diagnostics-open"].includes(state),
+      [
+        "real-empty-shell",
+        "first-run",
+        "nav-collapsed",
+        "diagnostics-open",
+        "workflow-goal",
+        "workflow-project",
+        "workflow-video",
+        "workflow-provider",
+        "workflow-prompts",
+        "workflow-run",
+        "workflow-dashboard",
+      ].includes(state),
     );
     const postSeedStates = options.states.filter((state) => !preSeedStates.includes(state));
 

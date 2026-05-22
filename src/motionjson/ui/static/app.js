@@ -54,6 +54,8 @@ const MotionJSONUI = (() => {
   const SHELL_STORAGE_KEYS = {
     sidebarCollapsed: "motionjson.localUi.sidebarCollapsed",
     railCollapsed: "motionjson.localUi.railCollapsed",
+    workflowStep: "motionjson.localUi.workflowStep",
+    workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
@@ -209,6 +211,72 @@ const MotionJSONUI = (() => {
     },
   };
 
+  const WORKFLOW_STEPS = [
+    {
+      id: "choose_goal",
+      title: "Choose goal",
+      label: "Goal",
+      description: "Pick the kind of object tracing workflow before setup details appear.",
+      nextHint: "Choose a tracing goal to continue.",
+    },
+    {
+      id: "project_video",
+      title: "Create or open project",
+      label: "Project",
+      description: "Create a local project or select an existing one so runs and artifacts stay organized.",
+      nextHint: "Create or select a project to continue.",
+    },
+    {
+      id: "source_video",
+      title: "Add or select video",
+      label: "Video",
+      description: "Load a browser preview for drawing and register a local path for backend extraction.",
+      nextHint: "Add or select a local video before backend runs.",
+    },
+    {
+      id: "provider_settings",
+      title: "Choose mode and provider",
+      label: "Mode",
+      description: "Keep mock/local providers as the safe default, or inspect advanced provider setup.",
+      nextHint: "Resolve provider blockers before continuing.",
+    },
+    {
+      id: "prompt_preview",
+      title: "Add prompts and keyframes",
+      label: "Prompts",
+      description: "Draw the prompt, keyframe, or review marks needed for the selected workflow.",
+      nextHint: "Add the required prompt or continue with an automatic discovery mode.",
+    },
+    {
+      id: "validate_run",
+      title: "Validate and run",
+      label: "Run",
+      description: "Review the generated plan, validate provider readiness, then start a local or mock run.",
+      nextHint: "Validate the plan and start a run before review.",
+    },
+    {
+      id: "review_candidates",
+      title: "Review candidates and tracks",
+      label: "Review",
+      description: "Inspect candidates, tracks, timeline markers, and fallback diagnostics before export.",
+      nextHint: "Review candidates or tracks before correction and export.",
+    },
+    {
+      id: "correct_tracks",
+      title: "Correct tracks",
+      label: "Correct",
+      description: "Relabel, merge, split, delete, repair, or add tracks while keeping edits local.",
+      nextHint: "Select or create a reviewed track before exporting.",
+    },
+    {
+      id: "export",
+      title: "Preview and export",
+      label: "Export",
+      description: "Validate reviewed tracks and hand off MotionJSON, snippets, or local asset bundles.",
+      nextHint: "Validate export settings, then write MotionJSON artifacts.",
+    },
+  ];
+
   const EMPTY_SAM2 = {
     checkpoint: null,
     model_config: null,
@@ -255,6 +323,7 @@ const MotionJSONUI = (() => {
     reviewTracks: [],
     trackVisibility: {},
     correctionState: emptyCorrectionState(),
+    configValidation: null,
     exportValidation: null,
     exportResult: null,
     exportCopyPayloads: {},
@@ -286,6 +355,8 @@ const MotionJSONUI = (() => {
     polling: false,
     errors: {},
     selectedPreset: "trace_one_object",
+    activeWorkflowStep: "choose_goal",
+    workflowDashboard: false,
     activeTool: "point",
     pointKind: "positive_point",
     prompts: [],
@@ -378,6 +449,89 @@ const MotionJSONUI = (() => {
       .map((part) => Number.parseInt(part, 10))
       .filter((number) => Number.isFinite(number) && number >= 0)
       .sort((a, b) => a - b);
+  }
+
+  function normalizeWorkflowStepId(value, fallback = "choose_goal") {
+    const id = String(value || "").trim();
+    return WORKFLOW_STEPS.some((step) => step.id === id) ? id : fallback;
+  }
+
+  function workflowStepIndex(stepId) {
+    const normalized = normalizeWorkflowStepId(stepId);
+    return Math.max(0, WORKFLOW_STEPS.findIndex((step) => step.id === normalized));
+  }
+
+  function workflowNextStepId(stepId, direction = 1) {
+    const index = workflowStepIndex(stepId);
+    const nextIndex = clamp(index + (direction < 0 ? -1 : 1), 0, WORKFLOW_STEPS.length - 1);
+    return WORKFLOW_STEPS[nextIndex].id;
+  }
+
+  function workflowReadinessFromSnapshot(snapshot = {}) {
+    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
+    const promptCount = toInteger(snapshot.promptCount, 0) + toInteger(snapshot.strokeCount, 0);
+    const candidateCount = toInteger(snapshot.candidateCount, 0);
+    const trackCount = toInteger(snapshot.trackCount, 0);
+    const correctionCount = toInteger(snapshot.correctionCount, 0);
+    const hasProject = Boolean(snapshot.selectedProjectId);
+    const hasRegisteredVideo = Boolean(snapshot.selectedVideoId);
+    const hasPreview = Boolean(snapshot.previewName || snapshot.previewLoaded);
+    const providerBlocked = Boolean(snapshot.providerBlocked || snapshot.providerTone === "is-bad");
+    const providerWarn = snapshot.providerTone === "is-warn";
+    const configBlocked = Boolean(snapshot.configBlocked || snapshot.configTone === "is-bad");
+    const configValid = Boolean(snapshot.configValid || snapshot.backendValidated);
+    const hasJob = Boolean(snapshot.selectedJobId);
+    const hasRunData = hasJob || candidateCount > 0 || trackCount > 0;
+    const hasExportValidation = Boolean(snapshot.exportValidated);
+    const exportOk = Boolean(snapshot.exportOk);
+    const manualPromptRequired = selectedPreset === "trace_one_object";
+
+    const step = (status, message, options = {}) => ({
+      status,
+      message,
+      tone: options.tone || (status === "done" || status === "ready" ? "is-ready" : status === "blocked" ? "is-bad" : "is-warn"),
+      complete: options.complete ?? (status === "done" || status === "ready"),
+    });
+
+    return {
+      choose_goal: step("done", snapshot.presetLabel ? `Goal selected: ${snapshot.presetLabel}` : "Choose the tracing goal.", { complete: true }),
+      project_video: hasProject
+        ? step("done", "Project selected.")
+        : step("needs-action", "Create or select a local project before adding videos.", { complete: false }),
+      source_video: hasRegisteredVideo
+        ? step("done", "Registered video selected for backend runs.")
+        : hasPreview
+          ? step("needs-action", "Browser preview is loaded; register a local path before extraction.", { tone: "is-warn", complete: false })
+          : step("needs-action", "Add a browser preview or register a local video path.", { complete: false }),
+      provider_settings: providerBlocked
+        ? step("blocked", "Provider setup has a blocker. Use mock/local or open diagnostics.", { complete: false })
+        : providerWarn
+          ? step("ready", "Provider warning is visible; mock/local workflows can continue.", { tone: "is-warn", complete: true })
+          : step("done", "Provider choice is ready or no-model safe."),
+      prompt_preview: manualPromptRequired && !promptCount
+        ? step("needs-action", "Add at least one point, box, or brush prompt for this goal.", { complete: false })
+        : step("done", promptCount ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"} ready.` : "This discovery mode can run without manual prompts."),
+      validate_run: configBlocked
+        ? step("blocked", "Fix config validation errors before starting a run.", { complete: false })
+        : hasJob
+          ? step("done", "Run selected. Review results next.")
+          : configValid
+            ? step("needs-action", "Plan is validated. Start a mock or provider run to continue.", { tone: "is-ready", complete: false })
+            : step("needs-action", "Validate the plan, then start a mock or provider run.", { complete: false }),
+      review_candidates: hasRunData
+        ? step("done", trackCount ? `${trackCount} track${trackCount === 1 ? "" : "s"} available for review.` : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} ready to review.`)
+        : step("needs-action", "Start or select a run before reviewing candidates.", { complete: false }),
+      correct_tracks: trackCount
+        ? step(correctionCount ? "done" : "ready", correctionCount ? `${correctionCount} correction edit${correctionCount === 1 ? "" : "s"} recorded.` : "Tracks are ready for optional correction.")
+        : step("needs-action", "Track at least one candidate before correction.", { complete: false }),
+      export: exportOk
+        ? step("done", "Export validation passed.")
+        : hasExportValidation
+          ? step("blocked", "Export validation found issues to resolve.", { complete: false })
+          : trackCount
+            ? step("needs-action", "Validate export settings before writing MotionJSON.", { complete: false })
+            : step("needs-action", "Reviewed tracks are required before export.", { complete: false }),
+    };
   }
 
   function containedVideoRect(containerWidth, containerHeight, videoWidth, videoHeight) {
@@ -2433,11 +2587,207 @@ const MotionJSONUI = (() => {
     const sidebarToggle = $("#sidebarToggle");
     const detailsToggle = $("#detailsToggle");
     const railCloseButton = $("#railCloseButton");
+    const workflowRailSteps = new Set(["review_candidates", "correct_tracks", "export"]);
 
     function boolFromStorage(key, fallback) {
       const value = storage.get(key);
       if (value == null) return fallback;
       return value === "true";
+    }
+
+    function workflowStepButton(stepId = state.activeWorkflowStep) {
+      const normalized = normalizeWorkflowStepId(stepId);
+      return [...document.querySelectorAll("[data-workflow-step]")].find((button) => button.dataset.workflowStep === normalized) || null;
+    }
+
+    function workflowPanels() {
+      return [...document.querySelectorAll("[data-workflow-panel]")];
+    }
+
+    function workflowFragments() {
+      return [...document.querySelectorAll("[data-workflow-fragment]")];
+    }
+
+    function workflowSnapshot() {
+      const providerWarning = $("#providerWarning");
+      const configStatus = $("#configStatus");
+      const candidates = reviewCandidates();
+      const selectedCount = candidates.filter((candidate) => {
+        const id = candidateId(candidate);
+        return id && state.candidateSelection[id] === true;
+      }).length;
+      const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
+      return {
+        selectedPreset: state.selectedPreset,
+        presetLabel: currentPresetLabel(),
+        selectedProjectId: state.selectedProjectId,
+        selectedVideoId: state.selectedVideoId,
+        previewName: state.video.loadedName,
+        providerWarning: providerWarning?.textContent?.trim() || "",
+        providerTone: providerWarning?.classList.contains("is-bad")
+          ? "is-bad"
+          : providerWarning?.classList.contains("is-warn")
+            ? "is-warn"
+            : "",
+        providerBlocked: providerWarning?.classList.contains("is-bad") || false,
+        configTone: configStatus?.classList.contains("is-bad") ? "is-bad" : configStatus?.classList.contains("is-ready") ? "is-ready" : "",
+        configBlocked: configStatus?.classList.contains("is-bad") || false,
+        configValid: configStatus?.classList.contains("is-ready") || false,
+        backendValidated: state.configValidation?.valid === true,
+        selectedJobId: state.selectedJobId,
+        selectedJobStatus: selectedJob()?.status || "",
+        candidateCount: candidates.length,
+        selectedCandidateCount: selectedCount,
+        trackCount: state.reviewTracks.length,
+        correctionCount: asArray(state.correctionState?.history).length,
+        exportValidated: Boolean(exportValidation),
+        exportOk: exportValidation?.ok === true,
+        promptCount: state.prompts.length,
+        strokeCount: state.strokes.length,
+      };
+    }
+
+    function setRunAlert(message, className = "warning-box", { html = false } = {}) {
+      for (const selector of ["#providerWarning", "#runPlanAlert"]) {
+        const element = $(selector);
+        if (!element) continue;
+        if (html) element.innerHTML = message || "";
+        else element.textContent = message || "";
+        element.className = className;
+      }
+      renderShellIndicators();
+      renderWorkflowStepper();
+    }
+
+    function setElementWorkflowHidden(element, hidden) {
+      element.classList.toggle("is-workflow-hidden", hidden);
+      element.hidden = hidden;
+      element.setAttribute("aria-hidden", String(hidden));
+      if ("inert" in element) element.inert = hidden;
+      if (hidden && element.contains(document.activeElement)) {
+        workflowStepButton()?.focus();
+      }
+    }
+
+    function panelMatchesWorkflowStep(element, stepId) {
+      const steps = String(element.dataset.workflowPanel || "")
+        .split(/\s+/)
+        .filter(Boolean);
+      return steps.includes(stepId);
+    }
+
+    function fragmentMatchesWorkflowStep(element, stepId) {
+      const steps = String(element.dataset.workflowFragment || "")
+        .split(/\s+/)
+        .filter(Boolean);
+      return steps.includes(stepId);
+    }
+
+    function syncWorkflowPanels() {
+      const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
+      const showAll = Boolean(state.workflowDashboard);
+      shell?.classList.toggle("is-workflow-dashboard", showAll);
+      for (const panel of workflowPanels()) {
+        const visible = showAll || panelMatchesWorkflowStep(panel, activeStep);
+        setElementWorkflowHidden(panel, !visible);
+        if (visible && panel.matches("details.rail-section") && !showAll) {
+          panel.open = true;
+        }
+      }
+      for (const fragment of workflowFragments()) {
+        setElementWorkflowHidden(fragment, !(showAll || fragmentMatchesWorkflowStep(fragment, activeStep)));
+      }
+      const hasVisibleRailPanel = workflowPanels().some((panel) => panel.matches("details.rail-section") && (showAll || panelMatchesWorkflowStep(panel, activeStep)));
+      if (showAll) {
+        setRailCollapsed(false, { persist: false });
+      } else if (workflowRailSteps.has(activeStep)) {
+        setRailCollapsed(false, { persist: false });
+      } else if (!hasVisibleRailPanel && !shell?.classList.contains("is-rail-collapsed")) {
+        setRailCollapsed(true, { persist: false });
+      }
+      scheduleDrawOverlay();
+    }
+
+    function renderWorkflowStepper() {
+      const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
+      const activeIndex = workflowStepIndex(activeStep);
+      const activeModel = WORKFLOW_STEPS[activeIndex];
+      const readiness = workflowReadinessFromSnapshot(workflowSnapshot());
+      const activeReadiness = readiness[activeStep] || {};
+      const title = $("#workflowTitle");
+      const description = $("#workflowDescription");
+      const status = $("#workflowStatus");
+      const nextHint = $("#workflowNextHint");
+      const backButton = $("#workflowBackButton");
+      const nextButton = $("#workflowNextButton");
+      const dashboardToggle = $("#workflowDashboardToggle");
+
+      if (title) title.textContent = activeModel.title;
+      if (description) description.textContent = activeModel.description;
+      if (status) {
+        status.textContent = activeReadiness.status === "done" ? "Ready" : activeReadiness.status || "Not started";
+        status.className = `status-chip ${activeReadiness.tone || "is-muted"}`;
+      }
+      if (nextHint) nextHint.textContent = activeReadiness.message || activeModel.nextHint;
+      if (backButton) backButton.disabled = activeIndex === 0;
+      if (nextButton) {
+        nextButton.disabled = activeIndex >= WORKFLOW_STEPS.length - 1 || !activeReadiness.complete;
+        nextButton.textContent = activeIndex >= WORKFLOW_STEPS.length - 1 ? "Done" : "Next";
+      }
+      if (dashboardToggle) {
+        dashboardToggle.textContent = state.workflowDashboard ? "Hide all panels" : "Show all panels";
+        dashboardToggle.setAttribute("aria-pressed", String(Boolean(state.workflowDashboard)));
+      }
+
+      document.querySelectorAll("[data-workflow-step]").forEach((button) => {
+        const stepId = normalizeWorkflowStepId(button.dataset.workflowStep);
+        const stepIndex = workflowStepIndex(stepId);
+        const stepReadiness = readiness[stepId] || {};
+        const active = stepId === activeStep;
+        button.classList.toggle("is-active", active);
+        button.classList.toggle("is-complete", Boolean(stepReadiness.complete));
+        button.classList.toggle("is-blocked", stepReadiness.status === "blocked");
+        button.setAttribute("aria-pressed", String(active));
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+        button.setAttribute("title", stepReadiness.message || WORKFLOW_STEPS[stepIndex]?.nextHint || "");
+        button.dataset.workflowStatus = stepReadiness.status || "";
+      });
+
+      syncWorkflowPanels();
+    }
+
+    function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
+      state.activeWorkflowStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
+      if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
+      renderWorkflowStepper();
+      if (focusStep) workflowStepButton()?.focus();
+    }
+
+    function setWorkflowDashboard(enabled, { persist = true } = {}) {
+      state.workflowDashboard = Boolean(enabled);
+      if (persist) storage.set(SHELL_STORAGE_KEYS.workflowDashboard, String(state.workflowDashboard));
+      renderWorkflowStepper();
+    }
+
+    function initWorkflowController() {
+      state.activeWorkflowStep = normalizeWorkflowStepId(storage.get(SHELL_STORAGE_KEYS.workflowStep), "choose_goal");
+      state.workflowDashboard = boolFromStorage(SHELL_STORAGE_KEYS.workflowDashboard, false);
+      $("#workflowStepper")?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-workflow-step]");
+        if (!button) return;
+        setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
+      });
+      $("#workflowBackButton")?.addEventListener("click", () => {
+        setWorkflowStep(workflowNextStepId(state.activeWorkflowStep, -1), { focusStep: true });
+      });
+      $("#workflowNextButton")?.addEventListener("click", () => {
+        setWorkflowStep(workflowNextStepId(state.activeWorkflowStep, 1), { focusStep: true });
+      });
+      $("#workflowDashboardToggle")?.addEventListener("click", () => {
+        setWorkflowDashboard(!state.workflowDashboard);
+      });
+      renderWorkflowStepper();
     }
 
     function currentPresetLabel() {
@@ -3304,6 +3654,7 @@ const MotionJSONUI = (() => {
       if (!state.projects.length) {
         select.innerHTML = `<option value="">${escapeHtml(state.errors.projects || "No local projects yet")}</option>`;
         state.selectedProjectId = "";
+        renderWorkflowStepper();
         return;
       }
       if (!state.selectedProjectId || !state.projects.some((project) => project.id === state.selectedProjectId)) {
@@ -3313,6 +3664,7 @@ const MotionJSONUI = (() => {
         .map((project) => `<option value="${escapeAttribute(project.id)}">${escapeHtml(project.name)}</option>`)
         .join("");
       select.value = state.selectedProjectId;
+      renderWorkflowStepper();
     }
 
     function renderVideos() {
@@ -3321,6 +3673,7 @@ const MotionJSONUI = (() => {
       if (state.errors.videos) {
         select.innerHTML = `<option value="">Video unavailable</option>`;
         $("#videoList").innerHTML = `<div class="error-state">${escapeHtml(state.errors.videos)}</div>`;
+        renderWorkflowStepper();
         return;
       }
       if (!state.videos.length) {
@@ -3364,6 +3717,7 @@ const MotionJSONUI = (() => {
 
       if (state.errors.jobs) {
         $("#jobList").innerHTML = `<div class="error-state">${escapeHtml(state.errors.jobs)}</div>`;
+        renderWorkflowStepper();
         return;
       }
 
@@ -3399,6 +3753,7 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Jobs will appear here with status, progress, and export diagnostics.</div>`;
+      renderWorkflowStepper();
     }
 
     function renderSelectedJobFacts() {
@@ -3780,8 +4135,9 @@ const MotionJSONUI = (() => {
         : candidates.length
           ? `<div class="empty-state">No API candidates match the current filters.</div>`
           : summary
-            ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
-            : `<div class="empty-state">API candidates appear here after discovery writes candidates.json.</div>`;
+          ? `<div class="empty-state">No discovery candidates were reported for this run.</div>`
+          : `<div class="empty-state">API candidates appear here after discovery writes candidates.json.</div>`;
+      renderWorkflowStepper();
     }
 
     function renderTrackList() {
@@ -3829,6 +4185,7 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Start or select a run to review object tracks.</div>`;
+      renderWorkflowStepper();
     }
 
     function relatedArtifactsForTrack(track) {
@@ -3848,6 +4205,7 @@ const MotionJSONUI = (() => {
       $("#selectedTrackStatus").className = `status-chip ${track ? statusClass(status, isTrackExportIncluded(track)) : "is-muted"}`;
       if (!track) {
         $("#selectedTrackDetail").innerHTML = `<div class="empty-state">Select a completed run and choose a track to inspect correction and export state.</div>`;
+        renderWorkflowStepper();
         return;
       }
       const frames = asArray(track.frames);
@@ -3892,6 +4250,7 @@ const MotionJSONUI = (() => {
             : `<div class="empty-state">No object-specific artifacts are linked to this track yet.</div>`
         }
       `;
+      renderWorkflowStepper();
     }
 
     function renderCorrectionPanel() {
@@ -3958,6 +4317,7 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">No duplicate-track merge suggestions reported for this run.</div>`;
+      renderWorkflowStepper();
     }
 
     function renderCorrectionHistory() {
@@ -3988,6 +4348,7 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Track edits will appear here after relabel, hide/show, export, merge, split, add-object, or repair actions.</div>`;
+      renderWorkflowStepper();
     }
 
     function exportPayloadFromControls() {
@@ -4256,6 +4617,7 @@ const MotionJSONUI = (() => {
             ${artifactLinks ? `<div class="artifact-row"><strong>Export artifacts</strong><span class="row-meta export-artifact-links">${artifactLinks}</span></div>` : ""}
           `
         : `<div class="empty-state">Select a completed run before validating or exporting MotionJSON.</div>`;
+      renderWorkflowStepper();
     }
 
     function renderFallbackDiagnostics() {
@@ -4271,6 +4633,7 @@ const MotionJSONUI = (() => {
             .join("")
         : `<div class="empty-state">No selected run diagnostics.</div>`;
       renderShellIndicators();
+      renderWorkflowStepper();
     }
 
     function renderJobReview() {
@@ -4286,6 +4649,7 @@ const MotionJSONUI = (() => {
       renderCorrectionHistory();
       renderFallbackDiagnostics();
       renderTimelinePanel();
+      renderWorkflowStepper();
       scheduleDrawOverlay();
     }
 
@@ -4440,8 +4804,7 @@ const MotionJSONUI = (() => {
       const rawContentUrl = video?.contentUrl || video?.content_url;
       const contentUrl = safeLocalContentUrl(rawContentUrl);
       if (rawContentUrl && !contentUrl) {
-        $("#providerWarning").textContent = "Preview blocked a non-local video content URL.";
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert("Preview blocked a non-local video content URL.", "warning-box is-bad");
       }
       if (!contentUrl || elements.video.getAttribute("src") === contentUrl) return;
       if (state.previewObjectUrl) {
@@ -4658,6 +5021,7 @@ const MotionJSONUI = (() => {
 
     function renderConfigPreview() {
       const formState = collectFormState($);
+      state.configValidation = null;
       let config;
       try {
         config = buildRunConfig(formState);
@@ -4667,17 +5031,16 @@ const MotionJSONUI = (() => {
         $("#configPreview").textContent = error.message;
         renderRunPlanError(error.message);
         renderShellIndicators();
+        renderWorkflowStepper();
         return;
       }
 
       const warnings = selectedCapabilityWarnings(config, $);
-      const warningBox = $("#providerWarning");
       if (warnings.length) {
-        warningBox.textContent = warnings.join(" ");
-        warningBox.className = warnings.some((warning) => /requires|needs|unavailable|missing|not_configured|not runnable/.test(warning)) ? "warning-box is-bad" : "warning-box";
+        const blocked = warnings.some((warning) => /requires|needs|unavailable|missing|not_configured|not runnable/.test(warning));
+        setRunAlert(warnings.join(" "), `warning-box ${blocked ? "is-bad" : "is-warn"}`);
       } else {
-        warningBox.textContent = "Selected providers are ready or no-model safe.";
-        warningBox.className = "warning-box is-ready";
+        setRunAlert("Selected providers are ready or no-model safe.", "warning-box is-ready");
       }
 
       const configWarnings = [];
@@ -4698,10 +5061,12 @@ const MotionJSONUI = (() => {
       renderCorrectionPanel();
       renderModelPlanPanel();
       renderShellIndicators();
+      renderWorkflowStepper();
       scheduleDrawOverlay();
     }
 
     function renderBackendValidation(validation) {
+      state.configValidation = validation || null;
       const errors = asArray(validation.errors).map((item) => item.message || String(item));
       const warnings = asArray(validation.warnings).map((item) => {
         const reasons = asArray(item.reasons).join(" ");
@@ -4713,11 +5078,9 @@ const MotionJSONUI = (() => {
       $("#configStatus").className = `status-chip ${valid ? (warnings.length ? "is-warn" : "is-ready") : "is-bad"}`;
 
       if (errors.length || warnings.length) {
-        $("#providerWarning").innerHTML = [...errors.map((message) => `Error: ${message}`), ...warnings].map(escapeHtml).join("<br />");
-        $("#providerWarning").className = `warning-box ${errors.length ? "is-bad" : "is-warn"}`;
+        setRunAlert([...errors.map((message) => `Error: ${message}`), ...warnings].map(escapeHtml).join("<br />"), `warning-box ${errors.length ? "is-bad" : "is-warn"}`, { html: true });
       } else {
-        $("#providerWarning").textContent = "Backend validation accepted this config and reported no provider warnings.";
-        $("#providerWarning").className = "warning-box is-ready";
+        setRunAlert("Backend validation accepted this config and reported no provider warnings.", "warning-box is-ready");
       }
 
       const config = validation.runConfig || buildRunConfig(collectFormState($));
@@ -4725,6 +5088,7 @@ const MotionJSONUI = (() => {
       renderRunPlanSummary(buildRunPlan(config, collectFormState($), validation));
       renderModelPlanPanel();
       renderShellIndicators();
+      renderWorkflowStepper();
     }
 
     async function validateConfigWithBackend() {
@@ -4738,11 +5102,13 @@ const MotionJSONUI = (() => {
         $("#configPreview").textContent = error.message;
         renderRunPlanError(error.message);
         renderShellIndicators();
+        renderWorkflowStepper();
         return;
       }
 
       $("#configStatus").textContent = "Validating";
       $("#configStatus").className = "status-chip is-neutral";
+      renderWorkflowStepper();
       try {
         renderBackendValidation(
           await api("/api/run-config/validate", {
@@ -4753,8 +5119,8 @@ const MotionJSONUI = (() => {
       } catch (error) {
         $("#configStatus").textContent = "Validation failed";
         $("#configStatus").className = "status-chip is-bad";
-        $("#providerWarning").textContent = error.message;
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert(error.message, "warning-box is-bad");
+        renderWorkflowStepper();
       }
     }
 
@@ -4966,8 +5332,7 @@ const MotionJSONUI = (() => {
           stopJobPolling();
         }
       } catch (error) {
-        $("#providerWarning").textContent = error.message;
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert(error.message, "warning-box is-bad");
       } finally {
         pollInFlight = false;
       }
@@ -4981,13 +5346,11 @@ const MotionJSONUI = (() => {
 
     async function startRunFromConfig({ forceMock = false } = {}) {
       if (!state.selectedProjectId) {
-        $("#providerWarning").textContent = "Create or select a project before starting a run.";
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert("Create or select a project before starting a run.", "warning-box is-bad");
         return;
       }
       if (!state.selectedVideoId) {
-        $("#providerWarning").textContent = "Register or select a video before starting a run.";
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert("Register or select a video before starting a run.", "warning-box is-bad");
         return;
       }
 
@@ -4995,8 +5358,7 @@ const MotionJSONUI = (() => {
       try {
         config = configForLocalJob(forceMock);
       } catch (error) {
-        $("#providerWarning").textContent = error.message;
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert(error.message, "warning-box is-bad");
         return;
       }
 
@@ -5022,8 +5384,7 @@ const MotionJSONUI = (() => {
       } catch (error) {
         $("#runStatus").textContent = "Failed";
         $("#runStatus").className = "status-chip is-bad";
-        $("#providerWarning").textContent = error.message;
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert(error.message, "warning-box is-bad");
       }
     }
 
@@ -5820,6 +6181,19 @@ const MotionJSONUI = (() => {
       const modelPlanPanel = document.querySelector("#modelPlanPanel");
       const localPathDisclosure = document.querySelector("#localPathDisclosure");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
+      const reviewCaptureStates = ["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet", "job-review"];
+
+      if (capture.startsWith("model-setup")) {
+        setWorkflowStep("provider_settings", { persist: false });
+      } else if (capture.startsWith("model-plan")) {
+        setWorkflowStep("validate_run", { persist: false });
+      } else if (reviewCaptureStates.includes(capture) || capture === "advanced-config") {
+        setWorkflowDashboard(true, { persist: false });
+      } else if (capture === "new-project") {
+        setWorkflowStep("project_video", { persist: false });
+      } else if (capture === "extraction-wizard" || capture === "provider-diagnostics" || capture === "provider-settings") {
+        setWorkflowStep("provider_settings", { persist: false });
+      }
 
       if (capture.startsWith("model-setup")) {
         if (shell) {
@@ -6146,12 +6520,14 @@ const MotionJSONUI = (() => {
 
     async function startJobFromConfig({ forceMock = false } = {}) {
       if (!state.selectedProjectId) {
+        setRunAlert("Create or select a local project before starting a run.", "warning-box is-bad");
         $("#runStatus").textContent = "No project";
         $("#runStatus").className = "status-chip is-bad";
         $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>project required</strong><span class="row-meta">Create or select a local project before starting a run.</span></div>`;
         return;
       }
       if (!state.selectedVideoId) {
+        setRunAlert("Register and select a local source video before starting a run.", "warning-box is-bad");
         $("#runStatus").textContent = "No video";
         $("#runStatus").className = "status-chip is-bad";
         $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>video required</strong><span class="row-meta">Register and select a local source video before starting a run.</span></div>`;
@@ -6162,6 +6538,7 @@ const MotionJSONUI = (() => {
       try {
         config = buildRunConfig(collectFormState($));
       } catch (error) {
+        setRunAlert(error.message, "warning-box is-bad");
         $("#runStatus").textContent = "Config invalid";
         $("#runStatus").className = "status-chip is-bad";
         $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>config</strong><span class="row-meta">${escapeHtml(error.message)}</span></div>`;
@@ -6173,6 +6550,10 @@ const MotionJSONUI = (() => {
       state.lastRunConfig = runtimeConfig;
 
       if (!forceMock && !LOCAL_JOB_PROVIDERS.has(requestedProvider)) {
+        setRunAlert(
+          `Local UI job execution currently accepts deterministic providers only: mock, threshold, motion, or external. ${requestedProvider} remains capability-gated.`,
+          "warning-box is-bad",
+        );
         $("#runStatus").textContent = "Provider gated";
         $("#runStatus").className = "status-chip is-bad";
         $("#fallbackDiagnostics").innerHTML = `
@@ -6216,6 +6597,7 @@ const MotionJSONUI = (() => {
         await refreshSelectedJobReview();
         startPolling();
       } catch (error) {
+        setRunAlert(error.message, "warning-box is-bad");
         $("#runStatus").textContent = "Start failed";
         $("#runStatus").className = "status-chip is-bad";
         $("#fallbackDiagnostics").innerHTML = `
@@ -6245,8 +6627,7 @@ const MotionJSONUI = (() => {
       } catch (error) {
         $("#runStatus").textContent = "Cancel failed";
         $("#runStatus").className = "status-chip is-bad";
-        $("#providerWarning").textContent = error.message;
-        $("#providerWarning").className = "warning-box is-bad";
+        setRunAlert(error.message, "warning-box is-bad");
         renderSelectedJobFacts();
       }
     }
@@ -7273,6 +7654,7 @@ const MotionJSONUI = (() => {
     window.addEventListener("resize", scheduleDrawOverlay);
 
     initShellNavigation();
+    initWorkflowController();
     updatePointKind("positive_point");
     updateTool("point");
     renderMaskProviderOptions();
@@ -7287,6 +7669,7 @@ const MotionJSONUI = (() => {
     CORRECTION_STATE_FORMAT,
     PRESETS,
     RUN_CONFIG_SCHEMA,
+    WORKFLOW_STEPS,
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,
     buildExportPanelSummary,
@@ -7314,6 +7697,7 @@ const MotionJSONUI = (() => {
     modelSetupPayloadFromValues,
     modelSetupProviderSummary,
     normalizeCorrectionState,
+    normalizeWorkflowStepId,
     objectDiscoveryConfig,
     mapClientPointToVideo,
     normalizePrompt,
@@ -7325,6 +7709,8 @@ const MotionJSONUI = (() => {
     timelineMarkersForDisplay,
     trackFrameForDisplay,
     trackSelectedPayload,
+    workflowNextStepId,
+    workflowReadinessFromSnapshot,
   };
 
   globalThis.MotionJSONUI = publicApi;
