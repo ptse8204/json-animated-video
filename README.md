@@ -3,7 +3,6 @@
 Turn selected video objects into reusable motion layers for editors and websites.
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/ptse8204/json-animated-video)
-[![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb)
 
 MotionJSON helps you cut a moving object out of a video once, review the result,
 and reuse it as a JSON-controlled layer. The practical output is cached
