@@ -282,6 +282,7 @@ for (const affordance of [
   "Local release candidate",
   "Object tracing workspace",
   "aria-keyshortcuts",
+  "inert = collapsed",
   "aria-current",
   "data-tooltip",
   "safeLocalContentUrl",

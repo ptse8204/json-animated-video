@@ -29,6 +29,7 @@ const CAPTURE_STATES = [
   "workflow-review-failure",
   "workflow-correct",
   "workflow-export",
+  "workflow-keyboard",
   "workflow-dashboard",
   "first-run",
   "new-project",
@@ -69,7 +70,7 @@ function parseArgs(argv) {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-keyboard,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the mock/no-model Local UI, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -404,6 +405,43 @@ async function captureScreenshot(cdp, path, { captureBeyondViewport = false } = 
   await writeFile(path, Buffer.from(result.data, "base64"));
 }
 
+async function sendKey(cdp, key, code, keyCode) {
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key,
+    code,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  });
+  await cdp.send("Runtime.evaluate", {
+    awaitPromise: true,
+    expression: `new Promise((resolve) => setTimeout(() => requestAnimationFrame(() => resolve()), 360))`,
+  });
+}
+
+async function exerciseWorkflowKeyboard(cdp) {
+  await cdp.send("Page.bringToFront").catch(() => {});
+  await cdp.send("Runtime.evaluate", {
+    expression: `
+      const firstStep = document.querySelector('[data-workflow-step="choose_goal"]');
+      firstStep?.focus();
+      document.documentElement.dataset.workflowFocusStart = document.activeElement?.dataset?.workflowStep || "none";
+    `,
+  });
+  await sendKey(cdp, "ArrowRight", "ArrowRight", 39);
+  await sendKey(cdp, "ArrowLeft", "ArrowLeft", 37);
+  await sendKey(cdp, "End", "End", 35);
+  await sendKey(cdp, "Home", "Home", 36);
+  await sendKey(cdp, "ArrowDown", "ArrowDown", 40);
+}
+
 async function closeTarget(cdp, targetId) {
   await Promise.race([
     cdp.send("Target.closeTarget", { targetId }),
@@ -504,7 +542,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         `,
       });
     }
+    if (state === "workflow-keyboard") {
+      await exerciseWorkflowKeyboard(cdp);
+    }
     const layout = await evaluateLayout(cdp);
+    if (state === "workflow-keyboard") {
+      await exerciseWorkflowKeyboard(cdp);
+    }
     const stateAssertions = await cdp.send("Runtime.evaluate", {
       returnByValue: true,
       expression: `(() => {
@@ -521,9 +565,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
           railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
           railVisible: visible(rightRail),
+          sidebarContentAriaHidden: document.querySelector("#sidebarNavigationContent")?.getAttribute("aria-hidden") || "",
+          sidebarContentInert: document.querySelector("#sidebarNavigationContent")?.inert === true,
+          railAriaHidden: rightRail?.getAttribute("aria-hidden") || "",
+          railInert: rightRail?.inert === true,
           sidebarExpanded: document.querySelector("#sidebarToggle")?.getAttribute("aria-expanded") || "",
+          sidebarControls: document.querySelector("#sidebarToggle")?.getAttribute("aria-controls") || "",
+          sidebarLabel: document.querySelector("#sidebarToggle")?.getAttribute("aria-label") || document.querySelector("#sidebarToggle")?.textContent?.trim() || "",
           detailsExpanded: document.querySelector("#detailsToggle")?.getAttribute("aria-expanded") || "",
+          detailsControls: document.querySelector("#detailsToggle")?.getAttribute("aria-controls") || "",
+          railCloseControls: document.querySelector("#railCloseButton")?.getAttribute("aria-controls") || "",
           rightRailWidth: Math.round(rightRailBox?.width || 0),
+          workflowKeyshortcuts: document.querySelector("#workflowStepper")?.getAttribute("aria-keyshortcuts") || "",
+          workflowFocusedStep: document.activeElement?.dataset?.workflowStep || "",
+          workflowFocusStart: document.documentElement.dataset.workflowFocusStart || "",
+          workflowFocusedElement: String(document.activeElement?.tagName || "") + "#" + String(document.activeElement?.id || "") + "." + String(document.activeElement?.className || "") + ":" + String(document.activeElement?.textContent || "").trim().slice(0, 30),
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
@@ -542,6 +598,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true,
           fallbackDiagnosticsOpen: document.querySelector("#fallbackDiagnosticsDisclosure")?.open === true,
           fallbackDiagnosticBadCount: document.querySelectorAll("#fallbackDiagnostics .diagnostic-row.is-bad").length,
+          fallbackDiagnosticsVisible: visible(document.querySelector("#fallbackDiagnostics")),
           exportArtifactsOpen: document.querySelector("#exportArtifactsDisclosure")?.open === true,
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
@@ -576,11 +633,29 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "nav-collapsed" && (!stateValue.sidebarCollapsed || stateValue.sidebarExpanded !== "false")) {
       failures.push(`${viewport.name}/${state}: sidebar did not collapse with aria-expanded=false`);
     }
+    if (state === "nav-collapsed" && (stateValue.sidebarContentAriaHidden !== "true" || !stateValue.sidebarContentInert || !stateValue.sidebarLabel)) {
+      failures.push(`${viewport.name}/${state}: collapsed sidebar content should be hidden from assistive tech and focus order`);
+    }
     if (state === "diagnostics-open" && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
       failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
     }
+    if (state === "diagnostics-open" && (stateValue.railAriaHidden === "true" || stateValue.railInert)) {
+      failures.push(`${viewport.name}/${state}: diagnostics rail should not be inert while open`);
+    }
     if (state === "real-empty-shell" && !stateValue.railCollapsed) {
       failures.push(`${viewport.name}/${state}: diagnostics rail should be reduced by default`);
+    }
+    if (state === "real-empty-shell" && (stateValue.railAriaHidden !== "true" || !stateValue.railInert)) {
+      failures.push(`${viewport.name}/${state}: collapsed diagnostics rail should be hidden from assistive tech and focus order`);
+    }
+    if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.detailsControls !== "diagnosticsRail" || stateValue.railCloseControls !== "diagnosticsRail") {
+      failures.push(`${viewport.name}/${state}: shell collapse controls should expose stable aria-controls targets`);
+    }
+    if (!stateValue.workflowKeyshortcuts.includes("ArrowRight") || !stateValue.workflowKeyshortcuts.includes("ArrowDown") || !stateValue.workflowKeyshortcuts.includes("ArrowLeft") || !stateValue.workflowKeyshortcuts.includes("ArrowUp") || !stateValue.workflowKeyshortcuts.includes("Home") || !stateValue.workflowKeyshortcuts.includes("End")) {
+      failures.push(`${viewport.name}/${state}: workflow stepper should advertise keyboard navigation shortcuts`);
+    }
+    if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "project_video" || stateValue.workflowFocusedStep !== "project_video")) {
+      failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Project (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
     }
     if (state === "workflow-provider" && !stateValue.providerWarningVisible) {
       failures.push(`${viewport.name}/${state}: provider warning area should be visible in provider step`);
@@ -611,7 +686,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-review" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || stateValue.runLogsOpen)) {
       failures.push(`${viewport.name}/${state}: review step should show run/review summaries while keeping logs collapsed unless the run failed`);
     }
-    if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || !stateValue.runLogsOpen || !stateValue.fallbackDiagnosticsOpen || stateValue.fallbackDiagnosticBadCount < 1)) {
+    if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || !stateValue.runLogsOpen || !stateValue.fallbackDiagnosticsOpen || !stateValue.fallbackDiagnosticsVisible || stateValue.fallbackDiagnosticBadCount < 1)) {
       failures.push(`${viewport.name}/${state}: failed review state should surface logs and fallback diagnostics without extra discovery`);
     }
     if (state === "workflow-correct" && stateValue.correctionStatusSummaryCount < 1) {
@@ -679,6 +754,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
+      if (state === "workflow-review-failure" && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
     }
     for (const failure of layout.failures) {
       failures.push(`${viewport.name}/${state}: ${failure}`);
@@ -737,6 +815,7 @@ async function run() {
         "workflow-provider",
         "workflow-prompts",
         "workflow-run",
+        "workflow-keyboard",
         "workflow-dashboard",
       ].includes(state),
     );

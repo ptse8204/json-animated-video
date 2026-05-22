@@ -3018,7 +3018,14 @@ const MotionJSONUI = (() => {
       state.activeWorkflowStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
       renderWorkflowStepper();
-      if (focusStep) workflowStepButton()?.focus();
+      if (focusStep) {
+        const focusActiveStep = () => workflowStepButton(state.activeWorkflowStep)?.focus();
+        focusActiveStep();
+        window.requestAnimationFrame(focusActiveStep);
+        window.setTimeout(focusActiveStep, 0);
+        window.setTimeout(focusActiveStep, 50);
+        window.setTimeout(focusActiveStep, 150);
+      }
     }
 
     function setWorkflowDashboard(enabled, { persist = true } = {}) {
@@ -3030,10 +3037,44 @@ const MotionJSONUI = (() => {
     function initWorkflowController() {
       state.activeWorkflowStep = normalizeWorkflowStepId(storage.get(SHELL_STORAGE_KEYS.workflowStep), "choose_goal");
       state.workflowDashboard = boolFromStorage(SHELL_STORAGE_KEYS.workflowDashboard, false);
+      const workflowKeyboardKeys = new Set(["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"]);
+      let pendingWorkflowKeyboardFocus = "";
+      const focusWorkflowKeyboardStep = () => {
+        if (!pendingWorkflowKeyboardFocus) return;
+        workflowStepButton(pendingWorkflowKeyboardFocus)?.focus();
+      };
       $("#workflowStepper")?.addEventListener("click", (event) => {
         const button = event.target.closest("[data-workflow-step]");
         if (!button) return;
         setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
+      });
+      $("#workflowStepper")?.addEventListener("keydown", (event) => {
+        const button = event.target.closest("[data-workflow-step]");
+        if (!button) return;
+        const buttons = [...document.querySelectorAll("[data-workflow-step]")];
+        const index = buttons.indexOf(button);
+        const keyTargets = {
+          ArrowRight: index + 1,
+          ArrowDown: index + 1,
+          ArrowLeft: index - 1,
+          ArrowUp: index - 1,
+          Home: 0,
+          End: buttons.length - 1,
+        };
+        if (!(event.key in keyTargets)) return;
+        event.preventDefault();
+        const nextButton = buttons[clamp(keyTargets[event.key], 0, buttons.length - 1)];
+        if (nextButton) {
+          pendingWorkflowKeyboardFocus = nextButton.dataset.workflowStep || "";
+          setWorkflowStep(pendingWorkflowKeyboardFocus, { focusStep: false });
+          window.requestAnimationFrame(() => focusWorkflowKeyboardStep());
+          window.setTimeout(() => focusWorkflowKeyboardStep(), 80);
+          window.setTimeout(() => focusWorkflowKeyboardStep(), 300);
+        }
+      });
+      document.addEventListener("keyup", (event) => {
+        if (!workflowKeyboardKeys.has(event.key)) return;
+        window.requestAnimationFrame(() => focusWorkflowKeyboardStep());
       });
       $("#workflowBackButton")?.addEventListener("click", () => {
         setWorkflowStep(workflowNextStepId(state.activeWorkflowStep, -1), { focusStep: true });
@@ -3054,7 +3095,10 @@ const MotionJSONUI = (() => {
     function setSidebarCollapsed(collapsed, { persist = true, focusToggle = false } = {}) {
       shell?.classList.toggle("is-sidebar-collapsed", collapsed);
       const content = $("#sidebarNavigationContent");
-      if (content) content.setAttribute("aria-hidden", String(collapsed));
+      if (content) {
+        content.setAttribute("aria-hidden", String(collapsed));
+        content.inert = collapsed;
+      }
       if (sidebarToggle) {
         sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
         sidebarToggle.textContent = collapsed ? "Menu" : "Collapse menu";
@@ -3072,7 +3116,10 @@ const MotionJSONUI = (() => {
     function setRailCollapsed(collapsed, { persist = true, focusToggle = false } = {}) {
       shell?.classList.toggle("is-rail-collapsed", collapsed);
       const rail = $("#diagnosticsRail");
-      if (rail) rail.setAttribute("aria-hidden", String(collapsed));
+      if (rail) {
+        rail.setAttribute("aria-hidden", String(collapsed));
+        rail.inert = collapsed;
+      }
       if (detailsToggle) {
         detailsToggle.setAttribute("aria-expanded", String(!collapsed));
         detailsToggle.textContent = collapsed ? "Show details" : "Hide details";
