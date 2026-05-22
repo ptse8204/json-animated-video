@@ -217,6 +217,19 @@ class FakeHostedBatchClient:
         return responses
 
 
+class FakeReplicateTransport:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, model, *, input):
+        self.calls.append({"model": model, "input": dict(input)})
+        first = np.zeros((4, 5), dtype=np.uint8)
+        second = np.zeros((4, 5), dtype=np.uint8)
+        first[1:3, 1:3] = 255
+        second[1:3, 2:4] = 255
+        return {"black_white_masks": [first, second]}
+
+
 def test_hosted_sam2_provider_uses_injected_client_without_env_or_network(monkeypatch):
     monkeypatch.delenv("HOSTED_SEGMENTATION_API_KEY", raising=False)
     client = FakeHostedClient()
@@ -228,6 +241,46 @@ def test_hosted_sam2_provider_uses_injected_client_without_env_or_network(monkey
     assert client.calls[0]["prompt_box"] == (2, 1, 2, 2)
     assert client.calls[0]["source_video"] == "input.mp4"
     assert mask.sum() == 4 * 255
+
+
+def test_hosted_sam2_replicate_profile_downloads_video_masks_without_legacy_endpoint(monkeypatch):
+    monkeypatch.delenv("HOSTED_SEGMENTATION_URL", raising=False)
+    monkeypatch.delenv("HOSTED_SEGMENTATION_API_KEY", raising=False)
+    transport = FakeReplicateTransport()
+    provider = HostedSAM2SegmentationProvider(
+        source_video="input.mp4",
+        api_key="replicate-test-token-abcdef",
+        config={
+            "profile": "replicate-sam2-video",
+            "model": "meta/sam-2-video",
+            "allowNetwork": True,
+            "acknowledgeCostPrivacy": True,
+            "transport": transport,
+        },
+        prompt_point=(2, 1),
+    )
+    provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
+
+    mask = provider.segment(1, np.zeros((4, 5, 3), dtype=np.uint8))
+
+    assert mask[1, 2] == 255
+    assert transport.calls[0]["model"] == "meta/sam-2-video"
+    assert transport.calls[0]["input"]["click_coordinates"] == "[2,1]"
+    assert transport.calls[0]["input"]["click_labels"] == "1"
+    assert "black_white_masks" not in transport.calls[0]["input"]
+
+
+def test_hosted_sam2_replicate_profile_requires_network_acknowledgement():
+    provider = HostedSAM2SegmentationProvider(
+        source_video="input.mp4",
+        api_key="replicate-test-token-abcdef",
+        config={"profile": "replicate-sam2-video", "transport": FakeReplicateTransport()},
+        prompt_point=(2, 1),
+    )
+    provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
+
+    with pytest.raises(ProviderConfigError, match="allowNetwork=true"):
+        provider.segment(0, np.zeros((4, 5, 3), dtype=np.uint8))
 
 
 def test_hosted_sam2_batch_provider_uses_mask_cache_for_native_batches(tmp_path):

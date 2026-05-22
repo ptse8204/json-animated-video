@@ -254,6 +254,10 @@ export function buildRunConfig(input) {
   const videoRef = video.id ? `local-ui://assets/${video.id}` : input.videoPath || "local-ui://assets/selected-video";
   const outputDir = input.outputDir || `out/motionjson-ui/${objectId}`;
   const providerName = input.maskProvider || preset.defaultMaskProvider || "mock";
+  let discoveryMode = preset.discoveryMode;
+  if (preset.id === "text_detector" && input.textDiscoveryProvider === "sam3-hosted") {
+    discoveryMode = "sam3_concept";
+  }
   const prompts = (input.prompts || []).map((prompt) =>
     promptToConfig(prompt, {
       objectId,
@@ -267,7 +271,6 @@ export function buildRunConfig(input) {
     Object.assign(discoveryConfig, objectDiscoveryConfig(input, advanced));
   }
   if (preset.id === "text_detector") {
-    discoveryConfig.mock = true;
     if (input.discoveryText) {
       discoveryConfig.text = input.discoveryText;
       discoveryConfig.labels = String(input.discoveryText)
@@ -276,6 +279,18 @@ export function buildRunConfig(input) {
         .filter(Boolean);
       discoveryConfig.box_threshold = Number(advanced.boxThreshold);
       discoveryConfig.text_threshold = Number(advanced.textThreshold);
+    }
+    if (input.textDiscoveryProvider === "sam3-hosted") {
+      discoveryConfig.concept = input.discoveryText || "";
+      discoveryConfig.providerPreference = "sam3-hosted";
+      discoveryConfig.hosted = true;
+      discoveryConfig.hostedProfile = input.hostedSam3ProfileId || "roboflow-sam3-pcs";
+      discoveryConfig.model = input.hostedSam3Model || null;
+      discoveryConfig.allowNetwork = Boolean(input.hostedSam3AllowHosted);
+      discoveryConfig.acknowledgeCostPrivacy = Boolean(input.hostedSam3AllowHosted);
+      discoveryConfig.mock = false;
+    } else {
+      discoveryConfig.mock = true;
     }
   }
   if (input.discoveryClasses) {
@@ -337,6 +352,15 @@ export function buildRunConfig(input) {
         device: advanced.device || "cpu",
         prompt_frame: Number(advanced.keyframe || 0),
         checkpoint: advanced.model || null,
+        hosted_config:
+          providerName === "sam2-hosted"
+            ? {
+                profile: input.hostedSam2ProfileId || "replicate-sam2-video",
+                hostedProfile: input.hostedSam2ProfileId || "replicate-sam2-video",
+                ...(advanced.model && advanced.model !== "auto" ? { model: advanced.model } : {}),
+              }
+            : {},
+        hosted_allow_network: providerName === "sam2-hosted" ? Boolean(input.hostedSam2AllowHosted) : false,
       },
       cache: {
         enabled: true,
@@ -344,7 +368,7 @@ export function buildRunConfig(input) {
       },
     },
     discovery: {
-      mode: preset.discoveryMode,
+      mode: discoveryMode,
       config: discoveryConfig,
     },
     prompts,
@@ -408,10 +432,17 @@ export function providerWarnings(config, capabilities) {
   }
   const discoveryMode = config.discovery?.mode;
   if (discoveryMode) {
-    const discovery = lookup.get(discoveryMode);
+    const discoveryName = config.discovery?.config?.providerPreference === "sam3-hosted" ? "sam3-hosted" : discoveryMode;
+    const discovery = lookup.get(discoveryName) || lookup.get(String(discoveryMode).replaceAll("_", "-"));
     if (discovery && !discovery.available) {
       warnings.push(`${discovery.name}: ${discovery.reasons?.[0] || discovery.status || "discovery unavailable"}`);
     }
+  }
+  if (config.provider?.name === "sam2-hosted" && !config.provider?.sam2?.hosted_allow_network) {
+    warnings.push("sam2-hosted needs hosted cost/privacy confirmation before extraction can send video frames.");
+  }
+  if (config.discovery?.config?.providerPreference === "sam3-hosted" && !config.discovery?.config?.allowNetwork) {
+    warnings.push("sam3-hosted needs hosted cost/privacy confirmation before discovery can send sampled frames.");
   }
   return warnings;
 }

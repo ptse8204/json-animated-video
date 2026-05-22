@@ -14,7 +14,9 @@ The Local UI Provider settings panel currently covers:
 - `mock`, `threshold`, `motion`, and `external`: local/free, no API key.
 - `sam2-local`: local model choice only. SAM2 package and model paths still
   come from local installation and environment variables.
-- `sam2-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
+- `sam2-hosted`: hosted profile, model choice, API key, optional endpoint, and
+  hosted-call opt-in. Built-in profiles include Replicate SAM2 video and a
+  custom SAM2-compatible endpoint.
 - `openai`: model choice and API key for hosted plan generation. It is not a
   segmentation provider and never receives frames from the UI-MODEL-04
   connector.
@@ -25,11 +27,11 @@ The Local UI Provider settings panel currently covers:
 - `auto_object_proposals`: no key in mock mode; optional local SAM2 automatic
   proposals use local package/checkpoint/config/device diagnostics, not a
   browser-supplied secret.
-- `sam3-hosted`: endpoint URL, model choice, API key, and hosted-call opt-in.
-  Hosted SAM3-compatible discovery uses `SAM3_HOSTED_URL` and
-  `SAM3_HOSTED_API_KEY`; setup tests validate fields locally, do not send
-  frames or make network calls, and require a separate explicit opt-in for
-  hosted smoke tests.
+- `sam3-hosted`: hosted profile, model choice, API key, optional endpoint, and
+  hosted-call opt-in. Built-in profiles include Roboflow SAM3 concept
+  segmentation, Fal SAM3 image, and a custom SAM3-compatible endpoint. Setup
+  tests validate fields locally, do not send frames or make network calls, and
+  require a separate explicit opt-in for hosted smoke tests.
 
 ![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
 
@@ -46,6 +48,10 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_DEFAULT_MODEL=gpt-5.4-mini
 HOSTED_SEGMENTATION_URL=
 HOSTED_SEGMENTATION_API_KEY=
+REPLICATE_API_TOKEN=
+ROBOFLOW_API_KEY=
+ROBOFLOW_SAM3_URL=
+FAL_KEY=
 SAM3_HOSTED_URL=
 SAM3_HOSTED_API_KEY=
 SAM3_HOSTED_MODEL=auto
@@ -61,19 +67,11 @@ Environment variables take precedence over Local UI settings. If
 `OPENROUTER_API_KEY` or `OPENAI_API_KEY` is set, diagnostics report the
 credential source as `environment` even if a different Local UI key is saved.
 
-In Phase 03B, saved hosted keys are a user-facing settings and diagnostics
-surface. They are not passed into runtime provider constructors yet. Diagnostics
-mark these providers as configured but `configured_settings_only`; use
-environment variables for actual provider execution until per-user runtime
-provider routing is wired in a later phase.
-
-Phase OD-09 adds a narrow exception for `sam3-hosted`: the Local UI can run an
-explicit one-frame smoke test from server-side saved settings. UI-MODEL-04 adds
-the same safety shape for `openai-planner` model-plan runs. The browser never
-receives the raw key and does not send the key back to the API. The request must
-include both `allowNetwork: true` and `acknowledgeCostPrivacy: true`, and the
-provider must have the hosted-call opt-in enabled in settings or in the
-headless API request.
+Saved `sam2-hosted` and `sam3-hosted` settings are server-side runtime
+settings for the Local UI worker. The browser never receives the raw key and
+does not send the key back to the API. A hosted extraction still requires a run
+config with explicit network/cost/privacy opt-in, and missing optional vendor
+SDKs are reported as diagnostics instead of falling back to mock providers.
 
 ## What Is Redacted
 
@@ -111,19 +109,22 @@ Local providers keep frames on your machine. Hosted providers may send frames,
 frame-derived data, text prompts, or model-routing requests to a third-party
 service. MotionJSON marks these providers as hosted, shows a cost/privacy
 warning, and requires an explicit hosted-call opt-in in settings before hosted
-segmentation can be considered for execution. In the current Local UI, saved
-hosted credentials remain settings-only and do not make backend jobs runnable.
+segmentation can be considered for execution. The Local UI worker can use saved
+`sam2-hosted` and `sam3-hosted` settings for explicit hosted runs, but it does
+not put raw keys into API responses, run configs, logs, notebooks, screenshots,
+or exported settings.
 
 `POST /api/provider-settings/PROVIDER_ID/test` is a no-network setup check. It
 verifies required fields and basic key shape, but it does not call OpenRouter
 or a hosted segmentation service.
 
-`POST /api/provider-settings/sam3-hosted/smoke-test` is the hosted SAM3
-network smoke route. It sends one generated test frame to the configured
-endpoint only after the explicit request acknowledgement. The authenticated
-backend equivalent is:
+`POST /api/provider-settings/sam2-hosted/smoke-test` and
+`POST /api/provider-settings/sam3-hosted/smoke-test` are explicit hosted SAM
+smoke routes. They run only after the request acknowledgement. The
+authenticated backend equivalents are:
 
 ```text
+POST /v1/providers/sam2-hosted/smoke-test
 POST /v1/providers/sam3-hosted/smoke-test
 ```
 

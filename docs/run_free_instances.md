@@ -35,16 +35,27 @@ It is not the right place to host a public long-running MotionJSON web service.
 
 Use the checked-in notebooks when you want ready Colab surfaces:
 
-- [Colab local UI demo](../notebooks/colab_ui_local_demo.ipynb): launches
+- [Colab local UI demo](../notebooks/colab_ui_local_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_local_demo.ipynb):
+  launches
   `python3 -m motionjson.cli ui --no-open --mock` in the notebook runtime,
   displays `/ui/` through Colab's port proxy, and provides the generated
   red-ball video path for UI registration.
-- [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb): runs
+- [Colab provider-connect UI demo](../notebooks/colab_ui_provider_connect_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
+  installs hosted SAM vendor dependencies, launches the UI through Colab's port
+  proxy, and supports Roboflow SAM3, Replicate SAM2 video, Fal SAM3 image, and
+  custom SAM-compatible provider profiles after explicit opt-in.
+- [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
+  runs
   the compact threshold extraction, validation, and ZIP download path.
-- [Colab export and browser preview demo](../notebooks/colab_red_ball_export_preview.ipynb):
+- [Colab export and browser preview demo](../notebooks/colab_red_ball_export_preview.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_export_preview.ipynb):
   runs extraction, validates output, exports a website ZIP, and previews
   `examples/plain_js_embed.html` against generated MotionJSON assets.
-- [Colab provider diagnostics](../notebooks/colab_provider_diagnostics.ipynb):
+- [Colab provider diagnostics](../notebooks/colab_provider_diagnostics.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_provider_diagnostics.ipynb):
   reports provider readiness, defensively redacts diagnostic fields that look
   credential-related, and runs a no-model smoke extraction.
 

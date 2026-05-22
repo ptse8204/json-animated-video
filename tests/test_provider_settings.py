@@ -65,6 +65,12 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_mock_safe(tmp_path
     openrouter = provider_by_id(payload, "openrouter")
     assert openrouter["locality"] == "hosted"
     assert openrouter["readiness"]["status"] == "missing_key"
+    sam2_hosted = provider_by_id(payload, "sam2-hosted")
+    assert sam2_hosted["settings"]["hostedProfileId"] == "replicate-sam2-video"
+    assert {profile["id"] for profile in sam2_hosted["hostedProfiles"]} >= {"replicate-sam2-video", "custom-sam2-compatible"}
+    sam3_hosted = provider_by_id(payload, "sam3-hosted")
+    assert sam3_hosted["settings"]["hostedProfileId"] == "roboflow-sam3-pcs"
+    assert {profile["id"] for profile in sam3_hosted["hostedProfiles"]} >= {"roboflow-sam3-pcs", "fal-sam3-image", "custom-sam3-compatible"}
     assert "apiKey" not in json.dumps(payload)
 
 
@@ -135,6 +141,41 @@ def test_local_ui_provider_settings_reject_invalid_key_without_echoing_it(tmp_pa
     text = body.decode("utf-8")
     assert "bad secret with spaces" not in text
     assert "invalid or too" in text
+
+
+def test_hosted_profile_persistence_is_redacted_and_updates_capabilities(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "fal-profile-secret-abcdef123456"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam3-hosted",
+                "hostedProfileId": "fal-sam3-image",
+                "apiKey": secret,
+                "selectedModel": "fal-ai/sam-3/image",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert secret not in body.decode("utf-8")
+    provider = provider_by_id(payload, "sam3-hosted")
+    assert provider["settings"]["hostedProfileId"] == "fal-sam3-image"
+    assert provider["effectiveProfile"]["id"] == "fal-sam3-image"
+    assert provider["credentials"][0]["env"] == "FAL_KEY"
+    assert provider["credentials"][0]["display"].startswith("fal...")
+
+    status, _headers, body = app.handle("GET", "/api/capabilities")
+    capability = capability_by_name(decode(body), "sam3-hosted")
+    assert status == 200
+    assert capability["metadata"]["hostedProfileId"] == "fal-sam3-image"
+    assert capability["metadata"]["effectiveProfile"]["id"] == "fal-sam3-image"
+    assert secret not in body.decode("utf-8")
 
 
 def test_local_ui_provider_settings_reject_invalid_hosted_urls(tmp_path):
@@ -244,12 +285,12 @@ def test_hosted_sam2_settings_require_endpoint_key_and_opt_in(tmp_path):
     capability = capability_by_name(decode(body), "sam2-hosted")
     assert status == 200
     assert capability["configured"] is True
-    assert capability["runnable"] is False
-    assert capability["status"] == "configured_settings_only"
+    assert capability["runnable"] is True
+    assert capability["status"] == "ready"
     assert capability["networkRequired"] is True
     assert capability["metadata"]["credentialSource"] == "local_settings"
     assert capability["metadata"]["networkOptIn"] is True
-    assert capability["metadata"]["settingsOnly"] is True
+    assert capability["metadata"]["settingsOnly"] is False
     assert secret not in body.decode("utf-8")
 
 
@@ -284,10 +325,10 @@ def test_hosted_sam3_settings_are_redacted_and_never_test_network(tmp_path):
     capability = capability_by_name(decode(body), "sam3-hosted")
     assert status == 200
     assert capability["configured"] is True
-    assert capability["runnable"] is False
-    assert capability["status"] == "configured_settings_only"
+    assert capability["runnable"] is True
+    assert capability["status"] == "ready"
     assert capability["metadata"]["credentialSource"] == "local_settings"
-    assert capability["metadata"]["settingsOnly"] is True
+    assert capability["metadata"]["settingsOnly"] is False
     assert secret not in body.decode("utf-8")
 
 
@@ -315,6 +356,42 @@ def test_hosted_sam3_smoke_requires_per_request_network_ack(tmp_path):
     text = body.decode("utf-8")
     assert "allowNetwork=true" in text
     assert secret not in text
+
+
+def test_hosted_sam2_smoke_supports_replicate_profile_without_raw_secret(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "replicate-profile-secret-abcdef123456"
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam2-hosted",
+                "hostedProfileId": "replicate-sam2-video",
+                "apiKey": secret,
+                "selectedModel": "meta/sam-2-video",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        result = hosted_sam3_smoke_test(
+            conn,
+            user_id=user["id"],
+            payload={"providerId": "sam2-hosted", "allowNetwork": True, "allowHosted": True, "acknowledgeCostPrivacy": True},
+        )
+    finally:
+        conn.close()
+
+    encoded = json.dumps(result, sort_keys=True)
+    assert result["providerId"] == "sam2-hosted"
+    assert result["hostedProfileId"] == "replicate-sam2-video"
+    assert result["smokeTest"]["providerName"] == "replicate-sam2-video"
+    assert secret not in encoded
 
 
 def test_hosted_sam3_smoke_uses_server_saved_secret_and_redacts_response(tmp_path):

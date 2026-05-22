@@ -462,6 +462,7 @@ class HostedSAM2SegmentationProvider:
 
     source_video: str | Path
     endpoint: str | None = None
+    api_key: str | None = None
     config: Mapping[str, Any] | None = None
     auth_env: str = "HOSTED_SEGMENTATION_API_KEY"
     endpoint_env: str = "HOSTED_SEGMENTATION_URL"
@@ -481,7 +482,23 @@ class HostedSAM2SegmentationProvider:
     def prepare(self, video_metadata: VideoInfo) -> None:
         self.video_metadata = video_metadata
         self._endpoint = self.endpoint or os.environ.get(self.endpoint_env)
-        self._token = os.environ.get(self.auth_env) if self.auth_env else None
+        self._token = self.api_key or (os.environ.get(self.auth_env) if self.auth_env else None)
+        if self.client is None:
+            from .hosted_sam import hosted_sam2_client_from_config
+
+            base_config = dict(self.config or {})
+            runtime_config = {
+                **base_config,
+                "apiKey": self._token or base_config.get("apiKey") or base_config.get("api_key"),
+                "endpoint": self._endpoint or base_config.get("endpoint"),
+                "promptFrame": self.prompt_frame_index,
+                "objectId": self.object_id,
+                "promptPoint": self.prompt_point,
+                "promptBox": self.prompt_box,
+            }
+            self.client = hosted_sam2_client_from_config(self.source_video, runtime_config)
+            if self.client is not None:
+                return
         if self.client is not None:
             return
         if not self._endpoint:

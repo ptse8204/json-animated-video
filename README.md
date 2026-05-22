@@ -193,17 +193,28 @@ Colab is useful for short interactive demos and generated-file inspection. It
 is not the right place to host a long-running public MotionJSON web service.
 Use the checked-in notebooks for the safe first paths:
 
-- [Colab local UI notebook](notebooks/colab_ui_local_demo.ipynb): clones the
+- [Colab local UI notebook](notebooks/colab_ui_local_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_local_demo.ipynb):
+  clones the
   repo, installs the lightweight UI extra, creates the deterministic red-ball
   video, runs provider diagnostics, starts `motionjson ui --no-open --mock`,
   and displays `/ui/` through Colab's notebook port proxy.
-- [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb): runs
+- [Colab provider-connect UI notebook](notebooks/colab_ui_provider_connect_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
+  launches the Local UI with optional hosted SAM vendor dependencies and can
+  connect to Roboflow SAM3, Replicate SAM2 video, Fal SAM3 image, or custom
+  SAM-compatible endpoints after explicit cost/privacy opt-in.
+- [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
+  runs
   the compact CPU/no-model threshold extraction, validation, and ZIP download
   path.
-- [Colab export and browser preview notebook](notebooks/colab_red_ball_export_preview.ipynb):
+- [Colab export and browser preview notebook](notebooks/colab_red_ball_export_preview.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_export_preview.ipynb):
   creates a website handoff ZIP and previews the generated runtime assets
   through Colab's port proxy.
-- [Colab provider diagnostics notebook](notebooks/colab_provider_diagnostics.ipynb):
+- [Colab provider diagnostics notebook](notebooks/colab_provider_diagnostics.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_provider_diagnostics.ipynb):
   reports provider readiness and saves redacted diagnostics plus a no-model
   smoke extraction for support.
 

@@ -24,6 +24,7 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "Provider settings",
         "Providers and models",
         "Choose how planning works",
+        "textDiscoveryProviderSelect",
     ]:
         assert expected in html
 
@@ -34,8 +35,11 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "modelSetupPayloadFromValues",
         "renderModelSetup",
         "data-provider-field=\"apiKey\"",
+        "data-provider-field=\"hostedProfileId\"",
         "data-model-setup-field=\"apiKey\"",
         "allowHosted",
+        "hostedProfileId",
+        "textDiscoveryProvider",
         "providerSettingsById",
         "saveProviderSettingsFromRow",
         "/api/provider-settings/${encodeURIComponent(providerId)}/test",

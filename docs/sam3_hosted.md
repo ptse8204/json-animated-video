@@ -9,14 +9,26 @@ frames may leave the machine and may incur provider cost.
 Headless and CLI workflows should prefer environment variables:
 
 ```bash
+ROBOFLOW_API_KEY=
+ROBOFLOW_SAM3_URL=https://serverless.roboflow.com/sam3/concept_segment
+FAL_KEY=
 SAM3_HOSTED_URL=https://provider.example.test/sam3
 SAM3_HOSTED_API_KEY=
 SAM3_HOSTED_MODEL=auto
 ```
 
-The Local UI Provider settings panel can also save the endpoint, API key, model
-choice, and hosted-call opt-in in the local SQLite database. Raw keys are never
-returned by `GET /api/provider-settings` or `GET /api/capabilities`.
+The Local UI Provider settings panel can also save the hosted profile, optional
+endpoint, API key, model choice, and hosted-call opt-in in the local SQLite
+database. Built-in profiles are:
+
+- `roboflow-sam3-pcs`: Roboflow SAM3 concept segmentation, using sampled
+  frames and text concepts.
+- `fal-sam3-image`: Fal `fal-ai/sam-3/image`, called frame-by-frame for sampled
+  frames.
+- `custom-sam3-compatible`: the generic MotionJSON hosted SAM3 JSON contract.
+
+Raw keys are never returned by `GET /api/provider-settings` or
+`GET /api/capabilities`.
 
 Do not put hosted API keys in extraction run configs. The hosted SAM3 runtime
 adapter reads credentials from environment variables or explicit server-side
@@ -28,8 +40,8 @@ settings paths so job payloads do not become a secret store.
 the endpoint, key, and model fields are present and plausible, then returns
 `networkAttempted: false`.
 
-`POST /api/provider-settings/sam3-hosted/smoke-test` is the only Local UI route
-that sends a test frame. It requires:
+`POST /api/provider-settings/sam3-hosted/smoke-test` sends a test frame for
+Roboflow/Fal/custom image profiles after explicit acknowledgement. It requires:
 
 ```json
 {
@@ -64,6 +76,11 @@ The response must be a SAM3-compatible JSON object or list containing masks,
 boxes, scores, labels, outputs, objects, tracks, predictions, segments, or
 instances. Empty candidate responses fail schema validation instead of being
 treated as success.
+
+Roboflow polygon masks are rasterized into MotionJSON masks before review.
+Fal mask image URLs are downloaded server-side and routed through the same
+review/filter/linking path. Hosted credentials stay server-side; run configs
+store only `discovery.config.hostedProfile` and provider preference metadata.
 
 ## Safety Rules
 

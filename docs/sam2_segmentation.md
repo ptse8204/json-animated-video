@@ -113,7 +113,14 @@ receives boxes or masks.
 
 The hosted provider lives at `motionjson.providers.sam2.HostedSAM2SegmentationProvider`. It accepts an injected client or JSON transport and makes no network calls by default.
 
-For a real hosted deployment:
+For the built-in Replicate SAM2 video profile, select
+`replicate-sam2-video` in the Local UI or put it in
+`provider.sam2.hosted_config.profile`; the server-side credential comes from
+saved provider settings or `REPLICATE_API_TOKEN`. The runtime calls
+Replicate's `meta/sam-2-video` model, converts point/box prompts into click
+fields, and materializes returned `black_white_masks` as per-frame masks.
+
+For a custom hosted deployment:
 
 ```bash
 HOSTED_SEGMENTATION_URL=https://your-segmentation-service.example/sam2
@@ -126,7 +133,9 @@ python3 -m motionjson.cli extract input.mp4 \
   --prompt-point 410,230
 ```
 
-Without an injected client/transport, the CLI requires explicit `--sam2-hosted-allow-network`, a configured endpoint, and auth from `--sam2-auth-env` before any request can be made.
+Without an injected client/transport or hosted vendor profile, the CLI requires
+explicit `--sam2-hosted-allow-network`, a configured endpoint, and auth from
+`--sam2-auth-env` before any request can be made.
 
 The hosted request payload contains:
 

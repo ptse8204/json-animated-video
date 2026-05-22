@@ -895,6 +895,25 @@ const MotionJSONUI = (() => {
         mock: true,
       };
     }
+    if (input.discoveryMode === "sam3_concept") {
+      return {
+        concept: input.textPrompt || "",
+        text: input.textPrompt || "",
+        labels: parseCsv(input.textPrompt),
+        providerPreference: "sam3-hosted",
+        hosted: true,
+        hostedProfile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
+        model: input.hostedSam3Model || null,
+        keyframes,
+        max_candidates: toInteger(input.maxObjects, 12),
+        box_threshold: toNumber(input.boxThreshold, 0.35),
+        text_threshold: toNumber(input.textThreshold, 0.25),
+        deduplicate: true,
+        allowNetwork: Boolean(input.hostedSam3AllowHosted),
+        acknowledgeCostPrivacy: Boolean(input.hostedSam3AllowHosted),
+        mock: false,
+      };
+    }
     if (input.discoveryMode === "sam_auto_masks") {
       return {
         keyframes,
@@ -950,7 +969,10 @@ const MotionJSONUI = (() => {
     const preset = PRESETS[input.preset] || PRESETS.auto_object_proposals;
     const objectId = slugObjectId(input.objectId, "object_0");
     const objectLabel = String(input.objectLabel || objectId || "selected_object").trim() || objectId;
-    const discoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
+    let discoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
+    if (input.preset === "text_detector" && input.textDiscoveryProvider === "sam3-hosted") {
+      discoveryMode = "sam3_concept";
+    }
     const maskProvider = input.maskProvider || preset.maskProvider || "threshold";
     const frameIndex = Math.max(0, toInteger(input.currentFrame, 0));
     const normalizedPrompts = asArray(input.prompts).map((prompt) => normalizePrompt(prompt, objectId, objectLabel));
@@ -962,6 +984,7 @@ const MotionJSONUI = (() => {
     const keyframes = parseKeyframes(input.keyframes);
     const device = input.device && input.device !== "auto" ? input.device : null;
     const modelName = input.modelName && input.modelName !== "auto" ? input.modelName : null;
+    const hostedSam2ProfileId = input.hostedSam2ProfileId || "replicate-sam2-video";
     const objects = [
       {
         object_id: objectId,
@@ -992,7 +1015,11 @@ const MotionJSONUI = (() => {
           ...EMPTY_SAM2,
           device,
           prompt_frame: frameIndex,
-          hosted_config: modelName ? { model: modelName } : {},
+          hosted_config: {
+            ...(modelName ? { model: modelName } : {}),
+            ...(maskProvider === "sam2-hosted" ? { profile: hostedSam2ProfileId, hostedProfile: hostedSam2ProfileId } : {}),
+          },
+          hosted_allow_network: maskProvider === "sam2-hosted" ? Boolean(input.hostedSam2AllowHosted) : false,
         },
         cache: {
           enabled: true,
@@ -1065,7 +1092,7 @@ const MotionJSONUI = (() => {
     const goal = RUN_PLAN_GOALS[presetName] || RUN_PLAN_GOALS.auto_object_proposals;
     const providerName = config?.provider?.name || "mock";
     const discoveryMode = config?.discovery?.mode || PRESETS[presetName]?.discoveryMode || "manual_prompt";
-    const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network);
+    const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network || config?.discovery?.config?.allowNetwork);
     const localOrMock = LOCAL_JOB_PROVIDERS.has(providerName) || providerName === "threshold";
     const hasRegisteredVideo = Boolean(input.videoId || config?.rights?.source_asset_id);
     const hasBrowserPreview = Boolean(input.previewName);
@@ -1366,6 +1393,10 @@ const MotionJSONUI = (() => {
   function collectFormState($) {
     const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
     const frameIndex = state.video.currentFrame || toInteger($("#frameSlider").value, 0);
+    const hostedSam2Provider = providerSettingsById("sam2-hosted");
+    const hostedSam3Provider = providerSettingsById("sam3-hosted");
+    const hostedSam2Settings = hostedSam2Provider?.settings || {};
+    const hostedSam3Settings = hostedSam3Provider?.settings || {};
     return {
       preset: state.selectedPreset,
       discoveryMode: preset.discoveryMode,
@@ -1382,6 +1413,7 @@ const MotionJSONUI = (() => {
       prompts: state.prompts,
       strokes: state.strokes,
       maskProvider: $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold",
+      textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "mock",
       device: $("#deviceSelect").value,
       sampleFps: $("#sampleFps").value,
       maxFrames: $("#maxFrames").value,
@@ -1402,6 +1434,12 @@ const MotionJSONUI = (() => {
       classPreset: $("#classPreset").value,
       classList: $("#classList").value.trim(),
       externalMaskDir: $("#externalMaskDir").value.trim(),
+      hostedSam2ProfileId: hostedSam2Settings.hostedProfileId || "replicate-sam2-video",
+      hostedSam2AllowHosted: Boolean(hostedSam2Settings.allowHosted),
+      hostedSam2Model: providerEffectiveModel(hostedSam2Provider),
+      hostedSam3ProfileId: hostedSam3Settings.hostedProfileId || "roboflow-sam3-pcs",
+      hostedSam3AllowHosted: Boolean(hostedSam3Settings.allowHosted),
+      hostedSam3Model: providerEffectiveModel(hostedSam3Provider),
     };
   }
 
@@ -1556,7 +1594,8 @@ const MotionJSONUI = (() => {
 
   function selectedCapabilityWarnings(config, $) {
     const warnings = [];
-    const discovery = providerByName(config.discovery.mode, "discovery_provider");
+    const discoveryName = config.discovery.config?.providerPreference === "sam3-hosted" ? "sam3-hosted" : config.discovery.mode;
+    const discovery = providerByName(discoveryName, "discovery_provider") || providerByName(String(config.discovery.mode || "").replaceAll("_", "-"), "discovery_provider");
     const mask = providerByName(config.provider.name, "mask_provider");
     const device = $("#deviceSelect").value;
     const hasPointOrBox = config.prompts.some((prompt) => ["point", "positive_point", "box"].includes(prompt.kind));
@@ -1585,8 +1624,16 @@ const MotionJSONUI = (() => {
       warnings.push(`${config.provider.name} requires at least one positive point or box prompt.`);
     }
 
+    if (config.provider.name === "sam2-hosted" && !config.provider.sam2?.hosted_allow_network) {
+      warnings.push("sam2-hosted needs hosted cost/privacy confirmation before extraction can send video frames.");
+    }
+
+    if (config.discovery.config?.providerPreference === "sam3-hosted" && !config.discovery.config?.allowNetwork) {
+      warnings.push("sam3-hosted needs hosted cost/privacy confirmation before discovery can send sampled frames.");
+    }
+
     if (state.selectedPreset === "text_detector" && !String(config.discovery.config.text || "").trim()) {
-      warnings.push("text_detector needs at least one text label.");
+      warnings.push(`${config.discovery.mode === "sam3_concept" ? "sam3-hosted" : "text_detector"} needs at least one text label.`);
     }
 
     if (
@@ -3693,6 +3740,18 @@ const MotionJSONUI = (() => {
       const hosted = provider.locality === "hosted";
       const modelOptions = asArray(provider.modelOptions);
       const selectedModel = settings.selectedModel || provider.defaultModel || "";
+      const hostedProfiles = asArray(provider.hostedProfiles);
+      const selectedProfile = settings.hostedProfileId || provider.defaultHostedProfile || hostedProfiles[0]?.id || "";
+      const profileField = hostedProfiles.length
+        ? `<label>
+            <span>Hosted profile</span>
+            <select data-provider-field="hostedProfileId">
+              ${hostedProfiles
+                .map((profile) => `<option value="${escapeAttribute(profile.id)}" ${profile.id === selectedProfile ? "selected" : ""}>${escapeHtml(profile.name || profile.id)}</option>`)
+                .join("")}
+            </select>
+          </label>`
+        : "";
       const customHidden = selectedModel !== "__custom__";
       const customModelField = provider.customModelAllowed
         ? `<label class="provider-custom-model" ${customHidden ? "hidden" : ""}>
@@ -3729,7 +3788,7 @@ const MotionJSONUI = (() => {
           </label>`
         : "";
       const hostedSmokeButton =
-        provider.id === "sam3-hosted"
+        provider.id === "sam2-hosted" || provider.id === "sam3-hosted"
           ? `<button type="button" data-provider-action="smoke-test">Run hosted smoke</button>`
           : "";
       return `
@@ -3751,6 +3810,7 @@ const MotionJSONUI = (() => {
           ${provider.warning ? `<div class="warning-box ${hosted ? "is-warn" : ""}">${escapeHtml(provider.warning)}</div>` : ""}
           <div class="provider-credential-summary">${credentialSummary}</div>
           <div class="provider-settings-fields">
+            ${profileField}
             <label>
               <span>Model</span>
               <select data-provider-field="selectedModel">
@@ -3905,6 +3965,7 @@ const MotionJSONUI = (() => {
       const checked = (selector) => Boolean(row.querySelector(selector)?.checked);
       const payload = {
         providerId: row.dataset.providerSettingsId,
+        hostedProfileId: value("[data-provider-field='hostedProfileId']"),
         selectedModel: value("[data-provider-field='selectedModel']"),
         customModelId: value("[data-provider-field='customModelId']"),
         endpoint: value("[data-provider-field='endpoint']"),
@@ -4983,6 +5044,7 @@ const MotionJSONUI = (() => {
       $("#qualityPresetField").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
+      $("#textDiscoveryProviderField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
       $("#classPresetField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#classListField").classList.toggle("is-hidden", state.selectedPreset !== "class_detector");
       $("#externalMaskField").classList.toggle("is-hidden", state.selectedPreset !== "external_masks");
@@ -7853,7 +7915,7 @@ const MotionJSONUI = (() => {
           const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/test`, { method: "POST", body: JSON.stringify({}) });
           if (result) result.textContent = payload.message || payload.status || "Provider setup checked.";
         } else if (action === "smoke-test") {
-          if (!window.confirm("Run a hosted SAM3 one-frame smoke test? This can send a generated frame to the configured endpoint and may incur provider cost.")) {
+          if (!window.confirm("Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost.")) {
             if (result) result.textContent = "Hosted smoke test canceled.";
             return;
           }
@@ -7866,7 +7928,7 @@ const MotionJSONUI = (() => {
               prompt: "object",
             }),
           });
-          if (result) result.textContent = payload.message || "Hosted SAM3 smoke test completed.";
+          if (result) result.textContent = payload.message || "Hosted SAM smoke test completed.";
         } else if (action === "reset") {
           await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
           await refreshAll();
@@ -7965,6 +8027,7 @@ const MotionJSONUI = (() => {
       "traceEverythingMode",
       "traceEverythingAck",
       "textPrompt",
+      "textDiscoveryProviderSelect",
       "classList",
       "externalMaskDir",
       "videoPath",

@@ -100,9 +100,9 @@ or detector model before the real backend can run.
 | `external_masks` | Yes | No | No | No | Multi-object extraction from prepared mask folders or manifests. | Frame-count mismatches and path mistakes can leave tracks incomplete. |
 | `auto_object_proposals` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Default clean candidate gallery before selected-object tracking. | Clean misses small objects; recall/Trace Everything can be noisy; missing SAM2 package/checkpoint/config blocks real proposals. |
 | `sam2-local` | Local once installed | Recommended for real use | Yes | No | Promptable local segmentation/tracking with SAM2-style models. | Missing SAM2 package, checkpoint, config, CUDA, or an overly broad prompt. |
-| `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
+| `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing key, missing optional vendor SDK, missing custom endpoint, no hosted opt-in, or remote errors. |
 | `sam3-local` | Local once installed | Yes, CUDA expected | Yes | No | Concept, exemplar, and higher-recall semantic discovery. | Missing SAM3 package, Python 3.12+ runtime, local model path, torch/CUDA, or incompatible runtime. |
-| `sam3-hosted` | No | No local GPU | No local weights | Yes | Hosted SAM3-compatible discovery experiments. | Missing endpoint/key, no hosted opt-in, remote errors, or settings-only Local UI credentials. |
+| `sam3-hosted` | No | No local GPU | No local weights | Yes | Hosted SAM3-compatible discovery experiments. | Missing key, missing optional vendor SDK, missing custom endpoint, no hosted opt-in, or remote errors. |
 | `sam3-concept` / `sam3-exemplar` / `sam3-auto-masks` | Mock/no-model path, or SAM3 when configured | Yes, CUDA expected for real SAM3 | Yes for real backend | No | Concept prompts, exemplar search, and higher-recall proposal review. | Mock output is deterministic; real execution remains optional and capability-gated. |
 | `sam_auto_masks` | Mock/no-model path, or local SAM2 when configured | Recommended for real SAM2 use | Yes for SAM2 backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
 | `text_detector` | Mock only today | Future backend dependent | Yes for real backend | No | Text-guided candidate boxes before segmentation. | Missing detector package/model or semantically wrong boxes. |
@@ -124,10 +124,10 @@ Optional SAM2/hosted providers:
   test/client injects behavior.
 - `sam2-local`: local SAM2-compatible segmentation; requires optional SAM2,
   torch, `SAM2_LOCAL_CHECKPOINT`, and `SAM2_LOCAL_CONFIG`.
-- `sam2-hosted`: hosted segmentation; requires `HOSTED_SEGMENTATION_URL` and
-  `HOSTED_SEGMENTATION_API_KEY`, and extraction still requires explicit network
-  opt-in. Diagnostics may show `configured: true` while `runnable: false` until
-  that opt-in/client path is provided.
+- `sam2-hosted`: hosted segmentation. `replicate-sam2-video` uses
+  `REPLICATE_API_TOKEN` and the optional `replicate` package; custom endpoints
+  use `HOSTED_SEGMENTATION_URL` and `HOSTED_SEGMENTATION_API_KEY`. Extraction
+  still requires explicit network/cost/privacy opt-in.
 - `auto_object_proposals` and `sam_auto_masks`: local SAM2 automatic proposal
   diagnostics require the `sam2.automatic_mask_generator` module, torch, and
   existing `SAM2_LOCAL_CHECKPOINT` / `SAM2_LOCAL_CONFIG` paths. They report
@@ -137,10 +137,11 @@ Optional SAM2/hosted providers:
   package, Python 3.12+, torch with CUDA available, and an existing
   `SAM3_LOCAL_MODEL` path. The base install and mock modes do not require any
   of those.
-- `sam3-hosted`: hosted SAM3-compatible discovery requires
-  `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`, and explicit network opt-in. Its
-  setup check is no-network; the one-frame smoke test is a separate API call
-  that requires a cost/privacy acknowledgement before any frame is sent.
+- `sam3-hosted`: hosted SAM3-compatible discovery. `roboflow-sam3-pcs` uses
+  `ROBOFLOW_API_KEY`, `fal-sam3-image` uses `FAL_KEY` plus the optional
+  `fal-client` package, and custom endpoints use `SAM3_HOSTED_URL` and
+  `SAM3_HOSTED_API_KEY`. Its setup check is no-network; the smoke test is a
+  separate API call that requires a cost/privacy acknowledgement first.
 
 Reasoning provider:
 
@@ -158,18 +159,20 @@ Provider settings:
 - `POST /api/provider-settings/PROVIDER_ID/test` runs a no-network readiness
   check. Hosted providers are checked for required fields and plausible key
   format, but the smoke test does not call the remote provider.
-- `POST /api/provider-settings/sam3-hosted/smoke-test` runs the hosted SAM3
-  one-frame network smoke test. It requires `allowNetwork: true`,
-  `allowHosted: true`, and `acknowledgeCostPrivacy: true`, uses server-side
-  settings or environment credentials, and redacts secrets in all responses.
-- `POST /v1/providers/sam3-hosted/smoke-test` exposes the same explicit smoke
-  test for authenticated/headless API clients.
+- `POST /api/provider-settings/sam2-hosted/smoke-test` and
+  `POST /api/provider-settings/sam3-hosted/smoke-test` run explicit hosted SAM
+  smoke tests. They require `allowNetwork: true`, `allowHosted: true`, and
+  `acknowledgeCostPrivacy: true`, use server-side settings or environment
+  credentials, and redact secrets in all responses.
+- `POST /v1/providers/sam2-hosted/smoke-test` and
+  `POST /v1/providers/sam3-hosted/smoke-test` expose the same explicit smoke
+  tests for authenticated/headless API clients.
 
 Environment variables override Local UI settings. This keeps CLI/headless use
-predictable and avoids surprising hosted calls in shared environments. For
-Phase 03B, saved hosted keys are settings-only in diagnostics; use environment
-variables for actual provider execution until a later phase wires per-user
-runtime provider construction.
+predictable and avoids surprising hosted calls in shared environments. Saved
+hosted SAM2/SAM3 keys can be used by the Local UI worker for explicit hosted
+extraction. Other hosted reasoning keys remain connector-specific and are still
+never exposed to the browser.
 
 Discovery providers:
 

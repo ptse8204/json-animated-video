@@ -194,6 +194,33 @@ assert.deepEqual(modelSetupPayload, {
 const noSecretPayload = ui.modelSetupPayloadFromValues("openai", { selectedModel: "gpt-5.4-mini", apiKey: " " });
 assert.equal(Object.hasOwn(noSecretPayload, "apiKey"), false);
 
+const hostedSam2Config = ui.buildRunConfig({
+  preset: "trace_one_object",
+  maskProvider: "sam2-hosted",
+  objectId: "object_0",
+  objectLabel: "selected object",
+  prompts: [{ kind: "positive_point", frame_index: 0, object_id: "object_0", label: "selected object", data: { x: 10, y: 12 } }],
+  hostedSam2ProfileId: "replicate-sam2-video",
+  hostedSam2AllowHosted: true,
+  modelName: "meta/sam-2-video",
+});
+assert.equal(hostedSam2Config.provider.sam2.hosted_config.profile, "replicate-sam2-video");
+assert.equal(hostedSam2Config.provider.sam2.hosted_allow_network, true);
+assert.equal(JSON.stringify(hostedSam2Config).includes("replicate-profile-secret"), false);
+
+const hostedSam3Config = ui.buildRunConfig({
+  preset: "text_detector",
+  textDiscoveryProvider: "sam3-hosted",
+  textPrompt: "red ball",
+  hostedSam3ProfileId: "roboflow-sam3-pcs",
+  hostedSam3AllowHosted: true,
+  hostedSam3Model: "sam3/sam3_final",
+});
+assert.equal(hostedSam3Config.discovery.mode, "sam3_concept");
+assert.equal(hostedSam3Config.discovery.config.providerPreference, "sam3-hosted");
+assert.equal(hostedSam3Config.discovery.config.hostedProfile, "roboflow-sam3-pcs");
+assert.equal(hostedSam3Config.discovery.config.allowNetwork, true);
+
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
 const modelPlanPayload = ui.modelPlanRequestFromInput(

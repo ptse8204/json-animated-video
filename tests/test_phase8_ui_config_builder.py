@@ -77,6 +77,21 @@ const cases = [
     expected: {{ provider: "mock", discovery: "text_detector", prompts: 0 }},
   }},
   {{
+    goal: "find_objects_from_text_hosted_sam3",
+    input: {{
+      presetId: "text_detector",
+      video: {{ id: "video_text_hosted" }},
+      label: "Detected object",
+      objectId: "detected_object",
+      discoveryText: "red ball",
+      textDiscoveryProvider: "sam3-hosted",
+      hostedSam3ProfileId: "roboflow-sam3-pcs",
+      hostedSam3AllowHosted: true,
+      advanced: commonAdvanced,
+    }},
+    expected: {{ provider: "mock", discovery: "sam3_concept", prompts: 0 }},
+  }},
+  {{
     goal: "find_known_classes",
     input: {{
       presetId: "class_detector",

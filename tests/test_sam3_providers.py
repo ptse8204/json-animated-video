@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import builtins
+import io
 import os
 from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from motionjson.providers.discovery import (
     SAM3AutoMasksDiscoveryProvider,
@@ -14,6 +16,7 @@ from motionjson.providers.discovery import (
     object_specs_from_candidates,
 )
 from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
+from motionjson.providers.hosted_sam import FalSAM3ImageBackend, RoboflowSAM3ConceptBackend
 from motionjson.providers.sam3 import HostedSAM3DiscoveryBackend, LocalSAM3DiscoveryBackend, normalize_sam3_output
 from motionjson.tracks import RunContext, VideoSource
 from motionjson.video import Frame, VideoInfo
@@ -112,12 +115,82 @@ class FakeHostedSAM3Transport:
         return self.response
 
 
+class FakeFalClient:
+    def __init__(self, response):
+        self.response = response
+        self.uploads = []
+        self.calls = []
+
+    def upload_file(self, path):
+        self.uploads.append(path)
+        return "https://fal.example.test/input.png"
+
+    def subscribe(self, model, *, arguments, with_logs=False):
+        self.calls.append({"model": model, "arguments": arguments, "with_logs": with_logs})
+        return self.response
+
+
 def test_normalize_sam3_output_maps_official_image_shape():
     records = normalize_sam3_output({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.91], "labels": ["red ball"]})
 
     assert records[0]["label"] == "red ball"
     assert records[0]["bbox"] == [3, 2, 5, 5]
     assert records[0]["score"] == 0.91
+
+
+def test_roboflow_sam3_profile_rasterizes_polygon_masks_without_bearer_headers():
+    transport = FakeHostedSAM3Transport(
+        {
+            "prompt_results": [
+                {
+                    "prompt_index": 0,
+                    "predictions": [
+                        {
+                            "confidence": 0.88,
+                            "masks": [[{"x": 2, "y": 2}, {"x": 8, "y": 2}, {"x": 8, "y": 8}, {"x": 2, "y": 8}]],
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    backend = RoboflowSAM3ConceptBackend(
+        api_key="roboflow-test-key-abcdef",
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        transport=transport,
+    )
+
+    records = backend.discover_concept(video_source(), {"concept": "red ball"})
+
+    assert records[0]["label"] == "red ball"
+    assert records[0]["segmentation"].shape == (12, 16)
+    assert records[0]["bbox"][2] >= 5
+    assert "api_key=" in transport.calls[0]["url"]
+    assert "Authorization" not in transport.calls[0]["headers"]
+    assert transport.calls[0]["payload"]["prompts"][0]["text"] == "red ball"
+
+
+def test_fal_sam3_profile_downloads_mask_urls():
+    mask = mask_at(3)
+    buffer = io.BytesIO()
+    Image.fromarray(mask).save(buffer, format="PNG")
+    response = {"masks": [{"url": "https://fal.example.test/mask.png"}], "scores": [0.91], "boxes": [[0.4, 0.4, 0.3, 0.3]]}
+    client = FakeFalClient(response)
+    backend = FalSAM3ImageBackend(
+        api_key="fal-test-key-abcdef",
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        client=client,
+        downloader=lambda url: buffer.getvalue(),
+    )
+
+    records = backend.discover_concept(video_source(), {"concept": "red ball"})
+
+    assert records[0]["segmentation"].shape == (12, 16)
+    assert records[0]["score"] == 0.91
+    assert client.calls[0]["model"] == "fal-ai/sam-3/image"
+    assert client.calls[0]["arguments"]["image_url"] == "https://fal.example.test/input.png"
 
 
 def test_hosted_sam3_smoke_requires_explicit_network_opt_in():

@@ -311,14 +311,78 @@ def provider_capabilities(
     model_config = _path_config_status("SAM2_LOCAL_CONFIG", sam2_model_config)
     hosted_settings = dict((provider_settings or {}).get("sam2-hosted", {}))
     sam3_hosted_settings = dict((provider_settings or {}).get("sam3-hosted", {}))
+    hosted_profile = str(hosted_settings.get("hosted_profile_id") or "replicate-sam2-video")
+    sam3_hosted_profile = str(sam3_hosted_settings.get("hosted_profile_id") or "roboflow-sam3-pcs")
+    if not hosted_settings.get("hosted_profile_id") and os.environ.get("HOSTED_SEGMENTATION_API_KEY"):
+        hosted_profile = "custom-sam2-compatible"
+    if not sam3_hosted_settings.get("hosted_profile_id"):
+        if os.environ.get("FAL_KEY"):
+            sam3_hosted_profile = "fal-sam3-image"
+        elif os.environ.get("SAM3_HOSTED_API_KEY"):
+            sam3_hosted_profile = "custom-sam3-compatible"
+    hosted_effective_profile = dict(hosted_settings.get("effective_profile") or {})
+    sam3_effective_profile = dict(sam3_hosted_settings.get("effective_profile") or {})
+    hosted_credential_fields = list(hosted_effective_profile.get("credentialFields") or [])
+    sam3_credential_fields = list(sam3_effective_profile.get("credentialFields") or [])
+    hosted_endpoint_field = dict(hosted_effective_profile.get("endpointField") or {})
+    sam3_endpoint_field = dict(sam3_effective_profile.get("endpointField") or {})
+    hosted_default_credential_env = {
+        "replicate-sam2-video": "REPLICATE_API_TOKEN",
+        "custom-sam2-compatible": "HOSTED_SEGMENTATION_API_KEY",
+    }.get(hosted_profile, "HOSTED_SEGMENTATION_API_KEY")
+    sam3_default_credential_env = {
+        "roboflow-sam3-pcs": "ROBOFLOW_API_KEY",
+        "fal-sam3-image": "FAL_KEY",
+        "custom-sam3-compatible": "SAM3_HOSTED_API_KEY",
+    }.get(sam3_hosted_profile, "SAM3_HOSTED_API_KEY")
+    hosted_default_endpoint_env = "HOSTED_SEGMENTATION_URL"
+    sam3_default_endpoint_env = "SAM3_HOSTED_URL" if sam3_hosted_profile == "custom-sam3-compatible" else "ROBOFLOW_SAM3_URL"
+    hosted_default_endpoint_required = hosted_profile == "custom-sam2-compatible"
+    sam3_default_endpoint_required = sam3_hosted_profile == "custom-sam3-compatible"
+    hosted_auth = {
+        "env": str((hosted_credential_fields[0] if hosted_credential_fields else {}).get("env") or hosted_default_credential_env),
+        "configured": bool(hosted_settings.get("api_key_configured") or os.environ.get(hosted_default_credential_env)),
+        "source": hosted_settings.get("credential_source") or "unset",
+    }
+    sam3_hosted_auth = {
+        "env": str((sam3_credential_fields[0] if sam3_credential_fields else {}).get("env") or sam3_default_credential_env),
+        "configured": bool(sam3_hosted_settings.get("api_key_configured") or os.environ.get(sam3_default_credential_env)),
+        "source": sam3_hosted_settings.get("credential_source") or "unset",
+    }
+    if hosted_auth["source"] == "unset" and os.environ.get(str(hosted_auth["env"])):
+        hosted_auth["source"] = "environment"
+    if sam3_hosted_auth["source"] == "unset" and os.environ.get(str(sam3_hosted_auth["env"])):
+        sam3_hosted_auth["source"] = "environment"
+    hosted_endpoint = {
+        "env": str(hosted_endpoint_field.get("env") or hosted_default_endpoint_env),
+        "required": bool(hosted_endpoint_field.get("required", hosted_default_endpoint_required)),
+        "configured": bool(hosted_settings.get("endpoint_configured") or os.environ.get(hosted_default_endpoint_env)),
+        "source": hosted_settings.get("endpoint_source") or "unset",
+    }
+    sam3_hosted_endpoint = {
+        "env": str(sam3_endpoint_field.get("env") or sam3_default_endpoint_env),
+        "required": bool(sam3_endpoint_field.get("required", sam3_default_endpoint_required)),
+        "configured": bool(sam3_hosted_settings.get("endpoint_configured") or os.environ.get(sam3_default_endpoint_env) or (sam3_hosted_profile == "roboflow-sam3-pcs")),
+        "source": sam3_hosted_settings.get("endpoint_source") or "unset",
+    }
+    if hosted_endpoint["source"] == "unset" and os.environ.get(str(hosted_endpoint["env"])):
+        hosted_endpoint["source"] = "environment"
+    if sam3_hosted_endpoint["source"] == "unset" and os.environ.get(str(sam3_hosted_endpoint["env"])):
+        sam3_hosted_endpoint["source"] = "environment"
+    if sam3_hosted_endpoint["source"] == "unset" and sam3_hosted_profile == "roboflow-sam3-pcs":
+        sam3_hosted_endpoint["source"] = "profile_default"
+    hosted_profile_dependency = (
+        "replicate" if hosted_profile == "replicate-sam2-video" else None
+    )
+    sam3_profile_dependency = (
+        "fal_client" if sam3_hosted_profile == "fal-sam3-image" else None
+    )
+    hosted_profile_dependency_ready = True if hosted_profile_dependency is None else _module_available(hosted_profile_dependency)
+    sam3_profile_dependency_ready = True if sam3_profile_dependency is None else _module_available(sam3_profile_dependency)
     openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
-    hosted_endpoint = _settings_presence_config("HOSTED_SEGMENTATION_URL", provider_settings, "sam2-hosted", "endpoint_configured")
-    hosted_auth = _settings_presence_config("HOSTED_SEGMENTATION_API_KEY", provider_settings, "sam2-hosted", "api_key_configured")
     sam3_model = _path_config_status("SAM3_LOCAL_MODEL")
-    sam3_hosted_endpoint = _settings_presence_config("SAM3_HOSTED_URL", provider_settings, "sam3-hosted", "endpoint_configured")
-    sam3_hosted_auth = _settings_presence_config("SAM3_HOSTED_API_KEY", provider_settings, "sam3-hosted", "api_key_configured")
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -435,7 +499,7 @@ def provider_capabilities(
         class_detector_status = "ready"
     class_detector_runtime_status = class_detector_status if class_detector_status != "ready" else "not_configured"
 
-    hosted_configured = bool(hosted_endpoint["configured"] and hosted_auth["configured"])
+    hosted_configured = bool(hosted_settings.get("configured") or (hosted_auth["configured"] and (hosted_endpoint["configured"] or not hosted_endpoint["required"])))
     hosted_settings_only = bool(hosted_settings.get("settings_only"))
     hosted_endpoint_valid = hosted_settings.get("endpoint_valid", True) is not False
     hosted_runtime_runnable = bool(
@@ -443,8 +507,11 @@ def provider_capabilities(
         and hosted_endpoint_valid
         and hosted_allow_network_effective
         and not hosted_settings_only
+        and hosted_profile_dependency_ready
     )
-    if not hosted_endpoint_valid:
+    if not hosted_profile_dependency_ready:
+        hosted_status = "missing_dependency"
+    elif not hosted_endpoint_valid:
         hosted_status = "invalid_configuration"
     elif hosted_settings_only and hosted_configured:
         hosted_status = "configured_settings_only"
@@ -455,7 +522,10 @@ def provider_capabilities(
     else:
         hosted_status = "not_configured"
 
-    sam3_hosted_configured = bool(sam3_hosted_endpoint["configured"] and sam3_hosted_auth["configured"])
+    sam3_hosted_configured = bool(
+        sam3_hosted_settings.get("configured")
+        or (sam3_hosted_auth["configured"] and (sam3_hosted_endpoint["configured"] or not sam3_hosted_endpoint["required"]))
+    )
     sam3_hosted_settings_only = bool(sam3_hosted_settings.get("settings_only"))
     sam3_hosted_endpoint_valid = sam3_hosted_settings.get("endpoint_valid", True) is not False
     sam3_hosted_runtime_runnable = bool(
@@ -463,8 +533,11 @@ def provider_capabilities(
         and sam3_hosted_endpoint_valid
         and sam3_hosted_allow_network_effective
         and not sam3_hosted_settings_only
+        and sam3_profile_dependency_ready
     )
-    if not sam3_hosted_endpoint_valid:
+    if not sam3_profile_dependency_ready:
+        sam3_hosted_status = "missing_dependency"
+    elif not sam3_hosted_endpoint_valid:
         sam3_hosted_status = "invalid_configuration"
     elif sam3_hosted_settings_only and sam3_hosted_configured:
         sam3_hosted_status = "configured_settings_only"
@@ -595,37 +668,42 @@ def provider_capabilities(
         ProviderCapability(
             name="sam2-hosted",
             kind="mask_provider",
-            available=hosted_configured and hosted_endpoint_valid and not hosted_settings_only,
+            available=hosted_configured and hosted_endpoint_valid and not hosted_settings_only and hosted_profile_dependency_ready,
             configured=hosted_configured and hosted_endpoint_valid,
-            installed=True,
+            installed=hosted_profile_dependency_ready,
             runnable=hosted_runtime_runnable,
             status=hosted_status,
             supports=["point", "box", "hosted_segmentation"],
             reasons=[
                 reason
                 for reason in (
-                    None if hosted_endpoint["configured"] else "HOSTED_SEGMENTATION_URL is not set.",
-                    None if hosted_auth["configured"] else "HOSTED_SEGMENTATION_API_KEY is not set.",
+                    None if not hosted_profile_dependency or hosted_profile_dependency_ready else f"Python module {hosted_profile_dependency!r} is not importable.",
+                    None if hosted_endpoint["configured"] or not hosted_endpoint["required"] else f"{hosted_endpoint['env']} is not set.",
+                    None if hosted_auth["configured"] else f"{hosted_auth['env']} is not set.",
                     None if hosted_endpoint_valid else "Hosted segmentation endpoint must be an http:// or https:// URL.",
-                    None if not hosted_settings_only or not hosted_configured else "Saved Local UI hosted credentials are settings-only; export them to environment variables or wire an execution adapter before treating the provider as runnable.",
+                    None if not hosted_settings_only or not hosted_configured else "Saved Local UI hosted credentials are not available to extraction runtime.",
                     None if hosted_allow_network_effective or not hosted_configured else "Hosted segmentation requires explicit network opt-in.",
                 )
                 if reason
             ],
-            install_hint="Set HOSTED_SEGMENTATION_URL and HOSTED_SEGMENTATION_API_KEY, then opt into hosted network use explicitly.",
+            install_hint="Install .[hosted-sam-vendors] when the selected profile needs a vendor SDK, save a server-side key, and opt into hosted network use explicitly.",
             device="remote",
             no_model_safe=False,
             network_required=True,
             needs_credentials=True,
             mock_available=True,
-            optional_extra="hosted-segmentation",
+            optional_extra="hosted-sam-vendors",
             checks=[
-                _check("endpoint_env", "ok" if hosted_endpoint["configured"] else "missing", hosted_endpoint["env"], hosted_endpoint["configured"]),
+                _check("profile", "ok", hosted_profile, hosted_profile),
+                _check("profile_dependency", "ok" if hosted_profile_dependency_ready else "missing", hosted_profile_dependency, hosted_profile_dependency_ready),
+                _check("endpoint_env", "ok" if hosted_endpoint["configured"] or not hosted_endpoint["required"] else "missing", hosted_endpoint["env"], hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if hosted_auth["configured"] else "missing", hosted_auth["env"], hosted_auth["configured"]),
                 _check("network_opt_in", "ok" if hosted_allow_network_effective else "required", "Hosted segmentation requires explicit network opt-in.", hosted_allow_network_effective),
-                _check("settings_runtime", "settings_only" if hosted_settings_only else "runtime", "Local UI saved provider keys are not passed to runtime providers.", hosted_settings_only),
+                _check("settings_runtime", "settings_only" if hosted_settings_only else "runtime", "Local UI saved provider keys are available to local worker runtime.", not hosted_settings_only),
             ],
             metadata={
+                "hostedProfileId": hosted_profile,
+                "effectiveProfile": hosted_effective_profile,
                 "endpointEnv": hosted_endpoint,
                 "authEnv": hosted_auth,
                 "networkDefault": "disabled",
@@ -633,6 +711,7 @@ def provider_capabilities(
                 "credentialSource": hosted_auth.get("source"),
                 "endpointSource": hosted_endpoint.get("source"),
                 "settingsOnly": hosted_settings_only,
+                "profileDependency": hosted_profile_dependency,
                 "selectedModel": hosted_settings.get("selected_model"),
             },
         ),
@@ -679,37 +758,42 @@ def provider_capabilities(
         ProviderCapability(
             name="sam3-hosted",
             kind="discovery_provider",
-            available=sam3_hosted_configured and sam3_hosted_endpoint_valid and not sam3_hosted_settings_only,
+            available=sam3_hosted_configured and sam3_hosted_endpoint_valid and not sam3_hosted_settings_only and sam3_profile_dependency_ready,
             configured=sam3_hosted_configured and sam3_hosted_endpoint_valid,
-            installed=True,
+            installed=sam3_profile_dependency_ready,
             runnable=sam3_hosted_runtime_runnable,
             status=sam3_hosted_status,
             supports=["concept_discovery", "exemplar_discovery", "hosted_segmentation", "hosted_tracking"],
             reasons=[
                 reason
                 for reason in (
-                    None if sam3_hosted_endpoint["configured"] else "SAM3_HOSTED_URL is not set.",
-                    None if sam3_hosted_auth["configured"] else "SAM3_HOSTED_API_KEY is not set.",
+                    None if not sam3_profile_dependency or sam3_profile_dependency_ready else f"Python module {sam3_profile_dependency!r} is not importable.",
+                    None if sam3_hosted_endpoint["configured"] or not sam3_hosted_endpoint["required"] else f"{sam3_hosted_endpoint['env']} is not set.",
+                    None if sam3_hosted_auth["configured"] else f"{sam3_hosted_auth['env']} is not set.",
                     None if sam3_hosted_endpoint_valid else "Hosted SAM3 endpoint must be an http:// or https:// URL.",
-                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are used for setup and smoke tests only; export them to environment variables or pass explicit runtime config before treating extraction jobs as runnable.",
+                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are not available to extraction runtime.",
                     None if sam3_hosted_allow_network_effective or not sam3_hosted_configured else "Hosted SAM3 requires explicit network opt-in.",
                 )
                 if reason
             ],
-            install_hint="Set SAM3_HOSTED_URL and SAM3_HOSTED_API_KEY, then opt into hosted network use explicitly.",
+            install_hint="Install .[hosted-sam-vendors] when the selected profile needs a vendor SDK, save a server-side key, and opt into hosted network use explicitly.",
             device="remote",
             no_model_safe=False,
             network_required=True,
             needs_credentials=True,
             mock_available=True,
-            optional_extra="hosted-sam3",
+            optional_extra="hosted-sam-vendors",
             checks=[
-                _check("endpoint_env", "ok" if sam3_hosted_endpoint["configured"] else "missing", sam3_hosted_endpoint["env"], sam3_hosted_endpoint["configured"]),
+                _check("profile", "ok", sam3_hosted_profile, sam3_hosted_profile),
+                _check("profile_dependency", "ok" if sam3_profile_dependency_ready else "missing", sam3_profile_dependency, sam3_profile_dependency_ready),
+                _check("endpoint_env", "ok" if sam3_hosted_endpoint["configured"] or not sam3_hosted_endpoint["required"] else "missing", sam3_hosted_endpoint["env"], sam3_hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if sam3_hosted_auth["configured"] else "missing", sam3_hosted_auth["env"], sam3_hosted_auth["configured"]),
                 _check("network_opt_in", "ok" if sam3_hosted_allow_network_effective else "required", "Hosted SAM3 requires explicit network opt-in.", sam3_hosted_allow_network_effective),
-                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are only passed to explicit setup/smoke test routes.", sam3_hosted_settings_only),
+                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are available to local worker runtime.", not sam3_hosted_settings_only),
             ],
             metadata={
+                "hostedProfileId": sam3_hosted_profile,
+                "effectiveProfile": sam3_effective_profile,
                 "endpointEnv": sam3_hosted_endpoint,
                 "authEnv": sam3_hosted_auth,
                 "networkDefault": "disabled",
@@ -717,6 +801,7 @@ def provider_capabilities(
                 "credentialSource": sam3_hosted_auth.get("source"),
                 "endpointSource": sam3_hosted_endpoint.get("source"),
                 "settingsOnly": sam3_hosted_settings_only,
+                "profileDependency": sam3_profile_dependency,
                 "selectedModel": sam3_hosted_settings.get("selected_model"),
                 "semanticDiscovery": True,
             },

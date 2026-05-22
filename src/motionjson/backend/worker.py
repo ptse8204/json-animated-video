@@ -25,6 +25,7 @@ from motionjson.exporters.website_package import export_website_package
 from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
 from motionjson.masks import ExternalMaskProvider, MotionMaskProvider, ThresholdMaskProvider
 from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
+from motionjson.provider_settings import provider_runtime_settings
 from motionjson.providers.base import ProviderConfigError, StorageProvider
 from motionjson.providers.discovery import (
     ClassDetectorDiscoveryProvider,
@@ -39,6 +40,7 @@ from motionjson.providers.discovery import (
     object_specs_from_candidates,
 )
 from motionjson.providers.mocks import MockSegmentationProvider
+from motionjson.providers.sam2 import HostedSAM2SegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset
@@ -251,6 +253,50 @@ def _single_object_pipeline_options(run_config: ExtractionRunConfig | None, payl
     }
 
 
+def _prompt_point_and_box(run_config: ExtractionRunConfig) -> tuple[tuple[int, int] | None, tuple[int, int, int, int] | None]:
+    for prompt in run_config.prompts:
+        if prompt.kind in {"point", "positive_point"}:
+            data = prompt.data
+            if "x" in data and "y" in data:
+                return (int(data["x"]), int(data["y"])), None
+    for prompt in run_config.prompts:
+        if prompt.kind == "box":
+            data = prompt.data
+            if all(key in data for key in ("x", "y", "w", "h")):
+                return None, (int(data["x"]), int(data["y"]), int(data["w"]), int(data["h"]))
+    return None, None
+
+
+def _hosted_sam3_discovery_runtime(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    discovery_config: dict[str, Any],
+) -> tuple[dict[str, Any], Any | None]:
+    provider_preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or "").strip()
+    if provider_preference != "sam3-hosted" and not discovery_config.get("hosted") and not discovery_config.get("useHosted"):
+        return discovery_config, None
+    settings = provider_runtime_settings(conn, user_id=user_id, provider_id="sam3-hosted")
+    hosted_allowed = bool(discovery_config.get("allowNetwork") and settings.get("allow_hosted"))
+    public_config = {
+        **discovery_config,
+        "providerPreference": "sam3-hosted",
+        "hosted": True,
+        "hostedProfile": settings.get("hosted_profile_id"),
+        "model": settings.get("selected_model"),
+        "allowNetwork": hosted_allowed,
+        "acknowledgeCostPrivacy": bool(discovery_config.get("acknowledgeCostPrivacy") and settings.get("allow_hosted")),
+    }
+    runtime_config = {
+        **public_config,
+        "apiKey": settings.get("api_key"),
+        "endpoint": settings.get("endpoint"),
+    }
+    from motionjson.providers.hosted_sam import hosted_sam3_backend_from_config
+
+    return public_config, hosted_sam3_backend_from_config(runtime_config)
+
+
 def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> tuple[Any, str, bool] | None:
     discovery_config = dict(config or {})
     if mode == "auto_object_proposals":
@@ -332,6 +378,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         try:
             discovery_mode = run_config.discovery.mode if run_config is not None else None
             discovery_config = dict(run_config.discovery.config) if run_config is not None else {}
+            hosted_sam3_backend = None
             if run_config is not None:
                 sam2_config = run_config.provider.sam2
                 if sam2_config.checkpoint and not any(key in discovery_config for key in ("sam2Checkpoint", "sam2_checkpoint", "checkpoint")):
@@ -340,7 +387,32 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     discovery_config["sam2ModelConfig"] = sam2_config.model_config
                 if sam2_config.device and not any(key in discovery_config for key in ("sam2Device", "sam2_device", "device")):
                     discovery_config["sam2Device"] = sam2_config.device
-            discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
+                if discovery_mode in {"sam3_concept", "sam3_exemplar", "sam3_auto_masks"}:
+                    discovery_config, hosted_sam3_backend = _hosted_sam3_discovery_runtime(
+                        conn,
+                        user_id=job["created_by_user_id"],
+                        discovery_config=discovery_config,
+                    )
+            if hosted_sam3_backend is not None and discovery_mode == "sam3_concept":
+                discovery_provider = (
+                    SAM3ConceptDiscoveryProvider(backend=hosted_sam3_backend),
+                    "SAM3 hosted concept discovery configured",
+                    False,
+                )
+            elif hosted_sam3_backend is not None and discovery_mode == "sam3_exemplar":
+                discovery_provider = (
+                    SAM3ExemplarDiscoveryProvider(backend=hosted_sam3_backend),
+                    "SAM3 hosted exemplar discovery configured",
+                    False,
+                )
+            elif hosted_sam3_backend is not None and discovery_mode == "sam3_auto_masks":
+                discovery_provider = (
+                    SAM3AutoMasksDiscoveryProvider(backend=hosted_sam3_backend),
+                    "SAM3 hosted auto-mask discovery configured",
+                    False,
+                )
+            else:
+                discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
             if discovery_provider is not None:
                 provider, message, requires_mock = discovery_provider
                 if requires_mock and not discovery_config.get("mock"):
@@ -394,6 +466,41 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             else:
                 if provider_name == "mock":
                     mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
+                elif provider_name == "sam2-hosted" and run_config is not None:
+                    runtime = provider_runtime_settings(
+                        conn,
+                        user_id=job["created_by_user_id"],
+                        provider_id="sam2-hosted",
+                    )
+                    point, box = _prompt_point_and_box(run_config)
+                    hosted_allowed = bool(run_config.provider.sam2.hosted_allow_network and runtime.get("allow_hosted"))
+                    hosted_config = {
+                        **dict(run_config.provider.sam2.hosted_config or {}),
+                        "profile": runtime.get("hosted_profile_id"),
+                        "hostedProfile": runtime.get("hosted_profile_id"),
+                        "apiKey": runtime.get("api_key"),
+                        "endpoint": runtime.get("endpoint"),
+                        "model": runtime.get("selected_model"),
+                        "allowNetwork": hosted_allowed,
+                        "acknowledgeCostPrivacy": hosted_allowed,
+                    }
+                    mask_provider = SegmentationMaskProvider(
+                        HostedSAM2SegmentationProvider(
+                            source_video=video_path,
+                            endpoint=str(runtime.get("endpoint") or run_config.provider.sam2.endpoint or "") or None,
+                            api_key=str(runtime.get("api_key") or "") or None,
+                            config=hosted_config,
+                            auth_env=run_config.provider.sam2.auth_env,
+                            endpoint_env=run_config.provider.sam2.endpoint_env,
+                            prompt_frame_index=run_config.provider.sam2.prompt_frame,
+                            object_id=run_config.object_id,
+                            prompt_point=point,
+                            prompt_box=box,
+                            allow_network=hosted_allowed,
+                        ),
+                        prompt_point=point,
+                        prompt_box=box,
+                    )
                 elif provider_name == "motion":
                     motion_config = dict(run_config.discovery.config) if run_config is not None and run_config.discovery.mode == "motion_foreground" else {}
                     mask_provider = MotionMaskProvider(var_threshold=float(motion_config.get("threshold", 25.0) or 25.0))

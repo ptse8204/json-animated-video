@@ -15,7 +15,7 @@ from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
 from .sam2 import LocalSAM2AutomaticMaskProposalBackend
-from .sam3 import HostedSAM3DiscoveryBackend, LocalSAM3DiscoveryBackend
+from .sam3 import LocalSAM3DiscoveryBackend
 
 
 DISCOVERY_MODES = {
@@ -1082,7 +1082,9 @@ def _sam3_backend(current: Any | None, factory: Callable[[Mapping[str, Any]], An
         or ""
     )
     if provider_preference == "sam3-hosted" or _bool_config_any(config, ("hosted", "useHosted", "use_hosted"), False):
-        return HostedSAM3DiscoveryBackend.from_config(config)
+        from .hosted_sam import hosted_sam3_backend_from_config
+
+        return hosted_sam3_backend_from_config(config)
     return LocalSAM3DiscoveryBackend.from_config(config)
 
 

@@ -342,7 +342,14 @@ The Local UI currently exposes settings for:
 - `mock`, `threshold`, `motion`, and `external`: local/free, no key required.
 - `sam2-local`: local SAM2 model selection and diagnostics. Model weights and
   package setup still come from local environment paths.
-- `sam2-hosted`: endpoint, model, API key, and explicit hosted-call opt-in.
+- `sam2-hosted`: hosted profile, model, API key, optional endpoint, and
+  explicit hosted-call opt-in. The built-in Replicate SAM2 video profile uses
+  `REPLICATE_API_TOKEN`; custom endpoints use `HOSTED_SEGMENTATION_URL` and
+  `HOSTED_SEGMENTATION_API_KEY`.
+- `sam3-hosted`: hosted profile, model, API key, optional endpoint, and
+  explicit hosted-call opt-in for text concept discovery. Built-in profiles
+  cover Roboflow SAM3 concept segmentation and Fal SAM3 image, plus a custom
+  SAM3-compatible endpoint.
 - `openai`: OpenAI model selection and API key for hosted plan generation. It
   is not a mask or segmentation provider.
 - `openrouter`: LLM/VLM model selection and API key for reasoning only. It is

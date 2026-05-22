@@ -49,9 +49,11 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
         "https://github.com/codespaces/badge.svg",
         "https://codespaces.new/ptse8204/json-animated-video",
         "notebooks/colab_ui_local_demo.ipynb",
+        "notebooks/colab_ui_provider_connect_demo.ipynb",
         "notebooks/colab_red_ball_cli_demo.ipynb",
         "notebooks/colab_red_ball_export_preview.ipynb",
         "notebooks/colab_provider_diagnostics.ipynb",
+        "https://colab.research.google.com/assets/colab-badge.svg",
         "spaces/huggingface/README.md",
         "no paid GPU",
         "no client-side secrets",
@@ -60,9 +62,11 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
 
     for expected in [
         "../notebooks/colab_ui_local_demo.ipynb",
+        "../notebooks/colab_ui_provider_connect_demo.ipynb",
         "../notebooks/colab_red_ball_cli_demo.ipynb",
         "../notebooks/colab_red_ball_export_preview.ipynb",
         "../notebooks/colab_provider_diagnostics.ipynb",
+        "https://colab.research.google.com/assets/colab-badge.svg",
         "../spaces/huggingface/README.md",
         "CPU/mock/no-model",
         "public long-running MotionJSON web service",
@@ -73,6 +77,23 @@ def test_readme_and_free_instance_docs_link_hosted_demo_surfaces() -> None:
         "provider credentials",
     ]:
         assert expected in free_docs
+
+
+def test_all_checked_in_notebooks_have_colab_badges_in_docs() -> None:
+    docs_text = "\n".join(
+        [
+            read("README.md"),
+            read("notebooks/README.md"),
+            read("docs/run_free_instances.md"),
+        ]
+    )
+    notebooks = sorted(path.name for path in (ROOT / "notebooks").glob("*.ipynb"))
+
+    assert notebooks
+    for notebook in notebooks:
+        badge_url = f"https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/{notebook}"
+        assert notebook in docs_text
+        assert badge_url in docs_text
 
 
 def test_colab_notebook_is_valid_cpu_cli_demo() -> None:
@@ -189,6 +210,33 @@ def test_colab_provider_diagnostics_notebook_is_redacted_and_no_model() -> None:
     assert "This notebook intentionally does not request API keys" in joined
     assert "provider secrets" in joined
     assert "OPENROUTER_API_KEY" not in joined
+    assert "secret_json" not in joined
+    assert_no_public_tunnel_helpers(joined)
+    assert all(not cell.get("outputs") for cell in notebook["cells"])
+
+
+def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_profiles() -> None:
+    notebook = json.loads(read("notebooks/colab_ui_provider_connect_demo.ipynb"))
+    joined = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
+
+    assert notebook["nbformat"] == 4
+    assert "https://github.com/ptse8204/json-animated-video.git" in joined
+    assert '".[ui,hosted-segmentation,hosted-sam3,hosted-sam-vendors]"' in joined
+    assert "ROBOFLOW_API_KEY" in joined
+    assert "REPLICATE_API_TOKEN" in joined
+    assert "FAL_KEY" in joined
+    assert "userdata.get" in joined
+    assert "getpass" in joined
+    assert '"motionjson", "ui", "--no-open", "--mock", "--host", "127.0.0.1"' in joined
+    assert "output.serve_kernel_port_as_iframe" in joined
+    assert "output.serve_kernel_port_as_window" in joined
+    assert "Roboflow SAM3" in joined
+    assert "Replicate SAM2 video" in joined
+    assert "Fal SAM3 image" in joined
+    assert "paste temporary credentials into the UI provider settings form" in joined
     assert "secret_json" not in joined
     assert_no_public_tunnel_helpers(joined)
     assert all(not cell.get("outputs") for cell in notebook["cells"])

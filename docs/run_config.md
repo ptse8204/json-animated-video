@@ -134,19 +134,24 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   setup and accepts additive config keys such as `sam3ModelPath`,
   `sam3Device`, `useVideoSession`, `concept`, `exemplars`, and `box`.
   Hosted SAM3 can be requested with `providerPreference: "sam3-hosted"` or
-  `hosted: true`; it requires `SAM3_HOSTED_URL`, `SAM3_HOSTED_API_KEY`,
-  `allowNetwork: true`, and `acknowledgeCostPrivacy: true`. Diagnostics should
-  show missing SAM3, Python/CUDA runtime, model setup, endpoint/auth, or hosted
+  `hosted: true`, plus `hostedProfile` for `roboflow-sam3-pcs`,
+  `fal-sam3-image`, or `custom-sam3-compatible`. It requires `allowNetwork:
+  true` and `acknowledgeCostPrivacy: true`; credentials are read from
+  server-side settings or environment variables such as `ROBOFLOW_API_KEY`,
+  `FAL_KEY`, or `SAM3_HOSTED_API_KEY`. Diagnostics should show missing SAM3,
+  Python/CUDA runtime, model setup, endpoint/auth, optional SDKs, or hosted
   opt-in instead of falling back silently. Do not put hosted API keys in run
-  configs; the hosted adapter reads credentials from server-side settings or
-  environment variables.
+  configs.
 - `class_detector` accepts `discovery.config.class_preset` values
   `common_objects`, `people`, `vehicles`, `animals`, `sports`, or `custom`;
   repeat `--discovery-class` for custom labels and use
   `--discovery-class-preset` from the CLI.
 - Prompt boxes use the existing CLI format `x,y,w,h`.
 - `sam2-local` and `sam2-hosted` require a point or box prompt in the config.
-- Hosted SAM2 config stores auth environment variable names, not token values.
+- Hosted SAM2 config can include `provider.sam2.hosted_config.profile` or
+  `provider.sam2.hosted_config.hostedProfile`, for example
+  `replicate-sam2-video` or `custom-sam2-compatible`. It stores profile/model
+  selection without token values.
 - `sample_fps <= 0` remains accepted for CLI compatibility and keeps the current source-FPS sampling behavior.
 - Provider capability checks and CUDA/model diagnostics are available through
   `python3 -m motionjson.cli backend diagnostics --json`; see
