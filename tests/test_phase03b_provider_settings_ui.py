@@ -41,6 +41,8 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "hostedProfileId",
         "sam2CheckpointPath",
         "sam3ModelPath",
+        "field.helpText",
+        "field-helper",
         "textDiscoveryProvider",
         "providerSettingsById",
         "saveProviderSettingsFromRow",
@@ -60,6 +62,7 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "provider-settings-row",
         "provider-hosted-toggle",
         "provider-actions",
+        "field-helper",
     ]:
         assert expected in css
 

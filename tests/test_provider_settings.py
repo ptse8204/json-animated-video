@@ -85,6 +85,8 @@ def test_sam3_local_setup_guide_distinguishes_source_repo_from_checkpoint_path()
     assert "facebook/sam3" in guide_text
     assert "/content/sam3" in guide_text
     assert "checkpoint file path" in sam3_local["localConfigFields"][0]["label"]
+    assert "Do not enter /content/sam3 or facebook/sam3" in sam3_local["localConfigFields"][0]["helpText"]
+    assert "sam3.pt" in sam3_local["localConfigFields"][0]["placeholder"]
     assert sam3_local["docs"] == "docs/sam3_local.md"
     assert "sk-" not in guide_text
     assert "HF_TOKEN=" not in guide_text

@@ -2669,6 +2669,18 @@ button,
   min-width: 0;
 }
 
+.model-setup-form label,
+.provider-settings-fields label {
+  display: grid;
+  gap: 4px;
+}
+
+.field-helper {
+  color: #5f6470;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .model-setup-custom-model[hidden] {
   display: none !important;
 }

@@ -3591,9 +3591,12 @@ const MotionJSONUI = (() => {
                       : fieldName;
           const value = settings[camelName] || "";
           const type = fieldName.endsWith("_device") ? "text" : "text";
+          const placeholder = field.placeholder || field.env || "";
+          const helper = field.helpText ? `<span class="field-helper">${escapeHtml(field.helpText)}</span>` : "";
           return `<label>
             <span>${escapeHtml(field.label || fieldName)}</span>
-            <input data-model-setup-field="${escapeAttribute(camelName)}" type="${type}" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(field.env || "")}" />
+            <input data-model-setup-field="${escapeAttribute(camelName)}" type="${type}" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" />
+            ${helper}
           </label>`;
         })
         .join("");
@@ -3943,10 +3946,12 @@ const MotionJSONUI = (() => {
               sam3_model_path: "sam3ModelPath",
               sam3_device: "sam3Device",
             }[fieldName] || fieldName;
-          const placeholder = field.env || (fieldName.includes("device") ? "auto, cpu, mps, cuda, or cuda:0" : "");
+          const placeholder = field.placeholder || field.env || (fieldName.includes("device") ? "auto, cpu, mps, cuda, or cuda:0" : "");
+          const helper = field.helpText ? `<span class="field-helper">${escapeHtml(field.helpText)}</span>` : "";
           return `<label>
             <span>${escapeHtml(field.label || uiName)}</span>
             <input data-provider-field="${escapeAttribute(uiName)}" type="text" value="${escapeAttribute(settings[uiName] || "")}" placeholder="${escapeAttribute(placeholder)}" />
+            ${helper}
           </label>`;
         })
         .join("");

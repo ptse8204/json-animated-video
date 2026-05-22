@@ -281,7 +281,14 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "credentialRequired": False,
         "credentialFields": [],
         "localConfigFields": [
-            {"name": "sam3_model_path", "label": "SAM3 checkpoint file path", "env": "SAM3_LOCAL_MODEL", "required": True},
+            {
+                "name": "sam3_model_path",
+                "label": "SAM3 checkpoint file path",
+                "env": "SAM3_LOCAL_MODEL",
+                "required": True,
+                "placeholder": "/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt",
+                "helpText": "Use the local sam3.pt checkpoint file path. Do not enter /content/sam3 or facebook/sam3.",
+            },
             {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
         ],
         "modelOptions": [
