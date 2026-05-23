@@ -294,7 +294,7 @@ async function evaluateLayout(cdp) {
       const importantSelectors = [
         ".app-shell", ".sidebar", ".workspace", ".right-rail", ".topbar",
         ".workspace-grid", ".viewer-panel", ".setup-panel", ".wizard-panel",
-        ".config-panel", "#viewerStage", "#providerWarning", "#providerSettingsPanel", "#modelSetupPanel",
+        ".config-panel", "#viewerStage", "#studioReviewPanel", "#studioBottomCta", "#providerWarning", "#providerSettingsPanel", "#modelSetupPanel",
         "#candidateSummaryList", "#correctionGuidance", "#exportSummary"
       ];
       const rect = (selector) => {
@@ -590,6 +590,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
           videoFormVisible: visible(document.querySelector("#videoForm")),
           postRunGuideVisible: visible(document.querySelector("#postRunGuide")),
+          studioReviewVisible: visible(document.querySelector("#studioReviewPanel")),
+          studioObjectRowCount: document.querySelectorAll("#studioObjectList .studio-object-row").length,
+          studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
           postRunStageCount: document.querySelectorAll("#postRunGuideList .post-run-stage").length,
           runMonitorSummaryCount: document.querySelectorAll("#runMonitorSummary .status-summary-card").length,
           reviewStatusSummaryCount: document.querySelectorAll("#reviewStatusSummary .status-summary-card").length,
@@ -678,22 +681,25 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && (stateValue.rawConfigOpen || stateValue.configSaveLoadOpen || stateValue.startMockText !== "Start mock job")) {
       failures.push(`${viewport.name}/${state}: run step should keep raw config/save actions collapsed and promote the safe mock job`);
     }
-    if (["workflow-review", "workflow-review-failure", "workflow-correct", "workflow-export"].includes(state)) {
-      if (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5) {
-        failures.push(`${viewport.name}/${state}: post-run guide should be visible with five guided stages`);
+    if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
+      if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1 || !stateValue.studioBottomCtaVisible) {
+        failures.push(`${viewport.name}/${state}: studio review panel and package CTA should be visible with reviewed objects`);
       }
     }
-    if (state === "workflow-review" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || stateValue.runLogsOpen)) {
-      failures.push(`${viewport.name}/${state}: review step should show run/review summaries while keeping logs collapsed unless the run failed`);
+    if (state === "workflow-review-failure" && (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5)) {
+      failures.push(`${viewport.name}/${state}: failed post-run guide should be visible with five guided stages`);
+    }
+    if (state === "workflow-review" && stateValue.runLogsOpen) {
+      failures.push(`${viewport.name}/${state}: review step should keep logs collapsed unless the run failed`);
     }
     if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || !stateValue.runLogsOpen || !stateValue.fallbackDiagnosticsOpen || !stateValue.fallbackDiagnosticsVisible || stateValue.fallbackDiagnosticBadCount < 1)) {
       failures.push(`${viewport.name}/${state}: failed review state should surface logs and fallback diagnostics without extra discovery`);
     }
-    if (state === "workflow-correct" && stateValue.correctionStatusSummaryCount < 1) {
-      failures.push(`${viewport.name}/${state}: correction step should summarize correction readiness`);
+    if (state === "workflow-correct" && (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1)) {
+      failures.push(`${viewport.name}/${state}: correction step should keep reviewed objects visible`);
     }
-    if (state === "workflow-export" && (stateValue.exportStatusSummaryCount < 1 || stateValue.exportArtifactsOpen)) {
-      failures.push(`${viewport.name}/${state}: export step should summarize export readiness while keeping artifact browser collapsed`);
+    if (state === "workflow-export" && (!stateValue.studioBottomCtaVisible || stateValue.exportArtifactsOpen)) {
+      failures.push(`${viewport.name}/${state}: export step should keep package CTA visible while keeping artifact browser collapsed`);
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {

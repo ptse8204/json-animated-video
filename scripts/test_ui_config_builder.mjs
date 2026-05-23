@@ -224,6 +224,7 @@ assert.equal(hostedSam3Config.discovery.config.allowNetwork, true);
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
+assert.equal(ui.modelPlanGoalForPreset("trace_all_objects"), "discover_objects");
 const modelPlanPayload = ui.modelPlanRequestFromInput(
   {
     preset: "text_detector",
@@ -391,6 +392,35 @@ const firstRunPlan = ui.buildRunPlan(autoObjectConfig, { preset: "auto_object_pr
 assert.equal(firstRunPlan.title, "Discover objects");
 assert.ok(firstRunPlan.steps.some((step) => step.label === "Source" && step.status === "needs-action"));
 assert.ok(firstRunPlan.nextSteps.some((step) => step.includes("Choose a video preview")));
+
+const traceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  discoveryMode: "auto_object_proposals",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "object_0",
+  objectLabel: "all objects",
+  keyframes: new Set([0, 12]),
+  maskProvider: "mock",
+  debugMockMode: true,
+  sampleFps: 8,
+  maxFrames: 24,
+  minArea: 90,
+  maxAreaRatio: 0.6,
+  stabilityThreshold: 0.8,
+  overlapThreshold: 0.7,
+  boxThreshold: 0.4,
+  textThreshold: 0.3,
+  motionSensitivity: 30,
+  maxObjects: 8,
+  outputMode: "authoring",
+  qualityPreset: "balanced",
+});
+assert.equal(traceAllConfig.discovery.mode, "auto_object_proposals");
+assert.equal(traceAllConfig.discovery.config.qualityPreset, "balanced");
+assert.equal(traceAllConfig.discovery.config.trackSelectedOnly, true);
+assert.equal(traceAllConfig.discovery.config.requireReview, true);
+assert.equal(traceAllConfig.provider.name, "mock");
+assert.equal(ui.buildRunPlan(traceAllConfig, { preset: "trace_all_objects" }).title, "Trace all objects");
 
 const maximumRecallConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",
@@ -581,6 +611,7 @@ assert.equal(externalConfig.objects[0].mask_dir, "masks/object_0");
 
 const presetExpectations = [
   [autoObjectConfig, "auto_object_proposals", "mock"],
+  [traceAllConfig, "auto_object_proposals", "mock"],
   [maximumRecallConfig, "auto_object_proposals", "mock"],
   [traceEverythingConfig, "auto_object_proposals", "mock"],
   [manualConfig, "manual_prompt", "sam2-local"],

@@ -59,7 +59,7 @@ const MotionJSONUI = (() => {
     workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
-  const TRACK_COLORS = ["#10a37f", "#2f80ed", "#9a6a12", "#6046a5", "#b42318", "#0f766e"];
+  const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
   const MODEL_CONNECTIONS = [
     {
@@ -174,6 +174,12 @@ const MotionJSONUI = (() => {
   ];
 
   const PRESETS = {
+    trace_all_objects: {
+      label: "Trace all objects",
+      discoveryMode: "auto_object_proposals",
+      maskProvider: "sam2-local",
+      outputMode: "authoring",
+    },
     auto_object_proposals: {
       label: "Discover objects",
       discoveryMode: "auto_object_proposals",
@@ -225,6 +231,10 @@ const MotionJSONUI = (() => {
   };
 
   const RUN_PLAN_GOALS = {
+    trace_all_objects: {
+      title: "Trace all objects",
+      summary: "Find likely foreground objects, trace each one, then export every reviewed track.",
+    },
     trace_one_object: {
       title: "Cut out one object",
       summary: "Use a point, box, or brush prompt to follow one subject through the video.",
@@ -402,6 +412,7 @@ const MotionJSONUI = (() => {
     lastRunConfig: null,
     polling: false,
     errors: {},
+    railOpenedByUser: false,
     selectedPreset: "trace_one_object",
     activeWorkflowStep: "choose_goal",
     workflowDashboard: false,
@@ -1230,6 +1241,7 @@ const MotionJSONUI = (() => {
     return (
       {
         trace_one_object: "trace_one_object",
+        trace_all_objects: "discover_objects",
         auto_object_proposals: "trace_one_object",
         text_detector: "find_objects_from_text",
         class_detector: "find_objects_from_text",
@@ -1564,7 +1576,7 @@ const MotionJSONUI = (() => {
       const local = connectionReadiness(modelConnectionById("sam3-local"));
       return local.tone === "ready" ? "sam3-local" : "sam3-hosted:roboflow-sam3-pcs";
     }
-    if (presetId === "sam_auto_masks" || presetId === "auto_object_proposals") {
+    if (presetId === "sam_auto_masks" || presetId === "auto_object_proposals" || presetId === "trace_all_objects") {
       const localSam3 = connectionReadiness(modelConnectionById("sam3-local"));
       return localSam3.tone === "ready" ? "sam3-local" : "sam3-hosted:roboflow-sam3-pcs";
     }
@@ -1844,14 +1856,20 @@ const MotionJSONUI = (() => {
       demoMode: track.demoMode === true || track.demo_mode === true,
       providerName: track.providerName || track.provider_name || null,
       rightsSummary: track.rightsSummary || track.rights_summary || null,
-      color: TRACK_COLORS[index % TRACK_COLORS.length],
+      color: track.color || track.colorHex || track.color_hex || TRACK_COLORS[index % TRACK_COLORS.length],
       frames: frames.map((frame) => {
         const polygon = normalizePolygonPoints(frame.polygon || frame.contour || frame.points);
         const width = state.video.width || 1920;
         const height = state.video.height || 1080;
+        const rawBox = frame.bbox || frame.box || null;
+        const bbox = Array.isArray(rawBox)
+          ? { x: rawBox[0], y: rawBox[1], w: rawBox[2], h: rawBox[3] }
+          : rawBox && typeof rawBox === "object"
+            ? rawBox
+            : null;
         return {
           frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
-          bbox: frame.bbox ? clampBox({ x: frame.bbox[0], y: frame.bbox[1], w: frame.bbox[2], h: frame.bbox[3] }, width, height) : polygon ? polygonBounds(polygon, width, height) : null,
+          bbox: bbox ? clampBox(bbox, width, height) : polygon ? polygonBounds(polygon, width, height) : null,
           polygon,
           visible: frame.visible !== false,
         };
@@ -3112,6 +3130,9 @@ const MotionJSONUI = (() => {
     function syncWorkflowPanels() {
       const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
       const showAll = Boolean(state.workflowDashboard);
+      const shouldOpenRailForDiagnostics =
+        workflowRailSteps.has(activeStep) &&
+        collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview).some(diagnosticNeedsImmediateAttention);
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       for (const panel of workflowPanels()) {
         const visible = showAll || panelMatchesWorkflowStep(panel, activeStep);
@@ -3126,8 +3147,10 @@ const MotionJSONUI = (() => {
       const hasVisibleRailPanel = workflowPanels().some((panel) => panel.matches("details.rail-section") && (showAll || panelMatchesWorkflowStep(panel, activeStep)));
       if (showAll) {
         setRailCollapsed(false, { persist: false });
-      } else if (workflowRailSteps.has(activeStep)) {
+      } else if (shouldOpenRailForDiagnostics) {
         setRailCollapsed(false, { persist: false });
+      } else if (workflowRailSteps.has(activeStep) && !state.railOpenedByUser && !shell?.classList.contains("is-rail-collapsed")) {
+        setRailCollapsed(true, { persist: false });
       } else if (!hasVisibleRailPanel && !shell?.classList.contains("is-rail-collapsed")) {
         setRailCollapsed(true, { persist: false });
       }
@@ -3185,10 +3208,13 @@ const MotionJSONUI = (() => {
       renderWorkflowStepSummary(snapshot, activeStep);
       renderPostRunFlow();
       syncWorkflowPanels();
+      renderStudioShell(activeStep);
     }
 
     function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
-      state.activeWorkflowStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
+      const nextStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
+      if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
+      state.activeWorkflowStep = nextStep;
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
       renderWorkflowStepper();
       if (focusStep) {
@@ -3295,7 +3321,7 @@ const MotionJSONUI = (() => {
       }
       if (detailsToggle) {
         detailsToggle.setAttribute("aria-expanded", String(!collapsed));
-        detailsToggle.textContent = collapsed ? "Show details" : "Hide details";
+        detailsToggle.textContent = collapsed ? "Advanced" : "Hide details";
       }
       if (railCloseButton) {
         railCloseButton.setAttribute("aria-expanded", String(!collapsed));
@@ -3345,16 +3371,21 @@ const MotionJSONUI = (() => {
         setSidebarCollapsed(!shell?.classList.contains("is-sidebar-collapsed"), { focusToggle: true });
       });
       detailsToggle?.addEventListener("click", () => {
-        setRailCollapsed(!shell?.classList.contains("is-rail-collapsed"), { focusToggle: true });
+        const nextCollapsed = !shell?.classList.contains("is-rail-collapsed");
+        state.railOpenedByUser = !nextCollapsed;
+        setRailCollapsed(nextCollapsed, { focusToggle: true });
       });
-      railCloseButton?.addEventListener("click", () => setRailCollapsed(true, { focusToggle: true }));
+      railCloseButton?.addEventListener("click", () => {
+        state.railOpenedByUser = false;
+        setRailCollapsed(true, { focusToggle: true });
+      });
       renderShellIndicators();
     }
 
     function renderApiStatus(kind, label) {
       const chip = $("#apiStatus");
       chip.className = `status-chip ${kind}`;
-      chip.textContent = label;
+      chip.textContent = label === "API ready" ? "Local API ready" : label === "API unavailable" ? "Local API unavailable" : label;
       renderShellIndicators();
     }
 
@@ -4746,6 +4777,149 @@ const MotionJSONUI = (() => {
       renderWorkflowStepper();
     }
 
+    function studioWorkflowStep(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
+      if (["choose_goal", "project_video", "source_video"].includes(activeStep)) return "video";
+      if (activeStep === "provider_settings") return "model";
+      if (activeStep === "prompt_preview") return "prompt";
+      if (activeStep === "validate_run") return "run";
+      return "result";
+    }
+
+    function renderStudioProgress(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
+      const studioSteps = ["video", "model", "prompt", "run", "result"];
+      const activeStudioStep = studioWorkflowStep(activeStep);
+      const activeIndex = Math.max(0, studioSteps.indexOf(activeStudioStep));
+      document.querySelectorAll("#studioProgressStepper [data-studio-step]").forEach((item, index) => {
+        const complete = index < activeIndex;
+        const active = index === activeIndex;
+        item.classList.toggle("is-complete", complete);
+        item.classList.toggle("is-active", active);
+        item.classList.toggle("is-pending", index > activeIndex);
+        item.setAttribute("aria-current", active ? "step" : "false");
+      });
+    }
+
+    function studioConfidenceLabel(value) {
+      return typeof value === "number" ? `${Math.round(value * 100)}%` : "not reported";
+    }
+
+    function studioTrackStatus(track) {
+      const status = String(track?.exportStatus || "").toLowerCase();
+      if (track?.deleted || /deleted|rejected|failed|fallback_raster/.test(status)) {
+        return { label: /background|ground|floor|lawn|fence|plant/.test(`${track?.label || ""} ${track?.warnings || ""}`.toLowerCase()) ? "Rejected background" : "Rejected", tone: "bad" };
+      }
+      if (isTrackExportIncluded(track)) return { label: "Reviewed for export", tone: "ready" };
+      return { label: "Needs review", tone: "warn" };
+    }
+
+    function studioCandidateStatus(candidate) {
+      const reason = candidateReasonText(candidate);
+      if (candidateRejected(candidate)) {
+        return { label: /background|whole_frame|wall|floor|ground|lawn|plant|fence/.test(reason) ? "Rejected background" : "Rejected", tone: "bad" };
+      }
+      return { label: "Needs review", tone: "warn" };
+    }
+
+    function studioObjectRows() {
+      const rows = state.reviewTracks.map((track, index) => {
+        const objectId = trackObjectId(track);
+        const status = studioTrackStatus(track);
+        return {
+          kind: "track",
+          id: track.id,
+          objectId,
+          label: track.label || objectId || `Object ${index + 1}`,
+          confidence: track.confidence,
+          frameCount: toInteger(track.frameCount, toInteger(track.visibleFrameCount, 0)),
+          color: track.color || TRACK_COLORS[index % TRACK_COLORS.length],
+          visible: isTrackVisibleInReview(track),
+          exportIncluded: isTrackExportIncluded(track),
+          exportable: track.exportable !== false && track.demoMode !== true && !track.deleted,
+          status,
+        };
+      });
+      const seen = new Set(rows.map((row) => row.objectId).filter(Boolean));
+      for (const candidate of reviewCandidates()) {
+        const objectId = String(candidate.objectId || candidate.object_id || candidateId(candidate)).trim();
+        if (!objectId || seen.has(objectId)) continue;
+        const index = rows.length;
+        rows.push({
+          kind: "candidate",
+          id: candidateId(candidate),
+          objectId,
+          label: candidate.label || objectId || `Candidate ${index + 1}`,
+          confidence: candidateConfidenceScore(candidate),
+          frameCount: toInteger(candidate.frameCount ?? candidate.frame_count, 0) || toInteger(state.jobReview?.source?.frameCount ?? state.jobReview?.source?.frame_count, 0) || 450,
+          color: TRACK_COLORS[index % TRACK_COLORS.length],
+          visible: false,
+          exportIncluded: false,
+          exportable: false,
+          status: studioCandidateStatus(candidate),
+        });
+        seen.add(objectId);
+      }
+      return rows.slice(0, 12);
+    }
+
+    function renderStudioReviewPanel() {
+      const list = $("#studioObjectList");
+      const summary = $("#studioReviewSummary");
+      if (!list || !summary) return;
+      const rows = studioObjectRows();
+      const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
+      summary.textContent = rows.length
+        ? `${reviewedCount} reviewed object${reviewedCount === 1 ? "" : "s"} ready`
+        : "Object masks appear here after a run completes.";
+      const canExport = Boolean(state.selectedJobId && reviewedCount);
+      $("#studioExportAllButton").disabled = !canExport;
+      $("#studioExportSelectedButton").disabled = !canExport;
+      $("#studioCreatePackageButton").disabled = !canExport;
+      list.innerHTML = rows.length
+        ? rows
+            .map((row, index) => {
+              const selected = row.kind === "track" && (state.selectedCorrectionTrackId === row.id || state.selectedCorrectionTrackId === row.objectId);
+              const frames = row.frameCount ? `${row.frameCount} frames` : row.kind === "track" ? trackCoverageLabel(row) : "frames unavailable";
+              const statusTone = row.status.tone === "bad" ? "is-bad" : row.status.tone === "warn" ? "is-warn" : "";
+              return `
+                <div class="studio-object-row ${row.visible ? "" : "is-muted"} ${selected ? "is-selected" : ""}" data-studio-track-row="${row.kind === "track" ? escapeAttribute(row.id) : ""}" style="--studio-track-color: ${escapeAttribute(row.color)}">
+                  <span class="studio-object-color" aria-hidden="true"></span>
+                  <span class="studio-object-number">${index + 1}</span>
+                  <span class="studio-object-copy">
+                    <strong class="studio-object-title">${escapeHtml(row.label)}</strong>
+                    <span class="studio-object-meta">Confidence ${escapeHtml(studioConfidenceLabel(row.confidence))} &nbsp; - &nbsp; ${escapeHtml(frames)}</span>
+                  </span>
+                  <span class="studio-status-chip ${statusTone}">${escapeHtml(row.status.label)}</span>
+                  <button
+                    class="studio-icon-toggle"
+                    type="button"
+                    data-studio-track-visible="${row.kind === "track" ? escapeAttribute(row.id) : ""}"
+                    data-visible="${row.visible ? "true" : "false"}"
+                    aria-label="${escapeAttribute(row.visible ? `Hide ${row.label}` : `Show ${row.label}`)}"
+                    aria-pressed="${row.visible ? "true" : "false"}"
+                    ${row.kind === "track" ? "" : "disabled"}
+                  ></button>
+                  <input
+                    class="studio-export-check"
+                    type="checkbox"
+                    data-studio-track-export="${row.kind === "track" ? escapeAttribute(row.id) : ""}"
+                    aria-label="${escapeAttribute(`Export ${row.label}`)}"
+                    ${row.exportIncluded ? "checked" : ""}
+                    ${row.kind === "track" && row.exportable ? "" : "disabled"}
+                  />
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">Start a run to review objects before export.</div>`;
+    }
+
+    function renderStudioShell(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
+      const resultMode = ["review_candidates", "correct_tracks", "export"].includes(activeStep);
+      shell?.classList.toggle("is-result-mode", resultMode && !state.workflowDashboard);
+      renderStudioProgress(activeStep);
+      renderStudioReviewPanel();
+    }
+
     function relatedArtifactsForTrack(track) {
       const objectId = trackObjectId(track);
       return state.jobArtifacts.filter((artifact) => {
@@ -5237,7 +5411,7 @@ const MotionJSONUI = (() => {
       const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
       $("#presetSummary").textContent = preset.label;
       $("#presetSummary").className = "status-chip is-neutral";
-      const isObjectDiscovery = state.selectedPreset === "auto_object_proposals";
+      const isObjectDiscovery = state.selectedPreset === "auto_object_proposals" || state.selectedPreset === "trace_all_objects";
       $("#qualityPresetField").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
@@ -5426,17 +5600,19 @@ const MotionJSONUI = (() => {
       ctx.fillText(label, start.x + 6, Math.max(14, start.y - 7));
     }
 
-    function drawTrackBox(track, frame, view) {
+    function drawTrackBox(track, frame, view, index = 0) {
       const box = frame?.bbox;
       const polygon = normalizePolygonPoints(frame?.polygon);
       if (!box && !polygon) return;
       const bounds = box || polygonBounds(polygon, state.video.width || 1920, state.video.height || 1080);
       const start = videoPointToCanvas({ x: bounds.x, y: bounds.y }, view);
       const end = videoPointToCanvas({ x: bounds.x + bounds.w, y: bounds.y + bounds.h }, view);
+      const center = videoPointToCanvas({ x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 }, view);
+      const resultMode = shell?.classList.contains("is-result-mode");
       ctx.save();
-      ctx.lineWidth = 3;
+      ctx.lineWidth = resultMode ? 4 : 3;
       ctx.strokeStyle = track.color || "#10a37f";
-      ctx.fillStyle = `${track.color || "#10a37f"}26`;
+      ctx.fillStyle = `${track.color || "#10a37f"}${resultMode ? "45" : "26"}`;
       if (polygon) {
         polygon.forEach((point, index) => {
           const canvasPoint = videoPointToCanvas(point, view);
@@ -5451,14 +5627,29 @@ const MotionJSONUI = (() => {
         ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
         ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
       }
-      ctx.fillStyle = "rgba(20, 28, 32, 0.86)";
-      const label = `${track.label || track.objectId} - ${track.reviewSource || "track"}`;
-      ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
-      const textWidth = Math.min(ctx.measureText(label).width + 14, Math.max(60, view.width - start.x - 8));
-      const labelY = Math.max(view.y + 18, start.y - 24);
-      ctx.fillRect(start.x, labelY, textWidth, 20);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(label, start.x + 7, labelY + 14, textWidth - 12);
+      if (resultMode) {
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(24, 32, 42, 0.16)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#1c2530";
+        ctx.font = "700 16px ui-sans-serif, system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(index + 1), center.x, center.y + 1);
+      } else {
+        ctx.fillStyle = "rgba(20, 28, 32, 0.86)";
+        const label = `${track.label || track.objectId} - ${track.reviewSource || "track"}`;
+        ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
+        const textWidth = Math.min(ctx.measureText(label).width + 14, Math.max(60, view.width - start.x - 8));
+        const labelY = Math.max(view.y + 18, start.y - 24);
+        ctx.fillRect(start.x, labelY, textWidth, 20);
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(label, start.x + 7, labelY + 14, textWidth - 12);
+      }
       ctx.restore();
     }
 
@@ -5507,9 +5698,9 @@ const MotionJSONUI = (() => {
         drawBox(state.draftBox.data, "#e5be5f", "box draft", view);
       }
 
-      state.reviewTracks.forEach((track) => {
+      state.reviewTracks.forEach((track, index) => {
         if (!isTrackVisibleInReview(track)) return;
-        drawTrackBox(track, trackFrameForDisplay(track, state.video.currentFrame), view);
+        drawTrackBox(track, trackFrameForDisplay(track, state.video.currentFrame), view, index);
       });
 
       if (state.pointer?.inside) {
@@ -6445,14 +6636,14 @@ const MotionJSONUI = (() => {
         outputDirectory: "out/ui-runs/project_layout",
         objectLabel: "red ball",
         objectId: "red_ball",
-        currentFrame: 12,
-        keyframes: new Set([0, 12, 24]),
+        currentFrame: 152,
+        keyframes: new Set([0, 152, 300]),
         prompts: [],
         strokes: [],
         maskProvider: "mock",
         device: "auto",
         sampleFps: "12",
-        maxFrames: "48",
+        maxFrames: "450",
         minArea: "100",
         maxAreaRatio: "0.45",
         stabilityThreshold: "0.82",
@@ -6472,7 +6663,7 @@ const MotionJSONUI = (() => {
         progress: failedCapture ? 64 : 100,
         percent: failedCapture ? 64 : 100,
         payload: { mask_provider: "mock", run_config: runConfig },
-        result: failedCapture ? { objects: 0, frames: 48, rasterFallback: true } : { objects: 2, frames: 48 },
+        result: failedCapture ? { objects: 0, frames: 450, rasterFallback: true } : { objects: 4, frames: 450 },
         updated_at: "2026-05-20T12:00:00Z",
         message: failedCapture ? "SAM2 model weights unavailable; vector tracks were not produced." : "review fixture ready",
         error: failedCapture ? "SAM2 model weights unavailable; use mock/local provider or install model weights before retrying." : "",
@@ -6482,79 +6673,116 @@ const MotionJSONUI = (() => {
           candidateId: "cand_red_ball",
           objectId: "red_ball",
           label: "Red ball",
-          source: "text_detector",
+          source: "auto_object_proposals",
           providerName: "mock detector",
-          frameIndex: 12,
-          box: { x: 310, y: 160, w: 84, h: 84 },
+          frameIndex: 152,
+          box: { x: 250, y: 650, w: 230, h: 230 },
           confidence: 0.92,
           stabilityScore: 0.91,
           motionScore: 0.22,
-          frameCoverageEstimate: 0.76,
+          frameCoverageEstimate: 1,
+          frameCount: 452,
           reviewStatus: "accepted",
           defaultSelected: true,
         },
         {
-          candidateId: "cand_floor",
-          objectId: "floor_patch",
-          label: "Floor patch",
+          candidateId: "cand_person",
+          objectId: "hand_person",
+          label: "Hand / Person",
+          source: "auto_object_proposals",
+          providerName: "mock detector",
+          frameIndex: 152,
+          box: { x: 510, y: 110, w: 760, h: 900 },
+          confidence: 0.87,
+          stabilityScore: 0.88,
+          motionScore: 0.34,
+          frameCoverageEstimate: 1,
+          frameCount: 450,
+          reviewStatus: "accepted",
+          defaultSelected: true,
+        },
+        {
+          candidateId: "cand_cup",
+          objectId: "cup",
+          label: "Cup",
+          source: "auto_object_proposals",
+          providerName: "mock detector",
+          frameIndex: 152,
+          box: { x: 1590, y: 650, w: 260, h: 210 },
+          confidence: 0.81,
+          stabilityScore: 0.82,
+          motionScore: 0.14,
+          frameCoverageEstimate: 0.98,
+          frameCount: 441,
+          reviewStatus: "accepted",
+          defaultSelected: true,
+        },
+        {
+          candidateId: "cand_moving_object",
+          objectId: "moving_object",
+          label: "Moving object",
+          source: "motion_foreground",
+          providerName: "CPU motion",
+          frameIndex: 152,
+          box: { x: 1395, y: 390, w: 125, h: 220 },
+          confidence: 0.74,
+          stabilityScore: 0.74,
+          motionScore: 0.52,
+          frameCoverageEstimate: 0.69,
+          frameCount: 312,
+          reviewStatus: "accepted",
+          defaultSelected: true,
+        },
+        {
+          candidateId: "cand_plant",
+          objectId: "plant_background",
+          label: "Plant (background)",
           source: "sam_auto_masks",
           providerName: "mock masks",
-          frameIndex: 12,
-          box: { x: 0, y: 300, w: 640, h: 160 },
-          confidence: 0.54,
+          frameIndex: 152,
+          box: { x: 55, y: 260, w: 190, h: 520 },
+          confidence: 0.42,
           stabilityScore: 0.7,
           motionScore: 0.01,
-          frameCoverageEstimate: 0.95,
+          frameCoverageEstimate: 1,
+          frameCount: 450,
+          reviewStatus: "needs_review",
+          warnings: ["background_like"],
+          defaultSelected: false,
+        },
+        {
+          candidateId: "cand_fence",
+          objectId: "fence_background",
+          label: "Fence",
+          source: "sam_auto_masks",
+          providerName: "mock masks",
+          frameIndex: 152,
+          box: { x: 0, y: 175, w: 1920, h: 310 },
+          confidence: 0.38,
+          stabilityScore: 0.78,
+          motionScore: 0.01,
+          frameCoverageEstimate: 1,
+          frameCount: 450,
+          reviewStatus: "needs_review",
+          warnings: ["background_like", "whole_frame_like"],
+          defaultSelected: false,
+        },
+        {
+          candidateId: "cand_ground",
+          objectId: "ground_lawn",
+          label: "Ground / Lawn",
+          source: "sam_auto_masks",
+          providerName: "mock masks",
+          frameIndex: 152,
+          box: { x: 0, y: 570, w: 1500, h: 510 },
+          confidence: 0.28,
+          stabilityScore: 0.76,
+          motionScore: 0.01,
+          frameCoverageEstimate: 1,
+          frameCount: 450,
           reviewStatus: "rejected",
           rejectionReason: "background_like",
           warnings: ["whole_frame_like"],
-          defaultSelected: false,
-        },
-        {
-          candidateId: "cand_duplicate",
-          objectId: "red_ball_duplicate",
-          label: "Duplicate red ball",
-          source: "text_detector",
-          providerName: "mock detector",
-          frameIndex: 13,
-          box: { x: 316, y: 164, w: 80, h: 80 },
-          confidence: 0.86,
-          stabilityScore: 0.88,
-          motionScore: 0.2,
-          frameCoverageEstimate: 0.72,
-          reviewStatus: "rejected",
-          rejectionReason: "duplicate_mask",
-          defaultSelected: false,
-        },
-        {
-          candidateId: "cand_low_confidence",
-          objectId: "soft_shadow",
-          label: "Soft shadow",
-          source: "text_detector",
-          providerName: "mock detector",
-          frameIndex: 18,
-          box: { x: 410, y: 220, w: 68, h: 42 },
-          confidence: 0.31,
-          stabilityScore: 0.55,
-          motionScore: 0.04,
-          frameCoverageEstimate: 0.28,
-          reviewStatus: "needs_review",
-          warnings: ["low_confidence"],
-          defaultSelected: false,
-        },
-        {
-          candidateId: "cand_moving_hand",
-          objectId: "moving_hand",
-          label: "Moving hand",
-          source: "motion_foreground",
-          providerName: "CPU motion",
-          frameIndex: 22,
-          box: { x: 120, y: 92, w: 96, h: 120 },
-          confidence: 0.66,
-          stabilityScore: 0.62,
-          motionScore: 0.48,
-          frameCoverageEstimate: 0.44,
-          reviewStatus: "pending",
           defaultSelected: false,
         },
       ];
@@ -6565,40 +6793,73 @@ const MotionJSONUI = (() => {
           label: "Red ball",
           source: "selected-candidate-tracker",
           providerName: "mock tracker",
-          confidence: 0.91,
-          frameStart: 1,
-          frameEnd: 48,
-          visibleFrameCount: 45,
-          frameCount: 48,
+          confidence: 0.92,
+          frameStart: 0,
+          frameEnd: 451,
+          visibleFrameCount: 452,
+          frameCount: 452,
           exportStatus: "accepted",
           exportIncluded: true,
           reviewSource: "reviewed",
-          color: "#10a37f",
+          color: "#20c4cf",
           rightsSummary: {
             commercialUseStatus: "review_required",
             license: "user_uploaded_unverified",
             attributionRequired: true,
             sourceAttribution: { displayText: "User uploaded source video" },
           },
-          frames: [{ frame: 12, bbox: { x: 310, y: 160, w: 84, h: 84 }, visible: true }],
+          frames: [{ frame: 152, bbox: { x: 250, y: 650, w: 230, h: 230 }, visible: true }],
         },
         {
-          id: "duplicate_ball",
-          objectId: "duplicate_ball",
-          label: "Duplicate ball",
+          id: "hand_person",
+          objectId: "hand_person",
+          label: "Hand / Person",
           source: "selected-candidate-tracker",
           providerName: "mock tracker",
-          confidence: 0.86,
-          frameStart: 2,
-          frameEnd: 40,
-          visibleFrameCount: 36,
-          frameCount: 48,
-          exportStatus: "review_pending",
-          exportIncluded: false,
-          reviewSource: "duplicate",
-          warnings: ["possible duplicate of Red ball"],
-          color: "#2f80ed",
-          frames: [{ frame: 12, bbox: { x: 316, y: 164, w: 80, h: 80 }, visible: true }],
+          confidence: 0.87,
+          frameStart: 0,
+          frameEnd: 449,
+          visibleFrameCount: 450,
+          frameCount: 450,
+          exportStatus: "accepted",
+          exportIncluded: true,
+          reviewSource: "reviewed",
+          color: "#45b844",
+          frames: [{ frame: 152, bbox: { x: 510, y: 110, w: 760, h: 900 }, visible: true }],
+        },
+        {
+          id: "cup",
+          objectId: "cup",
+          label: "Cup",
+          source: "selected-candidate-tracker",
+          providerName: "mock tracker",
+          confidence: 0.81,
+          frameStart: 0,
+          frameEnd: 440,
+          visibleFrameCount: 441,
+          frameCount: 441,
+          exportStatus: "accepted",
+          exportIncluded: true,
+          reviewSource: "reviewed",
+          color: "#2f8dea",
+          frames: [{ frame: 152, bbox: { x: 1590, y: 650, w: 260, h: 210 }, visible: true }],
+        },
+        {
+          id: "moving_object",
+          objectId: "moving_object",
+          label: "Moving object",
+          source: "selected-candidate-tracker",
+          providerName: "mock tracker",
+          confidence: 0.74,
+          frameStart: 0,
+          frameEnd: 311,
+          visibleFrameCount: 312,
+          frameCount: 312,
+          exportStatus: "accepted",
+          exportIncluded: true,
+          reviewSource: "reviewed",
+          color: "#f9bd0a",
+          frames: [{ frame: 152, bbox: { x: 1395, y: 390, w: 125, h: 220 }, visible: true }],
         },
       ];
       state.selectedProjectId = "project_layout";
@@ -6606,6 +6867,19 @@ const MotionJSONUI = (() => {
       state.jobs = [job];
       state.selectedJobId = job.id;
       state.selectedJob = job;
+      state.video = {
+        ...state.video,
+        width: 1920,
+        height: 1080,
+        duration: 15,
+        currentFrame: 152,
+        loadedName: "review-demo.mp4",
+      };
+      elements.stage.classList.add("has-video", "has-studio-demo");
+      $("#frameSlider").max = "450";
+      $("#frameSlider").value = "152";
+      $("#frameReadout").textContent = "frame 152";
+      $("#videoMetricReadout").textContent = "1920x1080 px";
       state.jobEvents = failedCapture
         ? [
             {
@@ -6632,8 +6906,8 @@ const MotionJSONUI = (() => {
             },
           ]
         : [
-            { event_type: "candidate_discovery", message: "5 candidates proposed for review" },
-            { event_type: "track_linking", message: "2 selected candidates tracked" },
+            { event_type: "candidate_discovery", message: "7 candidates proposed for review" },
+            { event_type: "track_linking", message: "4 selected candidates tracked" },
             { event_type: "review_gate", message: "export includes reviewed selected objects only" },
           ];
       state.jobArtifacts = failedCapture
@@ -6649,21 +6923,28 @@ const MotionJSONUI = (() => {
           providerName: "mock detector",
           qualityPreset: "balanced",
           candidateCount: failedCapture ? 0 : candidates.length,
-          acceptedCandidateCount: failedCapture ? 0 : 1,
-          rejectedCandidateCount: failedCapture ? 0 : 2,
-          defaultSelectedCount: failedCapture ? 0 : 1,
-          rejectionReasons: failedCapture ? {} : { background_like: 1, duplicate_mask: 1 },
+          acceptedCandidateCount: failedCapture ? 0 : 4,
+          rejectedCandidateCount: failedCapture ? 0 : 1,
+          defaultSelectedCount: failedCapture ? 0 : 4,
+          rejectionReasons: failedCapture ? {} : { background_like: 3 },
         },
         tracks: failedCapture ? [] : reviewTracks,
-        objects: failedCapture ? [] : [{ objectId: "red_ball", id: "red_ball", label: "Red ball" }],
+        objects: failedCapture
+          ? []
+          : [
+              { objectId: "red_ball", id: "red_ball", label: "Red ball" },
+              { objectId: "hand_person", id: "hand_person", label: "Hand / Person" },
+              { objectId: "cup", id: "cup", label: "Cup" },
+              { objectId: "moving_object", id: "moving_object", label: "Moving object" },
+            ],
         export: {
-          includedObjectIds: failedCapture ? [] : ["red_ball", "manual_prompt_pending"],
-          excludedObjectIds: failedCapture ? [] : ["duplicate_ball", "floor_patch", "soft_shadow"],
+          includedObjectIds: failedCapture ? [] : ["red_ball", "hand_person", "cup", "moving_object"],
+          excludedObjectIds: failedCapture ? [] : ["plant_background", "fence_background", "ground_lawn"],
           exportReviewRequired: true,
         },
         rightsSummary: {
           format: "motionjson.export_rights_summary.v0.1",
-          summary: { commercialUseApproved: false, commercialUseReviewRequired: ["red_ball"] },
+          summary: { commercialUseApproved: false, commercialUseReviewRequired: ["red_ball", "hand_person", "cup", "moving_object"] },
           warnings: [{ code: "commercial_use_review_required", message: "Review source rights before publishing." }],
         },
         fallbackDiagnostics: failedCapture
@@ -6681,16 +6962,18 @@ const MotionJSONUI = (() => {
         failure: failedCapture ? { message: "SAM2 model weights unavailable; vector tracks were not produced." } : null,
       };
       state.reviewTracks = failedCapture ? [] : reviewTracks;
-      state.trackVisibility = failedCapture ? {} : { red_ball: true, duplicate_ball: true };
-      state.candidateSelection = failedCapture ? {} : { cand_red_ball: true };
+      state.trackVisibility = failedCapture ? {} : { red_ball: true, hand_person: true, cup: true, moving_object: true };
+      state.candidateSelection = failedCapture
+        ? {}
+        : { cand_red_ball: true, cand_person: true, cand_cup: true, cand_moving_object: true, cand_plant: false, cand_fence: false, cand_ground: false };
       state.candidateSelectionJobId = job.id;
-      state.candidateTrackingStatus = failedCapture ? "" : "1 reviewed candidate tracked; export remains reviewed-only.";
+      state.candidateTrackingStatus = failedCapture ? "" : "4 reviewed candidates tracked; export remains reviewed-only.";
       state.selectedCorrectionTrackId = failedCapture ? "" : "red_ball";
-      state.mergeSelection = !failedCapture && capture === "correction-tools" ? new Set(["red_ball", "duplicate_ball"]) : new Set();
+      state.mergeSelection = !failedCapture && capture === "correction-tools" ? new Set(["red_ball", "moving_object"]) : new Set();
       state.prompts = failedCapture
         ? []
         : [
-            { id: "prompt_layout_point", kind: "positive_point", frame_index: 12, object_id: "red_ball", label: "Red ball", data: { x: 350, y: 198 } },
+            { id: "prompt_layout_point", kind: "positive_point", frame_index: 152, object_id: "red_ball", label: "Red ball", data: { x: 365, y: 765 } },
           ];
       state.strokes = [];
       state.correctionState = {
@@ -6700,7 +6983,7 @@ const MotionJSONUI = (() => {
         persistenceMessage: failedCapture
           ? "No correction state is available because the run did not produce object tracks."
           : "Correction state loaded from the local backend. Edits are saved locally before export.",
-        mergeSuggestions: failedCapture ? [] : [{ keepObjectId: "red_ball", mergeObjectId: "duplicate_ball", meanIou: 0.82 }],
+        mergeSuggestions: failedCapture ? [] : [{ keepObjectId: "red_ball", mergeObjectId: "moving_object", meanIou: 0.42 }],
         history: failedCapture
           ? []
           : [
@@ -6708,7 +6991,7 @@ const MotionJSONUI = (() => {
                 type: "relabel_track",
                 trackId: "red_ball",
                 label: "Red ball",
-                frameRange: [1, 48],
+                frameRange: [0, 451],
                 createdAt: "2026-05-20T12:00:00Z",
                 persistenceStatus: "saved",
               },
@@ -6718,9 +7001,9 @@ const MotionJSONUI = (() => {
         capture === "export-gate"
           ? {
               jobId: job.id,
-              includedObjectIds: ["red_ball"],
-              excludedObjectIds: ["duplicate_ball", "manual_prompt_pending"],
-              validation: { ok: false, issueCount: 1, checked: 4, issues: [{ path: "manual_prompt_pending", message: "Added object needs materialized assets before export." }] },
+              includedObjectIds: ["red_ball", "hand_person", "cup", "moving_object"],
+              excludedObjectIds: ["plant_background", "fence_background", "ground_lawn"],
+              validation: { ok: false, issueCount: 1, checked: 7, issues: [{ path: "background_candidates", message: "Background-like candidates stay excluded until reviewed." }] },
               exportValidationMessages: [{ code: "reviewed_only_export", severity: "warn", message: "Only reviewed selected tracks are eligible for export." }],
               rightsSummary: state.jobReview.rightsSummary,
               exportWarnings: [{ code: "commercial_use_review_required", severity: "warn", message: "Confirm source rights before public distribution." }],
@@ -6736,19 +7019,19 @@ const MotionJSONUI = (() => {
         ];
         const objectLayerPack = {
           format: "motionjson.object_layer_pack.v0.1",
-          selectedObjectIds: ["red_ball"],
-          excludedObjectIds: ["duplicate_ball"],
-          objectCount: 1,
+          selectedObjectIds: ["red_ball", "hand_person", "cup", "moving_object"],
+          excludedObjectIds: ["plant_background", "fence_background", "ground_lawn"],
+          objectCount: 4,
           snippets: {
-            plainJs: 'import { mountMotionJSON } from "./runtime/index.js";\n\nawait mountMotionJSON("#motion", "./scene_graph.json", { objectId: "red_ball" });',
-            remotion: 'const selectedObjectIds = ["red_ball"];\n<MotionJSONComposition sceneGraphPath="./scene_graph.json" objectIds={selectedObjectIds} assetBasePath="." />',
+            plainJs: 'import { mountMotionJSON } from "./runtime/index.js";\n\nawait mountMotionJSON("#motion", "./scene_graph.json", { objectIds: ["red_ball", "hand_person", "cup", "moving_object"] });',
+            remotion: 'const selectedObjectIds = ["red_ball", "hand_person", "cup", "moving_object"];\n<MotionJSONComposition sceneGraphPath="./scene_graph.json" objectIds={selectedObjectIds} assetBasePath="." />',
           },
         };
         state.exportResult = {
           jobId: job.id,
           validation: { ok: true, issueCount: 0, checked: 4 },
-          includedObjectIds: ["red_ball"],
-          excludedObjectIds: ["duplicate_ball"],
+          includedObjectIds: ["red_ball", "hand_person", "cup", "moving_object"],
+          excludedObjectIds: ["plant_background", "fence_background", "ground_lawn"],
           assets,
           objectLayerPack,
           rightsSummary: state.jobReview.rightsSummary,
@@ -6759,7 +7042,11 @@ const MotionJSONUI = (() => {
             includeMasks: false,
             includeContours: false,
             includePreview: true,
-            objects: [{ objectId: "red_ball", selectedOutput: "hybrid_vector_silhouette_plus_raster", selectedDelivery: { route: "sprite_atlas_webp" } }],
+            objects: ["red_ball", "hand_person", "cup", "moving_object"].map((objectId) => ({
+              objectId,
+              selectedOutput: "hybrid_vector_silhouette_plus_raster",
+              selectedDelivery: { route: "sprite_atlas_webp" },
+            })),
             preview: { mp4Preview: { status: "ready", reason: "preview route available" } },
           },
         };
@@ -6800,15 +7087,13 @@ const MotionJSONUI = (() => {
       const modelSetupPanel = document.querySelector("#modelSetupPanel");
       const modelPlanPanel = document.querySelector("#modelPlanPanel");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
-      const reviewCaptureStates = ["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet", "job-review"];
-
       if (capture.startsWith("model-setup")) {
         setWorkflowStep("provider_settings", { persist: false });
       } else if (capture.startsWith("model-plan")) {
         setWorkflowStep("validate_run", { persist: false });
-      } else if (capture === "workflow-review-failure") {
+      } else if (capture === "workflow-review" || capture === "workflow-review-failure") {
         setWorkflowStep("review_candidates", { persist: false });
-      } else if (reviewCaptureStates.includes(capture) || capture === "advanced-config") {
+      } else if (capture === "advanced-config") {
         setWorkflowDashboard(true, { persist: false });
       } else if (capture === "new-project") {
         setWorkflowStep("project_video", { persist: false });
@@ -7076,24 +7361,12 @@ const MotionJSONUI = (() => {
         }
         if (configPanel) configPanel.style.order = "-1";
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
-      } else if (capture === "workflow-review-failure") {
+      } else if (capture === "workflow-review" || capture === "workflow-review-failure") {
         applyReviewCaptureFixture(capture);
         setWorkflowStep("review_candidates", { persist: false });
       } else if (["candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture)) {
-        if (shell) {
-          shell.style.display = "block";
-          shell.style.minHeight = "100vh";
-        }
-        if (sidebar) sidebar.style.display = "none";
-        if (workspace) workspace.style.display = "none";
-        if (rightRail) {
-          rightRail.style.display = "grid";
-          rightRail.style.gridTemplateColumns = window.innerWidth < 760 ? "1fr" : "repeat(2, minmax(0, 1fr))";
-          rightRail.style.gap = "16px";
-          rightRail.style.borderLeft = "0";
-          rightRail.style.minHeight = "100vh";
-        }
         applyReviewCaptureFixture(capture);
+        setWorkflowStep(capture === "correction-tools" ? "correct_tracks" : capture.startsWith("export") || capture === "copyable-snippet" ? "export" : "review_candidates", { persist: false });
         if (capture === "candidate-review") {
           const backgroundFilter = document.querySelector("#candidateFilterNotBackground");
           const duplicateFilter = document.querySelector("#candidateFilterNotDuplicate");
@@ -7101,20 +7374,6 @@ const MotionJSONUI = (() => {
           if (duplicateFilter) duplicateFilter.checked = false;
           renderCandidateSummary();
         }
-        document.querySelectorAll(".right-rail > details").forEach((details) => {
-          const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
-          const openSummaries = {
-            "candidate-review": ["run monitor", "review", "review candidates and tracks"],
-            "correction-tools": ["review", "review candidates and tracks", "corrections"],
-            "export-gate": ["review", "review candidates and tracks", "artifacts and exports", "preview and export"],
-            "export-handoff": ["review", "review candidates and tracks", "artifacts and exports", "preview and export"],
-            "export-success": ["artifacts and exports", "preview and export"],
-            "copyable-snippet": ["artifacts and exports", "preview and export"],
-          }[capture];
-          const open = openSummaries.includes(summary);
-          details.open = open;
-          details.style.display = open ? "" : "none";
-        });
       } else if (capture === "job-review") {
         if (shell) {
           shell.style.display = "block";
@@ -7883,6 +8142,70 @@ const MotionJSONUI = (() => {
         renderCorrectionPanel();
       }
     });
+
+    $("#studioObjectList").addEventListener("change", (event) => {
+      const exportToggle = event.target.closest("[data-studio-track-export]");
+      if (!exportToggle || !exportToggle.dataset.studioTrackExport) return;
+      submitCorrectionAction({
+        type: "set_export_inclusion",
+        trackId: exportToggle.dataset.studioTrackExport,
+        included: exportToggle.checked,
+      });
+    });
+
+    $("#studioObjectList").addEventListener("click", (event) => {
+      const visibleToggle = event.target.closest("[data-studio-track-visible]");
+      if (visibleToggle && visibleToggle.dataset.studioTrackVisible) {
+        const trackId = visibleToggle.dataset.studioTrackVisible;
+        const visible = visibleToggle.dataset.visible !== "true";
+        state.trackVisibility[trackId] = visible;
+        submitCorrectionAction({ type: "set_track_visibility", trackId, visible });
+        return;
+      }
+
+      const row = event.target.closest("[data-studio-track-row]");
+      if (!row || !row.dataset.studioTrackRow || event.target.closest("input, button")) return;
+      state.selectedCorrectionTrackId = row.dataset.studioTrackRow;
+      renderTrackList();
+      renderSelectedTrackDetail();
+      renderCorrectionPanel();
+      renderStudioReviewPanel();
+      scheduleDrawOverlay();
+    });
+
+    $("#studioRejectBackgroundButton").addEventListener("click", () => {
+      for (const candidate of reviewCandidates()) {
+        const id = candidateId(candidate);
+        if (id && /background|whole_frame|wall|floor|ground|lawn|plant|fence/.test(candidateReasonText(candidate) || String(candidate.label || "").toLowerCase())) {
+          state.candidateSelection[id] = false;
+        }
+      }
+      $("#candidateFilterNotBackground").checked = true;
+      renderCandidateSummary();
+      renderStudioReviewPanel();
+    });
+
+    $("#studioMergeDuplicatesButton").addEventListener("click", () => {
+      const duplicateTracks = state.reviewTracks.filter((track) => /duplicate|overlap|same object/i.test(`${track.label || ""} ${asArray(track.warnings).join(" ")}`));
+      const mergeTargets = duplicateTracks.length >= 2 ? duplicateTracks.slice(0, 2) : state.reviewTracks.slice(0, 2);
+      state.mergeSelection = new Set(mergeTargets.map((track) => track.id).filter(Boolean));
+      setWorkflowStep("correct_tracks", { focusStep: true });
+      renderTrackList();
+      renderSelectedTrackDetail();
+      renderCorrectionPanel();
+      renderStudioReviewPanel();
+    });
+
+    $("#studioSegmentEditButton").addEventListener("click", () => {
+      setWorkflowStep("provider_settings", { focusStep: true });
+      const disclosure = $("#traceEverythingDisclosure");
+      disclosure.open = true;
+      disclosure.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    $("#studioExportSelectedButton").addEventListener("click", validateSelectedExport);
+    $("#studioExportAllButton").addEventListener("click", exportSelectedMotionJson);
+    $("#studioCreatePackageButton").addEventListener("click", exportSelectedMotionJson);
 
     $("#correctionTrackSelect").addEventListener("change", (event) => {
       state.selectedCorrectionTrackId = event.target.value;

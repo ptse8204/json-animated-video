@@ -9,6 +9,13 @@ export const WIZARD_PRESETS = [
     requiredTools: ["keyframe"],
   },
   {
+    id: "trace_all_objects",
+    label: "Trace all objects",
+    discoveryMode: "auto_object_proposals",
+    defaultMaskProvider: "sam2-local",
+    requiredTools: ["keyframe"],
+  },
+  {
     id: "trace_one_object",
     label: "Trace one object",
     discoveryMode: "manual_prompt",
@@ -270,7 +277,7 @@ export function buildRunConfig(input) {
   );
   const discoveryConfig = {};
   const maxCandidates = Number(input.discoveryMaxCandidates || advanced.maxObjects || 12);
-  if (preset.id === "auto_object_proposals") {
+  if (preset.id === "auto_object_proposals" || preset.id === "trace_all_objects") {
     Object.assign(discoveryConfig, objectDiscoveryConfig(input, advanced));
   }
   if (preset.id === "text_detector") {

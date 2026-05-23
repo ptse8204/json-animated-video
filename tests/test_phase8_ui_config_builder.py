@@ -64,6 +64,18 @@ const cases = [
     expected: {{ provider: "sam2-local", discovery: "manual_prompt", prompts: 2 }},
   }},
   {{
+    goal: "trace_all_objects",
+    input: {{
+      presetId: "trace_all_objects",
+      video: {{ id: "video_trace_all" }},
+      label: "All objects",
+      objectId: "all_objects",
+      discoveryMaxCandidates: 8,
+      advanced: {{ ...commonAdvanced, qualityPreset: "balanced" }},
+    }},
+    expected: {{ provider: "sam2-local", discovery: "auto_object_proposals", prompts: 0 }},
+  }},
+  {{
     goal: "find_objects_from_text",
     input: {{
       presetId: "text_detector",
@@ -273,6 +285,16 @@ def test_phase8_frontend_config_builds_class_detector_preset(frontend_contract: 
     assert class_config["discovery"]["config"]["classes"] == ["forklift", "cart"]
     assert class_config["discovery"]["config"]["confidence_threshold"] == 0.42
     assert class_config["discovery"]["config"]["max_candidates"] == 5
+
+
+def test_phase8_frontend_config_builds_trace_all_objects_preset(frontend_contract: dict[str, Any]):
+    trace_all = next(item["config"] for item in frontend_contract["configs"] if item["goal"] == "trace_all_objects")
+
+    assert trace_all["provider"]["name"] == "sam2-local"
+    assert trace_all["discovery"]["mode"] == "auto_object_proposals"
+    assert trace_all["discovery"]["config"]["qualityPreset"] == "balanced"
+    assert trace_all["discovery"]["config"]["trackSelectedOnly"] is True
+    assert trace_all["discovery"]["config"]["requireReview"] is True
 
 
 def test_phase8_coordinate_mapper_returns_native_pixels_and_letterbox_status(frontend_contract: dict[str, Any]):

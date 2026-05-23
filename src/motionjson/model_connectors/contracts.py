@@ -25,6 +25,9 @@ GOAL_ALIASES = {
     "cut_out_one_object": "trace_one_object",
     "trace_one_object": "trace_one_object",
     "manual_prompt": "trace_one_object",
+    "trace_all_objects": "discover_objects",
+    "discover_objects": "discover_objects",
+    "auto_object_proposals": "discover_objects",
     "find_moving_things": "find_moving_things",
     "find_moving_objects": "find_moving_things",
     "motion_foreground": "find_moving_things",
@@ -423,6 +426,7 @@ class FakeModelConnector:
     def _provider_plan(self, request: ModelPlanRequest) -> dict[str, Any]:
         discovery_provider = {
             "trace_one_object": "manual_prompt",
+            "discover_objects": "auto_object_proposals",
             "find_moving_things": "motion_foreground",
             "find_objects_from_text": "text_detector",
             "import_masks": "external_masks",
@@ -461,6 +465,31 @@ class FakeModelConnector:
                 "deduplicate": True,
                 "send_candidates_to_sam": True,
                 "mock": True,
+            }
+        elif discovery_provider == "auto_object_proposals":
+            discovery_config = {
+                "mock": True,
+                "qualityPreset": "balanced",
+                "intent": "discover_objects_balanced",
+                "providerPreference": "mock",
+                "keyframePolicy": "scene_changes",
+                "keyframes": [0],
+                "maxKeyframes": 5,
+                "frameInterval": None,
+                "maxCandidatesPerKeyframe": 64,
+                "maxObjects": request.max_objects,
+                "minMaskArea": 64,
+                "maxMaskAreaRatio": 0.6,
+                "dedupeIou": 0.84,
+                "stabilityThreshold": 0.78,
+                "motionScoreWeight": 0.35,
+                "rejectWholeFrame": True,
+                "rejectBackgroundLike": True,
+                "trackSelectedOnly": True,
+                "trackTopCandidates": False,
+                "requireReview": True,
+                "writeRejectedCandidates": True,
+                "requireExplicitCostWarning": False,
             }
         elif discovery_provider == "motion_foreground":
             discovery_config = {"threshold": 32, "min_area": 100, "max_candidates": request.max_objects, "morph_open": 3, "morph_close": 5, "keyframes": [0]}

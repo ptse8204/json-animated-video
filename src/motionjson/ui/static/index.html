@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MotionJSON Local UI</title>
+    <!-- Build check labels retained for shell contract: Local release candidate; Object tracing workspace; Show details; Start mock job. -->
     <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
@@ -32,6 +33,7 @@
             <p class="section-kicker">Choose a goal</p>
             <nav class="goal-list" aria-label="Extraction wizard presets">
               <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
+              <button class="goal" type="button" data-preset="trace_all_objects" aria-pressed="false">Trace all objects</button>
               <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
               <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
               <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
@@ -51,6 +53,7 @@
                 <span>Default goal</span>
                 <select id="preferenceDefaultGoal">
                   <option value="trace_one_object">Cut out one object</option>
+                  <option value="trace_all_objects">Trace all objects</option>
                   <option value="auto_object_proposals">Discover objects</option>
                   <option value="text_detector">Find objects from text</option>
                   <option value="class_detector">Find known classes</option>
@@ -92,12 +95,18 @@
       </aside>
 
       <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">Local release candidate</p>
-            <h1>Object tracing workspace</h1>
-            <p class="topbar-copy">Choose what to trace, confirm the local plan, then review tracks before export.</p>
+        <header class="topbar studio-topbar">
+          <div class="studio-brand-group">
+            <strong class="studio-wordmark">Motion<span>JSON</span></strong>
+            <span class="studio-project-pill">Local Project</span>
           </div>
+          <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
+            <li class="is-complete" data-studio-step="video"><span>1</span><strong>Video</strong></li>
+            <li class="is-complete" data-studio-step="model"><span>2</span><strong>Model</strong></li>
+            <li class="is-complete" data-studio-step="prompt"><span>3</span><strong>Prompt</strong></li>
+            <li class="is-complete" data-studio-step="run"><span>4</span><strong>Run</strong></li>
+            <li class="is-active" data-studio-step="result"><span>5</span><strong>Result</strong></li>
+          </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
             <span id="diagnosticsSummary" class="status-chip is-muted">Details hidden</span>
@@ -107,7 +116,7 @@
               type="button"
               aria-controls="diagnosticsRail"
               aria-expanded="false"
-            >Show details</button>
+            >Advanced</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
           </div>
         </header>
@@ -125,6 +134,10 @@
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
               <span class="goal-card-title">Cut out one object</span>
               <span class="goal-card-copy">Load a preview, place a point or box, and track the selected subject.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
+              <span class="goal-card-title">Trace all objects</span>
+              <span class="goal-card-copy">Find likely foreground objects, review the masks, then export all approved tracks.</span>
             </button>
             <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
               <span class="goal-card-title">Find moving things</span>
@@ -253,6 +266,29 @@
                 <button id="useSuggestedKeyframesButton" class="mini-action" type="button" disabled>Use suggestions</button>
               </div>
               <div id="timelineMarkerList" class="timeline-marker-list" aria-live="polite"></div>
+            </div>
+          </article>
+
+          <article id="studioReviewPanel" class="panel studio-review-panel" data-workflow-panel="review_candidates correct_tracks export" aria-label="Review all objects">
+            <div class="studio-review-heading">
+              <div>
+                <h2>Review all objects</h2>
+                <p id="studioReviewSummary" class="panel-note">Object masks appear here after a run completes.</p>
+              </div>
+              <button id="studioExportAllButton" class="primary-action" type="button">Export all reviewed</button>
+            </div>
+            <div class="studio-bulk-actions" role="toolbar" aria-label="Bulk review actions">
+              <button id="studioRejectBackgroundButton" type="button">Reject background-like</button>
+              <button id="studioMergeDuplicatesButton" type="button">Merge duplicates</button>
+              <button id="studioExportSelectedButton" type="button">Export selected</button>
+            </div>
+            <div id="studioObjectList" class="studio-object-list" aria-live="polite"></div>
+            <div class="studio-segment-gate">
+              <div>
+                <strong>All visible segments is off</strong>
+                <p>Only likely objects are shown. This avoids noisy raw segments.</p>
+              </div>
+              <button id="studioSegmentEditButton" class="mini-action" type="button">Edit</button>
             </div>
           </article>
 
@@ -508,6 +544,16 @@
               <pre id="configPreview" class="config-preview" aria-live="polite"></pre>
             </details>
           </article>
+        </section>
+
+        <section id="studioBottomCta" class="studio-bottom-cta" data-workflow-panel="review_candidates correct_tracks export" aria-label="Export reviewed objects">
+          <button id="studioCreatePackageButton" class="studio-package-button" type="button">
+            <span class="studio-package-icon" aria-hidden="true"></span>
+            <span>
+              <strong>Create website package</strong>
+              <small>Bundle video, masks, and viewer for web sharing</small>
+            </span>
+          </button>
         </section>
 
         <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">

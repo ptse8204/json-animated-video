@@ -39,6 +39,30 @@ def test_fake_model_connector_builds_valid_text_plan_without_network():
     ExtractionRunConfig.from_dict(result.run_config)
 
 
+def test_fake_model_connector_builds_valid_trace_all_plan_without_network():
+    connector = FakeModelConnector()
+    request = ModelPlanRequest.from_dict(
+        {
+            "goal": "Trace all objects",
+            "prompt": "find every likely foreground object",
+            "videoId": "asset_123",
+            "projectId": "project_123",
+            "maxObjects": 6,
+        }
+    )
+
+    result = connector.plan(request)
+
+    assert result.goal == "discover_objects"
+    assert result.provider_plan["discoveryProvider"] == "auto_object_proposals"
+    assert result.provider_plan["trackingMode"] == "selected_only"
+    assert result.run_config["discovery"]["mode"] == "auto_object_proposals"
+    assert result.run_config["discovery"]["config"]["maxObjects"] == 6
+    assert result.run_config["discovery"]["config"]["requireReview"] is True
+    assert result.run_config["provider"]["name"] == "mock"
+    ExtractionRunConfig.from_dict(result.run_config)
+
+
 def test_openrouter_settings_connector_is_no_network_and_not_runnable():
     connector = OpenRouterSettingsModelConnector()
     request = ModelPlanRequest.from_dict({"goal": "Find by description", "prompt": "red ball"})
