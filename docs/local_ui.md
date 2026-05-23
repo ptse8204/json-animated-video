@@ -40,8 +40,14 @@ review work has an audit trail before team accounts or paid plans exist.
 
 ## Guided First Run
 
-The default workspace now starts with a goal-first wizard for nontechnical
-users. The main canvas offers plain-language choices:
+The default Local UI now opens in a 3-screen product flow:
+
+1. `Setup`
+2. `Prepare`
+3. `Review`
+
+`Setup` starts with a goal-first chooser for nontechnical users. The main
+canvas offers plain-language choices:
 
 - Cut out one object.
 - Find moving things.
@@ -49,10 +55,12 @@ users. The main canvas offers plain-language choices:
 - Import masks.
 - Review previous result.
 
-The browser preview control is shown before backend path registration so users
-can load a local file and draw prompts without understanding storage routes.
-Backend extraction still requires a registered local path, which stays in an
-Advanced disclosure with the registered video selector.
+When a local video is registered, MotionJSON inspects the source codec. If the
+source is already browser-safe, the player uses the source asset directly. If
+the source is not browser-safe, MotionJSON prepares a local browser-safe H.264
+preview automatically when FFmpeg is available and generates a poster image for
+Setup. The normal product flow blocks `Prepare` and `Review` until that browser
+preview is usable.
 
 The Run preview panel shows a readable plan by default: goal, source status,
 model/provider mode, prompt needs, review gate, and next steps. The generated
@@ -62,7 +70,7 @@ developer users, but it is no longer the default explanation of what will run.
 ## Guided Workspace Flow
 
 The Local UI now uses a progressive workflow instead of showing every setup,
-diagnostic, review, correction, and export card at once. The main stepper
+diagnostic, review, correction, and export card at once. The main product flow
 guides users through:
 
 1. Choose goal.
@@ -71,9 +79,9 @@ guides users through:
 4. Prepare and run.
 5. Review and export.
 
-Guided mode now keeps one visible footer action per step. The footer always
-shows `Back` plus one explicit primary action such as `Continue to video`, `Add
-video`, `Save and continue`, `Run trace`, or `Export reviewed objects`.
+Guided mode now keeps one visible footer action per screen. The footer always
+shows `Back` plus one explicit primary action such as `Add video`, `Continue`,
+`Run trace`, `Run search`, `Run motion scan`, or `Export reviewed objects`.
 Secondary actions such as demo video, diagnose, setup test, or review bulk
 actions stay visually secondary inside the current panel.
 
@@ -83,10 +91,10 @@ MotionJSON result, the Local UI creates a starter local project automatically
 if one does not already exist. Manual project switching and manual project
 creation remain available under `Project options` and `Show all panels`.
 
-Only the active step's main panels are shown by default. Completed prior steps
-appear as compact summary cards, and each step shows a next-action hint. The
-`Show all panels` control restores the advanced dashboard view for power users
-and debugging without removing the guided path.
+Only the active screen's main panels are shown by default. Advanced settings,
+full diagnostics, raw config JSON, artifact browsing, correction history, and
+export internals now sit behind the top-bar `Advanced` switch instead of
+competing with the normal user path.
 
 The left navigation can collapse to a compact rail with the active goal and a
 Menu button. The right details rail is collapsed by default on the first screen
@@ -252,6 +260,8 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `GET /api/videos?projectId=PROJECT_ID`
 - `POST /api/videos`
 - `GET /api/videos/VIDEO_ID/content`
+- `POST /api/videos/VIDEO_ID/prepare-browser-preview`
+- `GET /api/assets/ASSET_ID/content`
 - `GET /api/jobs?projectId=PROJECT_ID`
 - `POST /api/jobs`
 - `GET /api/progress?projectId=PROJECT_ID`
@@ -280,8 +290,11 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 The local UI creates a reserved local user in the selected SQLite database and
 uses that user for project, video, and job queries. API responses omit internal
 storage keys, local `file://` storage URIs, and token material. Registered
-videos are previewed through `/api/videos/VIDEO_ID/content`, which serves bytes
-from local storage without exposing the storage path.
+videos expose a `browserPreview` block that includes preview status, codec,
+dimensions, duration, and local content URLs for the chosen preview video and
+poster image. Source video bytes still come from `/api/videos/VIDEO_ID/content`
+without exposing the storage path, while browser-preview derivatives and poster
+images are served through `/api/assets/ASSET_ID/content`.
 JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
@@ -549,8 +562,8 @@ storage, and exposes the imported scene through the normal job review routes.
    path; `Find moving objects`, `Import external masks`, and `Review existing
    result` can run without optional ML models.
 3. Add or select a source video. Guided mode creates a starter local project
-   automatically the first time it needs one. A browser preview helps with
-   prompt drawing; backend jobs still require a registered local file path.
+   automatically the first time it needs one. MotionJSON prepares a browser-safe
+   preview automatically before `Prepare` and `Review` open.
 4. Choose mode/provider in Model Connections when the goal needs one. The UI
    recommends SAM2 local or
    Replicate for point/box tracing, SAM3 local or Roboflow for text concepts,
@@ -570,9 +583,9 @@ storage, and exposes the imported scene through the normal job review routes.
    merge, split, add object, or request repair with saved prompts.
 9. Export reviewed objects from the review step. Website package, MotionJSON,
    and other handoff cards remain review-gated.
-11. Validate export settings, then use the export handoff cards or
+10. Validate export settings in Advanced, then use the export handoff cards or
     `Export MotionJSON` to write reviewed local artifacts.
-12. Use the Asset Library panel to save useful generated/export artifacts as
+11. Use the Asset Library panel in Advanced to save useful generated/export artifacts as
     reusable motion layers, add them to brand collections, and assemble
     creator-approved packs when rights metadata permits.
 

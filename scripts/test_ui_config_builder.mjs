@@ -23,11 +23,11 @@ assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
 assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
 assert.equal(ui.workflowNextStepId("source_video", 1), "provider_settings");
 assert.equal(ui.workflowNextStepId("source_video", -1), "choose_goal");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "source_video");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "source_video");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "choose_goal");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "choose_goal");
 assert.equal(
   ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object", selectedProjectId: "project_1", selectedVideoId: "video_1" }, "review_export"),
-  "provider_settings",
+  "source_video",
 );
 const blockedWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
@@ -52,6 +52,7 @@ const readyWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "motion_foreground",
   selectedProjectId: "project_1",
   selectedVideoId: "video_1",
+  videoPreviewReady: true,
   configValid: true,
   selectedJobId: "job_1",
   candidateCount: 2,

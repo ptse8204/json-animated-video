@@ -24,6 +24,7 @@ const MotionJSONUI = (() => {
     "/api/run-config/validate",
     "/api/videos",
     "/api/videos/{videoId}/content",
+    "/api/videos/{videoId}/prepare-browser-preview",
     "/api/jobs",
     "/api/jobs/{jobId}",
     "/api/jobs/{jobId}/events",
@@ -38,6 +39,7 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}/model-plan",
     "/api/progress",
     "/api/artifacts",
+    "/api/assets/{assetId}/content",
     "/api/exports/formats",
     "/api/library/assets",
     "/api/library/assets/{libraryAssetId}",
@@ -58,7 +60,7 @@ const MotionJSONUI = (() => {
     workflowStep: "motionjson.localUi.workflowStep",
     workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
-  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
+  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
   const BUNDLED_DEMO_VIDEO_PATH = "examples/demo_red_ball.mp4";
@@ -338,6 +340,11 @@ const MotionJSONUI = (() => {
     prompt_preview: ["prompt_preview"],
     review_export: ["review_candidates", "correct_tracks", "export"],
   };
+  const SCREEN_STEPS = [
+    { id: "setup", label: "Setup", workflowSteps: ["choose_goal", "source_video", "provider_settings"] },
+    { id: "prepare", label: "Prepare", workflowSteps: ["prompt_preview"] },
+    { id: "review", label: "Review", workflowSteps: ["review_export"] },
+  ];
 
   const EMPTY_SAM2 = {
     checkpoint: null,
@@ -543,6 +550,15 @@ const MotionJSONUI = (() => {
     return WORKFLOW_STEPS[nextIndex].id;
   }
 
+  function workflowScreenForStep(stepId = "choose_goal") {
+    const normalized = normalizeWorkflowStepId(stepId);
+    return SCREEN_STEPS.find((screen) => screen.workflowSteps.includes(normalized))?.id || "setup";
+  }
+
+  function workflowStepForScreen(screenId = "setup") {
+    return SCREEN_STEPS.find((screen) => screen.id === screenId)?.workflowSteps[0] || "choose_goal";
+  }
+
   function goalRequiresModel(presetId = "trace_one_object") {
     return !MODEL_FREE_PRESETS.has(String(presetId || ""));
   }
@@ -552,6 +568,15 @@ const MotionJSONUI = (() => {
   }
 
   function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = "choose_goal") {
+    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
+    const hasRunData = Boolean(snapshot.selectedJobId || toInteger(snapshot.candidateCount, 0) || toInteger(snapshot.trackCount, 0));
+    if (selectedPreset === "review_existing") {
+      return snapshot.selectedJobId ? "review_export" : "choose_goal";
+    }
+    if (!hasRunData) {
+      if (snapshot.selectedVideoId) return goalRequiresModel(selectedPreset) ? "source_video" : "source_video";
+      return "choose_goal";
+    }
     const normalizedStep = normalizeWorkflowStepId(requestedStep);
     const readiness = workflowReadinessFromSnapshot(snapshot);
     const requestedIndex = workflowStepIndex(normalizedStep);
@@ -571,6 +596,8 @@ const MotionJSONUI = (() => {
     const hasRegisteredVideo = Boolean(snapshot.selectedVideoId);
     const hasImportedResult = selectedPreset === "review_existing" && Boolean(snapshot.selectedJobId);
     const hasPreview = Boolean(snapshot.previewName || snapshot.previewLoaded);
+    const previewReady = snapshot.videoPreviewReady === true || snapshot.videoPreviewStatus === "ready";
+    const previewBlocked = ["failed", "blocked"].includes(String(snapshot.videoPreviewStatus || ""));
     const providerBlocked = Boolean(snapshot.providerBlocked || snapshot.providerTone === "is-bad");
     const providerWarn = snapshot.providerTone === "is-warn";
     const providerSetupTone = String(snapshot.providerSummaryTone || "");
@@ -597,9 +624,13 @@ const MotionJSONUI = (() => {
       choose_goal: step("done", snapshot.presetLabel ? `Goal selected: ${snapshot.presetLabel}` : "Choose the tracing goal.", { complete: true }),
       source_video: hasImportedResult
         ? step("done", "Existing result loaded for review.")
-        : hasRegisteredVideo
-          ? step("done", "Registered video selected for backend runs.")
-          : hasPreview
+        : hasRegisteredVideo && previewReady
+          ? step("done", "Registered video and browser preview are ready.")
+          : hasRegisteredVideo && previewBlocked
+            ? step("blocked", snapshot.videoPreviewReason || "Browser preview could not be prepared for this video.", { complete: false })
+            : hasRegisteredVideo
+              ? step("needs-action", "Preparing a browser-safe preview for this video.", { tone: "is-warn", complete: false })
+        : hasPreview
             ? step("needs-action", "Browser preview is loaded; add a local video path before extraction.", { tone: "is-warn", complete: false })
             : step("needs-action", selectedPreset === "review_existing" ? "Open an existing MotionJSON result to continue." : "Add a local video or use the demo video to continue.", { complete: false }),
       provider_settings: !requiresModel
@@ -793,6 +824,142 @@ const MotionJSONUI = (() => {
     }
 
     return reviewStep;
+  }
+
+  function screenContractFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
+    const screenId = workflowScreenForStep(activeStep);
+    const selectedPreset = snapshot.selectedPreset || state.selectedPreset;
+    const requiresModel = goalRequiresModel(selectedPreset);
+    const previewStatus = String(snapshot.videoPreviewStatus || "");
+    const previewReason = snapshot.videoPreviewReason || "";
+    const providerReady = snapshot.providerSummaryTone === "ready";
+    const hasVideo = Boolean(snapshot.selectedVideoId);
+    const hasResult = selectedPreset === "review_existing" && Boolean(snapshot.selectedJobId);
+    const exportAction = exportActionState({
+      job: selectedJob(),
+      includedIds: state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean),
+      status: state.exportValidation?.validation || state.exportResult?.validation || null,
+    });
+    if (screenId === "setup") {
+      if (selectedPreset === "review_existing") {
+        if (hasResult) {
+          return {
+            title: "Setup",
+            description: "Import a previous result, then continue to review and export.",
+            statusLabel: "Ready",
+            statusTone: "is-ready",
+            primaryLabel: "Continue to review",
+            enabled: true,
+            blockedReason: "",
+            primaryAction: "continue_to_review",
+            backTarget: "",
+          };
+        }
+        const importPathValue = typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() || "" : "";
+        return {
+          title: "Setup",
+          description: "Import an existing MotionJSON result for review.",
+          statusLabel: importPathValue ? "Ready" : "Needs result",
+          statusTone: importPathValue ? "is-ready" : "is-warn",
+          primaryLabel: "Open result",
+          enabled: Boolean(importPathValue),
+          blockedReason: "Enter a MotionJSON path to open an existing result.",
+          primaryAction: "open_result",
+          backTarget: "",
+        };
+      }
+      const videoPathValue = typeof document !== "undefined" ? document.querySelector("#videoPath")?.value.trim() || "" : "";
+      if (!hasVideo) {
+        return {
+          title: "Setup",
+          description: "Choose the task, add a source video, and wait for preview readiness.",
+          statusLabel: videoPathValue ? "Ready to add" : "Needs video",
+          statusTone: videoPathValue ? "is-ready" : "is-warn",
+          primaryLabel: "Add video",
+          enabled: Boolean(videoPathValue),
+          blockedReason: "Enter a local video path or use the demo video.",
+          primaryAction: "add_video",
+          backTarget: "",
+        };
+      }
+      if (previewStatus === "failed" || previewStatus === "blocked") {
+        return {
+          title: "Setup",
+          description: "The source video needs a browser-safe preview before you can continue.",
+          statusLabel: "Preview failed",
+          statusTone: "is-bad",
+          primaryLabel: "Retry preview",
+          enabled: true,
+          blockedReason: previewReason || "Browser preview could not be prepared.",
+          primaryAction: "retry_preview",
+          backTarget: "",
+        };
+      }
+      if (previewStatus && previewStatus !== "ready") {
+        return {
+          title: "Setup",
+          description: "The source video needs a browser-safe preview before you can continue.",
+          statusLabel: "Preparing preview",
+          statusTone: "is-neutral",
+          primaryLabel: "Preparing preview",
+          enabled: false,
+          blockedReason: "Wait for MotionJSON to finish preparing the browser preview.",
+          primaryAction: "noop",
+          backTarget: "",
+        };
+      }
+      if (requiresModel && !providerReady) {
+        return {
+          title: "Setup",
+          description: "Save one compatible model connection for this task before continuing.",
+          statusLabel: "Model needed",
+          statusTone: "is-warn",
+          primaryLabel: "Save connection",
+          enabled: Boolean(typeof document !== "undefined" ? document.querySelector("#modelSetupForm") : true),
+          blockedReason: "Choose and save one compatible model connection.",
+          primaryAction: "save_model_setup",
+          backTarget: "",
+        };
+      }
+      return {
+        title: "Setup",
+        description: "Task, video, and model are ready. Continue to the working surface.",
+        statusLabel: "Ready",
+        statusTone: "is-ready",
+        primaryLabel: "Continue",
+        enabled: true,
+        blockedReason: "",
+        primaryAction: "continue_to_prepare",
+        backTarget: "",
+      };
+    }
+
+    if (screenId === "prepare") {
+      const base = workflowStepContractFromSnapshot(snapshot, "prompt_preview");
+      return {
+        title: "Prepare",
+        description: "Use the actual canvas and only the controls required for the selected task.",
+        statusLabel: base.enabled ? "Ready" : "Needs input",
+        statusTone: base.enabled ? "is-ready" : "is-warn",
+        primaryLabel: base.primaryLabel,
+        enabled: base.enabled,
+        blockedReason: base.blockedReason,
+        primaryAction: "run_prepared_workflow",
+        backTarget: "source_video",
+      };
+    }
+
+    return {
+      title: "Review",
+      description: "Validate objects, make fixes, and export reviewed results.",
+      statusLabel: exportAction.disabled ? "Needs review" : "Ready",
+      statusTone: exportAction.disabled ? "is-warn" : "is-ready",
+      primaryLabel: "Export reviewed objects",
+      enabled: !exportAction.disabled,
+      blockedReason: exportAction.reason,
+      primaryAction: "export_reviewed",
+      backTarget: selectedPreset === "review_existing" ? "source_video" : "prompt_preview",
+    };
   }
 
   function postRunWorkflowSummaryFromSnapshot(snapshot = {}) {
@@ -1741,6 +1908,18 @@ const MotionJSONUI = (() => {
 
   function selectedVideo() {
     return state.videos.find((video) => video.id === state.selectedVideoId) || null;
+  }
+
+  function selectedVideoBrowserPreview(video = selectedVideo()) {
+    return video?.browserPreview && typeof video.browserPreview === "object" ? video.browserPreview : null;
+  }
+
+  function browserPreviewReady(video = selectedVideo()) {
+    return selectedVideoBrowserPreview(video)?.status === "ready";
+  }
+
+  function selectedVideoPosterUrl(video = selectedVideo()) {
+    return safeLocalContentUrl(selectedVideoBrowserPreview(video)?.posterUrl || "");
   }
 
   function selectedVideoPath() {
@@ -3267,6 +3446,7 @@ const MotionJSONUI = (() => {
       const configStatus = $("#configStatus");
       const project = state.projects.find((item) => item.id === state.selectedProjectId) || null;
       const video = selectedVideo();
+      const browserPreview = selectedVideoBrowserPreview(video);
       const enginePlan = guidedEnginePlan(collectFormState($));
       const connection = selectedConnectionForInput({ modelConnectionId: state.selectedModelSetupProviderId, preset: state.selectedPreset });
       const connectionSummary = connection ? connectionReadiness(connection) : { tone: "bad", status: "needs_setup", label: "Setup needed", message: "" };
@@ -3283,6 +3463,10 @@ const MotionJSONUI = (() => {
         projectName: project?.name || "",
         selectedVideoId: state.selectedVideoId,
         videoName: video?.metadata?.filename || video?.filename || video?.path || video?.id || "",
+        videoPreviewStatus: browserPreview?.status || "",
+        videoPreviewReady: browserPreview?.status === "ready",
+        videoPreviewReason: browserPreview?.reason || browserPreview?.errorMessage || "",
+        videoPreviewKind: browserPreview?.kind || "",
         previewName: state.video.loadedName,
         providerName: connection?.title || enginePlan.providerName || "",
         providerDevice: enginePlan.providerName?.startsWith("sam3") ? (state.providerSettings?.providers || []).find((provider) => provider.id === enginePlan.providerName)?.settings?.sam3Device || "" : $("#deviceSelect")?.value || "",
@@ -3325,19 +3509,20 @@ const MotionJSONUI = (() => {
     }
 
     function renderWorkflowContextCopy(activeStep) {
+      const screenId = workflowScreenForStep(activeStep);
       const setupCopy = {
-        title: activeStep === "source_video" && state.selectedPreset === "review_existing" ? "Open an existing result" : "Add or select a video",
+        title: state.selectedPreset === "review_existing" ? "Open an existing result" : "Add a video",
         note:
-          activeStep === "source_video" && state.selectedPreset === "review_existing"
+          state.selectedPreset === "review_existing"
             ? "Open a local MotionJSON result for review. Guided mode creates the local workspace automatically."
-            : "Register the local video path backend jobs should read. Guided mode creates the local workspace automatically when needed.",
+            : "Register the local video path. MotionJSON prepares a browser-safe preview automatically before you continue.",
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
-        activeStep === "prompt_preview"
+        screenId === "prepare"
           ? state.selectedPreset === "trace_one_object"
             ? {
-                title: /^sam3-/.test(String(enginePlan.providerName || "")) ? "Draw one box prompt" : "Add prompt details",
+                title: /^sam3-/.test(String(enginePlan.providerName || "")) ? "Trace the object" : "Trace the object",
                 note: /^sam3-/.test(String(enginePlan.providerName || ""))
                   ? "SAM3 single-object tracing uses one box prompt in the viewer before the run starts."
                   : "Name the object, then draw a point or box prompt in the viewer.",
@@ -3364,7 +3549,7 @@ const MotionJSONUI = (() => {
             };
       const configCopy = {
         title: "Advanced run plan",
-        note: "Raw config, validation, and save/load controls stay available here when you need the full technical view.",
+        note: "Raw config, validation, and save/load controls stay available in Advanced when you need the full technical view.",
       };
       const copyTargets = [
         ["#setupPanelTitle", setupCopy.title],
@@ -3494,28 +3679,27 @@ const MotionJSONUI = (() => {
     function syncWorkflowPanels() {
       const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
       const showAll = Boolean(state.workflowDashboard);
-      const shouldOpenRailForDiagnostics =
-        workflowRailSteps.has(activeStep) &&
-        collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview).some(diagnosticNeedsImmediateAttention);
+      const visibleStepIds = SCREEN_STEPS.find((screen) => screen.id === workflowScreenForStep(activeStep))?.workflowSteps || [activeStep];
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       for (const panel of workflowPanels()) {
-        const visible = showAll || panelMatchesWorkflowStep(panel, activeStep);
+        const hiddenInSimpleMode =
+          !showAll &&
+          (
+            ["postRunGuide", "studioBottomCta", "runPlanAlert", "modelPlanPanel"].includes(panel.id) ||
+            (panel.id === "modelSetupPanel" && (!goalRequiresModel(state.selectedPreset) || (!state.selectedVideoId && state.selectedPreset !== "review_existing")))
+          );
+        const visible = !hiddenInSimpleMode && (showAll || (!panel.matches("details.rail-section") && visibleStepIds.some((stepId) => panelMatchesWorkflowStep(panel, stepId))));
         setElementWorkflowHidden(panel, !visible);
         if (visible && panel.matches("details.rail-section") && !showAll) {
           panel.open = true;
         }
       }
       for (const fragment of workflowFragments()) {
-        setElementWorkflowHidden(fragment, !(showAll || fragmentMatchesWorkflowStep(fragment, activeStep)));
+        setElementWorkflowHidden(fragment, !(showAll || visibleStepIds.some((stepId) => fragmentMatchesWorkflowStep(fragment, stepId))));
       }
-      const hasVisibleRailPanel = workflowPanels().some((panel) => panel.matches("details.rail-section") && (showAll || panelMatchesWorkflowStep(panel, activeStep)));
       if (showAll) {
         setRailCollapsed(false, { persist: false });
-      } else if (shouldOpenRailForDiagnostics) {
-        setRailCollapsed(false, { persist: false });
-      } else if (workflowRailSteps.has(activeStep) && !state.railOpenedByUser && !shell?.classList.contains("is-rail-collapsed")) {
-        setRailCollapsed(true, { persist: false });
-      } else if (!hasVisibleRailPanel && !shell?.classList.contains("is-rail-collapsed")) {
+      } else if (!shell?.classList.contains("is-rail-collapsed")) {
         setRailCollapsed(true, { persist: false });
       }
       scheduleDrawOverlay();
@@ -3523,12 +3707,10 @@ const MotionJSONUI = (() => {
 
     function renderWorkflowStepper() {
       const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
-      const activeIndex = workflowStepIndex(activeStep);
-      const activeModel = WORKFLOW_STEPS[activeIndex];
       const snapshot = workflowSnapshot();
       const readiness = workflowReadinessFromSnapshot(snapshot);
-      const activeReadiness = readiness[activeStep] || {};
-      const contract = workflowStepContractFromSnapshot(snapshot, activeStep);
+      const screenId = workflowScreenForStep(activeStep);
+      const contract = screenContractFromSnapshot(snapshot, activeStep);
       const title = $("#workflowTitle");
       const description = $("#workflowDescription");
       const status = $("#workflowStatus");
@@ -3537,16 +3719,17 @@ const MotionJSONUI = (() => {
       const backButton = $("#workflowBackButton");
       const primaryButton = $("#workflowPrimaryButton");
       const dashboardToggle = $("#workflowDashboardToggle");
-      const completedPrefix = WORKFLOW_STEPS.findIndex((step) => !readiness[step.id]?.complete);
-      const furthestAccessibleIndex = completedPrefix === -1 ? WORKFLOW_STEPS.length - 1 : Math.min(completedPrefix, WORKFLOW_STEPS.length - 1);
+      const setupComplete = Boolean(readiness.source_video?.complete) && (!goalRequiresModel(snapshot.selectedPreset || state.selectedPreset) || Boolean(readiness.provider_settings?.complete));
+      const prepareComplete = screenId === "review" || Boolean(snapshot.selectedJobId || snapshot.candidateCount || snapshot.trackCount);
+      const reviewComplete = Boolean(snapshot.exportOk);
 
-      if (title) title.textContent = activeModel.title;
-      if (description) description.textContent = activeModel.description;
+      if (title) title.textContent = contract.title;
+      if (description) description.textContent = contract.description;
       if (status) {
-        status.textContent = activeReadiness.status === "done" ? "Ready" : activeReadiness.status || "Not started";
-        status.className = `status-chip ${activeReadiness.tone || "is-muted"}`;
+        status.textContent = contract.statusLabel;
+        status.className = `status-chip ${contract.statusTone || "is-muted"}`;
       }
-      if (footerHint) footerHint.textContent = activeReadiness.message || activeModel.nextHint;
+      if (footerHint) footerHint.textContent = contract.blockedReason || contract.description;
       if (footerReason) {
         footerReason.hidden = contract.enabled;
         footerReason.textContent = contract.enabled ? "" : contract.blockedReason || "";
@@ -3561,12 +3744,10 @@ const MotionJSONUI = (() => {
         dashboardToggle.setAttribute("aria-pressed", String(Boolean(state.workflowDashboard)));
       }
 
-      document.querySelectorAll("[data-workflow-step]").forEach((button) => {
+      document.querySelectorAll("#workflowStepper [data-workflow-step]").forEach((button) => {
         const stepId = normalizeWorkflowStepId(button.dataset.workflowStep);
-        const stepIndex = workflowStepIndex(stepId);
         const stepReadiness = readiness[stepId] || {};
         const active = stepId === activeStep;
-        const allowed = stepIndex <= furthestAccessibleIndex || active;
         button.classList.toggle("is-active", active);
         button.classList.toggle("is-complete", Boolean(stepReadiness.complete));
         button.classList.toggle("is-blocked", stepReadiness.status === "blocked");
@@ -3574,14 +3755,28 @@ const MotionJSONUI = (() => {
         button.setAttribute("aria-pressed", String(active));
         if (active) button.setAttribute("aria-current", "step");
         else button.removeAttribute("aria-current");
-        if ("disabled" in button) button.disabled = !allowed;
-        button.setAttribute("title", stepReadiness.message || WORKFLOW_STEPS[stepIndex]?.nextHint || "");
+        if ("disabled" in button) button.disabled = false;
+        button.setAttribute("title", stepReadiness.message || "");
         button.dataset.workflowStatus = stepReadiness.status || "";
-        const parent = button.closest("[data-studio-step]");
-        if (parent) {
-          parent.classList.toggle("is-active", active);
-          parent.classList.toggle("is-complete", Boolean(stepReadiness.complete) && !active);
-          parent.classList.toggle("is-pending", !active && !stepReadiness.complete);
+      });
+
+      document.querySelectorAll("#studioProgressStepper [data-workflow-screen]").forEach((button) => {
+        const item = button.closest("[data-studio-step]");
+        const targetScreen = button.dataset.workflowScreen || "setup";
+        const active = targetScreen === screenId;
+        const complete = targetScreen === "setup" ? setupComplete && !active : targetScreen === "prepare" ? prepareComplete && !active : reviewComplete && !active;
+        const allowed =
+          targetScreen === "setup" ||
+          (targetScreen === "prepare" && (setupComplete || screenId !== "setup")) ||
+          (targetScreen === "review" && (prepareComplete || screenId === "review"));
+        button.disabled = !allowed;
+        button.setAttribute("aria-pressed", String(active));
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+        if (item) {
+          item.classList.toggle("is-active", active);
+          item.classList.toggle("is-complete", complete);
+          item.classList.toggle("is-pending", !active && !complete);
         }
       });
 
@@ -3737,8 +3932,12 @@ const MotionJSONUI = (() => {
           setWorkflowStep("source_video", { focusStep: true });
         } else if (contract.primaryAction === "add_video") {
           $("#videoForm")?.requestSubmit();
+        } else if (contract.primaryAction === "retry_preview") {
+          await retrySelectedVideoPreview();
         } else if (contract.primaryAction === "continue_after_video") {
           setWorkflowStep(contract.successAdvanceTo, { focusStep: true });
+        } else if (contract.primaryAction === "continue_to_prepare") {
+          setWorkflowStep("prompt_preview", { focusStep: true });
         } else if (contract.primaryAction === "open_result") {
           $("#importMotionJsonForm")?.requestSubmit();
         } else if (contract.primaryAction === "continue_to_review") {
@@ -3771,6 +3970,13 @@ const MotionJSONUI = (() => {
         if (!button) return;
         if (button.disabled) return;
         setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
+      });
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-workflow-screen]");
+        if (!button) return;
+        if (button.disabled) return;
+        const screenId = button.dataset.workflowScreen || "setup";
+        setWorkflowStep(workflowStepForScreen(screenId), { focusStep: true });
       });
       document.addEventListener("keydown", (event) => {
         const button = event.target.closest("[data-workflow-step]");
@@ -3843,10 +4049,7 @@ const MotionJSONUI = (() => {
         rail.setAttribute("aria-hidden", String(collapsed));
         rail.inert = collapsed;
       }
-      if (detailsToggle) {
-        detailsToggle.setAttribute("aria-expanded", String(!collapsed));
-        detailsToggle.textContent = collapsed ? "Advanced" : "Hide details";
-      }
+      if (detailsToggle) detailsToggle.setAttribute("aria-expanded", String(Boolean(state.workflowDashboard)));
       if (railCloseButton) {
         railCloseButton.setAttribute("aria-expanded", String(!collapsed));
       }
@@ -3886,22 +4089,24 @@ const MotionJSONUI = (() => {
         summary.textContent = diagnostic.label;
         summary.className = `status-chip ${diagnostic.tone}`;
       }
+      if (detailsToggle) {
+        detailsToggle.textContent = state.workflowDashboard ? "Simple" : "Advanced";
+        detailsToggle.setAttribute("aria-expanded", String(Boolean(state.workflowDashboard)));
+      }
     }
 
     function initShellNavigation() {
       setSidebarCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.sidebarCollapsed, false), { persist: false });
-      setRailCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.railCollapsed, true), { persist: false });
+      setRailCollapsed(true, { persist: false });
       sidebarToggle?.addEventListener("click", () => {
         setSidebarCollapsed(!shell?.classList.contains("is-sidebar-collapsed"), { focusToggle: true });
       });
       detailsToggle?.addEventListener("click", () => {
-        const nextCollapsed = !shell?.classList.contains("is-rail-collapsed");
-        state.railOpenedByUser = !nextCollapsed;
-        setRailCollapsed(nextCollapsed, { focusToggle: true });
+        setWorkflowDashboard(!state.workflowDashboard);
       });
       railCloseButton?.addEventListener("click", () => {
         state.railOpenedByUser = false;
-        setRailCollapsed(true, { focusToggle: true });
+        setWorkflowDashboard(false);
       });
       renderShellIndicators();
     }
@@ -4824,6 +5029,54 @@ const MotionJSONUI = (() => {
       renderWorkflowStepper();
     }
 
+    function renderBrowserPreviewCard() {
+      const card = $("#browserPreviewCard");
+      const poster = $("#browserPreviewPoster");
+      const title = $("#browserPreviewTitle");
+      const message = $("#browserPreviewMessage");
+      const meta = $("#browserPreviewMeta");
+      const retryButton = $("#retryPreviewButton");
+      if (!card || !poster || !title || !message || !meta || !retryButton) return;
+
+      const video = selectedVideo();
+      const preview = selectedVideoBrowserPreview(video);
+      const posterUrl = selectedVideoPosterUrl(video);
+      poster.hidden = !posterUrl;
+      poster.src = posterUrl || "";
+      const filename = video?.metadata?.filename || video?.filename || "";
+      const dimensions =
+        preview?.width && preview?.height ? `${preview.width}x${preview.height}` : "";
+      const duration =
+        typeof preview?.duration === "number" && preview.duration > 0 ? `${Math.round(preview.duration * 10) / 10}s` : "";
+      meta.textContent = [filename, preview?.codec || "", dimensions, duration].filter(Boolean).join(" • ");
+
+      const status = String(preview?.status || "");
+      if (!video) {
+        title.textContent = "Preview not ready";
+        message.textContent = "Add a source video to prepare a browser-safe preview.";
+        retryButton.hidden = true;
+        return;
+      }
+      if (status === "ready") {
+        title.textContent = "Preview ready";
+        message.textContent =
+          preview?.kind === "transcoded"
+            ? "MotionJSON prepared a browser-safe preview for this source video."
+            : "This source video is already safe to play in the browser.";
+        retryButton.hidden = true;
+        return;
+      }
+      if (status === "failed" || status === "blocked") {
+        title.textContent = "Preview failed";
+        message.textContent = preview?.reason || preview?.errorMessage || "The browser preview could not be prepared for this video.";
+        retryButton.hidden = false;
+        return;
+      }
+      title.textContent = "Preparing preview";
+      message.textContent = "Preparing a browser-safe preview for this source video.";
+      retryButton.hidden = true;
+    }
+
     function renderVideos() {
       const select = $("#videoSelect");
       $("#videoCount").textContent = `${state.videos.length} video${state.videos.length === 1 ? "" : "s"}`;
@@ -4865,6 +5118,7 @@ const MotionJSONUI = (() => {
             .join("")
         : `<div class="empty-state">Add a local video path or use the demo video to create the guided workspace.</div>`;
       loadSelectedVideoPreview();
+      renderBrowserPreviewCard();
       renderGuidedStart();
       renderConfigPreview();
     }
@@ -5348,15 +5602,11 @@ const MotionJSONUI = (() => {
     }
 
     function studioWorkflowStep(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
-      if (activeStep === "choose_goal") return "goal";
-      if (activeStep === "source_video") return "video";
-      if (activeStep === "provider_settings") return "model";
-      if (activeStep === "prompt_preview") return "prepare";
-      return "review";
+      return workflowScreenForStep(activeStep);
     }
 
     function renderStudioProgress(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
-      const studioSteps = ["goal", "video", "model", "prepare", "review"];
+      const studioSteps = ["setup", "prepare", "review"];
       const activeStudioStep = studioWorkflowStep(activeStep);
       const activeIndex = Math.max(0, studioSteps.indexOf(activeStudioStep));
       document.querySelectorAll("#studioProgressStepper [data-studio-step]").forEach((item, index) => {
@@ -6141,8 +6391,28 @@ const MotionJSONUI = (() => {
 
     function loadSelectedVideoPreview() {
       const video = selectedVideo();
-      const rawContentUrl = video?.contentUrl || video?.content_url;
+      const preview = selectedVideoBrowserPreview(video);
+      const rawContentUrl = preview?.contentUrl || video?.contentUrl || video?.content_url;
       const contentUrl = safeLocalContentUrl(rawContentUrl);
+      const posterUrl = selectedVideoPosterUrl(video);
+      if (posterUrl) elements.video.poster = posterUrl;
+      else elements.video.removeAttribute("poster");
+      if (!contentUrl && (preview?.status === "failed" || preview?.status === "blocked")) {
+        $("#emptyViewerState strong").textContent = "Preview failed";
+        $("#emptyViewerState span").textContent = preview?.reason || preview?.errorMessage || "The browser preview could not be prepared for this source video.";
+        elements.stage.classList.remove("has-video");
+        elements.video.removeAttribute("src");
+        elements.video.load();
+        return;
+      }
+      if (!contentUrl && video?.id) {
+        $("#emptyViewerState strong").textContent = "Preparing preview";
+        $("#emptyViewerState span").textContent = "MotionJSON is preparing a browser-safe preview for this source video.";
+        elements.stage.classList.remove("has-video");
+        elements.video.removeAttribute("src");
+        elements.video.load();
+        return;
+      }
       if (rawContentUrl && !contentUrl) {
         setRunAlert("Preview blocked a non-local video content URL.", "warning-box is-bad");
       }
@@ -6773,13 +7043,6 @@ const MotionJSONUI = (() => {
       renderModelSetup();
       renderConfigPreview();
       renderWorkflowStepper();
-      if (!options.skipAutoAdvance && state.activeWorkflowStep === "choose_goal") {
-        if (state.selectedPreset === "review_existing" && state.selectedJobId) {
-          setWorkflowStep("review_export", { focusStep: true });
-        } else if (state.selectedVideoId) {
-          setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
-        }
-      }
     }
 
     function updatePointKind(kind) {
@@ -7284,17 +7547,34 @@ const MotionJSONUI = (() => {
       return selectedVideo();
     }
 
+    async function retrySelectedVideoPreview() {
+      if (!state.selectedVideoId) return;
+      $("#retryPreviewButton").disabled = true;
+      try {
+        await api(`/api/videos/${encodeURIComponent(state.selectedVideoId)}/prepare-browser-preview`, {
+          method: "POST",
+          body: JSON.stringify({ force: true }),
+        });
+        await refreshProjectData();
+        setRunAlert("", "warning-box");
+      } catch (error) {
+        setRunAlert(error.message, "warning-box is-bad");
+      } finally {
+        $("#retryPreviewButton").disabled = false;
+      }
+    }
+
     async function startGuidedDemoVideoFlow() {
       const button = $("#guidedDemoVideoButton");
       if (button) button.disabled = true;
       try {
         if (state.selectedVideoId) {
-          setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
+          setWorkflowStep("source_video", { focusStep: true });
           return;
         }
         await ensureBundledDemoVideo();
         setRunAlert("", "warning-box is-ready");
-        setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
+        setWorkflowStep("source_video", { focusStep: true });
       } catch (error) {
         setRunAlert(error.message, "warning-box is-bad");
       } finally {
@@ -8073,13 +8353,43 @@ const MotionJSONUI = (() => {
           renderJobReview();
         }
         renderModelPlanPanel();
-      } else if (capture === "first-run") {
+      } else if (capture === "first-run" || capture === "preview-failed") {
         if (shell) {
           shell.style.display = "block";
           shell.style.minHeight = "100vh";
         }
         if (sidebar) sidebar.style.display = "none";
         if (rightRail) rightRail.style.display = "none";
+        if (capture === "preview-failed") {
+          applyPreset("trace_one_object", { keepProvider: true, skipAutoAdvance: true });
+          state.selectedProjectId = "project_layout";
+          state.projects = [{ id: "project_layout", name: "MotionJSON local project" }];
+          state.videos = [
+            {
+              id: "video_preview_failed",
+              project_id: "project_layout",
+              kind: "source_video",
+              contentUrl: "/api/videos/video_preview_failed/content",
+              metadata: { filename: "legacy_clip.mp4" },
+              browserPreview: {
+                status: "failed",
+                kind: "transcoded",
+                contentUrl: "",
+                posterUrl: "",
+                width: 640,
+                height: 360,
+                duration: 4,
+                codec: "mpeg4",
+                reason: "ffmpeg executable was not found while preparing a browser-safe preview.",
+                errorMessage: "ffmpeg executable was not found while preparing a browser-safe preview.",
+              },
+            },
+          ];
+          state.selectedVideoId = "video_preview_failed";
+          setWorkflowStep("source_video", { persist: false });
+          renderVideos();
+          renderWorkflowStepper();
+        }
       } else if (capture === "extraction-wizard") {
         applyPreset("text_detector");
       } else if (capture === "provider-diagnostics") {
@@ -8162,7 +8472,7 @@ const MotionJSONUI = (() => {
       window.setTimeout(() => {
         window.scrollTo({ top: 0, left: 0 });
         document.documentElement.dataset.captureReady = "true";
-      }, 350);
+      }, 800);
     }
 
     async function startJobFromConfig({ forceMock = false } = {}) {
@@ -9045,9 +9355,6 @@ const MotionJSONUI = (() => {
     $("#videoSelect").addEventListener("change", (event) => {
       state.selectedVideoId = event.target.value;
       renderVideos();
-      if (state.selectedVideoId && state.activeWorkflowStep === "source_video" && !state.workflowDashboard) {
-        setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
-      }
     });
 
     $("#videoList").addEventListener("click", (event) => {
@@ -9055,9 +9362,6 @@ const MotionJSONUI = (() => {
       if (!choice) return;
       state.selectedVideoId = choice.dataset.videoId;
       renderVideos();
-      if (state.selectedVideoId && state.activeWorkflowStep === "source_video" && !state.workflowDashboard) {
-        setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
-      }
     });
 
     $("#videoForm").addEventListener("submit", async (event) => {
@@ -9070,7 +9374,7 @@ const MotionJSONUI = (() => {
         });
         await refreshProjectData();
         setRunAlert("", "warning-box is-ready");
-        setWorkflowStep(nextGuidedStepAfterVideo(), { focusStep: true });
+        setWorkflowStep("source_video", { focusStep: true });
       } catch (error) {
         $("#videoList").innerHTML = `<div class="error-state">${escapeHtml(error.message)}</div>`;
       }
@@ -9080,6 +9384,8 @@ const MotionJSONUI = (() => {
       event.preventDefault();
       await importExistingMotionJson();
     });
+
+    $("#retryPreviewButton").addEventListener("click", retrySelectedVideoPreview);
 
     $("#videoFileInput").addEventListener("change", () => {
       const file = $("#videoFileInput").files?.[0];
@@ -9099,6 +9405,20 @@ const MotionJSONUI = (() => {
       renderVideoMetrics();
       renderConfigPreview();
       scheduleDrawOverlay();
+    });
+
+    elements.video.addEventListener("error", () => {
+      state.video.width = 0;
+      state.video.height = 0;
+      state.video.duration = 0;
+      elements.stage.classList.remove("has-video");
+      const preview = selectedVideoBrowserPreview();
+      $("#emptyViewerState strong").textContent = preview?.status === "ready" ? "Playback unavailable" : "Preview failed";
+      $("#emptyViewerState span").textContent =
+        preview?.reason ||
+        preview?.errorMessage ||
+        "This browser could not play the prepared preview for the selected video.";
+      renderVideoMetrics();
     });
 
     elements.video.addEventListener("timeupdate", () => {

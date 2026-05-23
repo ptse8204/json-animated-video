@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 
 from motionjson import __version__
 from motionjson.backend.assets import get_asset, list_assets_for_job, list_project_assets, register_upload
+from motionjson.backend.browser_preview import prepare_browser_preview
 from motionjson.backend.auth import register_user
 from motionjson.backend.corrections import (
     apply_track_edit,
@@ -200,6 +201,32 @@ def _public_asset(row: dict[str, Any]) -> dict[str, Any]:
 def _public_video(row: dict[str, Any]) -> dict[str, Any]:
     data = _public_asset(row)
     data["contentUrl"] = f"/api/videos/{data['id']}/content"
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    preview = metadata.get("browser_preview") if isinstance(metadata.get("browser_preview"), dict) else {}
+    if preview:
+        public_preview = {key: value for key, value in preview.items() if key not in {"contentAssetId", "posterAssetId"}}
+        content_asset_id = str(preview.get("contentAssetId") or "").strip()
+        poster_asset_id = str(preview.get("posterAssetId") or "").strip()
+        if content_asset_id:
+            public_preview["contentUrl"] = (
+                f"/api/videos/{data['id']}/content" if content_asset_id == data["id"] else f"/api/assets/{content_asset_id}/content"
+            )
+        if poster_asset_id:
+            public_preview["posterUrl"] = f"/api/assets/{poster_asset_id}/content"
+        data["browserPreview"] = public_preview
+    else:
+        data["browserPreview"] = {
+            "status": "blocked",
+            "kind": "source",
+            "contentUrl": f"/api/videos/{data['id']}/content",
+            "posterUrl": "",
+            "width": 0,
+            "height": 0,
+            "duration": 0.0,
+            "codec": "",
+            "reason": "Browser preview has not been prepared yet.",
+            "errorMessage": "Browser preview has not been prepared yet.",
+        }
     return data
 
 
@@ -430,6 +457,37 @@ class LocalUIApp:
     def storage(self) -> LocalStorageProvider:
         return LocalStorageProvider(self.storage_root)
 
+    def _public_video_payload(self, conn: sqlite3.Connection, *, user_id: str, asset: dict[str, Any], prepare_preview: bool = False, force_preview: bool = False) -> dict[str, Any]:
+        if prepare_preview:
+            try:
+                prepare_browser_preview(
+                    conn,
+                    storage=self.storage(),
+                    user_id=user_id,
+                    source_asset_id=str(asset["id"]),
+                    force=force_preview,
+                )
+                asset = get_asset(conn, user_id=user_id, asset_id=str(asset["id"]))
+            except Exception as exc:
+                metadata = json.loads(asset.get("metadata_json") or "{}")
+                if not isinstance(metadata, dict):
+                    metadata = {}
+                metadata["browser_preview"] = {
+                    "status": "failed",
+                    "kind": "source",
+                    "contentAssetId": str(asset["id"]),
+                    "posterAssetId": "",
+                    "width": 0,
+                    "height": 0,
+                    "duration": 0.0,
+                    "codec": "",
+                    "reason": _redact_public_text(str(exc)),
+                    "errorMessage": _redact_public_text(str(exc)),
+                    "contentType": asset.get("content_type") or "video/mp4",
+                }
+                asset["metadata_json"] = json.dumps(metadata, sort_keys=True)
+        return _public_video(asset)
+
     def handle(self, method: str, raw_path: str, headers: dict[str, str] | None = None, body: bytes = b"") -> tuple[int, dict[str, str], bytes]:
         request_headers = headers or {}
         parsed = urlparse(raw_path)
@@ -448,6 +506,10 @@ class LocalUIApp:
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 4:
                     return self._video_content(parts[2], headers=request_headers, head=method == "HEAD")
+            if method in {"GET", "HEAD"} and path.startswith("/api/assets/") and path.endswith("/content"):
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 4:
+                    return self._asset_content(parts[2], head=method == "HEAD")
             if method in {"GET", "HEAD"} and path.startswith("/api/artifacts/") and path.endswith("/content"):
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 4:
@@ -495,6 +557,7 @@ class LocalUIApp:
                     "/api/projects",
                     "/api/videos",
                     "/api/videos/{videoId}/content",
+                    "/api/videos/{videoId}/prepare-browser-preview",
                     "/api/run-config/defaults",
                     "/api/run-config/validate",
                     "/api/jobs",
@@ -512,6 +575,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/run",
                     "/api/progress",
                     "/api/artifacts",
+                    "/api/assets/{assetId}/content",
                     "/api/artifacts/{artifactId}/content",
                     "/api/exports/formats",
                     "/api/library/assets",
@@ -712,7 +776,7 @@ class LocalUIApp:
                 if not project_id:
                     return {"videos": []}
                 videos = list_project_assets(conn, user_id=user_id, project_id=project_id, kind="source_video")
-                return {"videos": [_public_video(asset) for asset in videos]}
+                return {"videos": [self._public_video_payload(conn, user_id=user_id, asset=asset, prepare_preview=True) for asset in videos]}
             if path == "/api/videos" and method == "POST":
                 project_id = str(payload.get("projectId") or "")
                 source_path = Path(str(payload.get("path") or "")).expanduser()
@@ -729,7 +793,20 @@ class LocalUIApp:
                     kind="source_video",
                     metadata={"rights_context": {"source_uri": str(source_path), "source_type": "user_upload"}},
                 )
-                return {"video": _public_video(asset)}
+                return {"video": self._public_video_payload(conn, user_id=user_id, asset=asset, prepare_preview=True, force_preview=True)}
+            if path.startswith("/api/videos/"):
+                parts = [part for part in path.split("/") if part]
+                if len(parts) == 4 and parts[3] == "prepare-browser-preview" and method == "POST":
+                    asset = get_asset(conn, user_id=user_id, asset_id=parts[2])
+                    return {
+                        "video": self._public_video_payload(
+                            conn,
+                            user_id=user_id,
+                            asset=asset,
+                            prepare_preview=True,
+                            force_preview=True,
+                        )
+                    }
             if path == "/api/jobs" and method == "GET":
                 project_id = self._query_one(query, "projectId")
                 if not project_id:
@@ -1982,6 +2059,29 @@ class LocalUIApp:
             except FileNotFoundError as exc:
                 raise NotFoundError("artifact content not found in local storage") from exc
             content_type = asset["content_type"] or "application/octet-stream"
+            response_headers = {
+                "content-type": content_type,
+                "cache-control": "no-store",
+                "content-length": str(len(data)),
+            }
+            return HTTPStatus.OK, response_headers, b"" if head else data
+        finally:
+            conn.close()
+
+    def _asset_content(self, asset_id: str, *, head: bool = False) -> tuple[int, dict[str, str], bytes]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            asset = get_asset(conn, user_id=user["id"], asset_id=asset_id)
+            if asset["kind"] == "source_video":
+                raise NotFoundError("use the source video route for source_video assets")
+            content_type = str(asset.get("content_type") or "application/octet-stream")
+            if not (content_type.startswith(("image/", "video/")) or asset["kind"] in PUBLIC_DOWNLOAD_ARTIFACT_KINDS):
+                raise NotFoundError("asset content is not public through the local UI")
+            try:
+                data = self.storage().load_bytes(asset["storage_key"])
+            except FileNotFoundError as exc:
+                raise NotFoundError("asset content not found in local storage") from exc
             response_headers = {
                 "content-type": content_type,
                 "cache-control": "no-store",

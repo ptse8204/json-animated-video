@@ -107,6 +107,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/exports" in health["routes"]
     assert "/api/jobs/{jobId}/cancel" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
+    assert "/api/videos/{videoId}/prepare-browser-preview" in health["routes"]
+    assert "/api/assets/{assetId}/content" in health["routes"]
     assert "/api/library/assets" in health["routes"]
     assert "/api/library/assets/{libraryAssetId}" in health["routes"]
     assert "/api/library/collections" in health["routes"]
@@ -455,6 +457,8 @@ def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     assert status == 200
     assert video["kind"] == "source_video"
     assert video["contentUrl"] == f"/api/videos/{video['id']}/content"
+    assert video["browserPreview"]["status"] in {"ready", "failed"}
+    assert video["browserPreview"]["contentUrl"].startswith("/api/")
     assert "storage_key" not in video
     assert "uri" not in video
     assert video["metadata"]["filename"] == "demo_red_ball.mp4"
@@ -466,6 +470,7 @@ def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     assert status == 200
     assert videos[0]["id"] == video["id"]
     assert videos[0]["contentUrl"] == video["contentUrl"]
+    assert videos[0]["browserPreview"]["status"] in {"ready", "failed"}
     assert videos[0]["metadata"]["filename"] == "demo_red_ball.mp4"
     assert "uri" not in videos[0]
     assert str(demo_video()) not in body.decode("utf-8")
@@ -581,6 +586,7 @@ def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_
     assert status == 200
     assert "file://" not in video["contentUrl"]
     assert "projects/" not in video["contentUrl"]
+    assert video["browserPreview"]["contentUrl"].startswith("/api/")
 
     status, headers, body = app.handle("GET", video["contentUrl"])
     assert status == 200
@@ -614,6 +620,13 @@ def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_
     assert status == 416
     assert headers["content-range"] == f"bytes */{len(original)}"
     assert body == b""
+
+    poster_url = video["browserPreview"].get("posterUrl") or ""
+    if poster_url:
+        status, headers, poster_body = app.handle("GET", poster_url)
+        assert status == 200
+        assert headers["content-type"].startswith("image/")
+        assert poster_body
 
 
 def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_path, monkeypatch):

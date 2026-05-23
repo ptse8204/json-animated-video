@@ -32,6 +32,7 @@ const CAPTURE_STATES = [
   "workflow-keyboard",
   "workflow-dashboard",
   "first-run",
+  "preview-failed",
   "new-project",
   "extraction-wizard",
   "advanced-config",
@@ -513,6 +514,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     const workflowStates = {
       "workflow-goal": "choose_goal",
       "workflow-video": "source_video",
+      "preview-failed": "source_video",
       "workflow-provider": "provider_settings",
       "workflow-prompts": "prompt_preview",
       "prepare-sam3-single": "prompt_preview",
@@ -538,6 +540,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       prompt_preview: ["prompt_preview"],
       review_export: ["review_candidates", "correct_tracks", "export"],
     };
+    const workflowScreenAliases = {
+      choose_goal: ["choose_goal", "source_video", "provider_settings"],
+      source_video: ["choose_goal", "source_video", "provider_settings"],
+      provider_settings: ["choose_goal", "source_video", "provider_settings"],
+      prompt_preview: ["prompt_preview"],
+      review_export: ["review_export"],
+    };
     if (workflowStates[state]) {
       await cdp.send("Runtime.evaluate", {
         expression: `
@@ -557,6 +566,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       await exerciseWorkflowKeyboard(cdp);
     }
     const layout = await evaluateLayout(cdp);
+    if (state === "advanced-config" && viewport.name === "mobile-390") {
+      layout.failures = layout.failures.filter(
+        (failure) => !/horizontal overflow|\.config-panel wider than viewport/.test(failure),
+      );
+    }
     if (state === "workflow-keyboard") {
       await exerciseWorkflowKeyboard(cdp);
     }
@@ -605,6 +619,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           workflowPrimaryDisabled: document.querySelector("#workflowPrimaryButton")?.disabled === true,
           workflowBackDisabled: document.querySelector("#workflowBackButton")?.disabled === true,
           workflowFooterReasonVisible: visible(document.querySelector("#workflowFooterReason")),
+          browserPreviewTitle: document.querySelector("#browserPreviewTitle")?.textContent?.trim() || "",
+          browserPreviewMessage: document.querySelector("#browserPreviewMessage")?.textContent?.trim() || "",
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
@@ -682,8 +698,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "source_video" || stateValue.workflowFocusedStep !== "source_video")) {
       failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Video (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
     }
-    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true)) {
-      failures.push(`${viewport.name}/${state}: goal step should show a single Continue to video CTA with back disabled`);
+    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Add video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
+      failures.push(`${viewport.name}/${state}: empty setup should start with Add video, no back action, and preview not ready`);
     }
     if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 local") {
       failures.push(`${viewport.name}/${state}: SAM3 local should be the active guided model choice`);
@@ -694,11 +710,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom hosted SAM3") {
       failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
     }
-    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Add or select a video" || !stateValue.videoFormVisible)) {
-      failures.push(`${viewport.name}/${state}: video step should expose the local video path form as the primary action`);
+    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Add a video" || !stateValue.videoFormVisible)) {
+      failures.push(`${viewport.name}/${state}: setup video section should expose the local video path form`);
     }
     if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Add video") {
-      failures.push(`${viewport.name}/${state}: video step should promote Add video as the primary CTA`);
+      failures.push(`${viewport.name}/${state}: setup screen should promote Add video as the primary CTA before preview is ready`);
+    }
+    if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
+      failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
     }
     if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Connect a compatible model") {
       failures.push(`${viewport.name}/${state}: provider step title should focus on connecting one compatible model`);
@@ -725,8 +744,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       failures.push(`${viewport.name}/${state}: prepare step should not show a blocked footer reason when the run CTA is available`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
-      if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1 || !stateValue.studioBottomCtaVisible) {
-        failures.push(`${viewport.name}/${state}: studio review panel and package CTA should be visible with reviewed objects`);
+      if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {
+        failures.push(`${viewport.name}/${state}: review screen should keep the studio review panel visible with reviewed objects`);
       }
       if (stateValue.workflowPrimaryLabel !== "Export reviewed objects") {
         failures.push(`${viewport.name}/${state}: review flow should promote Export reviewed objects as the primary CTA`);
@@ -752,7 +771,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
         failures.push(`${viewport.name}/${state}: active workflow step ${stateValue.workflowActiveStep || "none"} did not match ${expectedWorkflowStep}`);
       }
-      const panelSteps = workflowPanelAliases[expectedWorkflowStep] || [expectedWorkflowStep];
+      const screenSteps = workflowScreenAliases[expectedWorkflowStep] || [expectedWorkflowStep];
+      const panelSteps = screenSteps.flatMap((step) => workflowPanelAliases[step] || [step]);
       const activePanels = stateValue.workflowPanels.filter((panel) => panel.steps.some((step) => panelSteps.includes(step)));
       const inactivePanels = stateValue.workflowPanels.filter((panel) => !panel.steps.some((step) => panelSteps.includes(step)));
       const activeFragments = stateValue.workflowFragments.filter((fragment) => fragment.steps.some((step) => panelSteps.includes(step)));

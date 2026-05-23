@@ -2370,16 +2370,17 @@ button,
 
 .goal-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: var(--space-xs);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
 .goal-card {
   display: grid;
-  gap: 6px;
-  align-content: start;
-  min-height: 118px;
-  padding: 13px;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  min-height: 0;
+  padding: 12px 14px;
   color: #223036;
   line-height: 1.35;
   text-align: left;
@@ -2389,7 +2390,7 @@ button,
 
 .goal-card.is-active {
   border-color: #087a70;
-  background: #e2f4f1;
+  background: #f4fbfa;
   box-shadow: inset 3px 0 0 #087a70;
 }
 
@@ -3409,10 +3410,10 @@ body {
 
 .studio-progress {
   display: grid;
-  grid-template-columns: repeat(5, minmax(64px, 1fr));
+  grid-template-columns: repeat(3, minmax(92px, 1fr));
   gap: 14px;
   align-items: center;
-  max-width: 720px;
+  max-width: 520px;
   width: 100%;
   margin: 0 auto;
   padding: 0;
@@ -3575,11 +3576,11 @@ body {
   gap: 12px;
   max-width: 1120px;
   margin: 0 auto 18px;
-  padding: 14px 16px 16px;
-  border: 1px solid #d7dee5;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 14px 34px rgba(26, 35, 43, 0.05);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 #workflowController .workflow-controller-header {
@@ -3621,7 +3622,7 @@ body {
 }
 
 .workflow-step-summary {
-  display: grid;
+  display: none;
 }
 
 .workflow-footer {
@@ -3667,6 +3668,48 @@ body {
 }
 
 .inline-secondary-actions button {
+  min-height: 42px;
+}
+
+.browser-preview-card {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #d7dee5;
+  border-radius: 10px;
+  background: #fbfdfb;
+}
+
+.browser-preview-poster-shell {
+  display: grid;
+  width: 150px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #d7dee5;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #dfe8ea, #f4f7f8);
+}
+
+#browserPreviewPoster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.browser-preview-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.browser-preview-copy strong {
+  font-size: 14px;
+}
+
+#retryPreviewButton {
   min-height: 42px;
 }
 
@@ -4223,6 +4266,16 @@ body {
     padding: 0 12px 20px;
   }
 
+  .guided-start,
+  .model-setup-panel,
+  .model-plan-panel,
+  #runPlanAlert,
+  .setup-panel,
+  .wizard-panel,
+  .config-panel {
+    max-width: none;
+  }
+
   .studio-topbar {
     margin-right: -12px;
     margin-left: -12px;
@@ -4243,7 +4296,7 @@ body {
   }
 
   .studio-progress {
-    grid-template-columns: repeat(5, minmax(42px, 1fr));
+    grid-template-columns: repeat(3, minmax(42px, 1fr));
     gap: 4px;
   }
 
@@ -4277,6 +4330,18 @@ body {
 
   #workflowController {
     padding: 12px;
+  }
+
+  .goal-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .browser-preview-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .browser-preview-poster-shell {
+    width: 100%;
   }
 
   .workflow-footer {

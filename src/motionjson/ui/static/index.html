@@ -101,20 +101,14 @@
             <span class="studio-project-pill">Local Project</span>
           </div>
           <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
-            <li class="is-active" data-studio-step="goal">
-              <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong></button>
-            </li>
-            <li class="is-pending" data-studio-step="video">
-              <button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong></button>
-            </li>
-            <li class="is-pending" data-studio-step="model">
-              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong></button>
+            <li class="is-active" data-studio-step="setup">
+              <button type="button" data-workflow-screen="setup"><span>1</span><strong>Setup</strong></button>
             </li>
             <li class="is-pending" data-studio-step="prepare">
-              <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare</strong></button>
+              <button type="button" data-workflow-screen="prepare"><span>2</span><strong>Prepare</strong></button>
             </li>
             <li class="is-pending" data-studio-step="review">
-              <button type="button" data-workflow-step="review_export"><span>5</span><strong>Review</strong></button>
+              <button type="button" data-workflow-screen="review"><span>3</span><strong>Review</strong></button>
             </li>
           </ol>
           <div class="topbar-actions">
@@ -131,12 +125,11 @@
           </div>
         </header>
 
-        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Guided first run">
+        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Task setup">
           <div class="guided-start-header">
             <div>
-              <p class="section-kicker">Guided first run</p>
-              <h2>What do you want to trace?</h2>
-              <p class="panel-note">Start with a plain-language goal. The app keeps the generated run plan readable and waits for review before export.</p>
+              <h2>What do you want to do?</h2>
+              <p class="panel-note">Choose the job first. The rest of Setup will only show what the selected task actually needs.</p>
             </div>
             <span id="guidedModeChip" class="status-chip is-neutral">Local first</span>
           </div>
@@ -171,13 +164,12 @@
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow">
           <div class="workflow-controller-header">
             <div>
-              <p class="section-kicker">Guided workflow</p>
-              <h2 id="workflowTitle">Choose goal</h2>
-              <p id="workflowDescription" class="panel-note">Pick the tracing goal before setup details appear.</p>
+              <h2 id="workflowTitle">Setup</h2>
+              <p id="workflowDescription" class="panel-note">Add a video, wait for browser preview readiness, then continue when the task is ready to run.</p>
             </div>
             <div class="workflow-controller-actions">
               <span id="workflowStatus" class="status-chip is-muted">Not started</span>
-              <button id="workflowDashboardToggle" type="button" aria-pressed="false">Show all panels</button>
+              <button id="workflowDashboardToggle" type="button" aria-pressed="false" hidden>Show all panels</button>
             </div>
           </div>
           <ol
@@ -303,8 +295,8 @@
           <article class="panel setup-panel" data-workflow-panel="project_video source_video" aria-label="Project and video setup">
             <div class="panel-heading">
               <div>
-                <h2 id="setupPanelTitle">Create or open a project</h2>
-                <p id="setupPanelNote" class="panel-note">Keep every run, correction, and export artifact in a local project folder.</p>
+                <h2 id="setupPanelTitle">Add a video</h2>
+                <p id="setupPanelNote" class="panel-note">The source video must have a browser-ready preview before Prepare and Review can open.</p>
               </div>
               <span id="projectCount" class="subtle-chip">0 projects</span>
             </div>
@@ -344,7 +336,18 @@
                 <h3>Source Video</h3>
                 <span id="videoCount" class="subtle-chip">0 videos</span>
               </div>
-              <p class="form-hint step-leading-note">A registered local path is required before extraction starts. The file stays on this machine.</p>
+              <p class="form-hint step-leading-note">The source file stays local. MotionJSON prepares a browser-safe preview automatically when needed.</p>
+              <div id="browserPreviewCard" class="browser-preview-card">
+                <div class="browser-preview-poster-shell">
+                  <img id="browserPreviewPoster" alt="" />
+                </div>
+                <div class="browser-preview-copy">
+                  <strong id="browserPreviewTitle">Preview not ready</strong>
+                  <span id="browserPreviewMessage" class="row-meta">Add a source video to prepare a browser-safe preview.</span>
+                  <span id="browserPreviewMeta" class="row-meta"></span>
+                </div>
+                <button id="retryPreviewButton" type="button" hidden>Retry preview</button>
+              </div>
               <form id="videoForm" class="inline-form primary-form">
                 <label>
                   <span>Local video path</span>

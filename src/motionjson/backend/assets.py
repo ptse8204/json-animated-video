@@ -205,3 +205,19 @@ def load_asset_bytes(conn: sqlite3.Connection, *, storage: StorageProvider, user
 
 def open_asset(conn: sqlite3.Connection, *, storage: StorageProvider, user_id: str, asset_id: str) -> io.BytesIO:
     return io.BytesIO(load_asset_bytes(conn, storage=storage, user_id=user_id, asset_id=asset_id))
+
+
+def update_asset_metadata(
+    conn: sqlite3.Connection,
+    *,
+    asset_id: str,
+    metadata: dict[str, Any],
+) -> dict:
+    asset = _asset_row(conn, asset_id)
+    current = json.loads(asset.get("metadata_json") or "{}")
+    if not isinstance(current, dict):
+        current = {}
+    merged = {**current, **metadata}
+    conn.execute("UPDATE assets SET metadata_json = ? WHERE id = ?", (json.dumps(merged, sort_keys=True), asset_id))
+    conn.commit()
+    return _asset_row(conn, asset_id)
