@@ -66,14 +66,22 @@ diagnostic, review, correction, and export card at once. The main stepper
 guides users through:
 
 1. Choose goal.
-2. Create or open project.
-3. Add or select video.
-4. Choose mode/provider.
-5. Add prompts/keyframes.
-6. Validate and run.
-7. Review candidates/tracks.
-8. Correct tracks.
-9. Preview/export.
+2. Add or select video.
+3. Connect model.
+4. Prepare and run.
+5. Review and export.
+
+Guided mode now keeps one visible footer action per step. The footer always
+shows `Back` plus one explicit primary action such as `Continue to video`, `Add
+video`, `Save and continue`, `Run trace`, or `Export reviewed objects`.
+Secondary actions such as demo video, diagnose, setup test, or review bulk
+actions stay visually secondary inside the current panel.
+
+Local project creation is no longer a required early decision in guided mode.
+When a user adds a video, starts from the bundled demo, or opens an existing
+MotionJSON result, the Local UI creates a starter local project automatically
+if one does not already exist. Manual project switching and manual project
+creation remain available under `Project options` and `Show all panels`.
 
 Only the active step's main panels are shown by default. Completed prior steps
 appear as compact summary cards, and each step shows a next-action hint. The
@@ -393,9 +401,9 @@ The commercial Local UI shell is organized around a stable app frame:
 - collapsible right details rail for run monitor, review, corrections, export,
   asset library, logs, artifacts, and route diagnostics.
 
-The default visible workflow is: choose a goal, create/open a project, add or
-select video, choose mode/provider, add prompts/keyframes, validate and run,
-review candidates/tracks, correct tracks, then preview/export. Advanced
+The default visible workflow is: choose a goal, add or select a video, connect
+one compatible model when needed, prepare the run, then review and export.
+Advanced
 parameters, raw config JSON, raw routes, generated artifacts, library
 management, logs, fallback diagnostics, and correction history remain available
 through disclosure panels instead of being expanded by default.
@@ -540,26 +548,28 @@ storage, and exposes the imported scene through the normal job review routes.
 2. Choose a goal from the first step. `Cut out one object` is the default safe
    path; `Find moving objects`, `Import external masks`, and `Review existing
    result` can run without optional ML models.
-3. Create or open a local project.
-4. Add or select a source video. A browser preview helps with prompt drawing;
-   backend jobs still require a registered local file path.
-5. Choose mode/provider in Model Connections. The UI recommends SAM2 local or
+3. Add or select a source video. Guided mode creates a starter local project
+   automatically the first time it needs one. A browser preview helps with
+   prompt drawing; backend jobs still require a registered local file path.
+4. Choose mode/provider in Model Connections when the goal needs one. The UI
+   recommends SAM2 local or
    Replicate for point/box tracing, SAM3 local or Roboflow for text concepts,
    and Fal SAM3 image as a hosted frame fallback. Provider warnings stay
    visible before a run.
-6. Add point, box, brush/erase mask, label, or keyframe prompts on the video
+5. Add point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay when the selected goal needs them. Prompt coordinates are native
    video pixels, not CSS canvas pixels.
-7. Validate the generated plan before starting work. The raw
+6. Start extraction from the footer after the generated plan validates. The raw
    `ExtractionRunConfig` JSON remains available under `View generated JSON`.
    The optional advanced model plan panel can create a server-side planner
    config from the selected goal and plain-language intent; generated configs are
    revalidated before `Confirm and start` can create a job.
-8. Start extraction with the configured provider after validation passes.
-9. Review candidates and tracks. Keep candidates, inspect track coverage and
+7. Review candidates and tracks. Keep candidates, inspect track coverage and
    warnings, and use timeline markers before export.
-10. Correct tracks if needed: relabel, hide/show, include/exclude from export,
-    merge, split, add object, or request repair with saved prompts.
+8. Correct tracks if needed: relabel, hide/show, include/exclude from export,
+   merge, split, add object, or request repair with saved prompts.
+9. Export reviewed objects from the review step. Website package, MotionJSON,
+   and other handoff cards remain review-gated.
 11. Validate export settings, then use the export handoff cards or
     `Export MotionJSON` to write reviewed local artifacts.
 12. Use the Asset Library panel to save useful generated/export artifacts as

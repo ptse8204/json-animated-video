@@ -101,11 +101,21 @@
             <span class="studio-project-pill">Local Project</span>
           </div>
           <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
-            <li class="is-complete" data-studio-step="video"><span>1</span><strong>Video</strong></li>
-            <li class="is-complete" data-studio-step="model"><span>2</span><strong>Model</strong></li>
-            <li class="is-complete" data-studio-step="prompt"><span>3</span><strong>Prompt</strong></li>
-            <li class="is-complete" data-studio-step="run"><span>4</span><strong>Run</strong></li>
-            <li class="is-active" data-studio-step="result"><span>5</span><strong>Result</strong></li>
+            <li class="is-active" data-studio-step="goal">
+              <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="video">
+              <button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="model">
+              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="prepare">
+              <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="review">
+              <button type="button" data-workflow-step="review_export"><span>5</span><strong>Review</strong></button>
+            </li>
           </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
@@ -156,10 +166,6 @@
               <span class="goal-card-copy">Open a prior MotionJSON output and check tracks before exporting assets.</span>
             </button>
           </div>
-          <div class="guided-start-actions">
-            <button id="guidedContinueButton" class="guided-secondary-action" type="button">Continue to project setup</button>
-            <button id="guidedDemoVideoButton" class="primary-action" type="button">Start with demo video</button>
-          </div>
         </section>
 
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow">
@@ -174,26 +180,31 @@
               <button id="workflowDashboardToggle" type="button" aria-pressed="false">Show all panels</button>
             </div>
           </div>
-          <ol id="workflowStepper" class="workflow-steps" aria-label="Local workflow" aria-keyshortcuts="ArrowRight ArrowDown ArrowLeft ArrowUp Home End">
+          <ol
+            id="workflowStepper"
+            class="workflow-steps workflow-steps-accessible"
+            aria-label="Local workflow"
+            aria-keyshortcuts="ArrowRight ArrowDown ArrowLeft ArrowUp Home End"
+            hidden
+          >
             <li><button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong><small>Choose what to trace</small></button></li>
-            <li><button type="button" data-workflow-step="project_video"><span>2</span><strong>Project</strong><small>Create or open</small></button></li>
-            <li><button type="button" data-workflow-step="source_video"><span>3</span><strong>Video</strong><small>Add source</small></button></li>
-            <li><button type="button" data-workflow-step="provider_settings"><span>4</span><strong>Mode</strong><small>Provider setup</small></button></li>
-            <li><button type="button" data-workflow-step="prompt_preview"><span>5</span><strong>Prompts</strong><small>Keyframes and marks</small></button></li>
-            <li><button type="button" data-workflow-step="validate_run"><span>6</span><strong>Run</strong><small>Validate first</small></button></li>
-            <li><button type="button" data-workflow-step="review_candidates"><span>7</span><strong>Review</strong><small>Candidates and tracks</small></button></li>
-            <li><button type="button" data-workflow-step="correct_tracks"><span>8</span><strong>Correct</strong><small>Repair tracks</small></button></li>
-            <li><button type="button" data-workflow-step="export"><span>9</span><strong>Export</strong><small>Preview and handoff</small></button></li>
+            <li><button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong><small>Add source</small></button></li>
+            <li><button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong><small>Connect SAM</small></button></li>
+            <li><button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare</strong><small>Prompt and run</small></button></li>
+            <li><button type="button" data-workflow-step="review_export"><span>5</span><strong>Review</strong><small>Correct and export</small></button></li>
           </ol>
-          <div class="workflow-actions">
-            <button id="workflowBackButton" type="button">Back</button>
-            <span id="workflowNextHint" class="row-meta">Choose a tracing goal to continue.</span>
-            <button id="workflowNextButton" class="primary-action" type="button">Next</button>
-          </div>
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
+          <div class="workflow-footer">
+            <div class="workflow-footer-actions">
+              <button id="workflowBackButton" type="button">Back</button>
+              <button id="workflowPrimaryButton" class="primary-action" type="button">Continue to video</button>
+            </div>
+            <p id="workflowFooterHint" class="row-meta">Choose a tracing goal to continue.</p>
+            <p id="workflowFooterReason" class="form-hint workflow-footer-reason" hidden></p>
+          </div>
         </section>
 
-        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status">Selected real model providers are ready or waiting for setup.</div>
+        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status"></div>
 
         <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup">
           <div class="model-setup-heading">
@@ -297,22 +308,36 @@
               </div>
               <span id="projectCount" class="subtle-chip">0 projects</span>
             </div>
+            <div id="guidedProjectSummary" class="step-action-card" data-workflow-fragment="source_video">
+              <div>
+                <strong>Local workspace</strong>
+                <p id="guidedProjectSummaryNote" class="form-hint">A local project is created automatically when you add a video or open an existing result.</p>
+              </div>
+            </div>
             <div class="workflow-fragment" data-workflow-fragment="project_video">
               <div class="step-action-card">
                 <div>
-                  <strong>Start a local workspace</strong>
-                  <p class="form-hint">Use a short name you will recognize when reviewing runs later.</p>
+                  <strong>Workspace management moved to project options</strong>
+                  <p class="form-hint">Guided mode creates the workspace automatically. Use Project options when you need to switch or create one manually.</p>
                 </div>
               </div>
-              <form id="projectForm" class="inline-form primary-form">
-                <label>
-                  <span>Project name</span>
-                  <input id="projectName" type="text" value="MotionJSON local project" required />
-                </label>
-                <button class="primary-action" type="submit">Create project</button>
-              </form>
             </div>
-            <select id="projectSelect" data-workflow-fragment="project_video source_video" aria-label="Project"></select>
+            <details id="projectWorkspaceDisclosure" class="advanced-panel" data-workflow-fragment="source_video">
+              <summary>Project options</summary>
+              <div class="advanced-stack">
+                <label>
+                  <span>Current project</span>
+                  <select id="projectSelect" aria-label="Project"></select>
+                </label>
+                <form id="projectForm" class="inline-form">
+                  <label>
+                    <span>New project name</span>
+                    <input id="projectName" type="text" value="MotionJSON local project" required />
+                  </label>
+                  <button type="submit">Create project</button>
+                </form>
+              </div>
+            </details>
 
             <div class="workflow-fragment" data-workflow-fragment="source_video">
               <div class="section-divider">
@@ -325,8 +350,11 @@
                   <span>Local video path</span>
                   <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
                 </label>
-                <button class="primary-action" type="submit">Add video</button>
+                <button type="submit">Add video</button>
               </form>
+              <div class="inline-secondary-actions">
+                <button id="guidedDemoVideoButton" type="button">Use demo video</button>
+              </div>
               <select id="videoSelect" aria-label="Registered video"></select>
               <details class="advanced-panel">
                 <summary>Optional browser preview for drawing</summary>
@@ -340,7 +368,7 @@
               </details>
               <div id="videoList" class="artifact-list"></div>
 
-              <details class="advanced-panel">
+              <details id="reviewExistingDisclosure" class="advanced-panel">
                 <summary>Review existing MotionJSON</summary>
                 <div class="panel-heading secondary-heading">
                   <h2>Existing Result</h2>

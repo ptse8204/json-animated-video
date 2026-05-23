@@ -512,30 +512,32 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     const workflowStates = {
       "workflow-goal": "choose_goal",
-      "workflow-project": "project_video",
       "workflow-video": "source_video",
       "workflow-provider": "provider_settings",
       "workflow-prompts": "prompt_preview",
       "prepare-sam3-single": "prompt_preview",
       "prepare-sam3-text": "prompt_preview",
       "prepare-sam3-trace-all": "prompt_preview",
-      "workflow-run": "validate_run",
-      "workflow-review": "review_candidates",
-      "workflow-review-failure": "review_candidates",
-      "workflow-correct": "correct_tracks",
-      "workflow-export": "export",
+      "workflow-run": "prompt_preview",
+      "workflow-review": "review_export",
+      "workflow-review-failure": "review_export",
+      "workflow-correct": "review_export",
+      "workflow-export": "review_export",
     };
     const workflowStepOrder = [
       "choose_goal",
-      "project_video",
       "source_video",
       "provider_settings",
       "prompt_preview",
-      "validate_run",
-      "review_candidates",
-      "correct_tracks",
-      "export",
+      "review_export",
     ];
+    const workflowPanelAliases = {
+      choose_goal: ["choose_goal"],
+      source_video: ["project_video", "source_video"],
+      provider_settings: ["provider_settings"],
+      prompt_preview: ["prompt_preview"],
+      review_export: ["review_candidates", "correct_tracks", "export"],
+    };
     if (workflowStates[state]) {
       await cdp.send("Runtime.evaluate", {
         expression: `
@@ -599,6 +601,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           pointToolVisible: visible(document.querySelector("[data-tool='point']")),
           boxToolVisible: visible(document.querySelector("[data-tool='box']")),
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
+          workflowPrimaryLabel: document.querySelector("#workflowPrimaryButton")?.textContent?.trim() || "",
+          workflowPrimaryDisabled: document.querySelector("#workflowPrimaryButton")?.disabled === true,
+          workflowBackDisabled: document.querySelector("#workflowBackButton")?.disabled === true,
+          workflowFooterReasonVisible: visible(document.querySelector("#workflowFooterReason")),
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
@@ -673,11 +679,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (!stateValue.workflowKeyshortcuts.includes("ArrowRight") || !stateValue.workflowKeyshortcuts.includes("ArrowDown") || !stateValue.workflowKeyshortcuts.includes("ArrowLeft") || !stateValue.workflowKeyshortcuts.includes("ArrowUp") || !stateValue.workflowKeyshortcuts.includes("Home") || !stateValue.workflowKeyshortcuts.includes("End")) {
       failures.push(`${viewport.name}/${state}: workflow stepper should advertise keyboard navigation shortcuts`);
     }
-    if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "project_video" || stateValue.workflowFocusedStep !== "project_video")) {
-      failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Project (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
+    if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "source_video" || stateValue.workflowFocusedStep !== "source_video")) {
+      failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Video (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
     }
-    if (state === "workflow-provider" && !stateValue.providerWarningVisible) {
-      failures.push(`${viewport.name}/${state}: provider warning area should be visible in provider step`);
+    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true)) {
+      failures.push(`${viewport.name}/${state}: goal step should show a single Continue to video CTA with back disabled`);
     }
     if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 local") {
       failures.push(`${viewport.name}/${state}: SAM3 local should be the active guided model choice`);
@@ -688,20 +694,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom hosted SAM3") {
       failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
     }
-    if (state === "workflow-run" && !stateValue.runPlanAlertVisible) {
-      failures.push(`${viewport.name}/${state}: run-step provider/config alert should be visible`);
-    }
-    if (state === "workflow-project" && stateValue.setupPanelTitle !== "Create or open a project") {
-      failures.push(`${viewport.name}/${state}: project step title did not simplify the setup card`);
-    }
     if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Add or select a video" || !stateValue.videoFormVisible)) {
       failures.push(`${viewport.name}/${state}: video step should expose the local video path form as the primary action`);
     }
-    if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Choose extraction mode") {
-      failures.push(`${viewport.name}/${state}: provider step title should focus on mode/provider choice`);
+    if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Add video") {
+      failures.push(`${viewport.name}/${state}: video step should promote Add video as the primary CTA`);
     }
-    if (state === "workflow-prompts" && stateValue.wizardPanelTitle !== "Add prompt details") {
-      failures.push(`${viewport.name}/${state}: prompt step title should focus on prompt details`);
+    if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Connect a compatible model") {
+      failures.push(`${viewport.name}/${state}: provider step title should focus on connecting one compatible model`);
+    }
+    if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
+      failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
+    }
+    if (state === "prepare-sam3-text" && stateValue.workflowPrimaryLabel !== "Run search") {
+      failures.push(`${viewport.name}/${state}: SAM3 text prepare should label the primary CTA as Run search`);
+    }
+    if (state === "prepare-sam3-trace-all" && stateValue.workflowPrimaryLabel !== "Run trace all") {
+      failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should label the primary CTA as Run trace all`);
     }
     if (state === "prepare-sam3-single" && (stateValue.pointToolVisible || !stateValue.boxToolVisible || !stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should show box-only prompting and hide mask-provider internals`);
@@ -712,12 +721,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "prepare-sam3-trace-all" && (stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should hide prompt tools and mask-provider internals`);
     }
-    if (state === "workflow-run" && (stateValue.rawConfigOpen || stateValue.configSaveLoadOpen || stateValue.startMockText !== "Start mock job")) {
-      failures.push(`${viewport.name}/${state}: run step should keep raw config/save actions collapsed and promote the safe mock job`);
+    if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
+      failures.push(`${viewport.name}/${state}: prepare step should not show a blocked footer reason when the run CTA is available`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1 || !stateValue.studioBottomCtaVisible) {
         failures.push(`${viewport.name}/${state}: studio review panel and package CTA should be visible with reviewed objects`);
+      }
+      if (stateValue.workflowPrimaryLabel !== "Export reviewed objects") {
+        failures.push(`${viewport.name}/${state}: review flow should promote Export reviewed objects as the primary CTA`);
       }
     }
     if (state === "workflow-review-failure" && (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5)) {
@@ -740,10 +752,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
         failures.push(`${viewport.name}/${state}: active workflow step ${stateValue.workflowActiveStep || "none"} did not match ${expectedWorkflowStep}`);
       }
-      const activePanels = stateValue.workflowPanels.filter((panel) => panel.steps.includes(expectedWorkflowStep));
-      const inactivePanels = stateValue.workflowPanels.filter((panel) => !panel.steps.includes(expectedWorkflowStep));
-      const activeFragments = stateValue.workflowFragments.filter((fragment) => fragment.steps.includes(expectedWorkflowStep));
-      const inactiveFragments = stateValue.workflowFragments.filter((fragment) => !fragment.steps.includes(expectedWorkflowStep));
+      const panelSteps = workflowPanelAliases[expectedWorkflowStep] || [expectedWorkflowStep];
+      const activePanels = stateValue.workflowPanels.filter((panel) => panel.steps.some((step) => panelSteps.includes(step)));
+      const inactivePanels = stateValue.workflowPanels.filter((panel) => !panel.steps.some((step) => panelSteps.includes(step)));
+      const activeFragments = stateValue.workflowFragments.filter((fragment) => fragment.steps.some((step) => panelSteps.includes(step)));
+      const inactiveFragments = stateValue.workflowFragments.filter((fragment) => !fragment.steps.some((step) => panelSteps.includes(step)));
       if (!activePanels.some((panel) => panel.visible && !panel.hidden && panel.ariaHidden === "false" && !panel.inert)) {
         failures.push(`${viewport.name}/${state}: no active workflow panel is visible and interactive`);
       }

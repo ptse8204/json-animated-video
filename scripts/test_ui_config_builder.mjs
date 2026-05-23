@@ -12,35 +12,30 @@ assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
-assert.equal(ui.WORKFLOW_STEPS.length, 9);
+assert.equal(ui.WORKFLOW_STEPS.length, 5);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
-  "project_video",
   "source_video",
   "provider_settings",
   "prompt_preview",
-  "validate_run",
-  "review_candidates",
-  "correct_tracks",
-  "export",
+  "review_export",
 ]);
 assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
-assert.equal(ui.workflowNextStepId("project_video", 1), "source_video");
-assert.equal(ui.workflowNextStepId("project_video", -1), "choose_goal");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_candidates"), "project_video");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "export"), "source_video");
+assert.equal(ui.workflowNextStepId("source_video", 1), "provider_settings");
+assert.equal(ui.workflowNextStepId("source_video", -1), "choose_goal");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "source_video");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "source_video");
 assert.equal(
-  ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object", selectedProjectId: "project_1", selectedVideoId: "video_1" }, "review_candidates"),
-  "prompt_preview",
+  ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object", selectedProjectId: "project_1", selectedVideoId: "video_1" }, "review_export"),
+  "provider_settings",
 );
 const blockedWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
-  selectedProjectId: "",
   selectedVideoId: "",
   providerBlocked: true,
   promptCount: 0,
 });
-assert.equal(blockedWorkflow.project_video.status, "needs-action");
+assert.equal(blockedWorkflow.source_video.status, "needs-action");
 assert.equal(blockedWorkflow.provider_settings.status, "blocked");
 assert.equal(blockedWorkflow.prompt_preview.complete, false);
 const previewOnlyWorkflow = ui.workflowReadinessFromSnapshot({
@@ -66,8 +61,7 @@ const readyWorkflow = ui.workflowReadinessFromSnapshot({
 });
 assert.equal(readyWorkflow.source_video.complete, true);
 assert.equal(readyWorkflow.prompt_preview.complete, true);
-assert.equal(readyWorkflow.validate_run.complete, true);
-assert.equal(readyWorkflow.export.status, "done");
+assert.equal(readyWorkflow.review_export.status, "done");
 const sam3SingleNeedsBox = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
   selectedProjectId: "project_1",
@@ -90,14 +84,33 @@ const progressCards = ui.workflowSummaryCardsFromSnapshot(
     providerDevice: "cpu",
     configValid: true,
   },
-  "validate_run",
+  "prompt_preview",
 );
-assert.deepEqual(progressCards.map((card) => card.id), ["choose_goal", "project_video", "source_video", "provider_settings", "prompt_preview"]);
+assert.deepEqual(progressCards.map((card) => card.id), ["choose_goal", "source_video", "provider_settings"]);
 assert.equal(progressCards[0].value, "Find moving objects");
-assert.equal(progressCards[1].value, "Demo project");
-assert.equal(progressCards[2].value, "demo_red_ball.mp4");
-assert.equal(progressCards[3].value, "mock on cpu");
+assert.equal(progressCards[1].value, "demo_red_ball.mp4");
+assert.equal(progressCards[2].value, "mock on cpu");
 assert.equal(ui.workflowSummaryCardsFromSnapshot({}, "choose_goal").length, 0);
+const videoStepContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_one_object",
+    selectedVideoId: "",
+  },
+  "source_video",
+);
+assert.equal(videoStepContract.primaryLabel, "Add video");
+assert.equal(videoStepContract.enabled, false);
+const readyPrepareContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    providerName: "SAM3 local",
+    promptCount: 0,
+  },
+  "prompt_preview",
+);
+assert.equal(readyPrepareContract.primaryLabel, "Run trace all");
+assert.equal(readyPrepareContract.enabled, true);
 const postRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "succeeded",
   hasSelectedJob: true,

@@ -3421,15 +3421,8 @@ body {
 
 .studio-progress li {
   position: relative;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
   min-width: 0;
   color: #566371;
-  font-size: 14px;
-  font-weight: 760;
-  white-space: nowrap;
 }
 
 .studio-progress li:not(:last-child)::after {
@@ -3443,7 +3436,33 @@ body {
   transform: translateY(-50%);
 }
 
-.studio-progress span {
+.studio-progress button {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+  font-size: 14px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.studio-progress button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.studio-progress button strong {
+  color: inherit;
+}
+
+.studio-progress button span {
   position: relative;
   z-index: 1;
   display: inline-grid;
@@ -3457,11 +3476,11 @@ body {
   font-weight: 850;
 }
 
-.studio-progress .is-complete span {
+.studio-progress .is-complete button span {
   color: transparent;
 }
 
-.studio-progress .is-complete span::after {
+.studio-progress .is-complete button span::after {
   content: "";
   width: 10px;
   height: 6px;
@@ -3470,11 +3489,11 @@ body {
   transform: rotate(-45deg);
 }
 
-.studio-progress .is-active strong {
+.studio-progress .is-active button strong {
   color: #192332;
 }
 
-.studio-progress .is-pending span {
+.studio-progress .is-pending button span {
   color: #687585;
   background: #e5ebef;
 }
@@ -3552,24 +3571,22 @@ body {
 }
 
 #workflowController {
-  display: contents;
-  position: static;
-  width: auto;
-  height: auto;
-  margin: 0;
-  overflow: visible;
-  clip-path: none;
-  opacity: 1;
+  display: grid;
+  gap: 12px;
+  max-width: 1120px;
+  margin: 0 auto 18px;
+  padding: 14px 16px 16px;
+  border: 1px solid #d7dee5;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(26, 35, 43, 0.05);
 }
 
-.workflow-step-summary {
-  display: none;
-}
-
-#workflowController .workflow-controller-header,
-#workflowController .workflow-actions,
-#workflowController #workflowStepSummary {
-  display: none;
+#workflowController .workflow-controller-header {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
 }
 
 #workflowController #workflowStepper,
@@ -3598,8 +3615,59 @@ body {
   opacity: 0;
 }
 
-#workflowController #workflowStepper button > * {
-  display: none;
+#workflowController #workflowStepper[hidden],
+#workflowController #workflowStepper[hidden] * {
+  display: none !important;
+}
+
+.workflow-step-summary {
+  display: grid;
+}
+
+.workflow-footer {
+  position: sticky;
+  bottom: 14px;
+  z-index: calc(var(--z-sticky) - 1);
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d7dee5;
+  border-radius: 10px;
+  background: rgba(251, 253, 252, 0.96);
+  box-shadow: 0 12px 28px rgba(26, 35, 43, 0.08);
+}
+
+.workflow-footer-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workflow-footer-actions > button {
+  min-height: 48px;
+}
+
+#workflowBackButton {
+  min-width: 112px;
+}
+
+#workflowPrimaryButton {
+  min-width: clamp(220px, 34vw, 340px);
+}
+
+.workflow-footer-reason {
+  color: #8b4a2d;
+}
+
+.inline-secondary-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.inline-secondary-actions button {
+  min-height: 42px;
 }
 
 .guided-start,
@@ -4183,14 +4251,21 @@ body {
     display: grid;
     justify-items: center;
     gap: 5px;
+  }
+
+  .studio-progress button {
+    display: grid;
+    justify-items: center;
+    gap: 5px;
     font-size: 11px;
+    white-space: normal;
   }
 
   .studio-progress li:not(:last-child)::after {
     display: none;
   }
 
-  .studio-progress span {
+  .studio-progress button span {
     width: 25px;
     height: 25px;
   }
@@ -4198,6 +4273,26 @@ body {
   .topbar-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  #workflowController {
+    padding: 12px;
+  }
+
+  .workflow-footer {
+    bottom: 8px;
+    padding: 10px;
+  }
+
+  .workflow-footer-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  #workflowBackButton,
+  #workflowPrimaryButton {
+    width: 100%;
+    min-width: 0;
   }
 
   .app-shell.is-prepare-form-first:not(.is-workflow-dashboard) .workspace-grid {
