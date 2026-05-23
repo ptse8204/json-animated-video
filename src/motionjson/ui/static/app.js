@@ -61,6 +61,7 @@ const MotionJSONUI = (() => {
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
+  const BUNDLED_DEMO_VIDEO_PATH = "examples/demo_red_ball.mp4";
   const MODEL_CONNECTIONS = [
     {
       id: "sam2-local",
@@ -537,6 +538,17 @@ const MotionJSONUI = (() => {
     const index = workflowStepIndex(stepId);
     const nextIndex = clamp(index + (direction < 0 ? -1 : 1), 0, WORKFLOW_STEPS.length - 1);
     return WORKFLOW_STEPS[nextIndex].id;
+  }
+
+  function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = "choose_goal") {
+    const normalizedStep = normalizeWorkflowStepId(requestedStep);
+    const readiness = workflowReadinessFromSnapshot(snapshot);
+    const requestedIndex = workflowStepIndex(normalizedStep);
+    for (let index = 0; index < requestedIndex; index += 1) {
+      const prior = WORKFLOW_STEPS[index];
+      if (!readiness[prior.id]?.complete) return prior.id;
+    }
+    return normalizedStep;
   }
 
   function workflowReadinessFromSnapshot(snapshot = {}) {
@@ -3211,6 +3223,26 @@ const MotionJSONUI = (() => {
       renderStudioShell(activeStep);
     }
 
+    function reconcileWorkflowProgress({ persist = true } = {}) {
+      const snapshot = workflowSnapshot();
+      const restoredStep = workflowRestoredStepFromSnapshot(snapshot, state.activeWorkflowStep);
+      const hasWorkspaceState = Boolean(snapshot.selectedProjectId || snapshot.selectedVideoId || snapshot.selectedJobId);
+      let changed = false;
+      if (restoredStep !== state.activeWorkflowStep) {
+        state.activeWorkflowStep = restoredStep;
+        changed = true;
+      }
+      if (!hasWorkspaceState && state.workflowDashboard) {
+        state.workflowDashboard = false;
+        changed = true;
+      }
+      if (changed && persist) {
+        storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
+        storage.set(SHELL_STORAGE_KEYS.workflowDashboard, String(state.workflowDashboard));
+      }
+      return changed;
+    }
+
     function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
       const nextStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
       if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
@@ -3236,6 +3268,7 @@ const MotionJSONUI = (() => {
     function initWorkflowController() {
       state.activeWorkflowStep = normalizeWorkflowStepId(storage.get(SHELL_STORAGE_KEYS.workflowStep), "choose_goal");
       state.workflowDashboard = boolFromStorage(SHELL_STORAGE_KEYS.workflowDashboard, false);
+      reconcileWorkflowProgress({ persist: false });
       const workflowKeyboardKeys = new Set(["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"]);
       let pendingWorkflowKeyboardFocus = "";
       const focusWorkflowKeyboardStep = () => {
@@ -4081,6 +4114,7 @@ const MotionJSONUI = (() => {
       const firstRun = summary.firstRun || {};
       const readyNoModel = asArray(summary.readyNoModelProviders);
       const missingOptional = asArray(summary.missingOptional);
+      const debugMockMode = Boolean(state.health?.mockMode);
       const steps = [
         {
           label: "Base install",
@@ -4095,12 +4129,16 @@ const MotionJSONUI = (() => {
           detail: state.health?.mockMode ? "Debug mock mode is on for contributor checks." : "Use motionjson ui or module launch.",
         },
         {
-          label: "Debug smoke",
+          label: debugMockMode ? "Contributor smoke" : "Local worker",
           status: summary.canRunNoModelSmoke ? "ready" : "limited",
           available: Boolean(summary.canRunNoModelSmoke),
           detail: summary.canRunNoModelSmoke
-            ? `Contributor smoke providers are importable: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}.`
-            : "Install base CPU dependencies before using debug smoke providers.",
+            ? debugMockMode
+              ? `Contributor smoke providers are importable: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}.`
+              : "The local worker can use CPU-safe providers while you finish SAM setup."
+            : debugMockMode
+              ? "Install base CPU dependencies before using debug smoke providers."
+              : "Install base CPU dependencies before starting local runs.",
         },
         {
           label: "SAM models",
@@ -4123,7 +4161,7 @@ const MotionJSONUI = (() => {
           status: summary.canRunNoModelSmoke ? "ready" : "check",
           available: Boolean(summary.canRunNoModelSmoke),
           detail: summary.canRunNoModelSmoke
-            ? `Create a project, register a video, then open Model Connections. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open"}`
+            ? `Create a project or use the demo video, then open Model Connections. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open"}`
             : "Run backend diagnostics --text and fix base dependency blockers first.",
         },
       ];
@@ -4139,6 +4177,25 @@ const MotionJSONUI = (() => {
           `,
         )
         .join("");
+    }
+
+    function renderGuidedStart() {
+      const chip = $("#guidedModeChip");
+      if (chip) {
+        const debugMockMode = Boolean(state.health?.mockMode);
+        chip.textContent = debugMockMode ? "Debug mock mode" : "Local first";
+        chip.className = `status-chip ${debugMockMode ? "is-warn" : "is-neutral"}`;
+      }
+      const continueButton = $("#guidedContinueButton");
+      if (continueButton) {
+        if (state.selectedVideoId) continueButton.textContent = "Open model connections";
+        else if (state.selectedProjectId) continueButton.textContent = "Continue to video setup";
+        else continueButton.textContent = "Continue to project setup";
+      }
+      const demoButton = $("#guidedDemoVideoButton");
+      if (demoButton) {
+        demoButton.textContent = state.selectedVideoId ? "Use selected video" : "Start with demo video";
+      }
     }
 
     function renderRunDefaults() {
@@ -4243,6 +4300,7 @@ const MotionJSONUI = (() => {
       if (!state.projects.length) {
         select.innerHTML = `<option value="">${escapeHtml(state.errors.projects || "No local projects yet")}</option>`;
         state.selectedProjectId = "";
+        renderGuidedStart();
         renderWorkflowStepper();
         return;
       }
@@ -4253,6 +4311,7 @@ const MotionJSONUI = (() => {
         .map((project) => `<option value="${escapeAttribute(project.id)}">${escapeHtml(project.name)}</option>`)
         .join("");
       select.value = state.selectedProjectId;
+      renderGuidedStart();
       renderWorkflowStepper();
     }
 
@@ -4262,6 +4321,7 @@ const MotionJSONUI = (() => {
       if (state.errors.videos) {
         select.innerHTML = `<option value="">Video unavailable</option>`;
         $("#videoList").innerHTML = `<div class="error-state">${escapeHtml(state.errors.videos)}</div>`;
+        renderGuidedStart();
         renderWorkflowStepper();
         return;
       }
@@ -4296,6 +4356,7 @@ const MotionJSONUI = (() => {
             .join("")
         : `<div class="empty-state">Add a local video path after creating a project.</div>`;
       loadSelectedVideoPreview();
+      renderGuidedStart();
       renderConfigPreview();
     }
 
@@ -6620,7 +6681,73 @@ const MotionJSONUI = (() => {
       renderPresetFields();
       renderApiStatus(state.errors.health ? "is-bad" : "is-ready", state.errors.health ? "API unavailable" : "API ready");
       await refreshProjectData();
+      reconcileWorkflowProgress();
+      renderGuidedStart();
+      renderWorkflowStepper();
       renderConfigPreview();
+    }
+
+    function starterProjectName() {
+      return $("#projectName")?.value?.trim() || "MotionJSON local project";
+    }
+
+    function matchesBundledDemoVideo(video) {
+      const values = [
+        video?.path,
+        video?.filename,
+        video?.metadata?.filename,
+        video?.metadata?.source_uri,
+        video?.metadata?.rights_context?.source_uri,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      return /demo_red_ball\.mp4/i.test(values);
+    }
+
+    async function ensureStarterProject() {
+      if (state.selectedProjectId) return state.selectedProjectId;
+      const created = await api("/api/projects", {
+        method: "POST",
+        body: JSON.stringify({ name: starterProjectName() }),
+      });
+      state.selectedProjectId = created.project.id;
+      await refreshAll();
+      return state.selectedProjectId;
+    }
+
+    async function ensureBundledDemoVideo() {
+      if (!state.selectedProjectId) await ensureStarterProject();
+      if (!state.videos.length) await refreshProjectData();
+      const existing = state.videos.find(matchesBundledDemoVideo);
+      if (existing?.id) {
+        state.selectedVideoId = existing.id;
+        renderVideos();
+        return existing;
+      }
+      await api("/api/videos", {
+        method: "POST",
+        body: JSON.stringify({ projectId: state.selectedProjectId, path: BUNDLED_DEMO_VIDEO_PATH }),
+      });
+      await refreshProjectData();
+      return selectedVideo();
+    }
+
+    async function startGuidedDemoVideoFlow() {
+      const button = $("#guidedDemoVideoButton");
+      if (button) button.disabled = true;
+      try {
+        if (state.selectedVideoId) {
+          setWorkflowStep("provider_settings", { focusStep: true });
+          return;
+        }
+        await ensureBundledDemoVideo();
+        setRunAlert("Demo video registered. Open Model Connections to choose SAM2 or SAM3.", "warning-box is-ready");
+        setWorkflowStep("provider_settings", { focusStep: true });
+      } catch (error) {
+        setRunAlert(error.message, "warning-box is-bad");
+      } finally {
+        if (button) button.disabled = false;
+      }
     }
 
     function applyReviewCaptureFixture(capture) {
@@ -8261,6 +8388,7 @@ const MotionJSONUI = (() => {
         });
         state.selectedProjectId = created.project.id;
         await refreshAll();
+        setWorkflowStep("source_video", { focusStep: true });
       } catch (error) {
         state.errors.projects = error.message;
         renderProjects();
@@ -8303,6 +8431,8 @@ const MotionJSONUI = (() => {
           body: JSON.stringify({ projectId: state.selectedProjectId, path: $("#videoPath").value.trim() }),
         });
         await refreshProjectData();
+        setRunAlert("Video registered. Choose SAM2 or SAM3 in Model Connections next.", "warning-box is-ready");
+        setWorkflowStep("provider_settings", { focusStep: true });
       } catch (error) {
         $("#videoList").innerHTML = `<div class="error-state">${escapeHtml(error.message)}</div>`;
       }
@@ -8628,8 +8758,12 @@ const MotionJSONUI = (() => {
     });
 
     $("#validateConfigButton").addEventListener("click", validateConfigWithBackend);
-    $("#guidedPreviewButton").addEventListener("click", () => $("#videoFileInput").click());
-    $("#guidedValidateButton").addEventListener("click", validateConfigWithBackend);
+    $("#guidedContinueButton").addEventListener("click", () => {
+      if (state.selectedVideoId) setWorkflowStep("provider_settings", { focusStep: true });
+      else if (state.selectedProjectId) setWorkflowStep("source_video", { focusStep: true });
+      else setWorkflowStep("project_video", { focusStep: true });
+    });
+    $("#guidedDemoVideoButton").addEventListener("click", startGuidedDemoVideoFlow);
     $("#generateModelPlanButton").addEventListener("click", generateModelPlanFromIntent);
     $("#validateModelPlanButton").addEventListener("click", validateCurrentModelPlan);
     $("#confirmModelPlanButton").addEventListener("click", confirmModelPlanAndStart);
@@ -8708,6 +8842,7 @@ const MotionJSONUI = (() => {
     trackSelectedPayload,
     workflowNextStepId,
     workflowReadinessFromSnapshot,
+    workflowRestoredStepFromSnapshot,
     workflowSummaryCardsFromSnapshot,
   };
 

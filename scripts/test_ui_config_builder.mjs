@@ -27,6 +27,12 @@ assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
 assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
 assert.equal(ui.workflowNextStepId("project_video", 1), "source_video");
 assert.equal(ui.workflowNextStepId("project_video", -1), "choose_goal");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_candidates"), "project_video");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "export"), "source_video");
+assert.equal(
+  ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object", selectedProjectId: "project_1", selectedVideoId: "video_1" }, "review_candidates"),
+  "prompt_preview",
+);
 const blockedWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
   selectedProjectId: "",

@@ -2392,30 +2392,16 @@ button,
   align-items: stretch;
 }
 
-.guided-file-control {
-  display: grid;
-  gap: 4px;
+.guided-secondary-action {
   min-height: 54px;
-  padding: 11px 12px;
-  border: 1px dashed #77aaa3;
-  border-radius: var(--radius-sm);
-  color: #536168;
+  padding: 0 16px;
+  border-color: #9cbab5;
+  color: #1e2d31;
   background: #f4fbfa;
-  cursor: pointer;
-  text-align: left;
-  white-space: normal;
 }
 
-.guided-file-control span {
-  color: #223036;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.guided-file-control strong {
-  font-size: 12px;
-  font-weight: 650;
-  line-height: 1.35;
+.guided-secondary-action:hover {
+  background: #eaf6f4;
 }
 
 .form-hint {

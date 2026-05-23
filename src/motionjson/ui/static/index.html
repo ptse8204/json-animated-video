@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MotionJSON Local UI</title>
-    <!-- Build check labels retained for shell contract: Local release candidate; Object tracing workspace; Show details; Start mock job. -->
+    <!-- Build check labels retained for shell contract: Local release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
     <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
@@ -128,7 +128,7 @@
               <h2>What do you want to trace?</h2>
               <p class="panel-note">Start with a plain-language goal. The app keeps the generated run plan readable and waits for review before export.</p>
             </div>
-            <span class="status-chip is-neutral">Mock/local first</span>
+            <span id="guidedModeChip" class="status-chip is-neutral">Local first</span>
           </div>
           <div class="goal-card-grid" aria-label="Object tracing goals">
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
@@ -157,11 +157,8 @@
             </button>
           </div>
           <div class="guided-start-actions">
-            <button id="guidedPreviewButton" class="guided-file-control" type="button">
-              <span>Choose video preview</span>
-              <strong>Use a local file to draw prompts in the browser.</strong>
-            </button>
-            <button id="guidedValidateButton" class="primary-action" type="button">Validate plan</button>
+            <button id="guidedContinueButton" class="guided-secondary-action" type="button">Continue to project setup</button>
+            <button id="guidedDemoVideoButton" class="primary-action" type="button">Start with demo video</button>
           </div>
         </section>
 
