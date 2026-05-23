@@ -11,8 +11,8 @@ export const WIZARD_PRESETS = [
   {
     id: "trace_all_objects",
     label: "Trace all objects",
-    discoveryMode: "auto_object_proposals",
-    defaultMaskProvider: "sam2-local",
+    discoveryMode: "sam3_auto_masks",
+    defaultMaskProvider: "sam3-local",
     requiredTools: ["keyframe"],
   },
   {
@@ -25,8 +25,8 @@ export const WIZARD_PRESETS = [
   {
     id: "text_detector",
     label: "Find objects from text",
-    discoveryMode: "text_detector",
-    defaultMaskProvider: "sam2-local",
+    discoveryMode: "sam3_concept",
+    defaultMaskProvider: "sam3-local",
     requiredTools: ["label"],
   },
   {
@@ -159,6 +159,41 @@ export function promptToConfig(prompt, { objectId, label, frameIndex }) {
   };
 }
 
+function guidedEnginePlan(input, preset) {
+  const connectionId = String(input.modelConnectionId || "").trim();
+  const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
+  const connectionProvider = connectionId.startsWith("sam3-hosted:")
+    ? "sam3-hosted"
+    : connectionId.startsWith("sam2-hosted:")
+      ? "sam2-hosted"
+      : connectionId || (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider) ? input.textDiscoveryProvider : "") || input.maskProvider || "";
+  if (preset.id === "trace_one_object") {
+    if (connectionProvider === "sam3-local" || connectionProvider === "sam3-hosted") {
+      return { providerName: connectionProvider, discoveryMode: requestedDiscoveryMode === "manual_prompt" ? "sam3_exemplar" : requestedDiscoveryMode };
+    }
+    return { providerName: connectionProvider === "sam2-hosted" ? "sam2-hosted" : connectionProvider || "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode };
+  }
+  if (preset.id === "trace_all_objects") {
+    if (connectionProvider === "sam2-local") {
+      return { providerName: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode };
+    }
+    return { providerName: connectionProvider === "sam3-hosted" ? "sam3-hosted" : connectionProvider || "sam3-local", discoveryMode: requestedDiscoveryMode === "auto_object_proposals" && connectionProvider.startsWith("sam3") ? "sam3_auto_masks" : requestedDiscoveryMode };
+  }
+  if (preset.id === "text_detector") {
+    if (input.textDiscoveryProvider === "detector") {
+      return { providerName: input.maskProvider || "threshold", discoveryMode: "text_detector" };
+    }
+    if (connectionProvider && !connectionProvider.startsWith("sam3")) {
+      return { providerName: connectionProvider, discoveryMode: requestedDiscoveryMode };
+    }
+    return { providerName: connectionProvider === "sam3-hosted" ? "sam3-hosted" : connectionProvider || "sam3-local", discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode };
+  }
+  return {
+    providerName: input.maskProvider || preset.defaultMaskProvider || (input.debugMockMode ? "mock" : "sam2-local"),
+    discoveryMode: requestedDiscoveryMode,
+  };
+}
+
 export function objectDiscoveryConfig(input, advanced) {
   const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || "clean";
   const keyframes = parseKeyframes(advanced.keyframe ?? advanced.keyframes ?? input.keyframes ?? 0);
@@ -229,7 +264,7 @@ export function objectDiscoveryConfig(input, advanced) {
     mock: Boolean(input.debugMockMode),
     qualityPreset,
     intent: preset.intent,
-    providerPreference: input.debugMockMode ? "mock" : "sam2-local",
+    providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
     sam2Checkpoint: input.localSam2CheckpointPath || advanced.localSam2CheckpointPath || null,
     sam2ModelConfig: input.localSam2ModelConfigPath || advanced.localSam2ModelConfigPath || null,
     sam2Device: input.localSam2Device || advanced.localSam2Device || advanced.device || "auto",
@@ -263,11 +298,9 @@ export function buildRunConfig(input) {
   const video = input.video || {};
   const videoRef = video.id ? `local-ui://assets/${video.id}` : input.videoPath || "local-ui://assets/selected-video";
   const outputDir = input.outputDir || `out/motionjson-ui/${objectId}`;
-  const providerName = input.maskProvider || preset.defaultMaskProvider || (input.debugMockMode ? "mock" : "sam2-local");
-  let discoveryMode = preset.discoveryMode;
-  if (preset.id === "text_detector" && ["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
-    discoveryMode = "sam3_concept";
-  }
+  const enginePlan = guidedEnginePlan(input, preset);
+  const providerName = enginePlan.providerName;
+  const discoveryMode = enginePlan.discoveryMode;
   const prompts = (input.prompts || []).map((prompt) =>
     promptToConfig(prompt, {
       objectId,
@@ -278,7 +311,7 @@ export function buildRunConfig(input) {
   const discoveryConfig = {};
   const maxCandidates = Number(input.discoveryMaxCandidates || advanced.maxObjects || 12);
   if (preset.id === "auto_object_proposals" || preset.id === "trace_all_objects") {
-    Object.assign(discoveryConfig, objectDiscoveryConfig(input, advanced));
+    Object.assign(discoveryConfig, objectDiscoveryConfig({ ...input, providerName }, advanced));
   }
   if (preset.id === "text_detector") {
     if (input.discoveryText) {
@@ -291,7 +324,7 @@ export function buildRunConfig(input) {
       discoveryConfig.text_threshold = Number(advanced.textThreshold);
     }
     if (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
-      const hosted = input.textDiscoveryProvider === "sam3-hosted";
+      const hosted = providerName === "sam3-hosted";
       discoveryConfig.concept = input.discoveryText || "";
       discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
       discoveryConfig.hosted = hosted;
@@ -305,6 +338,34 @@ export function buildRunConfig(input) {
     } else {
       discoveryConfig.mock = Boolean(input.debugMockMode);
     }
+  }
+  if (discoveryMode === "sam3_exemplar") {
+    const hosted = providerName === "sam3-hosted";
+    const boxPrompt = prompts.find((prompt) => prompt.kind === "box");
+    discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
+    discoveryConfig.hosted = hosted;
+    discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;
+    discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
+    discoveryConfig.frameIndex = Number(advanced.keyframe || 0);
+    discoveryConfig.box = boxPrompt ? { ...boxPrompt.data } : null;
+    discoveryConfig.allowNetwork = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
+    discoveryConfig.acknowledgeCostPrivacy = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
+    discoveryConfig.mock = false;
+  }
+  if (discoveryMode === "sam3_auto_masks") {
+    const hosted = providerName === "sam3-hosted";
+    discoveryConfig.concept = input.discoveryText || "object";
+    discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
+    discoveryConfig.hosted = hosted;
+    discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : null;
+    discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
+    discoveryConfig.allowNetwork = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
+    discoveryConfig.acknowledgeCostPrivacy = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
+    discoveryConfig.mock = false;
   }
   if (input.discoveryClasses) {
     discoveryConfig.classes = Array.isArray(input.discoveryClasses)
@@ -379,6 +440,23 @@ export function buildRunConfig(input) {
               }
             : {},
         hosted_allow_network: providerName === "sam2-hosted" ? Boolean(input.hostedSam2AllowHosted) : false,
+      },
+      sam3: {
+        model_path: input.localSam3ModelPath || advanced.localSam3ModelPath || null,
+        device: input.localSam3Device || advanced.localSam3Device || advanced.device || null,
+        prompt_frame: Number(advanced.keyframe || 0),
+        endpoint: null,
+        auth_env: "SAM3_HOSTED_API_KEY",
+        endpoint_env: "SAM3_HOSTED_URL",
+        hosted_config:
+          providerName === "sam3-hosted"
+            ? {
+                profile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
+                hostedProfile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
+                ...(input.hostedSam3Model ? { model: input.hostedSam3Model } : {}),
+              }
+            : {},
+        hosted_allow_network: providerName === "sam3-hosted" ? Boolean(input.hostedSam3AllowHosted) : false,
       },
       cache: {
         enabled: true,

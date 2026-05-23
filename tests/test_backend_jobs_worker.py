@@ -183,3 +183,10 @@ def test_provider_policy_rejects_openrouter_as_segmentation(tmp_path):
     with pytest.raises(ProviderPolicyError):
         enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="openrouter")
     assert validate_extract_provider_policy("threshold") == "threshold"
+
+
+def test_provider_policy_accepts_sam2_and_sam3_ui_engine_names():
+    assert validate_extract_provider_policy("sam2-local") == "sam2-local"
+    assert validate_extract_provider_policy("sam2-hosted") == "sam2-hosted"
+    assert validate_extract_provider_policy("sam3-local") == "sam3-local"
+    assert validate_extract_provider_policy("sam3-hosted") == "sam3-hosted"

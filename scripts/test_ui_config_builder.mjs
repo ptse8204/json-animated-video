@@ -68,6 +68,16 @@ assert.equal(readyWorkflow.source_video.complete, true);
 assert.equal(readyWorkflow.prompt_preview.complete, true);
 assert.equal(readyWorkflow.validate_run.complete, true);
 assert.equal(readyWorkflow.export.status, "done");
+const sam3SingleNeedsBox = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "trace_one_object",
+  selectedProjectId: "project_1",
+  selectedVideoId: "video_1",
+  providerName: "SAM3 local",
+  hasPointPrompt: true,
+  hasBoxPrompt: false,
+  promptCount: 1,
+});
+assert.equal(sam3SingleNeedsBox.prompt_preview.status, "needs-action");
 const progressCards = ui.workflowSummaryCardsFromSnapshot(
   {
     selectedPreset: "motion_foreground",
@@ -223,10 +233,35 @@ const hostedSam3Config = ui.buildRunConfig({
   hostedSam3AllowHosted: true,
   hostedSam3Model: "sam3/sam3_final",
 });
+assert.equal(hostedSam3Config.provider.name, "sam3-hosted");
 assert.equal(hostedSam3Config.discovery.mode, "sam3_concept");
 assert.equal(hostedSam3Config.discovery.config.providerPreference, "sam3-hosted");
 assert.equal(hostedSam3Config.discovery.config.hostedProfile, "roboflow-sam3-pcs");
 assert.equal(hostedSam3Config.discovery.config.allowNetwork, true);
+assert.equal(hostedSam3Config.provider.sam3.hosted_config.profile, "roboflow-sam3-pcs");
+
+const sam3SingleObjectConfig = ui.buildRunConfig({
+  preset: "trace_one_object",
+  modelConnectionId: "sam3-local",
+  objectId: "object_0",
+  objectLabel: "selected object",
+  currentFrame: 12,
+  prompts: [{ kind: "box", frame_index: 12, object_id: "object_0", label: "selected object", data: { x: 120, y: 90, w: 180, h: 220 } }],
+});
+assert.equal(sam3SingleObjectConfig.provider.name, "sam3-local");
+assert.equal(sam3SingleObjectConfig.discovery.mode, "sam3_exemplar");
+assert.deepEqual(sam3SingleObjectConfig.discovery.config.box, { x: 120, y: 90, w: 180, h: 220 });
+
+const sam3TraceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "sam3-local",
+  objectId: "object_0",
+  objectLabel: "all objects",
+  keyframes: new Set([0, 12]),
+  qualityPreset: "balanced",
+});
+assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
+assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");

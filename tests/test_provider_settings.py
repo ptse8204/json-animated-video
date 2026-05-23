@@ -94,6 +94,24 @@ def test_sam3_local_setup_guide_distinguishes_source_repo_from_checkpoint_path()
     assert "api_key" not in guide_text
 
 
+def test_sam_goal_capabilities_are_declared_for_guided_ui():
+    catalog = provider_catalog()
+    sam2_local = provider_by_id(catalog, "sam2-local")
+    sam3_local = provider_by_id(catalog, "sam3-local")
+    sam3_hosted = provider_by_id(catalog, "sam3-hosted")
+    roboflow = next(profile for profile in sam3_hosted["hostedProfiles"] if profile["id"] == "roboflow-sam3-pcs")
+    custom = next(profile for profile in sam3_hosted["hostedProfiles"] if profile["id"] == "custom-sam3-compatible")
+
+    assert "trace_one_object" in sam2_local["supportedGoals"]
+    assert sam2_local["supportsTracking"] is True
+    assert sam3_local["supportedPromptTypes"] == ["box"]
+    assert {"trace_one_object", "trace_all_objects", "text_detector"} <= set(sam3_local["supportedGoals"])
+    assert roboflow["supportedGoals"] == ["trace_all_objects", "text_detector"]
+    assert roboflow["supportsExemplar"] is False
+    assert custom["supportsExemplar"] is True
+    assert custom["supportsTracking"] is True
+
+
 def test_local_sam_settings_persist_and_diagnose_without_raw_values(tmp_path):
     checkpoint = tmp_path / "sam2.pt"
     config = tmp_path / "sam2.yaml"

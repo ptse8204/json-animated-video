@@ -666,13 +666,10 @@ def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_
     assert payload["runConfig"]["prompts"][0]["data"] == {"x": 12, "y": 8}
     assert {warning["code"] for warning in payload["warnings"]} >= {
         "provider_unavailable",
-        "local_job_policy",
     }
     by_code = {warning["code"]: warning for warning in payload["warnings"]}
     assert by_code["provider_unavailable"]["severity"] == "error"
     assert by_code["provider_unavailable"]["action"] == "Install SAM2 separately."
-    assert by_code["local_job_policy"]["severity"] == "error"
-    assert "deterministic local provider" in by_code["local_job_policy"]["action"]
 
     invalid = {**run_config, "prompts": []}
     status, _headers, body = app.handle(

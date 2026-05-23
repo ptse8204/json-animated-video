@@ -73,7 +73,7 @@ const cases = [
       discoveryMaxCandidates: 8,
       advanced: {{ ...commonAdvanced, qualityPreset: "balanced" }},
     }},
-    expected: {{ provider: "sam2-local", discovery: "auto_object_proposals", prompts: 0 }},
+    expected: {{ provider: "sam3-local", discovery: "sam3_auto_masks", prompts: 0 }},
   }},
   {{
     goal: "find_objects_from_text",
@@ -86,7 +86,7 @@ const cases = [
       discoveryMaxCandidates: 4,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "sam2-local", discovery: "text_detector", prompts: 0 }},
+    expected: {{ provider: "sam3-local", discovery: "sam3_concept", prompts: 0 }},
   }},
   {{
     goal: "find_objects_from_text_hosted_sam3",
@@ -101,7 +101,7 @@ const cases = [
       hostedSam3AllowHosted: true,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "sam2-local", discovery: "sam3_concept", prompts: 0 }},
+    expected: {{ provider: "sam3-hosted", discovery: "sam3_concept", prompts: 0 }},
   }},
   {{
     goal: "find_known_classes",
@@ -290,10 +290,9 @@ def test_phase8_frontend_config_builds_class_detector_preset(frontend_contract: 
 def test_phase8_frontend_config_builds_trace_all_objects_preset(frontend_contract: dict[str, Any]):
     trace_all = next(item["config"] for item in frontend_contract["configs"] if item["goal"] == "trace_all_objects")
 
-    assert trace_all["provider"]["name"] == "sam2-local"
-    assert trace_all["discovery"]["mode"] == "auto_object_proposals"
+    assert trace_all["provider"]["name"] == "sam3-local"
+    assert trace_all["discovery"]["mode"] == "sam3_auto_masks"
     assert trace_all["discovery"]["config"]["qualityPreset"] == "balanced"
-    assert trace_all["discovery"]["config"]["trackSelectedOnly"] is True
     assert trace_all["discovery"]["config"]["requireReview"] is True
 
 

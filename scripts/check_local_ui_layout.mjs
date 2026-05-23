@@ -39,10 +39,16 @@ const CAPTURE_STATES = [
   "provider-settings",
   "model-setup",
   "model-setup-local",
+  "model-setup-sam3-local",
+  "model-setup-sam3-roboflow",
+  "model-setup-sam3-custom",
   "model-setup-hosted-warning",
   "model-setup-missing",
   "model-setup-invalid",
   "model-setup-success",
+  "prepare-sam3-single",
+  "prepare-sam3-text",
+  "prepare-sam3-trace-all",
   "model-plan-preview",
   "model-plan-warning",
   "model-plan-confirmation",
@@ -510,6 +516,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "workflow-video": "source_video",
       "workflow-provider": "provider_settings",
       "workflow-prompts": "prompt_preview",
+      "prepare-sam3-single": "prompt_preview",
+      "prepare-sam3-text": "prompt_preview",
+      "prepare-sam3-trace-all": "prompt_preview",
       "workflow-run": "validate_run",
       "workflow-review": "review_candidates",
       "workflow-review-failure": "review_candidates",
@@ -582,6 +591,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           workflowFocusedElement: String(document.activeElement?.tagName || "") + "#" + String(document.activeElement?.id || "") + "." + String(document.activeElement?.className || "") + ":" + String(document.activeElement?.textContent || "").trim().slice(0, 30),
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
+          activeModelChoice: document.querySelector("#modelSetupChoices .model-choice-card.is-active strong")?.textContent?.trim() || "",
+          maskProviderFieldVisible: visible(document.querySelector("#maskProviderField")),
+          deviceFieldVisible: visible(document.querySelector("#deviceField")),
+          textPromptVisible: visible(document.querySelector("#textPromptField")),
+          viewerToolbarVisible: visible(document.querySelector(".viewer-toolbar")),
+          pointToolVisible: visible(document.querySelector("[data-tool='point']")),
+          boxToolVisible: visible(document.querySelector("[data-tool='box']")),
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
@@ -663,6 +679,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-provider" && !stateValue.providerWarningVisible) {
       failures.push(`${viewport.name}/${state}: provider warning area should be visible in provider step`);
     }
+    if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 local") {
+      failures.push(`${viewport.name}/${state}: SAM3 local should be the active guided model choice`);
+    }
+    if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Roboflow SAM3") {
+      failures.push(`${viewport.name}/${state}: Roboflow SAM3 should be the active guided model choice`);
+    }
+    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom hosted SAM3") {
+      failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
+    }
     if (state === "workflow-run" && !stateValue.runPlanAlertVisible) {
       failures.push(`${viewport.name}/${state}: run-step provider/config alert should be visible`);
     }
@@ -677,6 +702,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "workflow-prompts" && stateValue.wizardPanelTitle !== "Add prompt details") {
       failures.push(`${viewport.name}/${state}: prompt step title should focus on prompt details`);
+    }
+    if (state === "prepare-sam3-single" && (stateValue.pointToolVisible || !stateValue.boxToolVisible || !stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
+      failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should show box-only prompting and hide mask-provider internals`);
+    }
+    if (state === "prepare-sam3-text" && (!stateValue.textPromptVisible || stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
+      failures.push(`${viewport.name}/${state}: SAM3 text prepare should keep only the text prompt visible in the guided path`);
+    }
+    if (state === "prepare-sam3-trace-all" && (stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
+      failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should hide prompt tools and mask-provider internals`);
     }
     if (state === "workflow-run" && (stateValue.rawConfigOpen || stateValue.configSaveLoadOpen || stateValue.startMockText !== "Start mock job")) {
       failures.push(`${viewport.name}/${state}: run step should keep raw config/save actions collapsed and promote the safe mock job`);
@@ -755,6 +789,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+      }
+      if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {

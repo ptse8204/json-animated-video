@@ -369,11 +369,11 @@
             <div id="providerWarning" class="warning-box" role="status"></div>
 
             <div class="wizard-fields">
-              <label data-workflow-fragment="prompt_preview">
+              <label id="objectLabelField" data-workflow-fragment="prompt_preview">
                 <span>Object label</span>
                 <input id="objectLabel" type="text" value="selected_object" />
               </label>
-              <label data-workflow-fragment="prompt_preview">
+              <label id="objectIdField" data-workflow-fragment="prompt_preview">
                 <span>Object ID</span>
                 <input id="objectId" type="text" value="object_0" />
               </label>
@@ -416,11 +416,11 @@
                 <span>Mask directory</span>
                 <input id="externalMaskDir" type="text" value="masks/object_0" />
               </label>
-              <label data-workflow-fragment="provider_settings">
+              <label id="maskProviderField" data-workflow-fragment="provider_settings">
                 <span>Mask provider</span>
                 <select id="maskProviderSelect"></select>
               </label>
-              <label data-workflow-fragment="provider_settings">
+              <label id="deviceField" data-workflow-fragment="provider_settings">
                 <span>Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>

@@ -1397,10 +1397,11 @@ class LocalUIApp:
             for provider in self._capability_report().get("providers", [])
             if isinstance(provider, dict)
         }
+        provider_kind = "discovery_provider" if config.provider.name in {"sam3-local", "sam3-hosted"} else "mask_provider"
         self._append_provider_warning(
             warnings,
             providers,
-            kind="mask_provider",
+            kind=provider_kind,
             name=config.provider.name,
             field="provider.name",
         )
@@ -1422,7 +1423,7 @@ class LocalUIApp:
                     "field": "provider.name",
                     "provider": config.provider.name,
                     "severity": "error",
-                    "action": "Choose a deterministic local provider such as mock, threshold, or external masks for the local UI worker.",
+                    "action": "Choose a compatible SAM2 or SAM3 engine, or use mock, motion, threshold, or external masks for the local UI worker.",
                     "message": str(exc),
                 }
             )

@@ -293,6 +293,11 @@ h2 {
   grid-area: config;
 }
 
+.app-shell.is-prepare-form-first .workspace-grid {
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-areas: "wizard viewer";
+}
+
 .panel,
 .compact-panel {
   border: 1px solid var(--border);
@@ -686,6 +691,7 @@ input[type="range"] {
   border: 1px solid var(--border);
   border-radius: 7px;
   background: var(--surface-muted);
+  overflow-wrap: anywhere;
 }
 
 .artifact-row {
@@ -2046,8 +2052,21 @@ h3 {
     "config";
 }
 
+.app-shell.is-prepare-form-first:not(.is-workflow-dashboard) .workspace-grid {
+  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-areas: "wizard viewer";
+}
+
 .app-shell:not(.is-workflow-dashboard) .workspace-grid > [data-workflow-panel]:not([hidden]) {
   grid-area: auto;
+}
+
+.app-shell.is-prepare-form-first:not(.is-workflow-dashboard) .wizard-panel {
+  grid-area: wizard;
+}
+
+.app-shell.is-prepare-form-first:not(.is-workflow-dashboard) .viewer-panel {
+  grid-area: viewer;
 }
 
 .workspace-grid {
@@ -4179,6 +4198,13 @@ body {
   .topbar-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .app-shell.is-prepare-form-first:not(.is-workflow-dashboard) .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "wizard"
+      "viewer";
   }
 
   .app-shell.is-result-mode .viewer-panel,

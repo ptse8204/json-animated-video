@@ -5,6 +5,7 @@ from motionjson.config import (
     ConfigValidationError,
     ExtractionRunConfig,
     ProjectConfig,
+    RUN_CONFIG_SCHEMA,
     build_extraction_run_config_from_args,
     load_project_config,
     load_run_config,
@@ -407,6 +408,48 @@ def test_project_config_round_trips_embedded_run_configs(tmp_path):
 
     assert reloaded == project
     assert reloaded.runs[0].provider.name == "threshold"
+
+
+def test_sam3_provider_config_round_trips_exemplar_runs():
+    payload = {
+        "schema": RUN_CONFIG_SCHEMA,
+        "input": {"path": "in.mp4"},
+        "output": {"directory": "out"},
+        "provider": {
+            "name": "sam3-local",
+            "sam3": {
+                "model_path": "/models/sam3.pt",
+                "device": "cuda",
+                "prompt_frame": 7,
+                "hosted_config": {},
+                "hosted_allow_network": False,
+            },
+        },
+        "discovery": {
+            "mode": "sam3_exemplar",
+            "config": {
+                "providerPreference": "sam3-local",
+                "box": {"x": 10, "y": 20, "w": 80, "h": 60},
+            },
+        },
+        "prompts": [
+            {
+                "kind": "box",
+                "frame_index": 7,
+                "object_id": "object_0",
+                "label": "Object",
+                "data": {"x": 10, "y": 20, "w": 80, "h": 60},
+            }
+        ],
+    }
+
+    config = ExtractionRunConfig.from_dict(payload)
+    reloaded = ExtractionRunConfig.from_dict(config.to_dict())
+
+    assert config.provider.name == "sam3-local"
+    assert config.provider.sam3.model_path == "/models/sam3.pt"
+    assert config.discovery.mode == "sam3_exemplar"
+    assert reloaded == config
 
 
 def test_run_extract_builds_config_before_existing_pipeline_call(tmp_path, monkeypatch):

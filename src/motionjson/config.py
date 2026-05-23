@@ -13,7 +13,7 @@ PROJECT_CONFIG_SCHEMA = "motionjson.project_config.v0.1"
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
-MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"}
+MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted"}
 FALLBACK_MASK_PROVIDERS = {"threshold", "motion"}
 PROMPT_KINDS = {"point", "positive_point", "negative_point", "box", "mask"}
 DISCOVERY_MODES = {
@@ -521,6 +521,51 @@ class SAM2ProviderConfig:
 
 
 @dataclass(frozen=True)
+class SAM3ProviderConfig:
+    model_path: str | None = None
+    device: str | None = None
+    prompt_frame: int = 0
+    endpoint: str | None = None
+    auth_env: str = "SAM3_HOSTED_API_KEY"
+    endpoint_env: str = "SAM3_HOSTED_URL"
+    hosted_config: dict[str, Any] = field(default_factory=dict)
+    hosted_allow_network: bool = False
+
+    def __post_init__(self) -> None:
+        frame = _int_value(self.prompt_frame, "provider.sam3.prompt_frame")
+        if frame < 0:
+            raise ConfigValidationError("provider.sam3.prompt_frame: expected >= 0")
+        if not isinstance(self.hosted_config, Mapping):
+            raise ConfigValidationError("provider.sam3.hosted_config: expected object")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model_path": self.model_path,
+            "device": self.device,
+            "prompt_frame": self.prompt_frame,
+            "endpoint": self.endpoint,
+            "auth_env": self.auth_env,
+            "endpoint_env": self.endpoint_env,
+            "hosted_config": dict(self.hosted_config),
+            "hosted_allow_network": self.hosted_allow_network,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any] | None) -> "SAM3ProviderConfig":
+        payload = _mapping(data or {}, "provider.sam3")
+        return cls(
+            model_path=_optional_str(payload.get("model_path")),
+            device=_optional_str(payload.get("device")),
+            prompt_frame=_int_value(payload.get("prompt_frame", 0), "provider.sam3.prompt_frame"),
+            endpoint=_optional_str(payload.get("endpoint")),
+            auth_env=_str_value(payload.get("auth_env", "SAM3_HOSTED_API_KEY"), "provider.sam3.auth_env"),
+            endpoint_env=_str_value(payload.get("endpoint_env", "SAM3_HOSTED_URL"), "provider.sam3.endpoint_env"),
+            hosted_config=dict(_mapping(payload.get("hosted_config", {}), "provider.sam3.hosted_config")),
+            hosted_allow_network=_bool_value(payload.get("hosted_allow_network", False)),
+        )
+
+
+@dataclass(frozen=True)
 class MaskCacheConfig:
     enabled: bool = True
     directory: str = ".motionjson-cache/masks"
@@ -546,6 +591,7 @@ class ProviderConfig:
     threshold: ThresholdProviderConfig = field(default_factory=ThresholdProviderConfig)
     external: ExternalMaskProviderConfig = field(default_factory=ExternalMaskProviderConfig)
     sam2: SAM2ProviderConfig = field(default_factory=SAM2ProviderConfig)
+    sam3: SAM3ProviderConfig = field(default_factory=SAM3ProviderConfig)
     cache: MaskCacheConfig = field(default_factory=MaskCacheConfig)
     fallback_mask_provider: str | None = None
 
@@ -559,6 +605,7 @@ class ProviderConfig:
             "threshold": self.threshold.to_dict(),
             "external": self.external.to_dict(),
             "sam2": self.sam2.to_dict(),
+            "sam3": self.sam3.to_dict(),
             "cache": self.cache.to_dict(),
             "fallback_mask_provider": self.fallback_mask_provider,
         }
@@ -571,6 +618,7 @@ class ProviderConfig:
             threshold=ThresholdProviderConfig.from_dict(payload.get("threshold")),
             external=ExternalMaskProviderConfig.from_dict(payload.get("external")),
             sam2=SAM2ProviderConfig.from_dict(payload.get("sam2")),
+            sam3=SAM3ProviderConfig.from_dict(payload.get("sam3")),
             cache=MaskCacheConfig.from_dict(payload.get("cache")),
             fallback_mask_provider=_optional_str(payload.get("fallback_mask_provider")),
         )
@@ -922,6 +970,13 @@ class ExtractionRunConfig:
             prompt.kind in {"point", "positive_point", "box"} for prompt in self.prompts
         ):
             raise ConfigValidationError(f"prompts: {self.provider.name} requires a point or box prompt")
+        sam3_exemplar_prompt_required = self.provider.name in {"sam3-local", "sam3-hosted"} and self.discovery.mode == "sam3_exemplar"
+        has_sam3_prompt_box = isinstance(self.discovery.config.get("box"), Mapping)
+        has_sam3_exemplars = bool(self.discovery.config.get("exemplars") or self.discovery.config.get("exemplarRefs") or self.discovery.config.get("exemplar_refs"))
+        if sam3_exemplar_prompt_required and not (
+            any(prompt.kind == "box" for prompt in self.prompts) or has_sam3_prompt_box or has_sam3_exemplars
+        ):
+            raise ConfigValidationError(f"prompts: {self.provider.name} exemplar runs require a box prompt or exemplar reference")
 
     @property
     def object_id(self) -> str:
@@ -1086,6 +1141,16 @@ def build_extraction_run_config_from_args(args: Any) -> ExtractionRunConfig:
             endpoint_env=str(getattr(args, "sam2_endpoint_env", "HOSTED_SEGMENTATION_URL")),
             hosted_config=dict(getattr(args, "sam2_hosted_config", {}) or {}),
             hosted_allow_network=bool(getattr(args, "sam2_hosted_allow_network", False)),
+        ),
+        sam3=SAM3ProviderConfig(
+            model_path=_optional_str(getattr(args, "sam3_model_path", None)),
+            device=_optional_str(getattr(args, "sam3_device", None)),
+            prompt_frame=prompt_frame,
+            endpoint=_optional_str(getattr(args, "sam3_endpoint", None)),
+            auth_env=str(getattr(args, "sam3_auth_env", "SAM3_HOSTED_API_KEY")),
+            endpoint_env=str(getattr(args, "sam3_endpoint_env", "SAM3_HOSTED_URL")),
+            hosted_config=dict(getattr(args, "sam3_hosted_config", {}) or {}),
+            hosted_allow_network=bool(getattr(args, "sam3_hosted_allow_network", False)),
         ),
         cache=MaskCacheConfig(
             enabled=not bool(getattr(args, "no_mask_cache", False)),

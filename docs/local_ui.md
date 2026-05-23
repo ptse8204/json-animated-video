@@ -216,11 +216,13 @@ provider setup, optional model extras, and FFmpeg status from
 setup clearly marked as diagnostics instead of claiming unavailable providers
 are ready.
 
-The local UI worker starts `sam2-local`, `sam2-hosted`, `threshold`, `motion`,
-and `external` extraction jobs. SAM3 concept discovery is selected through the
-discovery config and routes through the same review/filter/link/export path.
-`motion_foreground` is CPU/no-model and runs from the `Find moving objects`
-preset.
+The local UI worker starts `sam2-local`, `sam2-hosted`, `sam3-local`,
+`sam3-hosted`, `threshold`, `motion`, and `external` extraction jobs.
+Discovery-owned SAM3 runs still route through the same review/filter/link/export
+path, but the saved run config now records the selected SAM3 engine directly in
+`provider.name` plus `provider.sam3` instead of hiding it behind a threshold
+placeholder. `motion_foreground` is CPU/no-model and runs from the
+`Find moving objects` preset.
 
 ## Routes
 
@@ -568,21 +570,24 @@ Video registration copies the selected local file into the configured local
 storage root and records rights source metadata for the upload. Missing paths
 return a visible API error.
 
-Text prompts do not route directly to raw SAM2. The normal text/concept path is
-`sam3_concept` with `providerPreference: "sam3-local"` or `"sam3-hosted"`.
-Roboflow SAM3 is the recommended hosted concept provider, and Fal SAM3 image is
-available for sampled-frame fallback. Real detector packages and weights remain
-optional and capability-gated for `text_detector`; missing detector diagnostics
-are still shown before a run. Known-class presets map to `class_detector` and
-remain capability-gated until a concrete detector backend is configured.
-Automatic segment proposals map to `sam_auto_masks` or
-`auto_object_proposals`; normal configs prefer local SAM2 automatic masks and
-show checkpoint/config diagnostics when SAM2 is missing. Moving-object discovery
-maps to the
-CPU/no-model `motion_foreground` workflow: frame differences become candidate
-masks, candidate scores become track confidence, and low-quality/background
-fragments remain visible through fallback diagnostics. External mask imports
-use `external_masks` plus the `external` mask provider.
+The guided UI no longer asks for a separate mask-provider choice in normal SAM
+flows. Instead it derives the execution engine from the selected workflow and
+the compatible model connection:
+
+- `Trace one object`: prefers SAM2 local/hosted, but can route through
+  `sam3_exemplar` with `provider.name = sam3-local` or `sam3-hosted`. Guided
+  SAM3 single-object tracing is box-first.
+- `Find by description`: defaults to `sam3_concept` with `provider.name =
+  sam3-local` or `sam3-hosted`. Roboflow SAM3 is the recommended hosted concept
+  provider, and Fal SAM3 image remains a sampled-frame fallback for text-led
+  segmentation.
+- `Trace all objects`: defaults to `sam3_auto_masks` with SAM3 local/hosted and
+  falls back to `auto_object_proposals` on local SAM2 when needed.
+- `Find moving things`: uses the CPU/no-model `motion_foreground` workflow.
+- `Import masks`: uses `external_masks` plus the `external` provider.
+
+Real detector packages and weights remain optional and capability-gated for
+legacy `text_detector` or `class_detector` compatibility flows under Advanced.
 
 Model-generated plans are review artifacts, not trusted extraction truth. The
 browser never receives raw hosted API keys, and hosted planners still require
