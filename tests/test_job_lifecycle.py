@@ -77,6 +77,113 @@ def test_job_lifecycle_uses_event_progress_when_known():
     assert lifecycle["provider"]["engine"] == "sam3"
 
 
+def test_job_lifecycle_provider_matrix_keeps_ids_labels_and_locality():
+    cases = [
+        (
+            "sam2 hosted",
+            {
+                "payload": {
+                    "run_config": {
+                        "provider": {
+                            "name": "sam2-hosted",
+                            "sam2": {"hosted_config": {"profile": "replicate-sam2-video"}, "hosted_allow_network": True},
+                        }
+                    }
+                }
+            },
+            {
+                "id": "sam2-hosted",
+                "connectionId": "sam2-hosted:replicate-sam2-video",
+                "label": "Replicate SAM2 video",
+                "engine": "sam2",
+                "locality": "hosted",
+                "hostedCallsAllowed": True,
+            },
+        ),
+        (
+            "sam3 hosted",
+            {
+                "payload": {
+                    "run_config": {
+                        "provider": {
+                            "name": "sam3-hosted",
+                            "sam3": {"hosted_config": {"profile": "fal-sam3-image"}, "hostedAllowNetwork": True},
+                        },
+                        "discovery": {"mode": "sam3_exemplar"},
+                    }
+                }
+            },
+            {
+                "id": "sam3-hosted",
+                "connectionId": "sam3-hosted:fal-sam3-image",
+                "label": "Fal SAM3 image",
+                "engine": "sam3",
+                "locality": "hosted",
+                "hostedCallsAllowed": True,
+            },
+        ),
+        (
+            "motion foreground",
+            {"payload": {"mask_provider": "motion_foreground"}},
+            {
+                "id": "motion_foreground",
+                "connectionId": "motion_foreground",
+                "label": "Motion foreground",
+                "engine": "motion",
+                "locality": "no_model",
+                "hostedCallsAllowed": False,
+            },
+        ),
+        (
+            "imported masks",
+            {"payload": {"run_config": {"provider": {"name": "external_masks"}, "discovery": {"mode": "external_masks"}}}},
+            {
+                "id": "external_masks",
+                "connectionId": "external_masks",
+                "label": "Imported masks",
+                "engine": "external_masks",
+                "locality": "no_model",
+                "hostedCallsAllowed": False,
+            },
+        ),
+    ]
+
+    for name, partial_job, expected in cases:
+        job = {
+            "id": f"job_{name.replace(' ', '_')}",
+            "project_id": "project_1",
+            "type": "extract",
+            "status": "pending",
+            "result": {},
+            **partial_job,
+        }
+
+        lifecycle = job_lifecycle_summary(job)
+
+        assert lifecycle["provider"] == expected
+
+
+def test_job_lifecycle_canceled_job_has_no_cancel_or_retry_actions():
+    job = {
+        "id": "job_canceled",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "canceled",
+        "payload": {"mask_provider": "mock"},
+        "result": {},
+    }
+    events = [{"event_type": "canceled", "message": "User canceled the extraction."}]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["status"] == "canceled"
+    assert lifecycle["phase"] == "complete"
+    assert lifecycle["failure"]["reasonCode"] == "user_canceled"
+    assert lifecycle["actions"]["canCancel"] is False
+    assert lifecycle["actions"]["canRetry"] is False
+    assert lifecycle["nextAction"]["label"] == "Open logs"
+
+
 def test_job_lifecycle_summarizes_failure_and_recovery_action():
     job = {
         "id": "job_failed",

@@ -8573,7 +8573,7 @@ const MotionJSONUI = (() => {
         setWorkflowStep("provider_settings", { persist: false });
       } else if (capture.startsWith("model-plan")) {
         setWorkflowStep("prompt_preview", { persist: false });
-      } else if (capture === "workflow-review" || capture === "workflow-review-failure") {
+      } else if (["workflow-review", "workflow-review-failure", "workflow-correct", "workflow-export"].includes(capture)) {
         setWorkflowStep("review_export", { persist: false });
       } else if (capture === "workflow-run") {
         setWorkflowStep("prompt_preview", { persist: false });
@@ -8997,7 +8997,7 @@ const MotionJSONUI = (() => {
         }
         if (configPanel) configPanel.style.order = "-1";
         if (rawConfigDisclosure) rawConfigDisclosure.open = true;
-      } else if (capture === "workflow-review" || capture === "workflow-review-failure") {
+      } else if (["workflow-review", "workflow-review-failure", "workflow-correct", "workflow-export"].includes(capture)) {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         setWorkflowStep("review_export", { persist: false });

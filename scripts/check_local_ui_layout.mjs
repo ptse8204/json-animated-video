@@ -614,8 +614,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           viewerToolbarVisible: visible(document.querySelector(".viewer-toolbar")),
           pointToolVisible: visible(document.querySelector("[data-tool='point']")),
           boxToolVisible: visible(document.querySelector("[data-tool='box']")),
+          visibleGoalCardCount: [...document.querySelectorAll(".goal-card-grid > .goal-card")].filter(visible).length,
+          advancedTaskPanelOpen: document.querySelector(".advanced-task-panel")?.open === true,
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
           workflowPrimaryLabel: document.querySelector("#workflowPrimaryButton")?.textContent?.trim() || "",
+          workflowPrimaryVisible: visible(document.querySelector("#workflowPrimaryButton")),
+          visibleWorkflowPrimaryCount: [...document.querySelectorAll("#workflowPrimaryButton")].filter(visible).length,
           workflowPrimaryDisabled: document.querySelector("#workflowPrimaryButton")?.disabled === true,
           workflowBackDisabled: document.querySelector("#workflowBackButton")?.disabled === true,
           workflowFooterReasonVisible: visible(document.querySelector("#workflowFooterReason")),
@@ -641,6 +645,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           fallbackDiagnosticBadCount: document.querySelectorAll("#fallbackDiagnostics .diagnostic-row.is-bad").length,
           fallbackDiagnosticsVisible: visible(document.querySelector("#fallbackDiagnostics")),
           exportArtifactsOpen: document.querySelector("#exportArtifactsDisclosure")?.open === true,
+          mainJobCenterVisible: visible(document.querySelector("#mainJobCenter")),
+          mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
+          mainSelectedJobFactsText: document.querySelector("#mainSelectedJobFacts")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -701,6 +709,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Add video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
       failures.push(`${viewport.name}/${state}: empty setup should start with Add video, no back action, and preview not ready`);
     }
+    if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 5 || stateValue.advancedTaskPanelOpen)) {
+      failures.push(`${viewport.name}/${state}: first goal screen should show five primary goal cards and keep advanced tasks collapsed`);
+    }
     if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 local") {
       failures.push(`${viewport.name}/${state}: SAM3 local should be the active guided model choice`);
     }
@@ -754,6 +765,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-review-failure" && (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5)) {
       failures.push(`${viewport.name}/${state}: failed post-run guide should be visible with five guided stages`);
     }
+    if (["workflow-review", "workflow-review-failure"].includes(state)) {
+      const expectedJobId = `job_${state}_layout`;
+      if (!stateValue.mainJobCenterVisible || !stateValue.mainSelectedJobFactsText.includes(expectedJobId) || !stateValue.mainJobListText.includes(expectedJobId)) {
+        failures.push(`${viewport.name}/${state}: review step should expose the selected current job in the main job center`);
+      }
+    }
+    if (state === "workflow-review" && stateValue.mainRunStatusText !== "succeeded") {
+      failures.push(`${viewport.name}/${state}: completed review fixture should show succeeded in the main job center`);
+    }
+    if (
+      state === "workflow-review-failure" &&
+      (stateValue.mainRunStatusText !== "failed" || !/SAM2 model weights unavailable|vector tracks were not produced/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText}`))
+    ) {
+      failures.push(`${viewport.name}/${state}: failed review job center should show failed status and provider failure messaging`);
+    }
     if (state === "workflow-review" && stateValue.runLogsOpen) {
       failures.push(`${viewport.name}/${state}: review step should keep logs collapsed unless the run failed`);
     }
@@ -763,11 +789,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-correct" && (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1)) {
       failures.push(`${viewport.name}/${state}: correction step should keep reviewed objects visible`);
     }
-    if (state === "workflow-export" && (!stateValue.studioBottomCtaVisible || stateValue.exportArtifactsOpen)) {
-      failures.push(`${viewport.name}/${state}: export step should keep package CTA visible while keeping artifact browser collapsed`);
+    if (state === "workflow-export" && stateValue.exportArtifactsOpen) {
+      failures.push(`${viewport.name}/${state}: export step should keep generated artifact browser collapsed until requested`);
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
+      if (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel) {
+        failures.push(`${viewport.name}/${state}: guided workflow should expose exactly one visible footer primary action`);
+      }
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
         failures.push(`${viewport.name}/${state}: active workflow step ${stateValue.workflowActiveStep || "none"} did not match ${expectedWorkflowStep}`);
       }

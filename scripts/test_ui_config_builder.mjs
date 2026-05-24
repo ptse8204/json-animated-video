@@ -366,8 +366,140 @@ assert.equal(runPlanUsesProviderIdForLogic.providerId, "sam3-hosted");
 assert.equal(runPlanUsesProviderIdForLogic.providerLocality, "hosted");
 assert.equal(runPlanUsesProviderIdForLogic.privacy, "Hosted calls allowed after confirmation");
 
-assert.ok(ui.compatibleModelConnectionsForPreset("trace_one_object").some((connection) => connection.id === "sam2-local"));
-assert.ok(ui.compatibleModelConnectionsForPreset("text_detector").some((connection) => connection.id === "sam3-local"));
+const PROVIDER_STATE_FIXTURES = [
+  {
+    name: "SAM2 local prompt tracking",
+    input: { preset: "trace_one_object", modelConnectionId: "sam2-local" },
+    expected: {
+      connectionId: "sam2-local",
+      providerId: "sam2-local",
+      profileId: "",
+      displayLabel: "SAM2 local",
+      engine: "sam2",
+      locality: "local",
+      hostedCallsAllowed: false,
+      discoveryMode: "manual_prompt",
+    },
+  },
+  {
+    name: "Replicate SAM2 hosted prompt tracking",
+    input: { preset: "trace_one_object", modelConnectionId: "sam2-hosted:replicate-sam2-video", hostedSam2AllowHosted: true },
+    expected: {
+      connectionId: "sam2-hosted:replicate-sam2-video",
+      providerId: "sam2-hosted",
+      profileId: "replicate-sam2-video",
+      displayLabel: "Replicate SAM2 video",
+      engine: "sam2",
+      locality: "hosted",
+      hostedCallsAllowed: true,
+      discoveryMode: "manual_prompt",
+    },
+  },
+  {
+    name: "SAM3 local exemplar tracking",
+    input: { preset: "trace_one_object", modelConnectionId: "sam3-local" },
+    expected: {
+      connectionId: "sam3-local",
+      providerId: "sam3-local",
+      profileId: "",
+      displayLabel: "SAM3 local",
+      engine: "sam3",
+      locality: "local",
+      hostedCallsAllowed: false,
+      discoveryMode: "sam3_exemplar",
+    },
+  },
+  {
+    name: "Roboflow SAM3 hosted concept search",
+    input: { preset: "text_detector", modelConnectionId: "sam3-hosted:roboflow-sam3-pcs", hostedSam3AllowHosted: false },
+    expected: {
+      connectionId: "sam3-hosted:roboflow-sam3-pcs",
+      providerId: "sam3-hosted",
+      profileId: "roboflow-sam3-pcs",
+      displayLabel: "Roboflow SAM3",
+      engine: "sam3",
+      locality: "hosted",
+      hostedCallsAllowed: false,
+      discoveryMode: "sam3_concept",
+    },
+  },
+  {
+    name: "Fal SAM3 hosted exemplar tracking",
+    input: { preset: "trace_one_object", modelConnectionId: "sam3-hosted:fal-sam3-image", hostedSam3AllowHosted: true },
+    expected: {
+      connectionId: "sam3-hosted:fal-sam3-image",
+      providerId: "sam3-hosted",
+      profileId: "fal-sam3-image",
+      displayLabel: "Fal SAM3 image",
+      engine: "sam3",
+      locality: "hosted",
+      hostedCallsAllowed: true,
+      discoveryMode: "sam3_exemplar",
+    },
+  },
+  {
+    name: "Motion foreground no-model path",
+    input: { preset: "motion_foreground", maskProvider: "motion_foreground" },
+    expected: {
+      connectionId: "",
+      planConnectionId: "motion_foreground",
+      providerId: "motion_foreground",
+      profileId: "",
+      displayLabel: "Motion foreground",
+      engine: "motion",
+      locality: "no_model",
+      hostedCallsAllowed: false,
+      discoveryMode: "motion_foreground",
+    },
+  },
+  {
+    name: "Imported masks no-model path",
+    input: { preset: "external_masks", maskProvider: "external_masks" },
+    expected: {
+      connectionId: "",
+      planConnectionId: "external_masks",
+      providerId: "external_masks",
+      profileId: "",
+      displayLabel: "Imported masks",
+      engine: "external_masks",
+      locality: "no_model",
+      hostedCallsAllowed: false,
+      discoveryMode: "external_masks",
+    },
+  },
+];
+
+for (const fixture of PROVIDER_STATE_FIXTURES) {
+  const contract = ui.providerContractForInput(fixture.input);
+  const plan = ui.guidedEnginePlan(fixture.input);
+  assert.equal(contract.connectionId, fixture.expected.connectionId, `${fixture.name}: contract connection id`);
+  assert.equal(contract.providerId, fixture.expected.providerId, `${fixture.name}: contract provider id`);
+  assert.equal(contract.profileId, fixture.expected.profileId, `${fixture.name}: contract profile id`);
+  assert.equal(contract.displayLabel, fixture.expected.displayLabel, `${fixture.name}: contract label`);
+  assert.equal(contract.engine, fixture.expected.engine, `${fixture.name}: contract engine`);
+  assert.equal(contract.locality, fixture.expected.locality, `${fixture.name}: contract locality`);
+  assert.equal(contract.hostedCallsAllowed, fixture.expected.hostedCallsAllowed, `${fixture.name}: hosted opt-in`);
+  assert.equal(plan.providerId, fixture.expected.providerId, `${fixture.name}: plan provider id`);
+  assert.equal(plan.connectionId, fixture.expected.planConnectionId ?? fixture.expected.connectionId, `${fixture.name}: plan connection id`);
+  assert.equal(plan.displayLabel, fixture.expected.displayLabel, `${fixture.name}: plan label`);
+  assert.equal(plan.discoveryMode, fixture.expected.discoveryMode, `${fixture.name}: discovery mode`);
+}
+
+const compatibleConnectionExpectations = {
+  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
+  text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
+  trace_all_objects: ["sam3-local"],
+  motion_foreground: [],
+  external_masks: [],
+};
+
+for (const [preset, expectedIds] of Object.entries(compatibleConnectionExpectations)) {
+  assert.deepEqual(
+    ui.compatibleModelConnectionsForPreset(preset).map((connection) => connection.id),
+    expectedIds,
+    `${preset}: compatible guided model connections`,
+  );
+}
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
@@ -1029,6 +1161,13 @@ assert.deepEqual(handoffCards.map((card) => card.id), [
   "remotion-plan",
   "developer-handoff",
 ]);
+for (const card of handoffCards) {
+  assert.ok(card.title, `${card.id}: handoff card should have a title`);
+  assert.ok(card.status, `${card.id}: handoff card should have a short status`);
+  assert.ok(card.actionLabel, `${card.id}: handoff card should expose one direct action label`);
+  assert.ok(String(card.description || "").split(/\s+/).filter(Boolean).length <= 18, `${card.id}: handoff description should stay compact`);
+  assert.doesNotMatch(String(card.description || ""), /\n/, `${card.id}: handoff description should not become paragraph copy`);
+}
 assert.equal(handoffCards.find((card) => card.id === "runtime-snippet").action, "copy");
 assert.equal(handoffCards.find((card) => card.id === "runtime-snippet").actionLabel, "Copied");
 assert.equal(handoffCards.find((card) => card.id === "remotion-plan").action, "open");
@@ -1133,6 +1272,78 @@ const lifecycleCanceled = ui.normalizeJobLifecycle({ id: "job_canceled", status:
 assert.equal(lifecycleCanceled.status, "canceled");
 assert.equal(lifecycleCanceled.actions.canCancel, false);
 
+const LIFECYCLE_STATE_FIXTURES = [
+  {
+    name: "queued job",
+    job: { id: "job_fixture_queued", type: "extract", status: "queued" },
+    expected: { status: "queued", phase: "queued", progressKnown: false, progressPercent: 0, canCancel: true, canExport: false, primaryAction: "watch_job", primaryLabel: "Watch job" },
+  },
+  {
+    name: "running job with event progress",
+    job: {
+      id: "job_fixture_running",
+      type: "extract",
+      status: "running",
+      events: [{ metadata: { stage: "tracking", progress: { overallRatio: 0.42 } }, message: "tracking object" }],
+    },
+    expected: { status: "running", phase: "tracking", progressKnown: true, progressPercent: 42, canCancel: true, canExport: false, primaryAction: "watch_job", primaryLabel: "Watch job" },
+  },
+  {
+    name: "candidate review gate",
+    job: {
+      id: "job_fixture_candidates",
+      type: "extract",
+      status: "succeeded",
+      lifecycle: {
+        status: "waiting_review",
+        phase: "review_ready",
+        review: { candidateCount: 2, selectedCandidateCount: 1, trackCount: 0, exportableTrackCount: 0 },
+        actions: { canCancel: false, canTrackSelected: true, canExport: false },
+      },
+    },
+    expected: { status: "waiting_review", phase: "review_ready", progressKnown: false, progressPercent: 100, canCancel: false, canExport: false, primaryAction: "track_selected", primaryLabel: "Track selected" },
+  },
+  {
+    name: "failed job",
+    job: { id: "job_fixture_failed", type: "extract", status: "failed", error: "SAM2 model weights unavailable." },
+    expected: { status: "failed", phase: "failed", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "open_logs", primaryLabel: "Open logs", reasonCode: "job_failed" },
+  },
+  {
+    name: "canceled job",
+    job: { id: "job_fixture_canceled", type: "extract", status: "canceled" },
+    expected: { status: "canceled", phase: "canceled", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "open_logs", primaryLabel: "Open logs", reasonCode: "user_canceled" },
+  },
+  {
+    name: "export-ready reviewed job",
+    job: {
+      id: "job_fixture_export",
+      type: "extract",
+      status: "succeeded",
+      lifecycle: {
+        status: "succeeded",
+        phase: "complete",
+        review: { candidateCount: 0, selectedCandidateCount: 0, trackCount: 2, exportableTrackCount: 1 },
+        actions: { canCancel: false, canExport: true },
+      },
+    },
+    expected: { status: "succeeded", phase: "complete", progressKnown: false, progressPercent: 100, canCancel: false, canExport: true, primaryAction: "export_reviewed", primaryLabel: "Export reviewed objects" },
+  },
+];
+
+for (const fixture of LIFECYCLE_STATE_FIXTURES) {
+  const lifecycle = ui.normalizeJobLifecycle(fixture.job);
+  const gate = ui.reviewGateFromSnapshot({ job: fixture.job });
+  assert.equal(lifecycle.status, fixture.expected.status, `${fixture.name}: normalized status`);
+  assert.equal(lifecycle.phase, fixture.expected.phase, `${fixture.name}: normalized phase`);
+  assert.equal(lifecycle.progress.known, fixture.expected.progressKnown, `${fixture.name}: progress precision`);
+  assert.equal(lifecycle.progress.percent, fixture.expected.progressPercent, `${fixture.name}: progress percent`);
+  assert.equal(lifecycle.actions.canCancel, fixture.expected.canCancel, `${fixture.name}: can cancel`);
+  assert.equal(Boolean(lifecycle.actions.canExport), fixture.expected.canExport, `${fixture.name}: can export`);
+  assert.equal(gate.primaryAction, fixture.expected.primaryAction, `${fixture.name}: review gate primary action`);
+  assert.equal(gate.primaryLabel, fixture.expected.primaryLabel, `${fixture.name}: review gate primary label`);
+  if (fixture.expected.reasonCode) assert.equal(lifecycle.failure.reasonCode, fixture.expected.reasonCode, `${fixture.name}: failure reason`);
+}
+
 const jobCenter = ui.jobCenterStateFromSnapshot({
   selectedJobId: "",
   jobs: [
@@ -1236,6 +1447,10 @@ console.log(
         "review-ux-guidance",
         "model-setup-flow",
         "model-plan-confirmation",
+        "provider-state-fixtures",
+        "lifecycle-state-fixtures",
+        "job-center-regression-gates",
+        "export-handoff-minimal-copy",
         "python-config-validation",
       ],
     },
