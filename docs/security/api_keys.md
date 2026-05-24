@@ -159,8 +159,17 @@ provider is a pixel segmentation engine or traces objects by itself.
 ## Safe Demo Guidance
 
 - Codespaces and local CPU demos should use mock/no-model mode.
+- The Colab local UI and red-ball notebooks are no-model demos. The
+  provider-connect notebook separates hosted keys from optional heavy local
+  SAM2/SAM3 setup; do not paste private videos, provider keys, hosted
+  credentials, SAM checkpoints, or downloaded notebook outputs containing
+  secrets into shared notebooks.
 - Hugging Face Spaces or public demo deployments should not include provider
   keys in the repository, browser JavaScript, screenshots, or environment
   files visible to users.
 - Colab notebooks should keep provider-key examples empty and prefer CLI
-  no-model demos unless a user explicitly provides their own temporary key.
+  no-model demos unless a user explicitly provides their own temporary key
+  through Colab userdata, `getpass`, or the Local UI settings form.
+- A hosted SAM2/SAM3 key or saved Local UI setting does not make the provider
+  runnable by itself. Hosted smoke tests and hosted runs still require explicit
+  network, hosted, and cost/privacy acknowledgement.

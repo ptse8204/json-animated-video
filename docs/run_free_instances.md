@@ -33,22 +33,23 @@ forwarded and opened from the browser.
 
 Colab is suitable for short interactive demos and inspecting generated files.
 It is not the right place to host a public long-running MotionJSON web service.
+Colab GPUs, memory, runtime length, idle behavior, and VM lifetime are not
+guaranteed. Treat SAM2/SAM3 local setup as an experiment that must pass
+diagnostics in the current runtime, not as a notebook promise.
 
 Use the checked-in notebooks when you want ready Colab surfaces:
 
 - [Colab local UI demo](../notebooks/colab_ui_local_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_local_demo.ipynb):
-  launches
   launches the contributor debug no-model UI in the notebook runtime, displays
   `/ui/` through Colab's port proxy, and provides the generated red-ball video
   path for UI registration.
 - [Colab provider-connect UI demo](../notebooks/colab_ui_provider_connect_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
-  installs hosted SAM vendor dependencies, checks GPU status, includes optional
-  local SAM2/SAM3 setup cells, launches the UI through Colab's port proxy
-  without debug mock mode, and supports Roboflow SAM3, Replicate SAM2 video,
-  Fal SAM3 image, and custom SAM-compatible provider profiles after explicit
-  opt-in.
+  separates hosted-key setup, GPU checks, optional local SAM2 cells, optional
+  local SAM3 cells, and the real Local UI launch. It supports Roboflow SAM3,
+  Replicate SAM2 video, Fal SAM3 image, and custom SAM-compatible provider
+  profiles only after explicit opt-in.
 - [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
   runs
@@ -63,9 +64,11 @@ Use the checked-in notebooks when you want ready Colab surfaces:
   credential-related, and runs a no-model smoke extraction.
 
 The UI notebooks are intended for active, short, notebook-driven demos. Avoid
-secrets in shared notebooks, use Colab userdata or temporary UI credentials for
-hosted keys, and prefer Codespaces or a local machine for sustained UI
-sessions.
+private videos and secrets in shared notebooks, use Colab userdata or
+temporary UI credentials for hosted keys, and prefer Codespaces or a local
+machine for sustained UI sessions. Hosted providers can send frames, prompts,
+or derived image data to third-party services and require cost/privacy
+acknowledgement in MotionJSON before smoke tests or runs.
 
 Notebook cells can still use the manual CLI path:
 
@@ -88,7 +91,9 @@ Notebook cells can still use the manual CLI path:
 
 Use Colab file browsing or zip downloads to inspect `out/demo_red_ball/`.
 Avoid putting provider credentials in notebooks unless you understand Colab's
-sharing and runtime behavior.
+sharing and runtime behavior. A notebook field, saved setting, or environment
+variable only means a provider is configured; MotionJSON still requires
+diagnostics to mark SAM2/SAM3 providers runnable.
 Google's Colab FAQ says resources are not guaranteed or unlimited, and it lists
 file hosting, media serving, unrelated web services, and bypassing the notebook
 UI to interact primarily through a web UI among restricted activities.

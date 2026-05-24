@@ -1,8 +1,20 @@
 # MotionJSON Colab notebooks
 
 These notebooks are designed for short, interactive MotionJSON demos in Google
-Colab. Use the provider-connect notebook when you want real SAM setup from the
-UI; the local UI demo remains a contributor/debug no-model smoke path.
+Colab. Keep the paths separate:
+
+- CPU/no-model demos: red-ball CLI, export preview, provider diagnostics, and
+  local UI debug smoke.
+- Provider-connect UI: hosted keys, explicit hosted opt-in, and real Local UI
+  Model Connections.
+- Heavy local SAM setup: optional SAM2/SAM3 cells inside the provider-connect
+  notebook only.
+
+Colab does not guarantee GPU availability, memory, runtime length, or VM
+lifetime. Do not paste private videos, provider API keys, hosted credentials,
+SAM checkpoints, or notebook outputs containing secrets into shared notebooks.
+Use provider diagnostics to confirm that SAM2/SAM3 is runnable; a saved setting
+or environment variable only means the provider is configured.
 
 | Notebook | Open | Purpose | Safe first path |
 | --- | --- | --- | --- |
@@ -13,6 +25,6 @@ UI; the local UI demo remains a contributor/debug no-model smoke path.
 | `colab_provider_diagnostics.ipynb` | [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_provider_diagnostics.ipynb) | Reports provider readiness and runs a no-model smoke extraction. | Diagnostics plus threshold smoke test. |
 
 Colab is useful for learning and short demos. It is not a production hosting
-surface for a long-running public MotionJSON UI. Do not paste private videos,
-provider API keys, hosted segmentation credentials, SAM checkpoints, or other
-secrets into shared notebooks.
+surface for a long-running public MotionJSON UI. Hosted SAM2/SAM3 providers
+can send frames, prompts, or derived image data to third-party services and
+require explicit cost/privacy acknowledgement before smoke tests or runs.

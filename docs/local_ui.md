@@ -40,13 +40,15 @@ review work has an audit trail before team accounts or paid plans exist.
 
 ## Guided First Run
 
-The default Local UI now opens in a 3-screen product flow:
+The default Local UI opens in one visible guided workflow:
 
-1. `Setup`
-2. `Prepare`
-3. `Review`
+1. `Start`
+2. `Video`
+3. `Model`
+4. `Prepare & run`
+5. `Review & export`
 
-`Setup` starts with a goal-first chooser for nontechnical users. The main
+`Start` begins with a goal-first chooser for nontechnical users. The main
 canvas offers plain-language choices:
 
 - Cut out one object.
@@ -69,7 +71,7 @@ developer users, but it is no longer the default explanation of what will run.
 
 ## Guided Workspace Flow
 
-The Local UI now uses a progressive workflow instead of showing every setup,
+The Local UI uses a progressive workflow instead of showing every setup,
 diagnostic, review, correction, and export card at once. The main product flow
 guides users through:
 
@@ -91,6 +93,13 @@ jobs, normalized status, progress, provider, artifacts, and cancel state.
 Failed runs switch the main screen to Run monitor, open the details rail, and
 surface logs plus fallback diagnostics without requiring an extra discovery
 step.
+
+The review sequence is explicit: `Candidates` -> `Track selected` -> `Tracks`
+-> `Corrections` -> `Export`. If a run has candidates but no tracks, the
+primary action is `Track selected`. If tracks exist but none are marked for
+export, the primary action is `Mark reviewed`. A ready reviewed result uses
+`Export reviewed objects`. Failed or canceled jobs keep the primary action on
+diagnostics/log recovery rather than showing an empty review surface.
 
 Local project creation is no longer a required early decision in guided mode.
 When a user adds a video, starts from the bundled demo, or opens an existing
@@ -251,7 +260,7 @@ Discovery-owned SAM3 runs still route through the same review/filter/link/export
 path, but the saved run config now records the selected SAM3 engine directly in
 `provider.name` plus `provider.sam3` instead of hiding it behind a threshold
 placeholder. `motion_foreground` is CPU/no-model and runs from the
-`Find moving objects` preset.
+`Find moving things` preset.
 
 ## Routes
 
@@ -615,11 +624,11 @@ storage, and exposes the imported scene through the normal job review routes.
 
 1. Open the UI command above.
 2. Choose a goal from the first step. `Cut out one object` is the default safe
-   path; `Find moving objects`, `Import external masks`, and `Review existing
-   result` can run without optional ML models.
+   path; `Find moving things`, `Import masks`, and `Review previous result`
+   can run without optional ML models.
 3. Add or select a source video. Guided mode creates a starter local project
    automatically the first time it needs one. MotionJSON prepares a browser-safe
-   preview automatically before `Prepare` and `Review` open.
+   preview automatically before `Prepare & run` and `Review & export` open.
 4. Choose mode/provider in Model Connections when the goal needs one. The UI
    recommends SAM2 local or
    Replicate for point/box tracing, SAM3 local or Roboflow for text concepts,

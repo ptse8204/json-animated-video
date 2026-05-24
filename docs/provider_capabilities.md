@@ -4,6 +4,11 @@ MotionJSON can run without SAM2, torch, CUDA, hosted segmentation, OpenRouter,
 or FFmpeg. Provider diagnostics report what is usable in the current local
 environment before a user starts extraction or export.
 
+Use [System requirements](system_requirements.md) for hardware expectations
+before installing SAM2/SAM3. Provider settings, environment variables, or model
+paths can make a provider `configured`, but only diagnostics should decide
+whether it is `runnable`.
+
 ## CLI
 
 ```bash

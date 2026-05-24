@@ -11,7 +11,10 @@ python3 -m motionjson.cli validate out/demo_red_ball
 ```
 
 The local UI shows the same capability status in the First Run and Capabilities
-panels.
+panels. When a run has already started, use **Job Center** / **Run monitor**
+first: it shows the selected job, active jobs, failed/canceled state, latest
+event, provider/model, logs, retry guidance, and whether review/export is
+blocked.
 
 ## Python Command Not Found
 
@@ -87,6 +90,33 @@ python3 -m motionjson.cli backend diagnostics --json
 
 SAM2 tracks a prompted object. It does not discover every semantic object by
 itself.
+
+## SAM3 Is Missing Or Not Runnable
+
+SAM3 is optional and is not installed by the default package. A saved
+`SAM3_LOCAL_MODEL` path, hosted key, or provider setting only means setup data
+exists. Diagnostics must still show the provider as runnable before the UI can
+start a real SAM3 job.
+
+No-model alternatives:
+
+- use `Find moving things` for CPU motion foreground;
+- use `Import masks` when another tool already created masks;
+- use `Cut out one object` with SAM2 when point/box tracing is enough;
+- use debug mock mode only for contributor smoke checks.
+
+For local SAM3, verify the official package, compatible Python/CUDA runtime,
+torch/CUDA availability, and a real local `sam3.pt` file:
+
+```bash
+python3 -m pip install -e ".[sam3]"
+export SAM3_LOCAL_MODEL=/path/to/sam3.pt
+python3 -m motionjson.cli backend diagnostics --json
+```
+
+For hosted SAM3, configure `Roboflow SAM3`, `Fal SAM3 image`, or a custom SAM3
+endpoint in Model Connections, then acknowledge hosted cost/privacy before
+running a smoke test or extraction.
 
 ## Text Or Class Detectors Are Missing
 
@@ -189,6 +219,20 @@ Common causes:
 
 Do not assume a raster-only result is successful object extraction until the
 diagnostics explain why object tracks were unavailable.
+
+## Review Or Export Is Blocked
+
+Use the `Review & export` step and read the primary action:
+
+- `Track selected`: candidates exist, but object tracks have not been created.
+- `Mark reviewed`: tracks exist, but no kept track is marked for export.
+- `Export reviewed objects`: reviewed export validation passed.
+- Diagnostics/log action: the selected job failed or was canceled, so review
+  output is not ready.
+
+The export cards also show one disabled reason per format. Common blockers are
+no completed run, active/failed/canceled job, no tracks, unmaterialized
+corrections, no included reviewed track, or export validation failure.
 
 ## The UI Cannot Read A Video Path
 

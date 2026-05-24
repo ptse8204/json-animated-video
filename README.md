@@ -73,6 +73,21 @@ concept prompts, exemplar search, and higher-recall semantic discovery. Hosted
 SAM2/SAM3-style providers require explicit cost/privacy opt-in before network
 tests or hosted runs.
 
+## Which path should I choose?
+
+| Path | Best first use | Requirements and cautions |
+| --- | --- | --- |
+| CPU/no-model demo | First install check, `Use demo video`, simple CLI threshold demo, `Find moving things`, or `Import masks`. | Python `>=3.10`; 4 GB RAM minimum for tiny demos, 8 GB recommended; no GPU, model weights, or keys. |
+| Local SAM2 | `Cut out one object` with point/box prompts while keeping frames local. | Install/configure SAM2, checkpoint, config, torch/CUDA; 16 GB RAM minimum for small clips, 32 GB recommended; 8 GB VRAM can work for small experiments, 12-16+ GB recommended. |
+| Hosted SAM2 | SAM2-style tracing without local GPU. | Requires API key, hosted-call opt-in, cost/privacy acknowledgement, and a compatible hosted profile such as `Replicate SAM2 video`. |
+| Local SAM3 | Concept/exemplar discovery on your own CUDA machine. | Use only when official SAM3 package, Python/CUDA runtime, and a real local `sam3.pt` pass diagnostics; 32 GB RAM and 16+ GB VRAM are conservative starting points. |
+| Hosted SAM3 | Text/concept segmentation without local SAM3 hardware. | Requires API key and explicit hosted opt-in for `Roboflow SAM3`, `Fal SAM3 image`, or a custom endpoint. |
+| Motion foreground | CPU moving-object pass on a stable short clip. | No model required; camera motion, shadows, and reflections can become false foreground. |
+| External masks | You already have masks from another tool. | No model required; mask folders/manifests must line up with video frames and object IDs. |
+
+See [docs/system_requirements.md](docs/system_requirements.md) for the full
+hardware, Colab, SAM2, SAM3, FFmpeg, and Node guidance.
+
 ## Who it is for
 
 - Creators and editors who want reusable object cutouts from short clips.
@@ -105,12 +120,16 @@ python3 -m motionjson.cli ui --no-open
 ```
 
 Open the printed local UI URL. The workspace guides you through goal, project,
-video, mode/provider, prompts, run, review, correction, and export one step at a
-time. In **Model Connections**, choose the recommended provider for the goal:
+video, model setup, prepared input, run monitoring, review, correction, and
+export one step at a time. The visible UI steps are `Start`, `Video`, `Model`,
+`Prepare & run`, and `Review & export`. In **Model Connections**, choose the
+recommended provider for the goal:
 SAM2 local or Replicate SAM2 video for point/box tracing, SAM3 local or
 Roboflow SAM3 for text concepts, and Fal SAM3 image for frame-by-frame hosted
-fallbacks. Use `Show details` for diagnostics and `Show all panels` for the
-advanced dashboard.
+fallbacks. After a run starts, the main workspace switches to **Job Center** /
+**Run monitor** so active, failed, canceled, and completed jobs stay visible.
+Use `Show details` for diagnostics and `Show all panels` for the advanced
+dashboard.
 
 Contributor-only debug smoke checks use:
 
@@ -425,6 +444,7 @@ More docs:
 - [Run locally](docs/run_local.md)
 - [Run on free instances](docs/run_free_instances.md)
 - [Examples](docs/examples.md)
+- [System requirements](docs/system_requirements.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Glossary](docs/glossary.md)
 - [Local UI](docs/local_ui.md)

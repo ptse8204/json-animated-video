@@ -16,7 +16,7 @@ remains optional, environment-dependent, or future work.
 | CPU/no-model providers | `threshold`, `motion`, `external`, and `mock` providers report ready in `backend diagnostics --json`. |
 | Optional provider diagnostics | Diagnostics report unavailable SAM2, SAM2 automatic masks, SAM3 local/hosted, hosted segmentation, detector, YOLO, OpenRouter, CUDA, checkpoint/config, endpoint/auth, and hosted opt-in paths with reasons and install/configuration hints. |
 | Local backend | `src/motionjson/backend/` includes SQLite-backed auth, projects, assets, jobs, worker, API keys, support, billing metadata, webhooks, library, and beta workflows. |
-| Local UI command | `python3 -m motionjson.cli ui --help` passes and exposes `--mock`, `--no-open`, host, port, db, and storage-root flags. |
+| Local UI command | `python3 -m motionjson.cli ui --help` passes and exposes `--debug-mock`, hidden deprecated `--mock`, `--no-open`, host, port, db, and storage-root flags. |
 | Static UI shell | `npm run build` checks `index.html`, `app.css`, `app.js`, and `config_builder.js` in dependency-free static UI mode. |
 | Runtime and SDK packages | Root npm workspace includes `packages/motionjson-runtime` and `packages/motionjson-sdk`; `npm test` passes 21 Node tests in the OD-14 audit environment. |
 | Python tests | `python3 -m pytest -q` passes 391 tests with 1 skipped test in the OD-14 audit environment. |
@@ -32,7 +32,7 @@ remains optional, environment-dependent, or future work.
 | Export handoff | The Local UI offers Website package, MotionJSON scene, Runtime snippet, Remotion plan, and Developer handoff cards; validated exports default to reviewed selected objects. |
 | Codex operational prompts | `docs/codex/ui_model_operational_prompts.md` captures master-agent, screenshot review, model connector review, release audit, and read-only scout prompts with no-edit/no-hosted-call guardrails. |
 | Trace Everything safeguards | Trace Everything remains expert/experimental, requires explicit acknowledgement, stays capped, writes rejected candidates, and blocks export until review. |
-| Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, troubleshooting links, and current launch risks. `docs/index.md` links first-run, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
+| Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, system requirements, troubleshooting links, and current launch risks. `docs/index.md` links first-run, system requirements, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
 | Screenshot and demo assets | Real local mock-UI screenshots and deterministic red-ball preview/GIF assets exist under `docs/assets/`, with regeneration commands in `docs/assets/README_ASSETS.md`. |
 | Free and low-install run paths | Codespaces, Colab UI and CLI demos, and Hugging Face Space planning docs exist. The Colab paths are checked-in notebooks; Hugging Face remains a documented plan, not a production hosted service. |
 | License metadata | Root `LICENSE`, Python project metadata, and npm workspace/package metadata declare Apache-2.0. Generated asset rights still depend on source-media rights and recorded export metadata. |

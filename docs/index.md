@@ -11,9 +11,12 @@ SAM2, CUDA, detector weights, hosted services, or provider credentials.
    red-ball tutorial, PowerShell commands, and the local UI project flow.
 2. [Run locally](run_local.md) gives copy-paste script and manual commands for
    the mock UI, red-ball CLI demo, backend API, Docker, and cleanup.
-3. [Run on free or low-install instances](run_free_instances.md) covers
+3. [System requirements](system_requirements.md) explains CPU/no-model, local
+   SAM2, hosted SAM2, local SAM3, hosted SAM3, motion foreground, external
+   masks, Colab limits, FFmpeg, and Node expectations.
+4. [Run on free or low-install instances](run_free_instances.md) covers
    Codespaces, Colab UI/CLI demos, and the Hugging Face Space demo plan.
-4. [Troubleshooting](troubleshooting.md) explains common setup, provider, bad
+5. [Troubleshooting](troubleshooting.md) explains common setup, provider, bad
    mask, and raster-only failures.
 
 After running the install steps in [First run setup](first_run.md), useful
@@ -21,7 +24,7 @@ first commands are:
 
 ```bash
 python3 -m motionjson.cli backend diagnostics --json
-python3 -m motionjson.cli ui --no-open --mock
+python3 -m motionjson.cli ui --no-open --debug-mock
 python3 scripts/run_red_ball_demo.sh
 ```
 
@@ -139,6 +142,7 @@ files, tests, screenshots or demos, known limitations, and follow-up tasks.
 ## Reference
 
 - [Glossary](glossary.md)
+- [System requirements](system_requirements.md)
 - [Deployment guide](deployment.md)
 - [Billing and pricing](billing_pricing.md)
 - [Onboarding guide](onboarding.md)
