@@ -299,6 +299,47 @@ JSON, static shell, video, and artifact responses use local no-store headers.
 The frontend only opens generated content links that point back to local
 `/api/videos/.../content` or `/api/artifacts/.../content` routes.
 
+## Job Lifecycle Summaries
+
+Job responses preserve their existing public fields and add a normalized
+`lifecycle` block for UI flow state. The block is available on jobs returned by
+`GET /api/jobs?projectId=...`, `GET /api/jobs/JOB_ID`, and
+`GET /api/progress?projectId=...`.
+
+`lifecycle` includes:
+
+- normalized job status: `queued`, `running`, `waiting_review`, `succeeded`,
+  `failed`, or `canceled`;
+- phase: `queued`, `validating`, `extracting`, `discovering`, `tracking`,
+  `writing_artifacts`, `review_ready`, `exporting`, `complete`, or `failed`;
+- progress with `known`, `percent`, and a short label. When progress is inferred
+  instead of event-measured, `known` is `false`;
+- provider summary with separate connection ID, provider ID, display label,
+  engine, locality, and hosted-call opt-in state;
+- latest event summary;
+- failure headline, reason code, detailed message, and suggested recovery action;
+- review counts for candidates, selected candidates, tracks, exportable tracks,
+  diagnostics, and raster/vector-unavailable state;
+- action gates for cancel, retry, review, track selected, and export;
+- a single next-action label and reason.
+
+`GET /api/workspace` and `GET /api/progress?projectId=...` also include a
+`jobCenter` block:
+
+```json
+{
+  "format": "motionjson.local_ui_job_center.v0.1",
+  "activeJobsCount": 1,
+  "selectedJobId": "job_id",
+  "activeJobs": [],
+  "recentJobs": []
+}
+```
+
+This contract is provider-neutral. SAM2 and SAM3 labels are display values only;
+policy logic should use provider IDs, connection IDs, engine, locality, and
+readiness fields instead of comparing labels.
+
 ## Candidate Review Payloads
 
 `GET /api/jobs/JOB_ID/review` is the source of truth for object candidates.

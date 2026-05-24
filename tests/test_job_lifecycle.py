@@ -1,0 +1,251 @@
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+from motionjson.backend.job_lifecycle import job_lifecycle_summary
+from motionjson.backend.jobs import record_job_event
+from motionjson.ui.server import LocalUIApp
+
+
+def decode(body: bytes) -> dict:
+    return json.loads(body.decode("utf-8"))
+
+
+def demo_video() -> Path:
+    return Path(__file__).resolve().parents[1] / "examples" / "demo_red_ball.mp4"
+
+
+def wait_for_job(app: LocalUIApp, job_id: str, *, timeout: float = 10.0) -> dict:
+    deadline = time.time() + timeout
+    last_job = {}
+    while time.time() < deadline:
+        status, _headers, body = app.handle("GET", f"/api/jobs/{job_id}")
+        assert status == 200
+        last_job = decode(body)["job"]
+        if last_job["status"] in {"succeeded", "failed", "canceled"}:
+            return last_job
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} did not finish; last status: {last_job}")
+
+
+def test_job_lifecycle_reports_unknown_progress_without_precision():
+    job = {
+        "id": "job_queued",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "pending",
+        "payload": {"mask_provider": "sam2-local"},
+        "result": {},
+    }
+
+    lifecycle = job_lifecycle_summary(job)
+
+    assert lifecycle["status"] == "queued"
+    assert lifecycle["phase"] == "queued"
+    assert lifecycle["progress"] == {"known": False, "percent": 0, "label": "Queued"}
+    assert lifecycle["provider"]["label"] == "SAM2 local"
+    assert lifecycle["actions"]["canCancel"] is True
+
+
+def test_job_lifecycle_uses_event_progress_when_known():
+    job = {
+        "id": "job_running",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "running",
+        "payload": {"run_config": {"provider": {"name": "sam3-hosted", "sam3": {"hosted_config": {"profile": "roboflow-sam3-pcs"}}}}},
+        "result": {},
+    }
+    events = [
+        {
+            "event_type": "progress",
+            "message": "discovering candidates",
+            "metadata": {"stage": "candidate_discovery", "progress": {"overallRatio": 0.42}},
+            "created_at": "2026-05-24T00:00:00+00:00",
+        }
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["status"] == "running"
+    assert lifecycle["phase"] == "discovering"
+    assert lifecycle["progress"] == {"known": True, "percent": 42, "label": "Candidate discovery"}
+    assert lifecycle["provider"]["connectionId"] == "sam3-hosted:roboflow-sam3-pcs"
+    assert lifecycle["provider"]["label"] == "Roboflow SAM3"
+    assert lifecycle["provider"]["engine"] == "sam3"
+
+
+def test_job_lifecycle_summarizes_failure_and_recovery_action():
+    job = {
+        "id": "job_failed",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "failed",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}}},
+        "error": "SAM3 model path is not configured",
+        "result": {},
+    }
+
+    lifecycle = job_lifecycle_summary(job)
+
+    assert lifecycle["status"] == "failed"
+    assert lifecycle["phase"] == "failed"
+    assert lifecycle["failure"]["headline"] == "SAM3 is not ready"
+    assert lifecycle["failure"]["reasonCode"] == "provider_unavailable"
+    assert lifecycle["nextAction"]["label"] == "Open logs"
+    assert lifecycle["actions"]["canRetry"] is False
+
+
+def test_job_lifecycle_gates_candidates_tracks_and_exports():
+    job = {
+        "id": "job_review",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "succeeded",
+        "payload": {"run_config": {"provider": {"name": "mock"}, "discovery": {"mode": "auto_object_proposals"}}},
+        "result": {},
+    }
+
+    candidates = job_lifecycle_summary(
+        job,
+        review={
+            "candidateSummary": {"candidateCount": 2, "defaultSelectedCount": 1},
+            "candidates": [{"candidateId": "cand_001"}, {"candidateId": "cand_002"}],
+            "tracks": [],
+        },
+    )
+    assert candidates["status"] == "waiting_review"
+    assert candidates["review"]["candidateCount"] == 2
+    assert candidates["review"]["selectedCandidateCount"] == 1
+    assert candidates["actions"]["canTrackSelected"] is True
+    assert candidates["actions"]["canExport"] is False
+
+    pending_tracks = job_lifecycle_summary(
+        job,
+        review={"tracks": [{"objectId": "cand_001", "exportStatus": "review_pending"}]},
+    )
+    assert pending_tracks["status"] == "waiting_review"
+    assert pending_tracks["review"]["trackCount"] == 1
+    assert pending_tracks["review"]["exportableTrackCount"] == 0
+    assert pending_tracks["nextAction"]["label"] == "Mark reviewed"
+
+    export_ready = job_lifecycle_summary(
+        job,
+        review={"tracks": [{"objectId": "object_0", "exportStatus": "accepted", "exportIncluded": True}]},
+    )
+    assert export_ready["status"] == "succeeded"
+    assert export_ready["actions"]["canExport"] is True
+    assert export_ready["nextAction"]["label"] == "Export reviewed objects"
+
+
+def test_local_ui_progress_and_workspace_include_job_center_lifecycle(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Lifecycle Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 2}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    assert status == 200
+    assert job["lifecycle"]["status"] == "queued"
+
+    conn = app.connection()
+    try:
+        record_job_event(
+            conn,
+            job_id=job["id"],
+            event_type="progress",
+            message="candidate discovery",
+            metadata={"stage": "candidate_discovery", "progress": {"overallRatio": 0.5}},
+        )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/progress?projectId={project['id']}")
+    payload = decode(body)
+    lifecycle = payload["progress"][0]["lifecycle"]
+    assert status == 200
+    assert lifecycle["progress"]["known"] is True
+    assert lifecycle["progress"]["percent"] == 50
+    assert payload["jobCenter"]["selectedJobId"] == job["id"]
+    assert payload["jobCenter"]["activeJobsCount"] == 1
+
+    status, _headers, body = app.handle("GET", "/api/workspace")
+    workspace = decode(body)
+    assert status == 200
+    assert workspace["jobCenter"]["recentJobs"][0]["lifecycle"]["jobId"] == job["id"]
+    assert "storage_key" not in body.decode("utf-8")
+
+
+def test_local_ui_job_lifecycle_redacts_failure_paths(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Redacted Failure"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "sam3-local", "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    conn = app.connection()
+    try:
+        conn.execute(
+            "UPDATE jobs SET status = 'failed', error = ? WHERE id = ?",
+            (f"SAM3 model path is not configured at {tmp_path / 'private' / 'sam3.pt'}", job["id"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}")
+    payload = decode(body)
+    public_text = body.decode("utf-8")
+
+    assert status == 200
+    assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "provider_unavailable"
+    assert "[LOCAL_PATH_REDACTED]" in public_text
+    assert str(tmp_path) not in public_text
+
+
+def test_completed_mock_job_lifecycle_reports_review_export_gate(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Review Lifecycle"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 2, "run": True}).encode("utf-8"),
+    )
+    job = wait_for_job(app, decode(body)["job"]["id"])
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}")
+    lifecycle = decode(body)["job"]["lifecycle"]
+
+    assert status == 200
+    assert lifecycle["status"] in {"succeeded", "waiting_review"}
+    assert lifecycle["review"]["trackCount"] >= 1
+    assert lifecycle["actions"]["canReview"] is True
+    assert lifecycle["review"]["exportableTrackCount"] >= 1

@@ -34,6 +34,7 @@ from motionjson.backend.export_workflows import (
     validate_motionjson_export_job,
 )
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
+from motionjson.backend.job_lifecycle import job_lifecycle_summary
 from motionjson.backend.library import (
     add_asset_to_collection,
     create_collection,
@@ -301,7 +302,13 @@ def _latest_progress_ratio(events: list[dict[str, Any]]) -> float | None:
     return latest
 
 
-def _public_job_snapshot(row: dict[str, Any], *, events: list[dict[str, Any]] | None = None, include_events: bool = False) -> dict[str, Any]:
+def _public_job_snapshot(
+    row: dict[str, Any],
+    *,
+    events: list[dict[str, Any]] | None = None,
+    include_events: bool = False,
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     data = _public_job(row)
     public_events = [_public_event(event) for event in events or []]
     ratio = _latest_progress_ratio(public_events)
@@ -321,6 +328,7 @@ def _public_job_snapshot(row: dict[str, Any], *, events: list[dict[str, Any]] | 
         data["latestEventType"] = public_events[-1].get("event_type")
     if include_events:
         data["events"] = public_events
+    data["lifecycle"] = job_lifecycle_summary(data, events=public_events, review=review or {})
     return data
 
 
@@ -666,14 +674,14 @@ class LocalUIApp:
             user_id = user["id"]
             if path == "/api/workspace" and method == "GET":
                 settings = provider_settings_response(conn, user_id=user_id)
-                return _public_value(
-                    workspace_response(
-                        conn,
-                        user_id=user_id,
-                        provider_settings=settings,
-                        export_presets_payload=export_presets(),
-                    )
+                workspace = workspace_response(
+                    conn,
+                    user_id=user_id,
+                    provider_settings=settings,
+                    export_presets_payload=export_presets(),
                 )
+                workspace["jobCenter"] = self._job_center_payload(conn, user_id=user_id)
+                return _public_value(workspace)
             if path == "/api/preferences" and method == "GET":
                 return _public_value(get_workspace_preferences(conn, user_id=user_id))
             if path == "/api/preferences" and method == "POST":
@@ -763,7 +771,7 @@ class LocalUIApp:
                         "import": _public_value(
                             {
                                 **imported,
-                                "job": _public_job_snapshot(imported["job"], events=list_job_events(conn, job_id=imported["job"]["id"])),
+                                "job": self._public_job_snapshot_for_job(conn, imported["job"]),
                                 "assets": assets,
                             }
                         )
@@ -813,12 +821,12 @@ class LocalUIApp:
                     return {"jobs": []}
                 jobs = []
                 for job in list_jobs(conn, user_id=user_id, project_id=project_id):
-                    jobs.append(_public_job_snapshot(job, events=list_job_events(conn, job_id=job["id"])))
+                    jobs.append(self._public_job_snapshot_for_job(conn, job))
                 return {"jobs": jobs}
             if path == "/api/jobs" and method == "POST":
                 job = self._enqueue_extract_from_ui_payload(conn, user_id=user_id, payload=payload)
                 response: dict[str, Any] = {
-                    "job": _public_job_snapshot(job, events=list_job_events(conn, job_id=job["id"]))
+                    "job": self._public_job_snapshot_for_job(conn, job)
                 }
                 if self._payload_requests_worker(payload):
                     record_job_event(
@@ -829,21 +837,17 @@ class LocalUIApp:
                         metadata={"source": "local_ui"},
                     )
                     response["worker"] = self._start_worker()
-                    response["job"] = _public_job_snapshot(
-                        get_job(conn, user_id=user_id, job_id=job["id"]),
-                        events=list_job_events(conn, job_id=job["id"]),
-                    )
+                    response["job"] = self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"]))
                 return response
             if path == "/api/progress" and method == "GET":
                 project_id = self._query_one(query, "projectId")
                 if not project_id:
-                    return {"progress": []}
+                    return {"progress": [], "jobCenter": self._job_center_payload(conn, user_id=user_id)}
                 progress = []
                 for job in list_jobs(conn, user_id=user_id, project_id=project_id):
-                    events = list_job_events(conn, job_id=job["id"])
-                    public_job = _public_job_snapshot(job, events=events, include_events=True)
+                    public_job = self._public_job_snapshot_for_job(conn, job, include_events=True)
                     progress.append(public_job)
-                return {"progress": progress}
+                return {"progress": progress, "jobCenter": self._job_center_payload(conn, user_id=user_id, project_id=project_id)}
             if path.startswith("/api/jobs/") and method == "POST":
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 4 and parts[3] == "model-plan":
@@ -851,12 +855,12 @@ class LocalUIApp:
                 if len(parts) == 4 and parts[3] == "cancel":
                     get_job(conn, user_id=user_id, job_id=parts[2])
                     canceled = request_cancel_job(conn, job_id=parts[2], reason=str(payload.get("reason") or "user_canceled"))
-                    return {"job": _public_job_snapshot(canceled, events=list_job_events(conn, job_id=parts[2]), include_events=True)}
+                    return {"job": self._public_job_snapshot_for_job(conn, canceled, include_events=True)}
                 if len(parts) == 4 and parts[3] == "run":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     if job["status"] in TERMINAL_JOB_STATUSES:
                         return {
-                            "job": _public_job_snapshot(job, events=list_job_events(conn, job_id=job["id"])),
+                            "job": self._public_job_snapshot_for_job(conn, job),
                             "worker": {"status": "not_started", "reason": "job is already terminal"},
                         }
                     record_job_event(
@@ -867,10 +871,7 @@ class LocalUIApp:
                         metadata={"source": "local_ui"},
                     )
                     return {
-                        "job": _public_job_snapshot(
-                            get_job(conn, user_id=user_id, job_id=job["id"]),
-                            events=list_job_events(conn, job_id=job["id"]),
-                        ),
+                        "job": self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"])),
                         "worker": self._start_worker(),
                     }
                 if len(parts) == 4 and parts[3] == "track-selected":
@@ -979,7 +980,7 @@ class LocalUIApp:
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 3:
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
-                    return {"job": _public_job_snapshot(job, events=list_job_events(conn, job_id=job["id"]))}
+                    return {"job": self._public_job_snapshot_for_job(conn, job)}
                 if len(parts) == 4 and parts[3] == "events":
                     get_job(conn, user_id=user_id, job_id=parts[2])
                     return {"events": [_public_event(event) for event in list_job_events(conn, job_id=parts[2])]}
@@ -1293,11 +1294,7 @@ class LocalUIApp:
         return _public_value(
             {
                 "format": "motionjson.local_ui_model_plan_attachment.v0.1",
-                "job": _public_job_snapshot(
-                    job,
-                    events=list_job_events(conn, job_id=job_id),
-                    include_events=True,
-                ),
+                "job": self._public_job_snapshot_for_job(conn, job, include_events=True),
                 "modelPlan": plan_snapshot,
             }
         )
@@ -1395,11 +1392,7 @@ class LocalUIApp:
                         "modelRun": run.to_dict(include_events=True),
                         "modelPlan": model_plan.to_dict(),
                         "validation": validation,
-                        "job": _public_job_snapshot(
-                            existing_job,
-                            events=list_job_events(conn, job_id=existing_job["id"]),
-                            include_events=True,
-                        ),
+                        "job": self._public_job_snapshot_for_job(conn, existing_job, include_events=True),
                         "worker": {"status": "not_started", "reason": "model plan was already confirmed"},
                     }
                 )
@@ -1421,11 +1414,7 @@ class LocalUIApp:
                 "modelRun": run.to_dict(include_events=True),
                 "modelPlan": model_plan.to_dict(),
                 "validation": validation,
-                "job": _public_job_snapshot(
-                    get_job(conn, user_id=user_id, job_id=job["id"]),
-                    events=list_job_events(conn, job_id=job["id"]),
-                    include_events=True,
-                ),
+                "job": self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"]), include_events=True),
             }
             if _truthy_payload(payload, "run", "start", "startWorker", "runWorker", "runImmediately"):
                 record_job_event(
@@ -1436,11 +1425,7 @@ class LocalUIApp:
                     metadata={"source": "local_ui", "modelRunId": run_id},
                 )
                 response["worker"] = self._start_worker()
-                response["job"] = _public_job_snapshot(
-                    get_job(conn, user_id=user_id, job_id=job["id"]),
-                    events=list_job_events(conn, job_id=job["id"]),
-                    include_events=True,
-                )
+                response["job"] = self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"]), include_events=True)
             return _public_value(response)
         finally:
             conn.close()
@@ -1763,6 +1748,66 @@ class LocalUIApp:
             )
         finally:
             conn.close()
+
+    def _job_review_for_lifecycle(self, conn: sqlite3.Connection, job: dict[str, Any]) -> dict[str, Any]:
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+        corrections = list_track_corrections(conn, user_id=job["created_by_user_id"], job_id=job["id"])
+        return self._review_metadata(assets, corrections=corrections, job_id=job["id"])
+
+    def _public_job_snapshot_for_job(
+        self,
+        conn: sqlite3.Connection,
+        job: dict[str, Any],
+        *,
+        include_events: bool = False,
+        include_review: bool = True,
+    ) -> dict[str, Any]:
+        events = list_job_events(conn, job_id=job["id"])
+        review = self._job_review_for_lifecycle(conn, job) if include_review else {}
+        return _public_job_snapshot(job, events=events, include_events=include_events, review=review)
+
+    def _job_center_payload(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        user_id: str,
+        project_id: str | None = None,
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        params: list[Any] = [user_id]
+        project_clause = ""
+        if project_id:
+            project_clause = " AND jobs.project_id = ?"
+            params.append(project_id)
+        params.append(limit)
+        rows = conn.execute(
+            f"""
+            SELECT jobs.*
+            FROM jobs
+            JOIN projects ON projects.id = jobs.project_id
+            WHERE projects.owner_user_id = ? AND projects.archived_at IS NULL{project_clause}
+            ORDER BY jobs.updated_at DESC, jobs.created_at DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+        recent_jobs = [
+            self._public_job_snapshot_for_job(conn, dict(row), include_events=False, include_review=True)
+            for row in rows
+        ]
+        active_statuses = {"queued", "running"}
+        active_jobs = [
+            job for job in recent_jobs
+            if job.get("lifecycle", {}).get("status") in active_statuses
+        ]
+        selected = active_jobs[0] if active_jobs else recent_jobs[0] if recent_jobs else None
+        return {
+            "format": "motionjson.local_ui_job_center.v0.1",
+            "activeJobsCount": len(active_jobs),
+            "selectedJobId": selected.get("id") if selected else None,
+            "activeJobs": active_jobs,
+            "recentJobs": recent_jobs,
+        }
 
     def _worker_loop(self) -> None:
         conn = self.connection()
