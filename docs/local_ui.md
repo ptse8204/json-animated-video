@@ -475,11 +475,13 @@ parameters, raw config JSON, raw routes, generated artifacts, library
 management, logs, fallback diagnostics, and correction history remain available
 through disclosure panels instead of being expanded by default.
 
-Post-run work is grouped into a compact review sequence: run monitor, candidate
-review, track review, corrections, and export. Clean runs keep logs and
-generated artifacts collapsed. Failed runs and raster/vector fallback states
-surface diagnostics immediately so users can see why object tracks were not
-available.
+Post-run work is grouped into a compact review sequence: candidates, track
+selected, tracks, corrections, and export. The main review action follows that
+sequence: track selected candidates before tracks exist, mark reviewed tracks
+before export, and export only after reviewed objects are included. Clean runs
+keep logs and generated artifacts collapsed. Failed runs and raster/vector
+fallback states surface diagnostics immediately so users can see why object
+tracks were not available.
 
 Design and validation notes live in:
 
@@ -631,8 +633,8 @@ storage, and exposes the imported scene through the normal job review routes.
    The optional advanced model plan panel can create a server-side planner
    config from the selected goal and plain-language intent; generated configs are
    revalidated before `Confirm and start` can create a job.
-7. Review candidates and tracks. Keep candidates, inspect track coverage and
-   warnings, and use timeline markers before export.
+7. Review candidates first. Keep the candidates you want, then use `Track
+   selected` to create object tracks.
 8. Correct tracks if needed: relabel, hide/show, include/exclude from export,
    merge, split, add object, or request repair with saved prompts.
 9. Export reviewed objects from the review step. Website package, MotionJSON,

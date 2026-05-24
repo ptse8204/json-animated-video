@@ -762,17 +762,44 @@ const MotionJSONUI = (() => {
     const selectedJobStatus = String(snapshot.selectedJobStatus || selectedJob()?.status || "").toLowerCase();
     const jobRunning = /queued|running|pending|started|cancel_requested/.test(selectedJobStatus);
     const jobFailed = /failed|error|canceled/.test(selectedJobStatus);
+    const exportIncludedIds = state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean);
+    const exportStatus = state.exportValidation?.validation || state.exportResult?.validation || null;
     const exportAction = exportActionState({
       job: selectedJob(),
-      includedIds: state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean),
-      status: state.exportValidation?.validation || state.exportResult?.validation || null,
+      includedIds: exportIncludedIds,
+      status: exportStatus,
+      trackCount: state.reviewTracks.length,
+      pendingIds: buildExportPanelSummary({
+        exportState: state.exportResult || state.exportValidation || {},
+        reviewExport: state.jobReview?.export || {},
+        reviewTracks: state.reviewTracks,
+        reviewObjects: state.jobReview?.objects,
+      }).pendingIds,
     });
+    const reviewFlow = reviewFlowStateFromSnapshot({
+      ...snapshot,
+      job: selectedJob(),
+      trackCount: state.reviewTracks.length,
+      exportIncludedCount: exportIncludedIds.length,
+      exportValidated: Boolean(exportStatus),
+      exportOk: exportStatus?.ok === true,
+    });
+    const reviewGate = reviewFlow.gate;
+    const reviewPrimaryAction = reviewGate.primaryAction;
+    const reviewPrimaryLabel = reviewPrimaryAction === "export_reviewed" && !exportAction.disabled ? "Export reviewed objects" : reviewPrimaryAction === "export_reviewed" ? exportAction.label : reviewGate.primaryLabel;
+    const reviewPrimaryBlockedReason = reviewPrimaryAction === "export_reviewed" ? exportAction.reason : reviewGate.reason;
+    const reviewPrimaryEnabled =
+      reviewPrimaryAction === "export_reviewed"
+        ? !exportAction.disabled
+        : reviewPrimaryAction === "track_selected"
+          ? state.candidateTrackingStatus !== "tracking" && reviewFlow.selectedCandidateCount > 0
+          : reviewPrimaryAction !== "start_run";
     const reviewStep = {
       id: "review_export",
-      primaryLabel: jobRunning ? "Cancel run" : jobFailed ? "Open logs" : "Export reviewed objects",
-      primaryAction: jobRunning ? "cancel_run" : jobFailed ? "open_logs" : "export_reviewed",
-      enabled: jobRunning || jobFailed || !exportAction.disabled,
-      blockedReason: jobRunning || jobFailed ? "" : exportAction.reason,
+      primaryLabel: jobRunning ? "Cancel run" : jobFailed ? "Open logs" : reviewPrimaryLabel,
+      primaryAction: jobRunning ? "cancel_run" : jobFailed ? "open_logs" : reviewPrimaryAction,
+      enabled: jobRunning || jobFailed || reviewPrimaryEnabled,
+      blockedReason: jobRunning || jobFailed ? "" : reviewPrimaryBlockedReason,
       successAdvanceTo: "review_export",
       backTarget: "prompt_preview",
     };
@@ -862,11 +889,6 @@ const MotionJSONUI = (() => {
     const selectedJobStatus = String(snapshot.selectedJobStatus || selectedJob()?.status || "").toLowerCase();
     const jobRunning = /queued|running|pending|started|cancel_requested/.test(selectedJobStatus);
     const jobFailed = /failed|error|canceled/.test(selectedJobStatus);
-    const exportAction = exportActionState({
-      job: selectedJob(),
-      includedIds: state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean),
-      status: state.exportValidation?.validation || state.exportResult?.validation || null,
-    });
     if (screenId === "setup") {
       if (selectedPreset === "review_existing") {
         if (hasResult) {
@@ -1002,30 +1024,29 @@ const MotionJSONUI = (() => {
         backTarget: selectedPreset === "review_existing" ? "source_video" : "prompt_preview",
       };
     }
+    const reviewContract = workflowStepContractFromSnapshot(snapshot, "review_export");
+    const reviewReady = reviewContract.primaryAction === "export_reviewed" && reviewContract.enabled;
     return {
       title: "Review",
-      description: "Validate objects, make fixes, and export reviewed results.",
-      statusLabel: exportAction.disabled ? "Needs review" : "Ready",
-      statusTone: exportAction.disabled ? "is-warn" : "is-ready",
-      primaryLabel: "Export reviewed objects",
-      enabled: !exportAction.disabled,
-      blockedReason: exportAction.reason,
-      primaryAction: "export_reviewed",
+      description: reviewContract.blockedReason || "Review candidates, create tracks, correct them if needed, then export.",
+      statusLabel: reviewReady ? "Ready" : "Needs review",
+      statusTone: reviewReady ? "is-ready" : "is-warn",
+      primaryLabel: reviewContract.primaryLabel,
+      enabled: reviewContract.enabled,
+      blockedReason: reviewContract.blockedReason,
+      primaryAction: reviewContract.primaryAction,
       backTarget: selectedPreset === "review_existing" ? "source_video" : "prompt_preview",
     };
   }
 
   function postRunWorkflowSummaryFromSnapshot(snapshot = {}) {
+    return reviewFlowStateFromSnapshot(snapshot).stages;
+  }
+
+  function runMonitorStageFromSnapshot(snapshot = {}) {
     const activeJobs = toInteger(snapshot.activeJobs, 0);
     const selectedJobStatus = String(snapshot.selectedJobStatus || "").toLowerCase();
     const hasSelectedJob = Boolean(snapshot.hasSelectedJob || selectedJobStatus);
-    const candidateCount = toInteger(snapshot.candidateCount, 0);
-    const selectedCandidateCount = toInteger(snapshot.selectedCandidateCount, 0);
-    const trackCount = toInteger(snapshot.trackCount, 0);
-    const exportIncludedCount = toInteger(snapshot.exportIncludedCount, 0);
-    const correctionCount = toInteger(snapshot.correctionCount, 0);
-    const exportValidated = Boolean(snapshot.exportValidated);
-    const exportOk = Boolean(snapshot.exportOk);
     const diagnosticCount = toInteger(snapshot.diagnosticCount, 0);
     const attentionDiagnosticCount = toInteger(snapshot.attentionDiagnosticCount, 0);
     const hasFailure = Boolean(snapshot.hasFailure || /failed|error|canceled/.test(selectedJobStatus));
@@ -1041,49 +1062,23 @@ const MotionJSONUI = (() => {
       tone: status === "done" || status === "ready" ? "is-ready" : status === "running" ? "is-neutral" : status === "blocked" ? "is-bad" : "is-warn",
     });
 
-    return [
-      hasFailure
-        ? stage("run", "Run monitor", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked")
-        : selectedJobComplete
-          ? stage(
-              "run",
-              "Run monitor",
-              selectedJobStatus || "Run complete",
-              attentionDiagnosticCount
-                ? `${attentionDiagnosticCount} fallback or provider diagnostic${attentionDiagnosticCount === 1 ? "" : "s"} need review.`
-                : diagnosticCount
-                  ? `${diagnosticCount} diagnostic item${diagnosticCount === 1 ? "" : "s"} available.`
-                  : "Run completed and review data can be checked.",
-              attentionDiagnosticCount ? "warning" : "done",
-            )
-          : selectedJobRunning
-            ? stage("run", "Run monitor", `${activeJobs || 1} active`, "Wait for the local job to finish or cancel it if needed.", "running")
-            : hasSelectedJob
-              ? stage("run", "Run monitor", selectedJobStatus || "Run selected", "Review the selected run status before continuing.", "ready")
-              : stage("run", "Run monitor", "No run selected", "Start or select a run before reviewing candidates."),
-      candidateCount
-        ? stage("candidates", "Candidate review", `${selectedCandidateCount}/${candidateCount} kept`, selectedCandidateCount ? "Track selected candidates when the keep list looks right." : "Keep at least one candidate before tracking.", selectedCandidateCount ? "done" : "needs-action")
-        : hasSelectedJob
-          ? stage("candidates", "Candidate review", "No candidates", "Inspect diagnostics or retry with clearer prompts.", "needs-action")
-          : stage("candidates", "Candidate review", "Not loaded", "Candidates appear after a run writes review data."),
-      trackCount
-        ? stage("tracks", "Track review", `${trackCount} track${trackCount === 1 ? "" : "s"}`, `${exportIncludedCount} marked for export.`, "done")
-        : selectedCandidateCount
-          ? stage("tracks", "Track review", "Track selected", "Turn kept candidates into object tracks.", "needs-action")
-          : stage("tracks", "Track review", "No tracks", "Tracks appear after selected candidates are tracked."),
-      correctionCount
-        ? stage("corrections", "Corrections", `${correctionCount} edit${correctionCount === 1 ? "" : "s"}`, "Correction edits are saved locally before export.", "done")
-        : trackCount
-          ? stage("corrections", "Corrections", "Optional", "Repair, relabel, merge, split, or skip to export.", "ready")
-          : stage("corrections", "Corrections", "No tracks", "Create a track before correction tools matter."),
-      exportOk
-        ? stage("export", "Export", "Validated", "Export validation passed; handoff packages can be created.", "done")
-        : exportValidated
-          ? stage("export", "Export", "Needs review", "Resolve validation issues before writing MotionJSON.", "blocked")
-          : exportIncludedCount
-            ? stage("export", "Export", `${exportIncludedCount} included`, "Validate export settings before writing artifacts.", "needs-action")
-            : stage("export", "Export", "Not ready", "Reviewed tracks marked for export are required."),
-    ];
+    if (hasFailure) return stage("run", "Run monitor", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked");
+    if (selectedJobComplete) {
+      return stage(
+        "run",
+        "Run monitor",
+        selectedJobStatus || "Run complete",
+        attentionDiagnosticCount
+          ? `${attentionDiagnosticCount} fallback or provider diagnostic${attentionDiagnosticCount === 1 ? "" : "s"} need review.`
+          : diagnosticCount
+            ? `${diagnosticCount} diagnostic item${diagnosticCount === 1 ? "" : "s"} available.`
+            : "Run completed and review data can be checked.",
+        attentionDiagnosticCount ? "warning" : "done",
+      );
+    }
+    if (selectedJobRunning) return stage("run", "Run monitor", `${activeJobs || 1} active`, "Wait for the local job to finish or cancel it if needed.", "running");
+    if (hasSelectedJob) return stage("run", "Run monitor", selectedJobStatus || "Run selected", "Review the selected run status before continuing.", "ready");
+    return stage("run", "Run monitor", "No run selected", "Start or select a run before reviewing candidates.");
   }
 
   function containedVideoRect(containerWidth, containerHeight, videoWidth, videoHeight) {
@@ -2189,6 +2184,85 @@ const MotionJSONUI = (() => {
       return { status: "needs-action", primaryAction: "inspect_diagnostics", primaryLabel: "Open diagnostics", reason: rasterReason || "The completed run produced diagnostics before exportable tracks." };
     }
     return { status: "needs-action", primaryAction: "inspect_diagnostics", primaryLabel: "Open diagnostics", reason: "No candidates or tracks were reported for this completed run." };
+  }
+
+  function reviewCountsFromSnapshot(snapshot = {}) {
+    const job = snapshot.job ? normalizeJobLifecycle(snapshot.job) : null;
+    const review = job?.review || {};
+    return {
+      job,
+      candidateCount: toInteger(snapshot.candidateCount ?? review.candidateCount, 0),
+      selectedCandidateCount: toInteger(snapshot.selectedCandidateCount ?? review.selectedCandidateCount, 0),
+      trackCount: toInteger(snapshot.trackCount ?? review.trackCount, 0),
+      exportIncludedCount: toInteger(snapshot.exportIncludedCount ?? snapshot.exportableTrackCount ?? review.exportIncludedCount ?? review.exportableTrackCount, 0),
+      correctionCount: toInteger(snapshot.correctionCount, 0),
+      exportValidated: Boolean(snapshot.exportValidated),
+      exportOk: Boolean(snapshot.exportOk),
+      diagnosticCount: toInteger(snapshot.diagnosticCount ?? review.diagnosticCount, 0),
+      attentionDiagnosticCount: toInteger(snapshot.attentionDiagnosticCount, 0),
+      hasFailure: Boolean(snapshot.hasFailure || job?.failure || /failed|error|canceled/.test(String(job?.status || snapshot.selectedJobStatus || "").toLowerCase())),
+    };
+  }
+
+  function reviewFlowStateFromSnapshot(snapshot = {}) {
+    const counts = reviewCountsFromSnapshot(snapshot);
+    const gate = reviewGateFromSnapshot({ ...snapshot, job: counts.job });
+    const hasJob = Boolean(counts.job || snapshot.hasSelectedJob || snapshot.selectedJobStatus);
+    const failed = gate.primaryAction === "open_logs";
+    const running = gate.primaryAction === "watch_job";
+    const stage = (id, label, value, detail, status = "needs-action") => ({
+      id,
+      label,
+      value,
+      detail,
+      status,
+      tone: status === "done" || status === "ready" ? "is-ready" : status === "running" ? "is-neutral" : status === "blocked" ? "is-bad" : "is-warn",
+    });
+    const candidatesStage = failed
+      ? stage("candidates", "Candidates", "Blocked", "Open diagnostics before reviewing candidates.", "blocked")
+      : counts.candidateCount
+        ? stage("candidates", "Candidates", `${counts.selectedCandidateCount}/${counts.candidateCount} kept`, counts.selectedCandidateCount ? "Kept candidates are ready for tracking." : "Keep at least one candidate before tracking.", counts.selectedCandidateCount ? "done" : "needs-action")
+        : hasJob
+          ? stage("candidates", "Candidates", "None reported", "Open diagnostics or retry with clearer prompts.", counts.diagnosticCount || counts.hasFailure ? "blocked" : "needs-action")
+          : stage("candidates", "Candidates", "Not loaded", "Run extraction before reviewing candidates.", "needs-action");
+    const trackSelectedStage = failed
+      ? stage("track_selected", "Track selected", "Blocked", "The run did not produce reviewable candidates.", "blocked")
+      : counts.trackCount
+        ? stage("track_selected", "Track selected", "Done", "Selected candidates were turned into tracks.", "done")
+        : counts.selectedCandidateCount
+          ? stage("track_selected", "Track selected", `${counts.selectedCandidateCount} ready`, "Track selected candidates to create object tracks.", "needs-action")
+          : counts.candidateCount
+            ? stage("track_selected", "Track selected", "Needs kept candidates", "Keep at least one candidate before tracking.", "needs-action")
+            : stage("track_selected", "Track selected", "Waiting", "Candidates must exist before tracking.", running ? "running" : "needs-action");
+    const tracksStage = failed
+      ? stage("tracks", "Tracks", "Unavailable", "No vector/object tracks were produced.", "blocked")
+      : counts.trackCount
+        ? stage("tracks", "Tracks", `${counts.trackCount} track${counts.trackCount === 1 ? "" : "s"}`, `${counts.exportIncludedCount} marked for export.`, counts.exportIncludedCount ? "done" : "needs-action")
+        : counts.candidateCount
+          ? stage("tracks", "Tracks", "Not created", "Track selected candidates before correcting or exporting.", "needs-action")
+          : stage("tracks", "Tracks", "None", "Tracks appear after candidate tracking.", running ? "running" : "needs-action");
+    const correctionsStage = counts.correctionCount
+      ? stage("corrections", "Corrections", `${counts.correctionCount} edit${counts.correctionCount === 1 ? "" : "s"}`, "Correction edits are saved locally before export.", "done")
+      : counts.trackCount
+        ? stage("corrections", "Corrections", "Optional", "Repair, relabel, merge, split, or continue to export.", "ready")
+        : stage("corrections", "Corrections", "No tracks", "Correction tools become useful after tracks exist.", failed ? "blocked" : "needs-action");
+    const exportStage = failed
+      ? stage("export", "Export", "Blocked", "Resolve the failed run before exporting.", "blocked")
+      : counts.exportOk
+        ? stage("export", "Export", "Validated", "Reviewed object export passed validation.", "done")
+        : counts.exportValidated
+          ? stage("export", "Export", "Needs fixes", "Resolve validation issues before writing MotionJSON.", "blocked")
+          : counts.exportIncludedCount
+            ? stage("export", "Export", `${counts.exportIncludedCount} included`, "Validate export settings before writing artifacts.", "needs-action")
+            : counts.trackCount
+              ? stage("export", "Export", "Needs reviewed track", "Mark at least one track for export.", "needs-action")
+              : stage("export", "Export", "Not ready", "Create tracks before exporting.", running ? "running" : "needs-action");
+    return {
+      format: "motionjson.local_ui_review_flow_view.v0.1",
+      gate,
+      ...counts,
+      stages: [candidatesStage, trackSelectedStage, tracksStage, correctionsStage, exportStage],
+    };
   }
 
   function jobConfig(job) {
@@ -3526,12 +3600,18 @@ const MotionJSONUI = (() => {
     return rows;
   }
 
-  function exportActionState({ job = null, includedIds = [], status = null } = {}) {
+  function exportActionState({ job = null, includedIds = [], pendingIds = [], trackCount = 0, status = null } = {}) {
+    const lifecycle = job ? normalizeJobLifecycle(job) : null;
     const includedCount = asArray(includedIds).length;
-    if (!job) return { disabled: true, label: "Export MotionJSON", reason: "Select a completed run before exporting." };
-    if (!includedCount) return { disabled: true, label: "Export MotionJSON", reason: "No reviewed tracks are included for export." };
+    const pendingCount = asArray(pendingIds).length;
+    if (!lifecycle) return { disabled: true, label: "Export MotionJSON", reason: "No completed run is selected." };
+    if (lifecycle.active) return { disabled: true, label: "Export MotionJSON", reason: "The selected run is still running." };
+    if (lifecycle.status === "failed" || lifecycle.status === "canceled") return { disabled: true, label: "Export MotionJSON", reason: "The selected run failed or was canceled; open logs before export." };
+    if (toInteger(trackCount, 0) === 0) return { disabled: true, label: "Export MotionJSON", reason: "Track selected candidates before exporting." };
+    if (pendingCount) return { disabled: true, label: "Export MotionJSON", reason: `${pendingCount} reviewed track${pendingCount === 1 ? "" : "s"} need materialized assets before export.` };
+    if (!includedCount) return { disabled: true, label: "Export MotionJSON", reason: "Mark at least one reviewed track for export." };
     if (status && status.ok !== true) {
-      return { disabled: true, label: "Resolve validation first", reason: "Fix or validate the reviewed export state before writing MotionJSON." };
+      return { disabled: true, label: "Resolve validation first", reason: "Resolve export validation issues before writing MotionJSON." };
     }
     return { disabled: false, label: "Export MotionJSON", reason: "" };
   }
@@ -3540,8 +3620,8 @@ const MotionJSONUI = (() => {
     return asArray(assets).find((asset) => String(asset?.kind || "") === kind) || null;
   }
 
-  function exportHandoffCards({ job = null, includedIds = [], assets = [], objectLayerPack = null, status = null, copiedId = "" } = {}) {
-    const exportAction = exportActionState({ job, includedIds, status });
+  function exportHandoffCards({ job = null, includedIds = [], pendingIds = [], trackCount = 0, assets = [], objectLayerPack = null, status = null, copiedId = "" } = {}) {
+    const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount, status });
     const snippets = objectLayerPack?.snippets || {};
     return EXPORT_HANDOFF_DEFS.map((definition) => {
       const asset = assetByKind(assets, definition.kind);
@@ -3776,11 +3856,13 @@ const MotionJSONUI = (() => {
       const connection = selectedConnectionForInput({ modelConnectionId: state.selectedModelSetupProviderId, preset: state.selectedPreset });
       const connectionSummary = connection ? connectionReadiness(connection) : { tone: "bad", status: "needs_setup", label: "Setup needed", message: "" };
       const candidates = reviewCandidates();
+      const selectedLifecycle = selectedJob() ? normalizeJobLifecycle(selectedJob()) : null;
       const selectedCount = candidates.filter((candidate) => {
         const id = candidateId(candidate);
         return id && state.candidateSelection[id] === true;
       }).length;
       const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
+      const exportIncludedCount = state.reviewTracks.filter(isTrackExportIncluded).length;
       return {
         selectedPreset: state.selectedPreset,
         presetLabel: currentPresetLabel(),
@@ -3814,10 +3896,11 @@ const MotionJSONUI = (() => {
         configValid: configStatus?.classList.contains("is-ready") || false,
         backendValidated: state.configValidation?.valid === true,
         selectedJobId: state.selectedJobId,
-        selectedJobStatus: selectedJob()?.status || "",
+        selectedJobStatus: selectedLifecycle?.status || selectedJob()?.status || "",
         candidateCount: candidates.length,
         selectedCandidateCount: selectedCount,
         trackCount: state.reviewTracks.length,
+        exportIncludedCount,
         correctionCount: asArray(state.correctionState?.history).length,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
@@ -3898,6 +3981,7 @@ const MotionJSONUI = (() => {
 
     function postRunSnapshot() {
       const candidates = reviewCandidates();
+      const selectedLifecycle = selectedJob() ? normalizeJobLifecycle(selectedJob()) : null;
       const selectedCandidateCount = candidates.filter((candidate) => {
         const id = candidateId(candidate);
         return id && state.candidateSelection[id] === true;
@@ -3910,7 +3994,7 @@ const MotionJSONUI = (() => {
       return {
         activeJobs: state.jobs.filter(isActiveJob).length,
         hasSelectedJob: Boolean(state.selectedJobId),
-        selectedJobStatus: selectedJob()?.status || "",
+        selectedJobStatus: selectedLifecycle?.status || selectedJob()?.status || "",
         candidateCount: candidates.length,
         selectedCandidateCount,
         trackCount: state.reviewTracks.length,
@@ -3935,21 +4019,23 @@ const MotionJSONUI = (() => {
 
     function renderPostRunFlow() {
       const snapshot = postRunSnapshot();
-      const stages = postRunWorkflowSummaryFromSnapshot(snapshot);
+      const reviewFlow = reviewFlowStateFromSnapshot({ ...snapshot, job: selectedJob() });
+      const stages = reviewFlow.stages;
       const blocking = stages.find((stage) => stage.status === "blocked");
       const next = blocking || stages.find((stage) => stage.status === "needs-action") || stages.find((stage) => stage.status === "running") || stages[stages.length - 1];
-      const runStage = stages.find((stage) => stage.id === "run");
+      const runStage = runMonitorStageFromSnapshot(snapshot);
       const candidateStage = stages.find((stage) => stage.id === "candidates");
+      const trackSelectedStage = stages.find((stage) => stage.id === "track_selected");
       const trackStage = stages.find((stage) => stage.id === "tracks");
       const correctionStage = stages.find((stage) => stage.id === "corrections");
       const exportStage = stages.find((stage) => stage.id === "export");
 
       if ($("#postRunGuideList")) $("#postRunGuideList").innerHTML = postRunStageCards(stages);
       if ($("#postRunGuideStatus")) {
-        $("#postRunGuideStatus").textContent = next?.status === "done" ? "Ready" : next?.value || "Needs review";
+        $("#postRunGuideStatus").textContent = reviewFlow.gate.primaryLabel || (next?.status === "done" ? "Ready" : next?.value || "Needs review");
         $("#postRunGuideStatus").className = `status-chip ${next?.tone || "is-muted"}`;
       }
-      if ($("#postRunGuideNote")) $("#postRunGuideNote").textContent = next?.detail || "Review, correct, and export reviewed object tracks.";
+      if ($("#postRunGuideNote")) $("#postRunGuideNote").textContent = reviewFlow.gate.reason || next?.detail || "Review, correct, and export reviewed object tracks.";
       const runSummaryMarkup = summaryCards([runStage].filter(Boolean));
       if ($("#runMonitorSummary")) $("#runMonitorSummary").innerHTML = runSummaryMarkup;
       if ($("#mainRunMonitorSummary")) $("#mainRunMonitorSummary").innerHTML = runSummaryMarkup;
@@ -3961,7 +4047,7 @@ const MotionJSONUI = (() => {
         $("#mainRunStatus").textContent = runStage.value;
         $("#mainRunStatus").className = `status-chip ${runStage.tone}`;
       }
-      if ($("#reviewStatusSummary")) $("#reviewStatusSummary").innerHTML = summaryCards([candidateStage, trackStage].filter(Boolean));
+      if ($("#reviewStatusSummary")) $("#reviewStatusSummary").innerHTML = summaryCards([candidateStage, trackSelectedStage, trackStage].filter(Boolean));
       if ($("#reviewFlowStatus") && trackStage) {
         $("#reviewFlowStatus").textContent = trackStage.value;
         $("#reviewFlowStatus").className = `status-chip ${trackStage.tone}`;
@@ -4017,6 +4103,7 @@ const MotionJSONUI = (() => {
       const visibleStepIds = SCREEN_STEPS.find((screen) => screen.id === workflowScreenForStep(activeStep))?.workflowSteps || [activeStep];
       const postRun = postRunSnapshot();
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
+      const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       for (const panel of workflowPanels()) {
         const railDetail = panel.matches("details.rail-section");
@@ -4028,7 +4115,7 @@ const MotionJSONUI = (() => {
             (panel.id === "mainJobCenter" && !state.selectedJobId) ||
             (panel.id === "modelSetupPanel" && (!goalRequiresModel(state.selectedPreset) || (!state.selectedVideoId && state.selectedPreset !== "review_existing")))
           );
-        const visible = !hiddenInSimpleMode && (showAll || ((!railDetail || showFailureDetails) && matchesVisibleStep));
+        const visible = !hiddenInSimpleMode && (showAll || ((!railDetail || showReviewDetails) && matchesVisibleStep));
         setElementWorkflowHidden(panel, !visible);
         if (visible && panel.matches("details.rail-section") && !showAll) {
           panel.open = true;
@@ -4039,7 +4126,7 @@ const MotionJSONUI = (() => {
       }
       if (showAll) {
         setRailCollapsed(false, { persist: false });
-      } else if (showFailureDetails) {
+      } else if (showReviewDetails) {
         setRailCollapsed(false, { persist: false });
       } else if (!shell?.classList.contains("is-rail-collapsed")) {
         setRailCollapsed(true, { persist: false });
@@ -4266,6 +4353,18 @@ const MotionJSONUI = (() => {
       renderWorkflowStepper();
     }
 
+    function focusReviewDetail(target = "candidates") {
+      setRailCollapsed(false, { persist: false });
+      const reviewDetails = [...document.querySelectorAll("details.rail-section")].find((details) =>
+        /review candidates and tracks/i.test(details.querySelector("summary")?.textContent || ""),
+      );
+      if (reviewDetails) reviewDetails.open = true;
+      const selector = target === "tracks" ? "#trackList" : target === "diagnostics" ? "#fallbackDiagnosticsDisclosure" : "#candidateSummaryList";
+      const element = $(selector);
+      if (element?.tagName === "DETAILS") element.open = true;
+      (element?.querySelector?.("button, input, [tabindex]") || element)?.focus?.({ preventScroll: false });
+    }
+
     async function performWorkflowPrimaryAction() {
       const snapshot = workflowSnapshot();
       const contract = workflowStepContractFromSnapshot(snapshot, state.activeWorkflowStep);
@@ -4297,6 +4396,14 @@ const MotionJSONUI = (() => {
           if (logs) logs.open = true;
           const diagnostics = $("#fallbackDiagnosticsDisclosure");
           if (diagnostics) diagnostics.open = true;
+        } else if (contract.primaryAction === "select_candidates") {
+          focusReviewDetail("candidates");
+        } else if (contract.primaryAction === "track_selected") {
+          await trackSelectedCandidatesWithApi();
+        } else if (contract.primaryAction === "mark_reviewed") {
+          await markReviewedTracksForExport();
+        } else if (contract.primaryAction === "inspect_diagnostics") {
+          focusReviewDetail("diagnostics");
         } else if (contract.primaryAction === "export_reviewed") {
           await exportReviewedObjectsFromGuidedFlow();
         }
@@ -6464,7 +6571,7 @@ const MotionJSONUI = (() => {
       });
       const status = exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation;
       const ok = status?.ok === true;
-      const exportAction = exportActionState({ job, includedIds, status });
+      const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount: state.reviewTracks.length, status });
       $("#exportStatus").textContent = !job ? "No run" : ok ? "Valid" : status ? "Needs review" : "Not validated";
       $("#exportStatus").className = `status-chip ${!job ? "is-muted" : ok ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       $("#validateExportButton").disabled = !job;
@@ -6477,6 +6584,8 @@ const MotionJSONUI = (() => {
       const handoffCards = exportHandoffCards({
         job,
         includedIds,
+        pendingIds,
+        trackCount: state.reviewTracks.length,
         assets: exportArtifacts,
         objectLayerPack,
         status,
@@ -6495,7 +6604,6 @@ const MotionJSONUI = (() => {
                     <strong>${escapeHtml(card.title)}</strong>
                     <span class="status-chip is-${escapeAttribute(card.tone)}">${escapeHtml(card.status)}</span>
                   </div>
-                  <span class="row-meta">${escapeHtml(card.description)}</span>
                   <span class="row-meta">${escapeHtml(card.detail)}</span>
                   ${card.copied ? `<span class="copy-status">Copied to clipboard.</span>` : ""}
                   <button
@@ -7976,6 +8084,7 @@ const MotionJSONUI = (() => {
     function applyReviewCaptureFixture(capture) {
       const jobId = `job_${capture}_layout`;
       const failedCapture = capture === "workflow-review-failure";
+      const candidateOnlyCapture = capture === "candidate-review";
       const runConfig = buildRunConfig({
         preset: "auto_object_proposals",
         discoveryMode: "auto_object_proposals",
@@ -8013,7 +8122,7 @@ const MotionJSONUI = (() => {
         progress: failedCapture ? 64 : 100,
         percent: failedCapture ? 64 : 100,
         payload: { mask_provider: "mock", run_config: runConfig },
-        result: failedCapture ? { objects: 0, frames: 450, rasterFallback: true } : { objects: 4, frames: 450 },
+        result: failedCapture || candidateOnlyCapture ? { objects: 0, frames: 450, rasterFallback: failedCapture } : { objects: 4, frames: 450 },
         updated_at: "2026-05-20T12:00:00Z",
         message: failedCapture ? "SAM2 model weights unavailable; vector tracks were not produced." : "review fixture ready",
         error: failedCapture ? "SAM2 model weights unavailable; use mock/local provider or install model weights before retrying." : "",
@@ -8278,8 +8387,8 @@ const MotionJSONUI = (() => {
           defaultSelectedCount: failedCapture ? 0 : 4,
           rejectionReasons: failedCapture ? {} : { background_like: 3 },
         },
-        tracks: failedCapture ? [] : reviewTracks,
-        objects: failedCapture
+        tracks: failedCapture || candidateOnlyCapture ? [] : reviewTracks,
+        objects: failedCapture || candidateOnlyCapture
           ? []
           : [
               { objectId: "red_ball", id: "red_ball", label: "Red ball" },
@@ -8288,8 +8397,8 @@ const MotionJSONUI = (() => {
               { objectId: "moving_object", id: "moving_object", label: "Moving object" },
             ],
         export: {
-          includedObjectIds: failedCapture ? [] : ["red_ball", "hand_person", "cup", "moving_object"],
-          excludedObjectIds: failedCapture ? [] : ["plant_background", "fence_background", "ground_lawn"],
+          includedObjectIds: failedCapture || candidateOnlyCapture ? [] : ["red_ball", "hand_person", "cup", "moving_object"],
+          excludedObjectIds: failedCapture ? [] : candidateOnlyCapture ? candidates.map(candidateId).filter(Boolean) : ["plant_background", "fence_background", "ground_lawn"],
           exportReviewRequired: true,
         },
         rightsSummary: {
@@ -8311,15 +8420,15 @@ const MotionJSONUI = (() => {
         rasterFallbackReason: failedCapture ? "Raster-only fallback was retained so the failed run still has inspectable output." : "",
         failure: failedCapture ? { message: "SAM2 model weights unavailable; vector tracks were not produced." } : null,
       };
-      state.reviewTracks = failedCapture ? [] : reviewTracks;
-      state.trackVisibility = failedCapture ? {} : { red_ball: true, hand_person: true, cup: true, moving_object: true };
+      state.reviewTracks = failedCapture || candidateOnlyCapture ? [] : reviewTracks;
+      state.trackVisibility = failedCapture || candidateOnlyCapture ? {} : { red_ball: true, hand_person: true, cup: true, moving_object: true };
       state.candidateSelection = failedCapture
         ? {}
         : { cand_red_ball: true, cand_person: true, cand_cup: true, cand_moving_object: true, cand_plant: false, cand_fence: false, cand_ground: false };
       state.candidateSelectionJobId = job.id;
-      state.candidateTrackingStatus = failedCapture ? "" : "4 reviewed candidates tracked; export remains reviewed-only.";
-      state.selectedCorrectionTrackId = failedCapture ? "" : "red_ball";
-      state.mergeSelection = !failedCapture && capture === "correction-tools" ? new Set(["red_ball", "moving_object"]) : new Set();
+      state.candidateTrackingStatus = failedCapture ? "" : candidateOnlyCapture ? "4 candidates kept; track selected to create object tracks." : "4 reviewed candidates tracked; export remains reviewed-only.";
+      state.selectedCorrectionTrackId = failedCapture || candidateOnlyCapture ? "" : "red_ball";
+      state.mergeSelection = !failedCapture && !candidateOnlyCapture && capture === "correction-tools" ? new Set(["red_ball", "moving_object"]) : new Set();
       state.prompts = failedCapture
         ? []
         : [
@@ -9096,13 +9205,41 @@ const MotionJSONUI = (() => {
         });
         if (response?.review) state.jobReview = response.review;
         if (response?.artifacts) state.jobArtifacts = asArray(response.artifacts);
-        await loadJobReview(state.selectedJobId);
+        if (response?.job) {
+          state.selectedJob = response.job;
+          state.jobs = state.jobs.map((item) => (jobIdentifier(item) === state.selectedJobId ? response.job : item));
+        }
+        await refreshProjectData({ quiet: true });
         state.candidateTrackingStatus = `Tracked ${ids.length} selected candidate${ids.length === 1 ? "" : "s"}; export remains review-gated.`;
         renderJobReview();
       } catch (error) {
         state.candidateTrackingStatus = error.message;
         renderCandidateSummary();
       }
+    }
+
+    async function markReviewedTracksForExport() {
+      const eligibleTracks = state.reviewTracks.filter((track) => track.exportable !== false && track.demoMode !== true && !track.deleted);
+      if (!eligibleTracks.length) {
+        setRunAlert("No materialized object tracks are available to mark for export.", "warning-box is-bad");
+        focusReviewDetail("tracks");
+        return;
+      }
+      const pendingTracks = eligibleTracks.filter((track) => !isTrackExportIncluded(track));
+      if (!pendingTracks.length) {
+        setRunAlert("Reviewed tracks are already marked for export.", "warning-box is-ready");
+        renderWorkflowStepper();
+        return;
+      }
+      for (const track of pendingTracks) {
+        await submitCorrectionAction({
+          type: "set_export_inclusion",
+          trackId: track.id,
+          included: true,
+        });
+      }
+      setRunAlert(`${pendingTracks.length} reviewed track${pendingTracks.length === 1 ? "" : "s"} marked for export.`, "warning-box is-ready");
+      renderJobReview();
     }
 
     function markCorrectionFailure(message) {
@@ -10254,7 +10391,9 @@ const MotionJSONUI = (() => {
     postRunWorkflowSummaryFromSnapshot,
     reviewGateFromSnapshot,
     reviewCandidates,
+    reviewFlowStateFromSnapshot,
     safeLocalContentUrl,
+    runMonitorStageFromSnapshot,
     slugObjectId,
     timelineMarkersForDisplay,
     trackFrameForDisplay,

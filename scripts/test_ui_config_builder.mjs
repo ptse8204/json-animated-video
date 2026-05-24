@@ -122,26 +122,46 @@ const postRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   correctionCount: 1,
   exportValidated: false,
 });
-assert.deepEqual(postRunSummary.map((stage) => stage.id), ["run", "candidates", "tracks", "corrections", "export"]);
-assert.equal(postRunSummary.find((stage) => stage.id === "run").status, "done");
+assert.deepEqual(postRunSummary.map((stage) => stage.id), ["candidates", "track_selected", "tracks", "corrections", "export"]);
 assert.equal(postRunSummary.find((stage) => stage.id === "candidates").value, "2/3 kept");
+assert.equal(postRunSummary.find((stage) => stage.id === "track_selected").status, "done");
 assert.equal(postRunSummary.find((stage) => stage.id === "tracks").value, "2 tracks");
 assert.equal(postRunSummary.find((stage) => stage.id === "corrections").status, "done");
 assert.equal(postRunSummary.find((stage) => stage.id === "export").status, "needs-action");
+const candidateOnlyFlow = ui.reviewFlowStateFromSnapshot({
+  job: { id: "job_candidates", status: "succeeded" },
+  candidateCount: 3,
+  selectedCandidateCount: 2,
+  trackCount: 0,
+});
+assert.equal(candidateOnlyFlow.gate.primaryAction, "track_selected");
+assert.equal(candidateOnlyFlow.stages.find((stage) => stage.id === "track_selected").value, "2 ready");
 const failedPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "failed",
   hasFailure: true,
   diagnosticCount: 2,
 });
-assert.equal(failedPostRunSummary.find((stage) => stage.id === "run").status, "blocked");
-assert.match(failedPostRunSummary.find((stage) => stage.id === "run").detail, /failure|diagnostics|logs/i);
+assert.equal(failedPostRunSummary.find((stage) => stage.id === "candidates").status, "blocked");
+const failedRunSummary = ui.runMonitorStageFromSnapshot({
+  selectedJobStatus: "failed",
+  hasFailure: true,
+  diagnosticCount: 2,
+});
+assert.equal(failedRunSummary.status, "blocked");
+assert.match(failedRunSummary.detail, /failure|diagnostics|logs/i);
 const fallbackPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "succeeded",
   diagnosticCount: 2,
   attentionDiagnosticCount: 1,
 });
-assert.equal(fallbackPostRunSummary.find((stage) => stage.id === "run").status, "warning");
-assert.match(fallbackPostRunSummary.find((stage) => stage.id === "run").detail, /fallback|provider diagnostic/i);
+assert.equal(fallbackPostRunSummary.find((stage) => stage.id === "candidates").value, "None reported");
+const fallbackRunSummary = ui.runMonitorStageFromSnapshot({
+  selectedJobStatus: "succeeded",
+  diagnosticCount: 2,
+  attentionDiagnosticCount: 1,
+});
+assert.equal(fallbackRunSummary.status, "warning");
+assert.match(fallbackRunSummary.detail, /fallback|provider diagnostic/i);
 assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "bad", kind: "job", message: "provider failed" }), true);
 assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "warn", kind: "fallback_diagnostics", message: "Raster fallback was written." }), true);
 assert.equal(ui.diagnosticNeedsImmediateAttention({ severity: "warn", kind: "status", message: "Quality note only." }), false);
@@ -975,17 +995,23 @@ assert.deepEqual(
 assert.deepEqual(ui.exportActionState({ job: null, includedIds: ["object_0"] }), {
   disabled: true,
   label: "Export MotionJSON",
-  reason: "Select a completed run before exporting.",
+  reason: "No completed run is selected.",
 });
-assert.deepEqual(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["object_0"], status: { ok: false } }), {
+assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, status: { ok: false } }), {
   disabled: true,
   label: "Resolve validation first",
-  reason: "Fix or validate the reviewed export state before writing MotionJSON.",
+  reason: "Resolve export validation issues before writing MotionJSON.",
 });
-assert.equal(ui.exportActionState({ job: { id: "job_1" }, includedIds: ["object_0"], status: { ok: true } }).disabled, false);
+assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: [], trackCount: 1 }), {
+  disabled: true,
+  label: "Export MotionJSON",
+  reason: "Mark at least one reviewed track for export.",
+});
+assert.equal(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, status: { ok: true } }).disabled, false);
 const handoffCards = ui.exportHandoffCards({
-  job: { id: "job_1" },
+  job: { id: "job_1", status: "succeeded" },
   includedIds: ["object_0"],
+  trackCount: 1,
   status: { ok: true },
   copiedId: "runtime-snippet",
   assets: [
