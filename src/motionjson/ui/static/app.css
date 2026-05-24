@@ -2405,6 +2405,22 @@ button,
   line-height: 1.45;
 }
 
+.advanced-task-panel {
+  margin-top: 2px;
+}
+
+.advanced-goal-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 var(--space-sm) var(--space-sm);
+}
+
+.advanced-goal-list .goal-card {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 10px 12px;
+}
+
 .guided-start-actions {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2735,6 +2751,33 @@ button,
   gap: var(--space-sm);
   margin: var(--space-md) 0 0;
   background: #fbfcfb;
+}
+
+.job-center-panel {
+  display: grid;
+  gap: var(--space-sm);
+  max-width: 1120px;
+  margin: 0 auto var(--space-md);
+  background: #fbfcfb;
+}
+
+.job-center-heading,
+.main-job-center-grid {
+  display: grid;
+  gap: var(--space-sm);
+  align-items: start;
+}
+
+.job-center-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.main-job-center-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
+}
+
+#mainCancelJobButton {
+  min-height: 34px;
 }
 
 .model-plan-heading,
@@ -3410,10 +3453,10 @@ body {
 
 .studio-progress {
   display: grid;
-  grid-template-columns: repeat(3, minmax(92px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(5, minmax(76px, 1fr));
+  gap: 10px;
   align-items: center;
-  max-width: 520px;
+  max-width: 760px;
   width: 100%;
   margin: 0 auto;
   padding: 0;
@@ -3439,7 +3482,7 @@ body {
 
 .studio-progress button {
   display: inline-flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   justify-content: center;
   width: 100%;
@@ -3449,9 +3492,9 @@ body {
   color: inherit;
   background: transparent;
   box-shadow: none;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 760;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .studio-progress button:disabled {
@@ -4296,7 +4339,7 @@ body {
   }
 
   .studio-progress {
-    grid-template-columns: repeat(3, minmax(42px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
   }
 
@@ -4310,7 +4353,7 @@ body {
     display: grid;
     justify-items: center;
     gap: 5px;
-    font-size: 11px;
+    font-size: 10px;
     white-space: normal;
   }
 
@@ -4321,6 +4364,11 @@ body {
   .studio-progress button span {
     width: 25px;
     height: 25px;
+  }
+
+  .main-job-center-grid,
+  .advanced-goal-list {
+    grid-template-columns: 1fr;
   }
 
   .topbar-actions {

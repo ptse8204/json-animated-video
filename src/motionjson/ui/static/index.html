@@ -101,14 +101,20 @@
             <span class="studio-project-pill">Local Project</span>
           </div>
           <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
-            <li class="is-active" data-studio-step="setup">
-              <button type="button" data-workflow-screen="setup"><span>1</span><strong>Setup</strong></button>
+            <li class="is-active" data-studio-step="choose_goal">
+              <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Start</strong></button>
             </li>
-            <li class="is-pending" data-studio-step="prepare">
-              <button type="button" data-workflow-screen="prepare"><span>2</span><strong>Prepare</strong></button>
+            <li class="is-pending" data-studio-step="source_video">
+              <button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong></button>
             </li>
-            <li class="is-pending" data-studio-step="review">
-              <button type="button" data-workflow-screen="review"><span>3</span><strong>Review</strong></button>
+            <li class="is-pending" data-studio-step="provider_settings">
+              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="prompt_preview">
+              <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare &amp; run</strong></button>
+            </li>
+            <li class="is-pending" data-studio-step="review_export">
+              <button type="button" data-workflow-step="review_export"><span>5</span><strong>Review &amp; export</strong></button>
             </li>
           </ol>
           <div class="topbar-actions">
@@ -129,36 +135,53 @@
           <div class="guided-start-header">
             <div>
               <h2>What do you want to do?</h2>
-              <p class="panel-note">Choose the job first. The rest of Setup will only show what the selected task actually needs.</p>
+              <p class="panel-note">Choose the task. The rest of the flow only shows what that task needs.</p>
             </div>
             <span id="guidedModeChip" class="status-chip is-neutral">Local first</span>
           </div>
           <div class="goal-card-grid" aria-label="Object tracing goals">
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
               <span class="goal-card-title">Cut out one object</span>
-              <span class="goal-card-copy">Load a preview, place a point or box, and track the selected subject.</span>
-            </button>
-            <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
-              <span class="goal-card-title">Trace all objects</span>
-              <span class="goal-card-copy">Find likely foreground objects, review the masks, then export all approved tracks.</span>
-            </button>
-            <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
-              <span class="goal-card-title">Find moving things</span>
-              <span class="goal-card-copy">Use CPU motion cues to propose objects that change over time.</span>
+              <span class="goal-card-copy">Place a point or box, then track that subject.</span>
             </button>
             <button class="goal-card" type="button" data-preset="text_detector" aria-pressed="false">
               <span class="goal-card-title">Find by description</span>
-              <span class="goal-card-copy">Describe labels such as red ball, hand, or cup, then review candidates.</span>
+              <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
+            </button>
+            <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
+              <span class="goal-card-title">Find moving things</span>
+              <span class="goal-card-copy">Use local motion cues without a model.</span>
             </button>
             <button class="goal-card" type="button" data-preset="external_masks" aria-pressed="false">
               <span class="goal-card-title">Import masks</span>
-              <span class="goal-card-copy">Bring in prepared mask frames and turn them into reviewed object tracks.</span>
+              <span class="goal-card-copy">Bring prepared masks into review.</span>
             </button>
             <button class="goal-card" type="button" data-preset="review_existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
-              <span class="goal-card-copy">Open a prior MotionJSON output and check tracks before exporting assets.</span>
+              <span class="goal-card-copy">Open a prior result and check tracks before export.</span>
             </button>
           </div>
+          <details class="advanced-panel advanced-task-panel">
+            <summary>Advanced tasks</summary>
+            <div class="advanced-goal-list">
+              <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
+                <span class="goal-card-title">Trace all objects</span>
+                <span class="goal-card-copy">Find likely foreground objects for review.</span>
+              </button>
+              <button class="goal-card" type="button" data-preset="auto_object_proposals" aria-pressed="false">
+                <span class="goal-card-title">Discover objects</span>
+                <span class="goal-card-copy">Generate automatic proposals before tracking.</span>
+              </button>
+              <button class="goal-card" type="button" data-preset="sam_auto_masks" aria-pressed="false">
+                <span class="goal-card-title">Propose all visible segments</span>
+                <span class="goal-card-copy">Use noisier segmentation for expert review.</span>
+              </button>
+              <button class="goal-card" type="button" data-preset="class_detector" aria-pressed="false">
+                <span class="goal-card-title">Find known classes</span>
+                <span class="goal-card-copy">Use configured detector classes.</span>
+              </button>
+            </div>
+          </details>
         </section>
 
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow">
@@ -194,6 +217,45 @@
             <p id="workflowFooterHint" class="row-meta">Choose a tracing goal to continue.</p>
             <p id="workflowFooterReason" class="form-hint workflow-footer-reason" hidden></p>
           </div>
+        </section>
+
+        <section id="mainJobCenter" class="job-center-panel panel" data-workflow-panel="prompt_preview review_candidates correct_tracks export" aria-label="Job center">
+          <div class="job-center-heading">
+            <div>
+              <p class="section-kicker">Job Center</p>
+              <h2>Run monitor</h2>
+            </div>
+            <span id="mainJobSummary" class="subtle-chip">0 active</span>
+          </div>
+          <div id="mainRunMonitorSummary" class="status-summary-grid" aria-live="polite"></div>
+          <div class="main-job-center-grid">
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h3>Jobs</h3>
+                <span id="mainRunStatus" class="status-chip is-muted">No run</span>
+              </div>
+              <div id="mainJobList" class="artifact-list"></div>
+            </section>
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h3>Selected run</h3>
+                <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
+              </div>
+              <dl id="mainSelectedJobFacts" class="facts"></dl>
+            </section>
+          </div>
+        </section>
+
+        <section id="postRunGuide" class="compact-panel post-run-guide" data-workflow-panel="review_candidates correct_tracks export" aria-label="Post-run review flow">
+          <div class="panel-heading compact-heading">
+            <div>
+              <p class="section-kicker">Post-run flow</p>
+              <h2>Review before export</h2>
+            </div>
+            <span id="postRunGuideStatus" class="status-chip is-muted">No run</span>
+          </div>
+          <p id="postRunGuideNote" class="panel-note">Start a run, review object tracks, correct mistakes, then export reviewed objects.</p>
+          <div id="postRunGuideList" class="post-run-guide-list" aria-live="polite"></div>
         </section>
 
         <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status"></div>
@@ -624,18 +686,6 @@
             aria-expanded="true"
           >Hide details</button>
         </div>
-
-        <section id="postRunGuide" class="compact-panel post-run-guide" data-workflow-panel="review_candidates correct_tracks export" aria-label="Post-run review flow">
-          <div class="panel-heading compact-heading">
-            <div>
-              <p class="section-kicker">Post-run flow</p>
-              <h2>Review before export</h2>
-            </div>
-            <span id="postRunGuideStatus" class="status-chip is-muted">No run</span>
-          </div>
-          <p id="postRunGuideNote" class="panel-note">Start a run, review object tracks, correct mistakes, then export reviewed objects.</p>
-          <div id="postRunGuideList" class="post-run-guide-list" aria-live="polite"></div>
-        </section>
 
         <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Provider settings</summary>

@@ -73,9 +73,9 @@ The Local UI now uses a progressive workflow instead of showing every setup,
 diagnostic, review, correction, and export card at once. The main product flow
 guides users through:
 
-1. Choose goal.
-2. Add or select video.
-3. Connect model.
+1. Start.
+2. Video.
+3. Model.
 4. Prepare and run.
 5. Review and export.
 
@@ -84,6 +84,13 @@ shows `Back` plus one explicit primary action such as `Add video`, `Continue`,
 `Run trace`, `Run search`, `Run motion scan`, or `Export reviewed objects`.
 Secondary actions such as demo video, diagnose, setup test, or review bulk
 actions stay visually secondary inside the current panel.
+
+After a run starts, the Job Center becomes part of the main workspace instead
+of living only in the details rail. It shows the selected job, active/recent
+jobs, normalized status, progress, provider, artifacts, and cancel state.
+Failed runs switch the main screen to Run monitor, open the details rail, and
+surface logs plus fallback diagnostics without requiring an extra discovery
+step.
 
 Local project creation is no longer a required early decision in guided mode.
 When a user adds a video, starts from the bundled demo, or opens an existing
@@ -104,8 +111,8 @@ ArrowLeft, ArrowUp, Home, and End for keyboard navigation.
 
 Diagnostics are quieter on successful runs but are not hidden when they matter.
 Provider warnings stay visible before a run, failed runs open logs, and
-fallback/raster/vector-unavailable diagnostics open automatically in the review
-step.
+fallback/raster/vector-unavailable diagnostics open automatically in the Run
+monitor or review step.
 
 ## Model Connections
 
