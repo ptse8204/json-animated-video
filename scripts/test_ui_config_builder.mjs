@@ -238,6 +238,17 @@ const hostedSam2Config = ui.buildRunConfig({
 assert.equal(hostedSam2Config.provider.sam2.hosted_config.profile, "replicate-sam2-video");
 assert.equal(hostedSam2Config.provider.sam2.hosted_allow_network, true);
 assert.equal(JSON.stringify(hostedSam2Config).includes("replicate-profile-secret"), false);
+const hostedSam2Contract = ui.providerContractForInput({
+  preset: "trace_one_object",
+  modelConnectionId: "sam2-hosted:replicate-sam2-video",
+  hostedSam2AllowHosted: true,
+});
+assert.equal(hostedSam2Contract.connectionId, "sam2-hosted:replicate-sam2-video");
+assert.equal(hostedSam2Contract.providerId, "sam2-hosted");
+assert.equal(hostedSam2Contract.displayLabel, "Replicate SAM2 video");
+assert.equal(hostedSam2Contract.engine, "sam2");
+assert.equal(hostedSam2Contract.locality, "hosted");
+assert.equal(hostedSam2Contract.hostedCallsAllowed, true);
 
 const hostedSam3Config = ui.buildRunConfig({
   preset: "text_detector",
@@ -253,6 +264,25 @@ assert.equal(hostedSam3Config.discovery.config.providerPreference, "sam3-hosted"
 assert.equal(hostedSam3Config.discovery.config.hostedProfile, "roboflow-sam3-pcs");
 assert.equal(hostedSam3Config.discovery.config.allowNetwork, true);
 assert.equal(hostedSam3Config.provider.sam3.hosted_config.profile, "roboflow-sam3-pcs");
+const hostedSam3BlockedConfig = ui.buildRunConfig({
+  preset: "text_detector",
+  modelConnectionId: "sam3-hosted:roboflow-sam3-pcs",
+  textPrompt: "red ball",
+  hostedSam3ProfileId: "roboflow-sam3-pcs",
+  hostedSam3AllowHosted: false,
+});
+assert.equal(hostedSam3BlockedConfig.discovery.config.allowNetwork, false);
+assert.equal(hostedSam3BlockedConfig.provider.sam3.hosted_allow_network, false);
+const hostedSam3Plan = ui.guidedEnginePlan({
+  preset: "text_detector",
+  modelConnectionId: "sam3-hosted:roboflow-sam3-pcs",
+  hostedSam3AllowHosted: false,
+});
+assert.equal(hostedSam3Plan.providerId, "sam3-hosted");
+assert.equal(hostedSam3Plan.connectionId, "sam3-hosted:roboflow-sam3-pcs");
+assert.equal(hostedSam3Plan.displayLabel, "Roboflow SAM3");
+assert.equal(hostedSam3Plan.discoveryMode, "sam3_concept");
+assert.equal(hostedSam3Plan.hostedCallsAllowed, false);
 
 const sam3SingleObjectConfig = ui.buildRunConfig({
   preset: "trace_one_object",
@@ -276,6 +306,48 @@ const sam3TraceAllConfig = ui.buildRunConfig({
 });
 assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
 assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
+
+const textPromptDefaultsToSam3 = ui.guidedEnginePlan({
+  preset: "text_detector",
+  maskProvider: "sam2-local",
+  textDiscoveryProvider: "detector",
+});
+assert.equal(textPromptDefaultsToSam3.providerId, "sam3-local");
+assert.equal(textPromptDefaultsToSam3.displayLabel, "SAM3 local");
+assert.equal(textPromptDefaultsToSam3.discoveryMode, "sam3_concept");
+
+const advancedDetectorFallback = ui.guidedEnginePlan({
+  preset: "text_detector",
+  maskProvider: "threshold",
+  textDiscoveryProvider: "detector",
+  allowLegacyTextDetector: true,
+});
+assert.equal(advancedDetectorFallback.providerId, "threshold");
+assert.equal(advancedDetectorFallback.discoveryMode, "text_detector");
+assert.equal(advancedDetectorFallback.locality, "no_model");
+
+const motionContract = ui.providerContractForInput({
+  preset: "motion_foreground",
+  maskProvider: "motion",
+});
+assert.equal(motionContract.providerId, "motion");
+assert.equal(motionContract.displayLabel, "Motion foreground");
+assert.equal(motionContract.locality, "no_model");
+
+const runPlanUsesProviderIdForLogic = ui.buildRunPlan(hostedSam3Config, {
+  preset: "text_detector",
+  modelConnectionId: "sam3-hosted:roboflow-sam3-pcs",
+  hostedSam3AllowHosted: true,
+  videoId: "video_1",
+  previewName: "preview.mp4",
+});
+assert.equal(runPlanUsesProviderIdForLogic.providerName, "Roboflow SAM3");
+assert.equal(runPlanUsesProviderIdForLogic.providerId, "sam3-hosted");
+assert.equal(runPlanUsesProviderIdForLogic.providerLocality, "hosted");
+assert.equal(runPlanUsesProviderIdForLogic.privacy, "Hosted calls allowed after confirmation");
+
+assert.ok(ui.compatibleModelConnectionsForPreset("trace_one_object").some((connection) => connection.id === "sam2-local"));
+assert.ok(ui.compatibleModelConnectionsForPreset("text_detector").some((connection) => connection.id === "sam3-local"));
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
@@ -670,6 +742,11 @@ const presetExpectations = [
   [maximumRecallConfig, "auto_object_proposals", "mock"],
   [traceEverythingConfig, "auto_object_proposals", "mock"],
   [manualConfig, "manual_prompt", "sam2-local"],
+  [hostedSam2Config, "manual_prompt", "sam2-hosted"],
+  [sam3SingleObjectConfig, "sam3_exemplar", "sam3-local"],
+  [sam3TraceAllConfig, "sam3_auto_masks", "sam3-local"],
+  [hostedSam3Config, "sam3_concept", "sam3-hosted"],
+  [hostedSam3BlockedConfig, "sam3_concept", "sam3-hosted"],
   [textConfig, "text_detector", "mock"],
   [classConfig, "class_detector", "mock"],
   [autoMasksConfig, "sam_auto_masks", "mock"],

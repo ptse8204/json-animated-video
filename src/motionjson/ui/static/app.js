@@ -68,8 +68,12 @@ const MotionJSONUI = (() => {
     {
       id: "sam2-local",
       providerId: "sam2-local",
+      engine: "sam2",
+      locality: "local",
+      displayLabel: "SAM2 local",
       workflow: "Trace one object",
       title: "SAM2 local",
+      capabilities: ["point", "box", "tracking"],
       recommendation: "Best first choice for a point or box prompt when SAM2 is installed on this machine.",
       nextAction: "Save checkpoint and config paths",
       profileId: "",
@@ -78,16 +82,24 @@ const MotionJSONUI = (() => {
       id: "sam2-hosted:replicate-sam2-video",
       providerId: "sam2-hosted",
       profileId: "replicate-sam2-video",
+      engine: "sam2",
+      locality: "hosted",
+      displayLabel: "Replicate SAM2 video",
       workflow: "Trace one object",
       title: "Replicate SAM2 video",
+      capabilities: ["point", "box", "tracking", "hosted"],
       recommendation: "Hosted fallback for promptable SAM2 video tracking when local SAM2 is not ready.",
       nextAction: "Link Replicate API token",
     },
     {
       id: "sam3-local",
       providerId: "sam3-local",
+      engine: "sam3",
+      locality: "local",
+      displayLabel: "SAM3 local",
       workflow: "Find objects from text",
       title: "SAM3 local",
+      capabilities: ["concept", "box", "tracking", "auto_masks"],
       recommendation: "Best local path for concept prompts and exemplar-style discovery when SAM3 is installed.",
       nextAction: "Save SAM3 model path",
       profileId: "",
@@ -96,8 +108,12 @@ const MotionJSONUI = (() => {
       id: "sam3-hosted:roboflow-sam3-pcs",
       providerId: "sam3-hosted",
       profileId: "roboflow-sam3-pcs",
+      engine: "sam3",
+      locality: "hosted",
+      displayLabel: "Roboflow SAM3",
       workflow: "Find objects from text",
       title: "Roboflow SAM3",
+      capabilities: ["concept", "tracking", "hosted"],
       recommendation: "Recommended hosted concept segmentation provider for prompts like red ball or person in white.",
       nextAction: "Link Roboflow API key",
     },
@@ -105,8 +121,12 @@ const MotionJSONUI = (() => {
       id: "sam3-hosted:fal-sam3-image",
       providerId: "sam3-hosted",
       profileId: "fal-sam3-image",
+      engine: "sam3",
+      locality: "hosted",
+      displayLabel: "Fal SAM3 image",
       workflow: "Frame-by-frame SAM3",
       title: "Fal SAM3 image",
+      capabilities: ["concept", "box", "hosted"],
       recommendation: "Hosted frame-by-frame fallback for sampled images when a Fal workflow is preferred.",
       nextAction: "Link FAL_KEY",
     },
@@ -114,8 +134,12 @@ const MotionJSONUI = (() => {
       id: "sam3-hosted:custom-sam3-compatible",
       providerId: "sam3-hosted",
       profileId: "custom-sam3-compatible",
+      engine: "sam3",
+      locality: "hosted",
+      displayLabel: "Custom SAM3 endpoint",
       workflow: "Custom SAM3",
       title: "Custom hosted SAM3",
+      capabilities: ["concept", "box", "tracking", "hosted"],
       recommendation: "Use a SAM3-compatible endpoint when it supports the guided workflow you selected.",
       nextAction: "Link endpoint and API key",
     },
@@ -1207,73 +1231,199 @@ const MotionJSONUI = (() => {
     return defaults[qualityPreset] || defaults.clean;
   }
 
-  function selectedConnectionForInput(input = {}) {
-    const explicitId = String(input.modelConnectionId || "").trim();
-    if (explicitId) {
-      return MODEL_CONNECTIONS.find((connection) => connection.id === explicitId) || null;
-    }
-    if (input.maskProvider === "sam2-local") return MODEL_CONNECTIONS.find((connection) => connection.id === "sam2-local") || null;
-    if (input.maskProvider === "sam2-hosted") return MODEL_CONNECTIONS.find((connection) => connection.id === "sam2-hosted:replicate-sam2-video") || null;
-    if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local") {
-      return MODEL_CONNECTIONS.find((connection) => connection.id === "sam3-local") || null;
-    }
-    if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted") {
-      const hostedProfileId = input.hostedSam3ProfileId || "roboflow-sam3-pcs";
-      return MODEL_CONNECTIONS.find((connection) => connection.providerId === "sam3-hosted" && connection.profileId === hostedProfileId) || null;
-    }
-    if (input.maskProvider || input.textDiscoveryProvider) {
-      return null;
-    }
-    const connectionId = state.selectedModelSetupProviderId || recommendedConnectionIdForPreset(input.preset || state.selectedPreset);
-    return MODEL_CONNECTIONS.find((connection) => connection.id === connectionId) || null;
+  function normalizedModelConnection(connection) {
+    if (!connection) return null;
+    return {
+      ...connection,
+      connectionId: connection.id,
+      displayLabel: connection.displayLabel || connection.title || connection.id,
+      providerId: connection.providerId || providerIdFromConnectionId(connection.id),
+      profileId: connection.profileId || profileIdFromConnectionId(connection.id),
+      engine: connection.engine || engineFromProviderId(connection.providerId || connection.id),
+      locality: connection.locality || localityFromProviderId(connection.providerId || connection.id),
+      capabilities: asArray(connection.capabilities),
+    };
   }
 
-  function guidedEnginePlan(input = {}) {
+  function modelConnectionByConnectionId(connectionId) {
+    const normalized = String(connectionId || "").trim();
+    return normalizedModelConnection(MODEL_CONNECTIONS.find((connection) => connection.id === normalized) || null);
+  }
+
+  function providerIdFromConnectionId(connectionId) {
+    const id = String(connectionId || "").trim();
+    if (id.startsWith("sam2-hosted:")) return "sam2-hosted";
+    if (id.startsWith("sam3-hosted:")) return "sam3-hosted";
+    return id;
+  }
+
+  function profileIdFromConnectionId(connectionId) {
+    const parts = String(connectionId || "").split(":");
+    return parts.length > 1 ? parts.slice(1).join(":") : "";
+  }
+
+  function engineFromProviderId(providerId) {
+    const id = String(providerId || "");
+    if (id.includes("sam3")) return "sam3";
+    if (id.includes("sam2")) return "sam2";
+    if (id.includes("motion")) return "motion";
+    if (id.includes("external")) return "external_masks";
+    return id ? "no_model" : "";
+  }
+
+  function localityFromProviderId(providerId) {
+    const id = String(providerId || "");
+    if (id.includes("hosted")) return "hosted";
+    if (MODEL_FREE_PRESETS.has(id) || ["mock", "threshold", "motion", "external"].includes(id)) return "no_model";
+    return id ? "local" : "";
+  }
+
+  function providerLabel(providerId, profileId = "") {
+    if (providerId === "sam2-local") return "SAM2 local";
+    if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
+    if (providerId === "sam2-hosted") return "Hosted SAM2";
+    if (providerId === "sam3-local") return "SAM3 local";
+    if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
+    if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
+    if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";
+    return {
+      mock: "Mock no-model",
+      threshold: "Color threshold",
+      motion: "Motion foreground",
+      external: "Imported masks",
+      "motion_foreground": "Motion foreground",
+      "external_masks": "Imported masks",
+    }[providerId] || providerId || "No model";
+  }
+
+  function hostedCallsAllowedForProvider(input, providerId) {
+    if (providerId === "sam2-hosted") return Boolean(input.hostedSam2AllowHosted);
+    if (providerId === "sam3-hosted") return Boolean(input.hostedSam3AllowHosted);
+    return false;
+  }
+
+  function selectedConnectionForInput(input = {}) {
+    const explicit = modelConnectionByConnectionId(input.modelConnectionId);
+    if (explicit) return explicit;
+    if (input.maskProvider === "sam2-local") return modelConnectionByConnectionId("sam2-local");
+    if (input.maskProvider === "sam2-hosted") return modelConnectionByConnectionId("sam2-hosted:replicate-sam2-video");
+    if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local") return modelConnectionByConnectionId("sam3-local");
+    if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted") {
+      return (
+        modelConnectionByConnectionId(`sam3-hosted:${input.hostedSam3ProfileId || "roboflow-sam3-pcs"}`) ||
+        modelConnectionByConnectionId("sam3-hosted:custom-sam3-compatible")
+      );
+    }
+    if (input.maskProvider || input.textDiscoveryProvider) return null;
+    const connectionId = state.selectedModelSetupProviderId || recommendedConnectionIdForPreset(input.preset || state.selectedPreset);
+    return modelConnectionByConnectionId(connectionId);
+  }
+
+  function providerContractForInput(input = {}) {
     const presetName = input.preset || state.selectedPreset;
     const preset = PRESETS[presetName] || PRESETS.auto_object_proposals;
     const connection = selectedConnectionForInput(input);
-    const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
     const providerId =
       connection?.providerId ||
       (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider) ? input.textDiscoveryProvider : "") ||
       input.maskProvider ||
       "";
-    const profileId = connection?.profileId || "";
-    const allowLegacyDetector = input.allowLegacyTextDetector === true && input.textDiscoveryProvider === "detector";
+    const profileId = connection?.profileId || (providerId === "sam2-hosted" ? input.hostedSam2ProfileId || "replicate-sam2-video" : providerId === "sam3-hosted" ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : "");
+    const noModelProviderId = input.maskProvider || preset.maskProvider || "threshold";
     if (!goalRequiresModel(presetName)) {
       return {
         connection,
-        providerName: preset.maskProvider || "threshold",
-        discoveryMode: requestedDiscoveryMode,
+        connectionId: "",
+        providerId: noModelProviderId,
+        providerName: noModelProviderId,
+        profileId: "",
+        displayLabel: providerLabel(noModelProviderId),
+        engine: engineFromProviderId(noModelProviderId),
+        locality: "no_model",
+        hostedCallsAllowed: false,
       };
-    }
-    if (presetName === "trace_one_object") {
-      if (providerId === "sam3-local" || providerId === "sam3-hosted") {
-        return { connection, providerName: providerId, discoveryMode: requestedDiscoveryMode === "manual_prompt" ? "sam3_exemplar" : requestedDiscoveryMode, profileId };
-      }
-      return { connection, providerName: providerId === "sam2-hosted" ? "sam2-hosted" : providerId || "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode };
-    }
-    if (presetName === "trace_all_objects") {
-      if (providerId === "sam2-local") {
-        return { connection, providerName: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode };
-      }
-      return { connection, providerName: providerId === "sam3-hosted" ? "sam3-hosted" : providerId || "sam3-local", discoveryMode: requestedDiscoveryMode === "auto_object_proposals" && providerId?.startsWith("sam3") ? "sam3_auto_masks" : requestedDiscoveryMode, profileId };
-    }
-    if (presetName === "text_detector") {
-      if (allowLegacyDetector) {
-        return { connection, providerName: input.maskProvider || "threshold", discoveryMode: "text_detector" };
-      }
-      if (providerId && !providerId.startsWith("sam3")) {
-        return { connection, providerName: providerId, discoveryMode: requestedDiscoveryMode };
-      }
-      return { connection, providerName: providerId === "sam3-hosted" ? "sam3-hosted" : providerId || "sam3-local", discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode, profileId };
     }
     return {
       connection,
-      providerName: input.maskProvider || preset.maskProvider || "threshold",
+      connectionId: connection?.connectionId || (providerId && profileId && providerId.includes("hosted") ? `${providerId}:${profileId}` : providerId),
+      providerId,
+      providerName: providerId,
+      profileId,
+      displayLabel: connection?.displayLabel || providerLabel(providerId, profileId),
+      engine: connection?.engine || engineFromProviderId(providerId),
+      locality: connection?.locality || localityFromProviderId(providerId),
+      hostedCallsAllowed: hostedCallsAllowedForProvider(input, providerId),
+    };
+  }
+
+  function enginePlanFromContract(contract, input, { providerId, discoveryMode, profileId = "", connection = null } = {}) {
+    const selectedProviderId = providerId || contract.providerId || "threshold";
+    const selectedProfileId = profileId || contract.profileId || "";
+    const selectedConnection = normalizedModelConnection(connection || contract.connection || modelConnectionByConnectionId(
+      selectedProviderId.includes("hosted") && selectedProfileId ? `${selectedProviderId}:${selectedProfileId}` : selectedProviderId,
+    ));
+    return {
+      ...contract,
+      connection: selectedConnection,
+      connectionId: selectedConnection?.connectionId || (selectedProviderId.includes("hosted") && selectedProfileId ? `${selectedProviderId}:${selectedProfileId}` : selectedProviderId),
+      providerId: selectedProviderId,
+      providerName: selectedProviderId,
+      profileId: selectedProfileId,
+      displayLabel: selectedConnection?.displayLabel || providerLabel(selectedProviderId, selectedProfileId),
+      engine: selectedConnection?.engine || engineFromProviderId(selectedProviderId),
+      locality: selectedConnection?.locality || localityFromProviderId(selectedProviderId),
+      hostedCallsAllowed: hostedCallsAllowedForProvider(input, selectedProviderId),
+      discoveryMode,
+    };
+  }
+
+  function guidedEnginePlan(input = {}) {
+    const presetName = input.preset || state.selectedPreset;
+    const preset = PRESETS[presetName] || PRESETS.auto_object_proposals;
+    const contract = providerContractForInput(input);
+    const connection = contract.connection;
+    const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
+    let providerId = contract.providerId || "";
+    const profileId = contract.profileId || "";
+    const allowLegacyDetector =
+      input.allowLegacyTextDetector === true ||
+      (input.debugMockMode === true && (input.maskProvider === "mock" || input.textDiscoveryProvider === "mock" || requestedDiscoveryMode === "text_detector"));
+    if (!goalRequiresModel(presetName)) {
+      return enginePlanFromContract(contract, input, { providerId: contract.providerId || preset.maskProvider || "threshold", discoveryMode: requestedDiscoveryMode, connection: null });
+    }
+    if (presetName === "trace_one_object") {
+      if (providerId === "sam3-local" || providerId === "sam3-hosted") {
+        return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "manual_prompt" ? "sam3_exemplar" : requestedDiscoveryMode, profileId, connection });
+      }
+      providerId = providerId === "sam2-hosted" ? "sam2-hosted" : providerId || "sam2-local";
+      return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode, profileId, connection });
+    }
+    if (presetName === "trace_all_objects") {
+      if (providerId === "sam2-local") {
+        return enginePlanFromContract(contract, input, { providerId: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode, connection });
+      }
+      providerId = providerId === "sam3-hosted" ? "sam3-hosted" : providerId || "sam3-local";
+      return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "auto_object_proposals" && providerId?.startsWith("sam3") ? "sam3_auto_masks" : requestedDiscoveryMode, profileId, connection });
+    }
+    if (presetName === "text_detector") {
+      if (allowLegacyDetector) {
+        const detectorProvider = input.maskProvider || "threshold";
+        return enginePlanFromContract(contract, input, { providerId: detectorProvider, discoveryMode: "text_detector", connection: null, profileId: "" });
+      }
+      providerId = providerId?.startsWith("sam3") ? providerId : "sam3-local";
+      return enginePlanFromContract(contract, input, {
+        providerId,
+        discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode,
+        profileId: providerId === "sam3-hosted" ? profileId : "",
+        connection: providerId === contract.providerId ? connection : modelConnectionByConnectionId(providerId),
+      });
+    }
+    return enginePlanFromContract(contract, input, {
+      providerId: contract.providerId || input.maskProvider || preset.maskProvider || "threshold",
       discoveryMode: requestedDiscoveryMode,
       profileId,
-    };
+      connection,
+    });
   }
 
   function firstPromptBox(promptsForConfig = []) {
@@ -1624,11 +1774,12 @@ const MotionJSONUI = (() => {
   function buildRunPlan(config, input = {}, validation = null) {
     const presetName = presetNameForRunPlan(config, input);
     const goal = RUN_PLAN_GOALS[presetName] || RUN_PLAN_GOALS.auto_object_proposals;
-    const connection = selectedConnectionForInput(input);
-    const providerName = connection?.title || config?.provider?.name || "sam2-local";
+    const enginePlan = guidedEnginePlan(input);
+    const providerId = enginePlan.providerId || config?.provider?.name || "sam2-local";
+    const providerName = enginePlan.displayLabel || providerLabel(providerId, enginePlan.profileId);
     const discoveryMode = config?.discovery?.mode || PRESETS[presetName]?.discoveryMode || "manual_prompt";
-    const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network || config?.discovery?.config?.allowNetwork);
-    const localOrMock = LOCAL_JOB_PROVIDERS.has(providerName) || providerName === "threshold";
+    const hostedAllowed = Boolean(config?.provider?.sam2?.hosted_allow_network || config?.provider?.sam3?.hosted_allow_network || config?.discovery?.config?.allowNetwork);
+    const localOrMock = LOCAL_JOB_PROVIDERS.has(providerId) || providerId === "threshold";
     const hasRegisteredVideo = Boolean(input.videoId || config?.rights?.source_asset_id);
     const hasBrowserPreview = Boolean(input.previewName);
     const hasPrompts = asArray(config?.prompts).length > 0;
@@ -1656,7 +1807,7 @@ const MotionJSONUI = (() => {
       },
       {
         label: "Model mode",
-        value: localOrMock ? `${providerName} provider` : `${providerName} provider needs diagnostics`,
+        value: localOrMock ? providerName : `${providerName} needs diagnostics`,
         detail: hostedAllowed
           ? "Hosted calls are allowed for this provider. Confirm privacy and cost before running."
           : "No hosted calls are enabled by this plan; provider diagnostics still decide what can run.",
@@ -1693,6 +1844,10 @@ const MotionJSONUI = (() => {
       summary: goal.summary,
       privacy: hostedAllowed ? "Hosted calls allowed after confirmation" : "Frames stay local for this plan",
       providerName,
+      providerId,
+      modelConnectionId: enginePlan.connectionId || "",
+      providerEngine: enginePlan.engine || "",
+      providerLocality: enginePlan.locality || "",
       discoveryMode,
       errors,
       warnings,
@@ -2028,17 +2183,18 @@ const MotionJSONUI = (() => {
   function connectionSupportsGoal(connection, presetId = state.selectedPreset) {
     if (!connection || !goalRequiresModel(presetId)) return false;
     const meta = connectionCapabilityMeta(connection);
-    if (!meta) return false;
-    const supportedGoals = asArray(meta.supportedGoals).map(String);
+    const capabilities = new Set(asArray(connection.capabilities));
+    const supportedGoals = asArray(meta?.supportedGoals).map(String);
     if (supportedGoals.length && !supportedGoals.includes(presetId)) return false;
     if (presetId === "trace_one_object") {
-      return asArray(meta.supportedPromptTypes).includes("box") && meta.supportsTracking !== false;
+      const promptTypes = asArray(meta?.supportedPromptTypes);
+      return (promptTypes.includes("box") || capabilities.has("box")) && meta?.supportsTracking !== false;
     }
     if (presetId === "trace_all_objects") {
-      return meta.supportsAutoMasks === true;
+      return meta?.supportsAutoMasks === true || capabilities.has("auto_masks");
     }
     if (presetId === "text_detector") {
-      return meta.supportsConcept === true;
+      return meta?.supportsConcept === true || capabilities.has("concept");
     }
     return true;
   }
@@ -2049,7 +2205,7 @@ const MotionJSONUI = (() => {
   }
 
   function modelConnectionById(id) {
-    return MODEL_CONNECTIONS.find((connection) => connection.id === id) || MODEL_CONNECTIONS[0];
+    return modelConnectionByConnectionId(id) || normalizedModelConnection(MODEL_CONNECTIONS[0]);
   }
 
   function capabilityForConnection(connection) {
@@ -2062,7 +2218,7 @@ const MotionJSONUI = (() => {
     const provider = providerSettingsById(connection.providerId);
     const capability = capabilityForConnection(connection);
     const readiness = provider?.readiness || {};
-    const hosted = provider?.locality === "hosted";
+    const hosted = connection.locality === "hosted" || provider?.locality === "hosted";
     const profileOk = !connection.profileId || provider?.settings?.hostedProfileId === connection.profileId || provider?.defaultHostedProfile === connection.profileId;
     const runnable = capability?.runnable === true || (readiness.configured && !hosted);
     const configured = readiness.configured === true || capability?.configured === true;
@@ -2071,12 +2227,14 @@ const MotionJSONUI = (() => {
       return { tone: "ready", status: "ready", label: "Ready", message: "Ready for this workflow." };
     }
     if (configured && hosted && !hostedAllowed) {
-      return { tone: "warn", status: "needs_opt_in", label: "Confirm", message: "Key is saved; hosted calls need cost/privacy opt-in." };
+      return { tone: "warn", status: "needs_opt_in", label: "Needs hosted confirmation", message: "Key is saved; hosted calls need cost/privacy opt-in." };
     }
     if (configured || capability?.installed) {
-      return { tone: "warn", status: "check_setup", label: "Check setup", message: readiness.message || capability?.reasons?.[0] || "Review diagnostics before running." };
+      const needsPath = connection.locality === "local" && /model|checkpoint|path|config/i.test(String(readiness.message || capability?.reasons?.join(" ") || ""));
+      return { tone: "warn", status: needsPath ? "needs_path" : "installed_not_runnable", label: needsPath ? "Needs path" : "Installed but not runnable", message: readiness.message || capability?.reasons?.[0] || "Review diagnostics before running." };
     }
-    return { tone: "bad", status: "needs_setup", label: "Setup needed", message: readiness.message || capability?.reasons?.[0] || connection.recommendation };
+    const needsKey = hosted && /key|token|credential/i.test(String(readiness.message || capability?.reasons?.join(" ") || ""));
+    return { tone: "bad", status: needsKey ? "needs_key" : "unavailable", label: needsKey ? "Needs key" : "Unavailable", message: readiness.message || capability?.reasons?.[0] || connection.recommendation };
   }
 
   function recommendedConnectionIdForPreset(presetId = state.selectedPreset) {
@@ -3468,8 +3626,12 @@ const MotionJSONUI = (() => {
         videoPreviewReason: browserPreview?.reason || browserPreview?.errorMessage || "",
         videoPreviewKind: browserPreview?.kind || "",
         previewName: state.video.loadedName,
-        providerName: connection?.title || enginePlan.providerName || "",
-        providerDevice: enginePlan.providerName?.startsWith("sam3") ? (state.providerSettings?.providers || []).find((provider) => provider.id === enginePlan.providerName)?.settings?.sam3Device || "" : $("#deviceSelect")?.value || "",
+        providerName: enginePlan.displayLabel || connection?.displayLabel || enginePlan.providerName || "",
+        providerDevice: enginePlan.providerId?.startsWith("sam3") ? (state.providerSettings?.providers || []).find((provider) => provider.id === enginePlan.providerId)?.settings?.sam3Device || "" : $("#deviceSelect")?.value || "",
+        providerId: enginePlan.providerId || "",
+        providerConnectionId: enginePlan.connectionId || "",
+        providerEngine: enginePlan.engine || "",
+        providerLocality: enginePlan.locality || "",
         providerStatus: connectionSummary.status || "",
         providerSummaryTone: connectionSummary.tone || "",
         providerSummaryLabel: connectionSummary.label || "",
@@ -4303,7 +4465,7 @@ const MotionJSONUI = (() => {
           return `
             <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" aria-pressed="${active}">
               <span class="model-choice-topline">
-                <strong>${escapeHtml(connection.title)}</strong>
+                <strong>${escapeHtml(connection.displayLabel || connection.title)}</strong>
                 ${statusChip(summary.label, summary.status, summary.tone === "ready")}
               </span>
               <span class="model-choice-copy">${escapeHtml(connection.recommendation)}</span>
@@ -4396,14 +4558,14 @@ const MotionJSONUI = (() => {
       const credentialField = credentials.some((credential) => credential.name === "api_key")
         ? `<label>
             <span>API key</span>
-            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || connection.title)} API key" />
+            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || connection.displayLabel || connection.title)} API key" />
           </label>`
         : "";
 
       return `
         <div class="model-setup-summary">
           <div class="model-setup-copy">
-            <h3>${escapeHtml(connection.title)}</h3>
+            <h3>${escapeHtml(connection.displayLabel || connection.title)}</h3>
             <p>${escapeHtml(guide.setupSummary || connection.recommendation)}</p>
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
@@ -9779,9 +9941,12 @@ const MotionJSONUI = (() => {
     modelPlanSourceIds,
     modelSetupPayloadFromValues,
     modelSetupProviderSummary,
+    normalizedModelConnection,
     normalizeCorrectionState,
     normalizeWorkflowStepId,
     objectDiscoveryConfig,
+    providerContractForInput,
+    providerIdFromConnectionId,
     mapClientPointToVideo,
     normalizePrompt,
     parseCsv,
@@ -9798,6 +9963,8 @@ const MotionJSONUI = (() => {
     workflowReadinessFromSnapshot,
     workflowRestoredStepFromSnapshot,
     workflowSummaryCardsFromSnapshot,
+    guidedEnginePlan,
+    compatibleModelConnectionsForPreset,
   };
 
   globalThis.MotionJSONUI = publicApi;

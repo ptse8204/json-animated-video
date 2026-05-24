@@ -127,6 +127,12 @@ hosted network calls. Hosted smoke tests require `allowNetwork`,
 `allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke tests require
 `allowHeavyLocal` before importing heavy model runtimes.
 
+The guided workflow derives run config from a normalized connection contract:
+connection ID, provider ID, engine, display label, hosted profile, locality,
+capability flags, readiness, and hosted-call opt-in remain separate. Display
+labels such as `Roboflow SAM3` are user-facing only; policy and validation use
+provider IDs and connection IDs.
+
 ## Model Planning Connector Contract
 
 The Local UI exposes a server-side model planning contract for future
