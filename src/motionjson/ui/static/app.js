@@ -2053,6 +2053,144 @@ const MotionJSONUI = (() => {
     return metadata.stage || event?.stage || event?.message || job.status || "queued";
   }
 
+  function jobTimestamp(job = {}) {
+    const lifecycle = job.lifecycle || {};
+    const value =
+      lifecycle.updatedAt ||
+      lifecycle.createdAt ||
+      job.updated_at ||
+      job.updatedAt ||
+      job.created_at ||
+      job.createdAt ||
+      job.timestamp ||
+      "";
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function normalizeJobLifecycle(job = {}, options = {}) {
+    const lifecycle = job.lifecycle || {};
+    const events = asArray(options.events || job.events);
+    const status = String(lifecycle.status || job.status || "queued").toLowerCase();
+    const rawStatus = String(lifecycle.rawStatus || job.status || status).toLowerCase();
+    const progress = lifecycle.progress || job.progress || {};
+    const directPercent = Number(progress.percent);
+    const percent = Number.isFinite(directPercent) ? clamp(Math.round(directPercent), 0, 100) : normalizeProgress({ ...job, events });
+    const progressKnown =
+      typeof progress.known === "boolean"
+        ? progress.known
+        : Boolean(latestProgressEvent({ ...job, events }) || typeof job.progress === "number" || typeof job.percent === "number");
+    const latestEvent = lifecycle.latestEvent || job.latestEvent || {};
+    const configProvider = job.payload?.run_config?.provider?.name || job.runConfig?.provider?.name || job.config?.provider?.name || "";
+    const failure =
+      lifecycle.failure ||
+      (/failed|canceled|cancelled/.test(status)
+        ? {
+            headline: /canceled|cancelled/.test(status) ? "Job canceled" : "Job failed",
+            reasonCode: /canceled|cancelled/.test(status) ? "user_canceled" : "job_failed",
+            message: job.error || job.reason || job.message || (/canceled|cancelled/.test(status) ? "The job was canceled." : "The job failed."),
+            suggestedAction: /canceled|cancelled/.test(status) ? "Start a new run when ready." : "Open logs and diagnostics before retrying.",
+          }
+        : null);
+    const provider = lifecycle.provider || job.provider || {};
+    const terminal = TERMINAL_JOB_STATUSES.has(status) || TERMINAL_JOB_STATUSES.has(rawStatus);
+    const active = /queued|pending|running|working|started|cancel_requested/.test(status) || /queued|pending|running|working|started|cancel_requested/.test(rawStatus);
+    const actions = lifecycle.actions || job.actions || {};
+    const review = lifecycle.review || job.review || {};
+    return {
+      format: "motionjson.local_ui_job_lifecycle_view.v0.1",
+      id: lifecycle.jobId || jobIdentifier(job),
+      projectId: lifecycle.projectId || job.project_id || job.projectId || "",
+      type: lifecycle.type || job.type || "job",
+      workflow: lifecycle.workflow || job.workflow || "",
+      status,
+      rawStatus,
+      phase: lifecycle.phase || latestStageLabel({ ...job, events }),
+      progress: {
+        known: progressKnown,
+        percent,
+        label: progress.label || `${percent}% complete`,
+      },
+      latestEvent: {
+        type: latestEvent.type || "",
+        message: latestEvent.message || latestStageLabel({ ...job, events }),
+        createdAt: latestEvent.createdAt || latestEvent.created_at || "",
+      },
+      failure,
+      review,
+      provider: {
+        connectionId: provider.connectionId || provider.connection_id || provider.id || "",
+        providerId: provider.providerId || provider.provider_id || provider.id || job.payload?.mask_provider || configProvider || "",
+        displayLabel: provider.displayLabel || provider.display_label || provider.label || provider.name || job.payload?.mask_provider || configProvider || "not reported",
+        engine: provider.engine || "",
+        locality: provider.locality || "",
+        hostedCallsAllowed: Boolean(provider.hostedCallsAllowed || provider.hosted_calls_allowed),
+      },
+      actions: {
+        ...actions,
+        canCancel: actions.canCancel ?? actions.cancel ?? (active && !terminal),
+        canRetry: actions.canRetry ?? false,
+      },
+      active,
+      terminal,
+      timestamp: jobTimestamp(job),
+      rawJob: job,
+    };
+  }
+
+  function jobCenterStateFromSnapshot(snapshot = {}) {
+    const jobs = asArray(snapshot.jobs).map((job) => normalizeJobLifecycle(job));
+    const recentJobs = jobs.slice().sort((a, b) => b.timestamp - a.timestamp || String(b.id).localeCompare(String(a.id)));
+    const activeJobs = recentJobs.filter((job) => job.active);
+    const requestedId = String(snapshot.selectedJobId || "").trim();
+    const selectedJob =
+      recentJobs.find((job) => job.id === requestedId) ||
+      activeJobs[0] ||
+      recentJobs[0] ||
+      null;
+    return {
+      format: "motionjson.local_ui_job_center_view.v0.1",
+      activeJobsCount: activeJobs.length,
+      selectedJobId: selectedJob?.id || "",
+      activeJobs,
+      recentJobs,
+      selectedJob,
+    };
+  }
+
+  function reviewGateFromSnapshot(snapshot = {}) {
+    const job = snapshot.job ? normalizeJobLifecycle(snapshot.job) : null;
+    const review = job?.review || {};
+    const candidateCount = toInteger(snapshot.candidateCount ?? review.candidateCount, 0);
+    const selectedCandidateCount = toInteger(snapshot.selectedCandidateCount ?? review.selectedCandidateCount, 0);
+    const trackCount = toInteger(snapshot.trackCount ?? review.trackCount, 0);
+    const exportIncludedCount = toInteger(snapshot.exportIncludedCount ?? snapshot.exportableTrackCount ?? review.exportIncludedCount ?? review.exportableTrackCount, 0);
+    const diagnosticCount = toInteger(snapshot.diagnosticCount ?? review.diagnosticCount, 0);
+    const rasterReason = snapshot.vectorUnavailableReason || snapshot.rasterFallbackReason || review.vectorUnavailableReason || "";
+    if (!job) return { status: "blocked", primaryAction: "start_run", primaryLabel: "Start a run", reason: "Run extraction before reviewing results." };
+    if (job.status === "failed" || job.status === "canceled") {
+      return { status: "blocked", primaryAction: "open_logs", primaryLabel: "Open logs", reason: job.failure?.message || "The selected run did not produce reviewable output." };
+    }
+    if (job.active) return { status: "running", primaryAction: "watch_job", primaryLabel: "Watch job", reason: "Wait for the selected run to finish." };
+    if (candidateCount > 0 && trackCount === 0) {
+      const readyCandidateCount = selectedCandidateCount || candidateCount;
+      return selectedCandidateCount > 0 || job.actions?.canTrackSelected
+        ? { status: "needs-action", primaryAction: "track_selected", primaryLabel: "Track selected", reason: `${readyCandidateCount} candidate${readyCandidateCount === 1 ? "" : "s"} ready to track.` }
+        : { status: "needs-action", primaryAction: "select_candidates", primaryLabel: "Keep candidates", reason: "Keep at least one candidate before tracking." };
+    }
+    if (trackCount > 0 && exportIncludedCount === 0) {
+      return { status: "needs-action", primaryAction: "mark_reviewed", primaryLabel: "Mark reviewed", reason: "Mark at least one track for export." };
+    }
+    if (exportIncludedCount > 0 || job.actions?.canExport) {
+      return { status: "ready", primaryAction: "export_reviewed", primaryLabel: "Export reviewed objects", reason: "" };
+    }
+    if (diagnosticCount > 0 || review.hasRasterFallback || rasterReason) {
+      return { status: "needs-action", primaryAction: "inspect_diagnostics", primaryLabel: "Open diagnostics", reason: rasterReason || "The completed run produced diagnostics before exportable tracks." };
+    }
+    return { status: "needs-action", primaryAction: "inspect_diagnostics", primaryLabel: "Open diagnostics", reason: "No candidates or tracks were reported for this completed run." };
+  }
+
   function jobConfig(job) {
     const id = jobIdentifier(job);
     return state.runConfigsByJob[id] || state.lastRunConfig || null;
@@ -5337,7 +5475,8 @@ const MotionJSONUI = (() => {
     }
 
     function renderJobs() {
-      const activeCount = state.jobs.filter(isActiveJob).length;
+      const jobCenter = jobCenterStateFromSnapshot({ jobs: state.jobs, selectedJobId: state.selectedJobId });
+      const activeCount = jobCenter.activeJobsCount;
       const activeLabel = `${activeCount} active`;
       $("#jobSummary").textContent = activeLabel;
       if ($("#mainJobSummary")) $("#mainJobSummary").textContent = activeLabel;
@@ -5351,32 +5490,31 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const markup = state.jobs.length
-        ? state.jobs
+      const markup = jobCenter.recentJobs.length
+        ? jobCenter.recentJobs
             .map((job) => {
-              const id = jobIdentifier(job);
-              const progress = normalizeProgress(job);
+              const id = job.id;
+              const progress = job.progress.percent;
               const status = job.status || "unknown";
               const selected = id && id === state.selectedJobId;
               const diagnostics = [
-                job.error,
-                job.reason,
-                job.message,
-                job.vectorUnavailableReason,
-                job.vector_unavailable_reason,
-                job.rasterOnlyReason,
-                job.raster_only_reason,
+                job.failure?.message,
+                job.latestEvent?.message,
+                job.rawJob?.vectorUnavailableReason,
+                job.rawJob?.vector_unavailable_reason,
+                job.rawJob?.rasterOnlyReason,
+                job.rawJob?.raster_only_reason,
               ].filter(Boolean);
               return `
                 <button class="artifact-row job-choice ${selected ? "is-selected" : ""}" type="button" data-job-id="${escapeAttribute(id)}" aria-pressed="${selected}">
                   <strong>${escapeHtml(job.type || "job")}</strong>
                   ${statusChip(status, status, /complete|succeeded/.test(String(status).toLowerCase()))}
-                  <span class="row-meta">${escapeHtml(id || "no id reported")} - ${escapeHtml(latestStageLabel(job))}</span>
+                  <span class="row-meta">${escapeHtml(id || "no id reported")} - ${escapeHtml(job.phase || job.latestEvent?.message || status)}</span>
                   <div class="job-progress" role="group" aria-label="${escapeAttribute(`${job.type || "job"} progress`)}">
                     <div class="job-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
                       <div class="job-progress-bar" style="--progress: ${progress}%"></div>
                     </div>
-                    <span class="job-progress-text">${progress}% complete${diagnostics.length ? ` - ${escapeHtml(diagnostics.join(" "))}` : ""}</span>
+                    <span class="job-progress-text">${progress}% ${escapeHtml(job.progress.known ? "complete" : "estimated")}${diagnostics.length ? ` - ${escapeHtml(diagnostics.join(" "))}` : ""}</span>
                   </div>
                 </button>
               `;
@@ -5418,7 +5556,8 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const status = job.status || "unknown";
+      const lifecycle = normalizeJobLifecycle({ ...job, events: state.jobEvents });
+      const status = lifecycle.status || "unknown";
       statusChipElement.textContent = status;
       statusChipElement.className = `status-chip ${statusClass(status, /succeeded|complete/.test(String(status).toLowerCase()))}`;
       if (mainStatusChipElement) {
@@ -5426,20 +5565,21 @@ const MotionJSONUI = (() => {
         mainStatusChipElement.className = statusChipElement.className;
       }
       const normalizedStatus = String(status).toLowerCase();
-      const terminal = TERMINAL_JOB_STATUSES.has(normalizedStatus);
-      cancelButton.disabled = terminal || normalizedStatus === "cancel_requested";
+      const cancelDisabled = !lifecycle.actions.canCancel || normalizedStatus === "cancel_requested";
+      cancelButton.disabled = cancelDisabled;
       cancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       if (mainCancelButton) {
-        mainCancelButton.disabled = terminal || normalizedStatus === "cancel_requested";
+        mainCancelButton.disabled = cancelDisabled;
         mainCancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       }
       const payload = job.payload || {};
       const result = job.result || {};
       const facts = {
-        id: jobIdentifier(job),
-        type: job.type || "job",
-        provider: payload.mask_provider || jobConfig(job)?.provider?.name || "not reported",
-        progress: `${normalizeProgress({ ...job, events: state.jobEvents })}%`,
+        id: lifecycle.id,
+        type: lifecycle.type || "job",
+        provider: lifecycle.provider.displayLabel || payload.mask_provider || jobConfig(job)?.provider?.name || "not reported",
+        progress: lifecycle.progress.known ? `${lifecycle.progress.percent}%` : `${lifecycle.progress.percent}% estimated`,
+        phase: lifecycle.phase || "not reported",
         artifacts: state.jobArtifacts.length,
         objects: result.scene?.objects ?? result.objects ?? state.reviewTracks.length,
         updated: job.updated_at || job.updatedAt || "not reported",
@@ -7604,9 +7744,8 @@ const MotionJSONUI = (() => {
     }
 
     function ensureSelectedJob() {
-      if (state.selectedJobId && state.jobs.some((job) => jobIdentifier(job) === state.selectedJobId)) return;
-      const active = state.jobs.find(isActiveJob);
-      state.selectedJobId = jobIdentifier(active || state.jobs[0] || {});
+      const center = jobCenterStateFromSnapshot({ jobs: state.jobs, selectedJobId: state.selectedJobId });
+      state.selectedJobId = center.selectedJobId;
       state.selectedJob = state.jobs.find((job) => jobIdentifier(job) === state.selectedJobId) || null;
     }
 
@@ -10100,7 +10239,9 @@ const MotionJSONUI = (() => {
     modelPlanSourceIds,
     modelSetupPayloadFromValues,
     modelSetupProviderSummary,
+    jobCenterStateFromSnapshot,
     normalizedModelConnection,
+    normalizeJobLifecycle,
     normalizeCorrectionState,
     normalizeWorkflowStepId,
     objectDiscoveryConfig,
@@ -10111,6 +10252,7 @@ const MotionJSONUI = (() => {
     parseCsv,
     parseKeyframes,
     postRunWorkflowSummaryFromSnapshot,
+    reviewGateFromSnapshot,
     reviewCandidates,
     safeLocalContentUrl,
     slugObjectId,

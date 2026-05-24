@@ -1042,6 +1042,159 @@ assert.equal(correctionGuidance.tone, "warn");
 assert.ok(correctionGuidance.items.some((item) => item.includes("will not export")));
 assert.ok(correctionGuidance.items.some((item) => item.includes("Draw a point")));
 
+const lifecycleQueued = ui.normalizeJobLifecycle({
+  id: "job_queued",
+  type: "extract",
+  status: "queued",
+  createdAt: "2026-05-20T10:00:00Z",
+  lifecycle: {
+    status: "queued",
+    phase: "queued",
+    progress: { known: false, percent: 0, label: "Queued" },
+    provider: { providerId: "sam2-local", displayLabel: "SAM2 local", engine: "sam2", locality: "local" },
+  },
+});
+assert.equal(lifecycleQueued.status, "queued");
+assert.equal(lifecycleQueued.progress.known, false);
+assert.equal(lifecycleQueued.provider.displayLabel, "SAM2 local");
+
+const lifecycleBackendShape = ui.normalizeJobLifecycle({
+  id: "job_waiting_review",
+  type: "extract",
+  status: "succeeded",
+  lifecycle: {
+    status: "waiting_review",
+    rawStatus: "succeeded",
+    phase: "review_ready",
+    provider: {
+      id: "sam3-hosted",
+      connectionId: "sam3-hosted:roboflow-sam3-pcs",
+      label: "Roboflow SAM3",
+      engine: "sam3",
+      locality: "hosted",
+      hostedCallsAllowed: true,
+    },
+    review: { candidateCount: 2, selectedCandidateCount: 1, trackCount: 0, exportableTrackCount: 0 },
+    actions: { canCancel: false, canTrackSelected: true, canExport: false },
+  },
+});
+assert.equal(lifecycleBackendShape.status, "waiting_review");
+assert.equal(lifecycleBackendShape.provider.providerId, "sam3-hosted");
+assert.equal(lifecycleBackendShape.provider.displayLabel, "Roboflow SAM3");
+assert.equal(lifecycleBackendShape.actions.canCancel, false);
+
+const lifecycleRunning = ui.normalizeJobLifecycle({
+  id: "job_running",
+  type: "extract",
+  status: "running",
+  updatedAt: "2026-05-20T10:05:00Z",
+  events: [{ metadata: { progress: { overallRatio: 0.42 }, stage: "tracking" }, message: "tracking object" }],
+});
+assert.equal(lifecycleRunning.progress.percent, 42);
+assert.equal(lifecycleRunning.progress.known, true);
+assert.equal(lifecycleRunning.phase, "tracking");
+
+const lifecycleFailed = ui.normalizeJobLifecycle({
+  id: "job_failed",
+  type: "extract",
+  status: "failed",
+  error: "SAM2 checkpoint missing.",
+});
+assert.equal(lifecycleFailed.failure.reasonCode, "job_failed");
+assert.match(lifecycleFailed.failure.message, /checkpoint/);
+
+const lifecycleCanceled = ui.normalizeJobLifecycle({ id: "job_canceled", status: "canceled" });
+assert.equal(lifecycleCanceled.status, "canceled");
+assert.equal(lifecycleCanceled.actions.canCancel, false);
+
+const jobCenter = ui.jobCenterStateFromSnapshot({
+  selectedJobId: "",
+  jobs: [
+    { id: "job_old", status: "failed", updatedAt: "2026-05-20T09:00:00Z" },
+    { id: "job_new_running", status: "running", updatedAt: "2026-05-20T10:10:00Z" },
+    { id: "job_queued", status: "queued", updatedAt: "2026-05-20T10:00:00Z" },
+  ],
+});
+assert.equal(jobCenter.activeJobsCount, 2);
+assert.equal(jobCenter.selectedJobId, "job_new_running");
+assert.deepEqual(jobCenter.activeJobs.map((job) => job.id), ["job_new_running", "job_queued"]);
+
+const manualJobCenter = ui.jobCenterStateFromSnapshot({
+  selectedJobId: "job_old",
+  jobs: [
+    { id: "job_old", status: "failed", updatedAt: "2026-05-20T09:00:00Z" },
+    { id: "job_new_running", status: "running", updatedAt: "2026-05-20T10:10:00Z" },
+  ],
+});
+assert.equal(manualJobCenter.selectedJobId, "job_old");
+
+assert.deepEqual(ui.reviewGateFromSnapshot({ job: null }), {
+  status: "blocked",
+  primaryAction: "start_run",
+  primaryLabel: "Start a run",
+  reason: "Run extraction before reviewing results.",
+});
+assert.equal(ui.reviewGateFromSnapshot({ job: { id: "job_running", status: "running" } }).primaryAction, "watch_job");
+assert.equal(ui.reviewGateFromSnapshot({ job: { id: "job_failed", status: "failed", error: "provider failed" } }).primaryAction, "open_logs");
+assert.equal(
+  ui.reviewGateFromSnapshot({ job: { id: "job_done", status: "succeeded" }, candidateCount: 3, selectedCandidateCount: 2 }).primaryAction,
+  "track_selected",
+);
+assert.equal(ui.reviewGateFromSnapshot({ job: lifecycleBackendShape }).primaryAction, "track_selected");
+assert.equal(
+  ui.reviewGateFromSnapshot({
+    job: {
+      id: "job_backend_tracks",
+      status: "succeeded",
+      lifecycle: {
+        status: "waiting_review",
+        rawStatus: "succeeded",
+        review: { candidateCount: 0, selectedCandidateCount: 0, trackCount: 2, exportableTrackCount: 0 },
+        actions: { canCancel: false, canExport: false },
+      },
+    },
+  }).primaryAction,
+  "mark_reviewed",
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({
+    job: {
+      id: "job_backend_export",
+      status: "succeeded",
+      lifecycle: {
+        status: "waiting_review",
+        rawStatus: "succeeded",
+        review: { candidateCount: 0, selectedCandidateCount: 0, trackCount: 2, exportableTrackCount: 1 },
+        actions: { canCancel: false, canExport: true },
+      },
+    },
+  }).primaryAction,
+  "export_reviewed",
+);
+assert.match(
+  ui.reviewGateFromSnapshot({
+    job: {
+      id: "job_backend_raster",
+      status: "succeeded",
+      lifecycle: {
+        status: "waiting_review",
+        rawStatus: "succeeded",
+        review: { candidateCount: 0, trackCount: 0, diagnosticCount: 1, hasRasterFallback: true, vectorUnavailableReason: "masks too large" },
+        actions: { canCancel: false, canExport: false },
+      },
+    },
+  }).reason,
+  /masks too large/,
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({ job: { id: "job_tracks", status: "succeeded" }, trackCount: 2, exportIncludedCount: 0 }).primaryAction,
+  "mark_reviewed",
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({ job: { id: "job_export", status: "succeeded" }, trackCount: 2, exportIncludedCount: 1 }).primaryAction,
+  "export_reviewed",
+);
+
 console.log(
   JSON.stringify(
     {
