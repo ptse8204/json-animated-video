@@ -306,6 +306,7 @@ def dependency_statuses() -> list[DependencyStatus]:
         _dependency("tqdm", "tqdm", "Install tqdm for CLI extraction progress."),
         _dependency("sam2", "sam2", "Install SAM2 separately only when using sam2-local."),
         _dependency("sam3", "sam3", "Install SAM3 separately only when using optional sam3-local discovery."),
+        _dependency("transformers", "transformers", "Install .[sam3-transformers] only when using SAM3 scene sweep."),
         _dependency("torch", "torch", "Install torch separately only when using local ML providers."),
     ]
 
@@ -323,6 +324,7 @@ def provider_capabilities(
     sam2_installed = deps.get("sam2", False)
     sam2_auto_installed = bool(sam2_installed and _module_available("sam2.automatic_mask_generator"))
     sam3_installed = deps.get("sam3", False)
+    transformers_installed = deps.get("transformers", False)
     torch_info = cuda_status()
     sam3_runtime = sam3_runtime_status()
     sam2_local_settings = dict((provider_settings or {}).get("sam2-local", {}))
@@ -475,6 +477,19 @@ def provider_capabilities(
         and sam3_runtime["pythonSupported"]
         and torch_info["available"]
     )
+    sam3_scene_sweep_reasons = [
+        reason
+        for reason in (
+            None if transformers_installed else "Python module 'transformers' is not importable.",
+            None if torch_info["torchInstalled"] else "torch is not installed.",
+        )
+        if reason
+    ]
+    sam3_scene_sweep_ready = bool(transformers_installed and torch_info["torchInstalled"])
+    if not transformers_installed or not torch_info["torchInstalled"]:
+        sam3_scene_sweep_status = "missing_dependency"
+    else:
+        sam3_scene_sweep_status = "ready"
     if not sam3_installed or not torch_info["torchInstalled"]:
         sam3_local_status = "missing_dependency"
     elif not sam3_runtime["pythonSupported"]:
@@ -748,9 +763,9 @@ def provider_capabilities(
             installed=bool(sam3_installed and torch_info["torchInstalled"]),
             runnable=sam3_local_ready,
             status=sam3_local_status,
-            supports=["concept_discovery", "exemplar_discovery", "automatic_masks", "video_tracking", "local_model"],
+            supports=["concept_discovery", "exemplar_discovery", "scene_sweep", "automatic_masks", "video_tracking", "local_model"],
             reasons=sam3_local_reasons,
-            install_hint="Install SAM3/torch separately and set SAM3_LOCAL_MODEL before using local SAM3 discovery.",
+            install_hint="Install SAM3/torch for concept/exemplar workflows or .[sam3-transformers] for SAM3 scene sweep. SAM2 is not required.",
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
@@ -761,6 +776,7 @@ def provider_capabilities(
             optional_extra="sam3",
             checks=[
                 _check("sam3_import", "ok" if sam3_installed else "missing", None if sam3_installed else "sam3 package is not importable"),
+                _check("transformers_import", "ok" if transformers_installed else "missing", None if transformers_installed else "transformers package is not importable"),
                 _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
                 _check(
                     "python_runtime",
@@ -777,6 +793,13 @@ def provider_capabilities(
                 "uiDescription": "Optional local SAM3 family for concept, exemplar, and higher-recall discovery.",
                 "whenToUse": "Use when a compatible SAM3 environment and model are configured.",
                 "semanticDiscovery": True,
+                "sceneSweep": {
+                    "ready": sam3_scene_sweep_ready,
+                    "status": sam3_scene_sweep_status,
+                    "reasons": sam3_scene_sweep_reasons,
+                    "optionalExtra": "sam3-transformers",
+                    "requiresSam2": False,
+                },
                 "mockRunnable": cv_ready and pil_ready,
             },
         ),
@@ -886,14 +909,14 @@ def provider_capabilities(
         ProviderCapability(
             name="sam3-auto-masks",
             kind="discovery_provider",
-            available=sam3_local_ready,
-            configured=bool(sam3_model["configured"]),
-            installed=bool(sam3_installed and torch_info["torchInstalled"]),
-            runnable=sam3_local_ready,
-            status=sam3_local_status,
-            supports=["higher_recall_auto_masks", "semantic_proposals", "mock_auto_candidates"],
-            reasons=sam3_local_reasons,
-            install_hint="Use discovery.config.mock=true for local smoke checks, or configure SAM3 local/hosted support.",
+            available=sam3_scene_sweep_ready,
+            configured=sam3_scene_sweep_ready,
+            installed=bool(transformers_installed and torch_info["torchInstalled"]),
+            runnable=sam3_scene_sweep_ready,
+            status=sam3_scene_sweep_status,
+            supports=["scene_sweep", "automatic_mask_generation", "tracker_video_propagation", "mock_auto_candidates"],
+            reasons=sam3_scene_sweep_reasons,
+            install_hint="Use discovery.config.mock=true for local smoke checks, or install .[sam3-transformers]. SAM2 is not required.",
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
@@ -901,11 +924,12 @@ def provider_capabilities(
             needs_model_path=True,
             model_paths=[sam3_model],
             mock_available=True,
-            optional_extra="sam3",
+            optional_extra="sam3-transformers",
             metadata={
-                "uiDescription": "SAM3-style higher-recall automatic proposals; mock mode is available without SAM3.",
-                "whenToUse": "Use when clean SAM2 proposals miss semantically important objects.",
+                "uiDescription": "SAM3 scene sweep proposals from SAM3 Tracker image masks and Tracker Video propagation.",
+                "whenToUse": "Use to find everything visible in the scene with SAM3-only dependencies.",
                 "discoveryMode": "sam3_auto_masks",
+                "requiresSam2": False,
                 "mockRunnable": cv_ready and pil_ready,
             },
         ),

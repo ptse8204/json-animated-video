@@ -326,6 +326,10 @@ const sam3TraceAllConfig = ui.buildRunConfig({
 });
 assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
 assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
+assert.equal(sam3TraceAllConfig.discovery.config.sceneSweep, true);
+assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, true);
+assert.equal("concept" in sam3TraceAllConfig.discovery.config, false);
+assert.equal("text" in sam3TraceAllConfig.discovery.config, false);
 
 const textPromptDefaultsToSam3 = ui.guidedEnginePlan({
   preset: "text_detector",
@@ -488,7 +492,7 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 const compatibleConnectionExpectations = {
   trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
   text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
-  trace_all_objects: ["sam3-local"],
+  trace_all_objects: ["sam3-local", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
 };
@@ -1306,12 +1310,12 @@ const LIFECYCLE_STATE_FIXTURES = [
   {
     name: "failed job",
     job: { id: "job_fixture_failed", type: "extract", status: "failed", error: "SAM2 model weights unavailable." },
-    expected: { status: "failed", phase: "failed", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "open_logs", primaryLabel: "Open logs", reasonCode: "job_failed" },
+    expected: { status: "failed", phase: "failed", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "prepare_new_run", primaryLabel: "Change setup", reasonCode: "job_failed" },
   },
   {
     name: "canceled job",
     job: { id: "job_fixture_canceled", type: "extract", status: "canceled" },
-    expected: { status: "canceled", phase: "canceled", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "open_logs", primaryLabel: "Open logs", reasonCode: "user_canceled" },
+    expected: { status: "canceled", phase: "canceled", progressKnown: false, progressPercent: 0, canCancel: false, canExport: false, primaryAction: "prepare_new_run", primaryLabel: "Change setup", reasonCode: "user_canceled" },
   },
   {
     name: "export-ready reviewed job",
@@ -1372,7 +1376,7 @@ assert.deepEqual(ui.reviewGateFromSnapshot({ job: null }), {
   reason: "Run extraction before reviewing results.",
 });
 assert.equal(ui.reviewGateFromSnapshot({ job: { id: "job_running", status: "running" } }).primaryAction, "watch_job");
-assert.equal(ui.reviewGateFromSnapshot({ job: { id: "job_failed", status: "failed", error: "provider failed" } }).primaryAction, "open_logs");
+assert.equal(ui.reviewGateFromSnapshot({ job: { id: "job_failed", status: "failed", error: "provider failed" } }).primaryAction, "prepare_new_run");
 assert.equal(
   ui.reviewGateFromSnapshot({ job: { id: "job_done", status: "succeeded" }, candidateCount: 3, selectedCandidateCount: 2 }).primaryAction,
   "track_selected",

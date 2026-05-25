@@ -109,6 +109,78 @@ class FakeSAM3TrackingBackend:
         return [mask_at(3 + index) for index, _frame in enumerate(video.frames)]
 
 
+class FakeSceneMaskGenerator:
+    def __init__(self, response=None):
+        self.response = response
+        self.calls = []
+
+    def __call__(self, image, *, points_per_batch=64):
+        self.calls.append({"size": getattr(image, "size", None), "pointsPerBatch": points_per_batch})
+        if self.response is not None:
+            return self.response
+        return {
+            "masks": [mask_at(3)],
+            "boxes": [[3, 2, 5, 5]],
+            "scores": [0.91],
+            "labels": ["scene object"],
+        }
+
+
+class FakeTrackerVideoSession:
+    video_height = 12
+    video_width = 16
+
+    def __init__(self, frame_count: int):
+        self.frame_count = frame_count
+
+
+class FakeTrackerVideoOutput:
+    def __init__(self, frame_idx: int, mask: np.ndarray):
+        self.frame_idx = frame_idx
+        self.pred_masks = np.asarray([mask])
+
+
+class FakeTrackerVideoModel:
+    device = "cpu"
+
+    def propagate_in_video_iterator(self, session):
+        for index in range(session.frame_count):
+            yield FakeTrackerVideoOutput(index, mask_at(3 + index))
+
+
+class FakeTrackerVideoProcessor:
+    def __init__(self) -> None:
+        self.added_inputs = []
+
+    def init_video_session(self, *, video, inference_device):
+        return FakeTrackerVideoSession(len(video))
+
+    def add_inputs_to_inference_session(self, **kwargs):
+        self.added_inputs.append(kwargs)
+
+    def post_process_masks(self, masks, *, original_sizes, binarize=False):
+        return masks
+
+
+class FakeAutoMaskBackend:
+    provider_name = "sam3-local"
+
+    def __init__(self) -> None:
+        self.configs = []
+        self.tracked = []
+
+    def discover_concept(self, video, config, ctx=None):
+        raise AssertionError("sam3_auto_masks must not call concept discovery")
+
+    def discover_auto_masks(self, video, config, ctx=None):
+        self.configs.append(dict(config))
+        return [{"object_id": "sam3_scene_001", "label": "scene object", "segmentation": mask_at(3), "bbox": [3, 2, 5, 5], "score": 0.91}]
+
+    def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
+        self.tracked.append(object_id)
+        return [mask_at(3 + index) for index, _frame in enumerate(video.frames)]
+
+
 class FakeHostedSAM3Transport:
     def __init__(self, response):
         self.response = response
@@ -331,6 +403,47 @@ def test_local_sam3_video_backend_returns_track_sequence():
     assert len(records[0]["mask_sequence"]) == 3
 
 
+def test_local_sam3_auto_masks_runs_scene_sweep_generator_without_object_prompt():
+    generator = FakeSceneMaskGenerator()
+    backend = LocalSAM3DiscoveryBackend(tracker_mask_generator=generator)
+
+    records = backend.discover_auto_masks(video_source(), {"keyframes": [0, 2], "maxCandidatesPerKeyframe": 1, "pointsPerBatch": 32}, RunContext())
+
+    assert [record["frame_index"] for record in records] == [0, 2]
+    assert records[0]["label"] == "scene object"
+    assert records[0]["sceneSweep"] is True
+    assert generator.calls == [{"size": (16, 12), "pointsPerBatch": 32}, {"size": (16, 12), "pointsPerBatch": 32}]
+
+
+def test_local_sam3_scene_sweep_empty_result_is_actionable():
+    backend = LocalSAM3DiscoveryBackend(tracker_mask_generator=FakeSceneMaskGenerator({"masks": []}))
+
+    with pytest.raises(ProviderExecutionError, match="SAM3 scene sweep did not return any masks"):
+        backend.discover_auto_masks(video_source(), {"keyframes": [0]}, RunContext())
+
+
+def test_local_sam3_tracker_video_tracks_scene_sweep_candidate():
+    processor = FakeTrackerVideoProcessor()
+    backend = LocalSAM3DiscoveryBackend(
+        tracker_video_model=FakeTrackerVideoModel(),
+        tracker_video_processor=processor,
+    )
+
+    masks = backend.track_candidate(
+        video_source(),
+        frame_index=0,
+        object_id="sam3_scene_001",
+        box=(3, 2, 5, 5),
+        mask=mask_at(3),
+        config={"useTransformersTracker": True},
+    )
+
+    assert len(masks) == 3
+    assert np.array_equal(masks[1], mask_at(4))
+    assert processor.added_inputs[0]["obj_ids"] == [3001]
+    assert processor.added_inputs[0]["input_labels"] == [[[1]]]
+
+
 def test_sam3_concept_provider_writes_api_candidates_and_tracks(tmp_path):
     backend = FakeSAM3TrackingBackend()
     candidates = SAM3ConceptDiscoveryProvider(backend=backend).propose(
@@ -371,6 +484,36 @@ def test_sam3_auto_masks_provider_filters_and_records_rejected_candidates(tmp_pa
 
     assert [candidate.metadata["rejectionReason"] for candidate in candidates] == [None, "whole_frame"]
     assert candidates[1].metadata["reviewStatus"] == "rejected"
+
+
+def test_sam3_auto_masks_provider_does_not_route_through_concept_prompt(tmp_path):
+    backend = FakeAutoMaskBackend()
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(
+        video_source(),
+        {"minMaskArea": 1, "maxObjects": 1},
+        RunContext(out_dir=tmp_path),
+    )
+
+    assert backend.configs == [{"minMaskArea": 1, "maxObjects": 1}]
+    assert backend.tracked == ["sam3_scene_001"]
+    assert candidates[0].metadata["promptType"] == "scene_sweep"
+    assert candidates[0].metadata["prompt"] is None
+
+
+def test_sam3_scene_sweep_does_not_import_sam2(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "sam2" or name.startswith("sam2."):
+            raise AssertionError("SAM3 scene sweep should not import SAM2")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    backend = LocalSAM3DiscoveryBackend(tracker_mask_generator=FakeSceneMaskGenerator())
+
+    records = backend.discover_auto_masks(video_source(), {"keyframes": [0]}, RunContext())
+
+    assert len(records) == 1
 
 
 def test_local_sam3_backend_validates_missing_model_path():

@@ -256,9 +256,19 @@ class LocalSAM3DiscoveryBackend:
     processor_factory: Any | None = None
     video_predictor: Any | None = None
     video_predictor_factory: Any | None = None
+    tracker_mask_generator: Any | None = None
+    tracker_mask_generator_factory: Any | None = None
+    tracker_video_model: Any | None = None
+    tracker_video_processor: Any | None = None
+    tracker_video_model_factory: Any | None = None
+    tracker_video_processor_factory: Any | None = None
     provider_name: str = "sam3-local"
     _image_processor: Any | None = field(default=None, init=False)
     _video_predictor: Any | None = field(default=None, init=False)
+    _tracker_mask_generator: Any | None = field(default=None, init=False)
+    _tracker_video_model: Any | None = field(default=None, init=False)
+    _tracker_video_processor: Any | None = field(default=None, init=False)
+    _prefer_tracker_video: bool = field(default=False, init=False)
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "LocalSAM3DiscoveryBackend":
@@ -302,9 +312,36 @@ class LocalSAM3DiscoveryBackend:
         return self._image_prompt_records(video, frame_index=frame_index, exemplars=exemplars, box=box, config=config)
 
     def discover_auto_masks(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
-        auto_config = dict(config)
-        auto_config.setdefault("concept", str(config.get("concept") or config.get("text") or "object"))
-        return self.discover_concept(video, auto_config, ctx)
+        if not getattr(video, "frames", None):
+            return []
+        generator = self._ensure_tracker_mask_generator(config)
+        keyframes = _scene_sweep_keyframes(video, config)
+        records: list[dict[str, Any]] = []
+        max_per_keyframe = _int_config(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), 64)
+        points_per_batch = _int_config(config, ("pointsPerBatch", "points_per_batch"), 64)
+        for keyframe_index in keyframes:
+            frame = video.frames[keyframe_index]
+            frame_records = self._generate_scene_masks(
+                generator,
+                Image.fromarray(np.asarray(frame.rgb, dtype=np.uint8)).convert("RGB"),
+                frame_index=keyframe_index,
+                points_per_batch=points_per_batch,
+                config=config,
+            )
+            for proposal_index, record in enumerate(frame_records[:max_per_keyframe]):
+                enriched = dict(record)
+                enriched.setdefault("frame_index", keyframe_index)
+                enriched.setdefault("frameIndex", keyframe_index)
+                enriched.setdefault("object_id", f"sam3_scene_{keyframe_index:04d}_{proposal_index + 1:03d}")
+                enriched.setdefault("label", f"Scene object {proposal_index + 1}")
+                enriched.setdefault("sceneSweep", True)
+                records.append(enriched)
+        if not records:
+            raise ProviderExecutionError(
+                "SAM3 scene sweep did not return any masks. Confirm the SAM3 Tracker mask-generation runtime is installed "
+                "and that the selected frames contain visible foreground objects."
+            )
+        return records
 
     def track_candidate(
         self,
@@ -316,11 +353,49 @@ class LocalSAM3DiscoveryBackend:
         mask: np.ndarray,
         config: Mapping[str, Any],
     ) -> Sequence[np.ndarray]:
+        if self._prefer_tracker_video or _bool_config(config, "useTransformersTracker", False):
+            try:
+                return self._track_candidate_with_tracker_video(
+                    video,
+                    frame_index=frame_index,
+                    object_id=object_id,
+                    box=box,
+                    mask=mask,
+                    config=config,
+                )
+            except ProviderConfigError:
+                if _bool_config(config, "requireTransformersTracker", False):
+                    raise
         records = self._video_prompt_records(video, frame_index=frame_index, box=box, mask=mask, config=config)
         masks = _first_mask_sequence(records)
         if not masks:
             raise ProviderExecutionError("SAM3 video tracking did not return a mask sequence.")
         return masks
+
+    def _generate_scene_masks(
+        self,
+        generator: Any,
+        image: Image.Image,
+        *,
+        frame_index: int,
+        points_per_batch: int,
+        config: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        if hasattr(generator, "generate"):
+            output = generator.generate(np.asarray(image), points_per_batch=points_per_batch)
+        elif hasattr(generator, "propose_masks"):
+            output = generator.propose_masks(np.asarray(image), frame_index=frame_index, config=config)
+        elif callable(generator):
+            try:
+                output = generator(image, points_per_batch=points_per_batch)
+            except TypeError:
+                try:
+                    output = generator(np.asarray(image), frame_index=frame_index, config=config)
+                except TypeError:
+                    output = generator(image)
+        else:
+            raise ProviderExecutionError("SAM3 scene sweep mask generator must expose generate(), propose_masks(), or be callable.")
+        return normalize_sam3_output(output)
 
     def _image_prompt_records(
         self,
@@ -377,7 +452,16 @@ class LocalSAM3DiscoveryBackend:
             response = predictor.handle_request(request=request)
         except TypeError:
             response = predictor.handle_request(request)
-        return normalize_sam3_output(response)
+        records = normalize_sam3_output(response)
+        if _records_include_video_sequence(records, len(video.frames)):
+            self._close_video_session(predictor, session_id)
+            return records
+        propagated = self._propagate_video_session(predictor, session_id)
+        self._close_video_session(predictor, session_id)
+        if propagated is None:
+            return records
+        propagated_records = normalize_sam3_output(propagated)
+        return propagated_records or records
 
     def _ensure_image_processor(self) -> Any:
         if self.image_processor is not None:
@@ -418,6 +502,123 @@ class LocalSAM3DiscoveryBackend:
             ) from exc
         self._video_predictor = self._call_builder(build_sam3_video_predictor)
         return self._video_predictor
+
+    def _ensure_tracker_mask_generator(self, config: Mapping[str, Any]) -> Any:
+        if self.tracker_mask_generator is not None:
+            self._prefer_tracker_video = True
+            return self.tracker_mask_generator
+        if self._tracker_mask_generator is not None:
+            self._prefer_tracker_video = True
+            return self._tracker_mask_generator
+        if self.tracker_mask_generator_factory is not None:
+            self._tracker_mask_generator = self.tracker_mask_generator_factory()
+            self._prefer_tracker_video = True
+            return self._tracker_mask_generator
+        try:
+            from transformers import pipeline  # type: ignore
+        except ImportError as exc:
+            raise ProviderConfigError(
+                "sam3_auto_masks scene sweep requires Hugging Face Transformers SAM3 Tracker mask-generation support. "
+                "Install the independent sam3-transformers extra or use discovery.config.mock=true; SAM2 is not required."
+            ) from exc
+        model_id = _tracker_model_id(config, fallback=self.model_path)
+        device = _transformers_device(self.device)
+        try:
+            self._tracker_mask_generator = pipeline("mask-generation", model=model_id, device=device)
+        except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
+            raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
+        self._prefer_tracker_video = True
+        return self._tracker_mask_generator
+
+    def _ensure_tracker_video(self, config: Mapping[str, Any]) -> tuple[Any, Any]:
+        if self.tracker_video_model is not None and self.tracker_video_processor is not None:
+            return self.tracker_video_model, self.tracker_video_processor
+        if self._tracker_video_model is not None and self._tracker_video_processor is not None:
+            return self._tracker_video_model, self._tracker_video_processor
+        if self.tracker_video_model_factory is not None and self.tracker_video_processor_factory is not None:
+            self._tracker_video_model = self.tracker_video_model_factory()
+            self._tracker_video_processor = self.tracker_video_processor_factory()
+            return self._tracker_video_model, self._tracker_video_processor
+        try:
+            from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore
+        except ImportError as exc:
+            raise ProviderConfigError(
+                "SAM3 scene sweep found masks, but SAM3 Tracker Video is not importable for propagation. "
+                "Install the independent sam3-transformers extra; SAM2 is not required."
+            ) from exc
+        model_id = _tracker_model_id(config, fallback=self.model_path)
+        try:
+            self._tracker_video_model = Sam3TrackerVideoModel.from_pretrained(model_id, device_map="auto")
+            self._tracker_video_processor = Sam3TrackerVideoProcessor.from_pretrained(model_id)
+        except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
+            raise ProviderConfigError(f"SAM3 Tracker Video could not be initialized: {exc}") from exc
+        return self._tracker_video_model, self._tracker_video_processor
+
+    def _track_candidate_with_tracker_video(
+        self,
+        video: Any,
+        *,
+        frame_index: int,
+        object_id: str,
+        box: tuple[int, int, int, int] | None,
+        mask: np.ndarray,
+        config: Mapping[str, Any],
+    ) -> Sequence[np.ndarray]:
+        model, processor = self._ensure_tracker_video(config)
+        frames = [Image.fromarray(np.asarray(frame.rgb, dtype=np.uint8)).convert("RGB") for frame in video.frames]
+        device = getattr(model, "device", self.device)
+        session = processor.init_video_session(video=frames, inference_device=device)
+        obj_id = _numeric_object_id(object_id)
+        point = _mask_center_point(mask, box)
+        processor.add_inputs_to_inference_session(
+            inference_session=session,
+            frame_idx=frame_index,
+            obj_ids=[obj_id],
+            input_points=[[[point]]],
+            input_labels=[[[1]]],
+        )
+        masks_by_frame: dict[int, np.ndarray] = {}
+        iterator = model.propagate_in_video_iterator(session)
+        for output in iterator:
+            current_frame = int(getattr(output, "frame_idx", len(masks_by_frame)))
+            raw_masks = getattr(output, "pred_masks", None)
+            original_sizes = [[getattr(session, "video_height", mask.shape[0]), getattr(session, "video_width", mask.shape[1])]]
+            processed = processor.post_process_masks([raw_masks], original_sizes=original_sizes, binarize=False)[0]
+            masks = _as_sequence(processed)
+            if masks:
+                masks_by_frame[current_frame] = normalize_binary_mask(np.asarray(_to_numpy(masks[0])))
+        return [masks_by_frame.get(index, normalize_binary_mask(mask).copy()) for index in range(len(video.frames))]
+
+    @staticmethod
+    def _propagate_video_session(predictor: Any, session_id: str) -> Any | None:
+        request = {"type": "propagate_in_video", "session_id": session_id}
+        if hasattr(predictor, "handle_stream_request"):
+            try:
+                return list(predictor.handle_stream_request(request=request))
+            except TypeError:
+                return list(predictor.handle_stream_request(request))
+        try:
+            return predictor.handle_request(request=request)
+        except TypeError:
+            try:
+                return predictor.handle_request(request)
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _close_video_session(predictor: Any, session_id: str) -> None:
+        request = {"type": "close_session", "session_id": session_id}
+        try:
+            predictor.handle_request(request=request)
+        except TypeError:
+            try:
+                predictor.handle_request(request)
+            except Exception:
+                return
+        except Exception:
+            return
 
     def _validate_model_path(self) -> Path:
         raw_model_path = str(self.model_path or os.environ.get("SAM3_LOCAL_MODEL") or "").strip()
@@ -600,7 +801,7 @@ class HostedSAM3DiscoveryBackend:
 
     def discover_auto_masks(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
         frame_index = _frame_index(config)
-        prompt = str(config.get("concept") or config.get("text") or "object")
+        prompt = str(config.get("concept") or config.get("text") or config.get("prompt") or "").strip() or None
         return self._discover_from_frame(video, config, task="sam3_auto_masks", frame_index=frame_index, prompt=prompt)
 
     def track_candidate(
@@ -801,6 +1002,45 @@ def _frame_index(config: Mapping[str, Any]) -> int:
         return 0
 
 
+def _int_config(config: Mapping[str, Any], names: Sequence[str], default: int) -> int:
+    for name in names:
+        if name in config and config[name] is not None:
+            try:
+                value = int(config[name])
+            except (TypeError, ValueError) as exc:
+                raise ProviderConfigError(f"discovery.{name}: expected integer") from exc
+            return max(1, value)
+    return max(1, int(default))
+
+
+def _scene_sweep_keyframes(video: Any, config: Mapping[str, Any]) -> list[int]:
+    frame_count = len(getattr(video, "frames", []) or [])
+    if frame_count <= 0:
+        return []
+    max_keyframes = _int_config(config, ("maxKeyframes", "max_keyframes"), 3)
+    raw = config.get("keyframes")
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes, bytearray)):
+        indexes: list[int] = []
+        for item in raw:
+            try:
+                index = int(item)
+            except (TypeError, ValueError) as exc:
+                raise ProviderConfigError("discovery.keyframes: expected integer frame indexes") from exc
+            if 0 <= index < frame_count and index not in indexes:
+                indexes.append(index)
+        return indexes[:max_keyframes] or [0]
+    interval_value = config.get("frameInterval", config.get("frame_interval"))
+    if interval_value is not None:
+        interval = _int_config(config, ("frameInterval", "frame_interval"), 1)
+        return list(range(0, frame_count, interval))[:max_keyframes] or [0]
+    if max_keyframes >= frame_count:
+        return list(range(frame_count))
+    if max_keyframes == 1:
+        return [0]
+    step = (frame_count - 1) / float(max_keyframes - 1)
+    return list(dict.fromkeys(max(0, min(frame_count - 1, round(index * step))) for index in range(max_keyframes)))
+
+
 def _bool_config(config: Mapping[str, Any], name: str, default: bool) -> bool:
     if name in config:
         return bool(config[name])
@@ -843,6 +1083,53 @@ def _first_mask_sequence(records: Sequence[Mapping[str, Any]]) -> list[np.ndarra
         if record.get("segmentation") is not None:
             return [normalize_binary_mask(np.asarray(_to_numpy(record["segmentation"])))]
     return []
+
+
+def _records_include_video_sequence(records: Sequence[Mapping[str, Any]], frame_count: int) -> bool:
+    return any(len(_first_mask_sequence([record])) == frame_count for record in records)
+
+
+def _tracker_model_id(config: Mapping[str, Any], *, fallback: str | Path | None) -> str:
+    value = (
+        config.get("sam3TrackerModel")
+        or config.get("sam3_tracker_model")
+        or config.get("sam3HfModel")
+        or config.get("sam3_hf_model")
+        or config.get("model")
+        or os.environ.get("SAM3_TRACKER_MODEL")
+        or os.environ.get("SAM3_HF_MODEL")
+        or fallback
+        or SAM3_HF_REPO_ID
+    )
+    return str(value).strip() or SAM3_HF_REPO_ID
+
+
+def _transformers_device(device: str) -> int | str:
+    normalized = str(device or "").strip().lower()
+    if normalized.startswith("cuda"):
+        return 0
+    if normalized == "mps":
+        return "mps"
+    return -1
+
+
+def _numeric_object_id(value: str) -> int:
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    if digits:
+        return max(1, int(digits[-6:]))
+    return max(1, abs(hash(value)) % 100000)
+
+
+def _mask_center_point(mask: np.ndarray, box: tuple[int, int, int, int] | None) -> list[int]:
+    normalized = normalize_binary_mask(mask)
+    ys, xs = np.where(normalized > 0)
+    if len(xs) and len(ys):
+        return [int(round(float(xs.mean()))), int(round(float(ys.mean())))]
+    if box is not None:
+        x, y, w, h = box
+        return [int(x + max(1, w) / 2), int(y + max(1, h) / 2)]
+    height, width = normalized.shape[:2]
+    return [width // 2, height // 2]
 
 
 def _scalar(value: Any) -> float:

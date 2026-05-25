@@ -106,8 +106,9 @@ def test_sam_goal_capabilities_are_declared_for_guided_ui():
     assert sam2_local["supportsTracking"] is True
     assert sam3_local["supportedPromptTypes"] == ["box"]
     assert {"trace_one_object", "trace_all_objects", "text_detector"} <= set(sam3_local["supportedGoals"])
-    assert roboflow["supportedGoals"] == ["trace_all_objects", "text_detector"]
+    assert roboflow["supportedGoals"] == ["text_detector"]
     assert roboflow["supportsExemplar"] is False
+    assert roboflow["supportsAutoMasks"] is False
     assert custom["supportsExemplar"] is True
     assert custom["supportsTracking"] is True
 

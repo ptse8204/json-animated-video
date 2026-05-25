@@ -30,9 +30,10 @@ provider receives boxes or masks.
   network calls.
 - `sam3_exemplar`: optional SAM3-style discovery from exemplar/crop references.
   Mock mode lets the review API and UI exercise exemplar-shaped candidates.
-- `sam3_auto_masks`: optional SAM3-style high-recall automatic proposals. Mock
-  mode uses the same candidate/rejected-candidate review shape as the default
-  object proposal flow.
+- `sam3_auto_masks`: optional SAM3 scene sweep. Mock mode uses the same
+  candidate/rejected-candidate review shape as the default object proposal
+  flow; real local mode uses SAM3 Tracker automatic mask generation on sampled
+  keyframes plus SAM3 Tracker Video propagation for accepted candidates.
 - `text_detector`: scaffold for open-vocabulary detection. Missing detector
   packages or model paths are capability warnings; mock mode can produce local
   boxes for UI smoke checks.
@@ -63,7 +64,7 @@ provider receives boxes or masks.
 | `text_detector` | Mock mode is runnable and writes candidate boxes, mask sequences, tracks, and review metadata. Real detector backends remain scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows `candidate_summary` before track/export decisions. |
 | `class_detector` | Mock mode is runnable with `--discovery-class-preset` and repeatable `--discovery-class`; real detector backends are scaffolded until configured and wired. | Runnable in mock mode through the local worker; review shows class-preset candidates, tracks, diagnostics, and export state without claiming real YOLO availability. |
 | `sam_auto_masks` | Mock mode is runnable and writes visible-segment candidates, generated mask sequences, track filter/dedupe metadata, and review artifacts. Real automatic masks use the same optional local SAM2 automatic proposal adapter. | Runnable in mock mode through the local worker; with local SAM2 configured, review shows SAM2 proposal candidates, track filtering, fallback diagnostics, and merge suggestions. |
-| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and higher-recall review flows. Real local SAM3 uses the optional adapter only when SAM3, Python 3.12+, CUDA, and `SAM3_LOCAL_MODEL` are configured. Hosted SAM3 can be selected with `providerPreference: "sam3-hosted"` only with explicit network and cost/privacy acknowledgement. | Runnable in mock mode through the local worker; non-mock runs fail clearly unless diagnostics pass or hosted network use is explicitly acknowledged. |
+| `sam3_concept` / `sam3_exemplar` / `sam3_auto_masks` | Mock mode is runnable and writes API-first candidates for concept, exemplar, and scene-sweep review flows. Real local `sam3_auto_masks` uses the independent `sam3-transformers` path and does not require SAM2. Real local concept/exemplar uses the optional official SAM3 adapter only when SAM3, Python 3.12+, CUDA, and `SAM3_LOCAL_MODEL` are configured. Hosted SAM3 can be selected with `providerPreference: "sam3-hosted"` only with explicit network and cost/privacy acknowledgement. | Runnable in mock mode through the local worker; non-mock runs fail clearly unless diagnostics pass or hosted network use is explicitly acknowledged. |
 
 Candidate-producing workflows write `candidates.json`, which is registered as a
 `candidate_summary` artifact. `/api/jobs/JOB_ID/review` and

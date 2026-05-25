@@ -3718,6 +3718,18 @@ body {
   min-height: 42px;
 }
 
+.inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.inline-actions button {
+  min-height: 38px;
+  flex: 1 1 130px;
+}
+
 .browser-preview-card {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) auto;

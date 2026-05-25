@@ -22,10 +22,13 @@ endpoint, API key, model choice, and hosted-call opt-in in the local SQLite
 database. Built-in profiles are:
 
 - `roboflow-sam3-pcs`: Roboflow SAM3 concept segmentation, using sampled
-  frames and text concepts.
+  frames and text concepts. It is not advertised as a no-prompt scene-sweep or
+  automatic-mask provider.
 - `fal-sam3-image`: Fal `fal-ai/sam-3/image`, called frame-by-frame for sampled
   frames.
 - `custom-sam3-compatible`: the generic MotionJSON hosted SAM3 JSON contract.
+  It may be used for `sam3_auto_masks` only when that endpoint explicitly
+  supports automatic mask generation and tracking.
 
 Raw keys are never returned by `GET /api/provider-settings` or
 `GET /api/capabilities`.
@@ -69,7 +72,9 @@ The hosted adapter posts JSON with:
 - `task`: `sam3_smoke_test`, `sam3_concept`, `sam3_exemplar`,
   `sam3_auto_masks`, or `sam3_track_candidate`;
 - `frame`: a PNG base64 frame for image discovery/smoke tests;
-- `prompt`, `exemplars`, `box`, or `mask` depending on task;
+- `prompt`, `exemplars`, `box`, or `mask` depending on task. `sam3_auto_masks`
+  may omit `prompt`; it represents scene sweep, not a default `"object"` text
+  concept;
 - `maxCandidates`, timeout, and retry behavior controlled by request/config.
 
 The response must be a SAM3-compatible JSON object or list containing masks,

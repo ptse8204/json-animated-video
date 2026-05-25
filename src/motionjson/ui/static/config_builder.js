@@ -356,10 +356,12 @@ export function buildRunConfig(input) {
   }
   if (discoveryMode === "sam3_auto_masks") {
     const hosted = providerName === "sam3-hosted";
-    discoveryConfig.concept = input.discoveryText || "object";
+    discoveryConfig.sceneSweep = true;
+    discoveryConfig.useTransformersTracker = !hosted;
+    discoveryConfig.pointsPerBatch = Number(advanced.pointsPerBatch || input.pointsPerBatch || 64);
     discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
     discoveryConfig.hosted = hosted;
-    discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : null;
+    discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;
     discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
     discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
     discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";

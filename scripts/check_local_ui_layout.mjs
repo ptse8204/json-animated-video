@@ -541,9 +541,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       review_export: ["review_candidates", "correct_tracks", "export"],
     };
     const workflowScreenAliases = {
-      choose_goal: ["choose_goal", "source_video", "provider_settings"],
-      source_video: ["choose_goal", "source_video", "provider_settings"],
-      provider_settings: ["choose_goal", "source_video", "provider_settings"],
+      choose_goal: ["choose_goal"],
+      source_video: ["source_video"],
+      provider_settings: ["provider_settings"],
       prompt_preview: ["prompt_preview"],
       review_export: ["review_export"],
     };
@@ -706,8 +706,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "source_video" || stateValue.workflowFocusedStep !== "source_video")) {
       failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Video (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
     }
-    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Add video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
-      failures.push(`${viewport.name}/${state}: empty setup should start with Add video, no back action, and preview not ready`);
+    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
+      failures.push(`${viewport.name}/${state}: goal step should start with Continue to video, no back action, and preview not ready`);
     }
     if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 5 || stateValue.advancedTaskPanelOpen)) {
       failures.push(`${viewport.name}/${state}: first goal screen should show five primary goal cards and keep advanced tasks collapsed`);

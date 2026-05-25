@@ -296,11 +296,11 @@ def test_mock_sam3_auto_masks_discovery_uses_review_artifact_shape(tmp_path):
 
 @pytest.mark.parametrize(
     ("provider", "message"),
-    [
-        (SAM3ConceptDiscoveryProvider(), "sam3_concept requires"),
-        (SAM3ExemplarDiscoveryProvider(), "sam3_exemplar requires"),
-        (SAM3AutoMasksDiscoveryProvider(), "SAM3 local adapter requires"),
-    ],
+        [
+            (SAM3ConceptDiscoveryProvider(), "sam3_concept requires"),
+            (SAM3ExemplarDiscoveryProvider(), "sam3_exemplar requires"),
+            (SAM3AutoMasksDiscoveryProvider(), "sam3_auto_masks scene sweep requires"),
+        ],
 )
 def test_sam3_mock_providers_fail_clearly_without_mock(provider, message):
     with pytest.raises(ProviderConfigError, match=message):

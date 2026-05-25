@@ -1166,7 +1166,9 @@ def _sam3_records_to_candidates(
     max_candidates = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), len(records) or 1))
     max_objects = max(1, _int_config_any(config, ("maxObjects", "max_objects"), max_candidates))
     min_area = max(1, _int_config_any(config, ("minMaskArea", "min_area"), 32))
-    max_area_ratio = _ratio_config_any(config, ("maxMaskAreaRatio", "max_area_ratio"), 0.9)
+    max_area_ratio = _ratio_config_any(config, ("maxMaskAreaRatio", "max_area_ratio"), 0.45 if source == "sam3_auto_masks" else 0.9)
+    stability_threshold = _ratio_config_any(config, ("stabilityThreshold", "stability_threshold"), 0.0)
+    dedupe_iou = _ratio_config_any(config, ("dedupeIou", "dedupe_iou", "overlap_threshold"), 0.78 if source == "sam3_auto_masks" else 1.0)
     write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
     quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
     provider_name = str(getattr(backend, "provider_name", "sam3-local") or "sam3-local")
@@ -1174,6 +1176,7 @@ def _sam3_records_to_candidates(
     frame_area = max(1, width * height)
     accepted_count = 0
     rejected_count = 0
+    accepted_boxes: list[Box] = []
     candidates: list[ObjectCandidate] = []
     sorted_records = sorted([dict(record) for record in records], key=lambda record: _proposal_score(record), reverse=True)[:max_candidates]
     for record_index, record in enumerate(sorted_records):
@@ -1195,11 +1198,16 @@ def _sam3_records_to_candidates(
             rejection_reason = "too_small"
         elif area_ratio > max_area_ratio:
             rejection_reason = "whole_frame"
+        elif _proposal_stability(record) < stability_threshold:
+            rejection_reason = "unstable_mask"
+        elif any(_box_iou(box, previous) >= dedupe_iou for previous in accepted_boxes):
+            rejection_reason = "duplicate_mask"
         elif accepted_count >= max_objects:
             rejection_reason = "max_objects"
         accepted = rejection_reason is None
         if accepted:
             accepted_count += 1
+            accepted_boxes.append(box)
             index_for_id = accepted_count
         else:
             rejected_count += 1
@@ -1241,7 +1249,15 @@ def _sam3_records_to_candidates(
             z_index=10 + (accepted_count * 10 if accepted else 1000 + rejected_count),
             metadata=_candidate_metadata(
                 source,
-                "SAM3 hosted discovery proposal" if hosted_backend else "SAM3 local discovery proposal",
+                (
+                    "SAM3 hosted scene sweep proposal"
+                    if hosted_backend and source == "sam3_auto_masks"
+                    else "SAM3 scene sweep keyframe mask proposal"
+                    if source == "sam3_auto_masks"
+                    else "SAM3 hosted discovery proposal"
+                    if hosted_backend
+                    else "SAM3 local discovery proposal"
+                ),
                 {
                     "providerName": provider_name,
                     "qualityPreset": quality_preset,
@@ -1257,6 +1273,8 @@ def _sam3_records_to_candidates(
                         "maxObjects": max_objects,
                         "minMaskArea": min_area,
                         "maxMaskAreaRatio": max_area_ratio,
+                        "stabilityThreshold": stability_threshold,
+                        "dedupeIou": dedupe_iou,
                         "writeRejectedCandidates": write_rejected,
                     },
                     "areaRatio": round(area_ratio, 6),
@@ -1294,6 +1312,11 @@ def _sam3_records_to_candidates(
             metadata={"objectId": object_id, "keyframeIndex": frame_index, "rejectionReason": rejection_reason},
         )
     if not candidates:
+        if source == "sam3_auto_masks":
+            raise ProviderConfigError(
+                "SAM3 scene sweep produced no candidate masks after filtering. Try a higher-recall quality preset, "
+                "lower minMaskArea, raise maxMaskAreaRatio for large foreground objects, or verify SAM3 Tracker mask generation is ready."
+            )
         raise ProviderConfigError("SAM3 discovery produced no candidates.")
     return candidates
 
@@ -1411,8 +1434,8 @@ class SAM3AutoMasksDiscoveryProvider:
                 ctx,
                 records,
                 source=self.name,
-                prompt_type="auto_masks",
-                prompt_value=str(config.get("concept") or config.get("text") or "object"),
+                prompt_type="scene_sweep",
+                prompt_value=str(config.get("concept") or config.get("text") or config.get("prompt") or "").strip() or None,
             )
         return MockObjectDiscoveryProvider(name=self.name, provider_name=self.provider_name).propose(video, {**dict(config), "mock": True}, ctx)
 

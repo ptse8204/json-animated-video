@@ -106,9 +106,9 @@ or detector model before the real backend can run.
 | `auto_object_proposals` | Local SAM2 when configured; debug mock only for tests | Recommended for real SAM2 use | Yes for SAM2 backend | No | Default clean candidate gallery before selected-object tracking. | Clean misses small objects; recall/Trace Everything can be noisy; missing SAM2 package/checkpoint/config blocks real proposals. |
 | `sam2-local` | Local once installed | Recommended for real use | Yes | No | Promptable local segmentation/tracking with SAM2-style models. | Missing SAM2 package, checkpoint, config, CUDA, or an overly broad prompt. |
 | `sam2-hosted` | No | No local GPU | No local weights | Yes | Hosted segmentation when a user explicitly accepts cost/privacy tradeoffs. | Missing key, missing optional vendor SDK, missing custom endpoint, no hosted opt-in, or remote errors. |
-| `sam3-local` | Local once installed | Yes, CUDA expected | Yes | No | Concept, exemplar, and higher-recall semantic discovery. | Missing SAM3 package, Python 3.12+ runtime, local model path, torch/CUDA, or incompatible runtime. |
+| `sam3-local` | Local once installed | GPU recommended; CUDA expected for official concept/exemplar | Yes for official concept/exemplar; SAM3 Tracker model id/path for scene sweep | No | SAM3 scene sweep, concept discovery, exemplar discovery, and SAM3 tracking. | Missing `transformers` for scene sweep, missing official SAM3 package/model for concept/exemplar, Python/CUDA mismatch, or incompatible runtime. |
 | `sam3-hosted` | No | No local GPU | No local weights | Yes | Hosted SAM3-compatible discovery experiments. | Missing key, missing optional vendor SDK, missing custom endpoint, no hosted opt-in, or remote errors. |
-| `sam3-concept` / `sam3-exemplar` / `sam3-auto-masks` | SAM3 local or hosted when configured; debug mock only for tests | Yes, CUDA expected for real local SAM3 | Yes for real local backend | Hosted variants need keys | Concept prompts, exemplar search, and higher-recall proposal review. | Missing SAM3 package/model/runtime, hosted key, provider SDK, opt-in, or remote errors. |
+| `sam3-concept` / `sam3-exemplar` / `sam3-auto-masks` | SAM3 local or hosted when configured; debug mock only for tests | GPU recommended; CUDA expected for official concept/exemplar | Yes for official concept/exemplar; SAM3 Tracker model id/path for scene sweep | Hosted variants need keys | Concept prompts, exemplar search, and scene-wide proposal review. | Missing SAM3 Tracker/Transformers for scene sweep, missing official SAM3 package/model/runtime for concept/exemplar, hosted key, provider SDK, opt-in, or remote errors. |
 | `sam_auto_masks` | Local SAM2 when configured; debug mock only for tests | Recommended for real SAM2 use | Yes for SAM2 backend | No | Proposing visible segments for later review. | Background fragments, duplicate masks, or unavailable SAM2 automatic-mask backend. |
 | `text_detector` | SAM3 concept is recommended for text prompts; detector backend optional | Backend dependent | Yes for real backend | Hosted SAM3 needs keys | Text-guided candidate boxes before segmentation. | Missing detector/SAM3 package/model or semantically wrong boxes. |
 | `class_detector` | Optional detector backend; debug mock only for tests | Future backend dependent | Yes for real backend | No | Known classes such as people, vehicles, or custom local labels. | Missing YOLO-style backend, too many candidates, or wrong class selection. |
@@ -138,12 +138,14 @@ Optional SAM2/hosted providers:
   existing `SAM2_LOCAL_CHECKPOINT` / `SAM2_LOCAL_CONFIG` paths. They report
   `available_cpu_only` when configured without CUDA, because CPU execution is
   possible but expected to be slower.
-- `sam3-local`: local SAM3 family diagnostics require the optional `sam3`
-  package, Python 3.12+, torch with CUDA available, and an existing
-  `SAM3_LOCAL_MODEL` checkpoint file path. A cloned source checkout such as
-  `/content/sam3` and the Hugging Face repo id `facebook/sam3` are not model
-  paths; use the resolved local `sam3.pt` file. The base install and mock modes
-  do not require any of those.
+- `sam3-local`: scene sweep uses the independent `sam3-transformers` extra and
+  does not require SAM2, a SAM2 checkpoint, or a SAM2 config. Official
+  concept/exemplar diagnostics require the optional `sam3` package, Python
+  3.12+, torch with CUDA available, and an existing `SAM3_LOCAL_MODEL`
+  checkpoint file path. A cloned source checkout such as `/content/sam3` and
+  the Hugging Face repo id `facebook/sam3` are not model paths for
+  `SAM3_LOCAL_MODEL`; use the resolved local `sam3.pt` file. The base install
+  and mock modes do not require any of those.
 - `sam3-hosted`: hosted SAM3-compatible discovery. `roboflow-sam3-pcs` uses
   `ROBOFLOW_API_KEY`, `fal-sam3-image` uses `FAL_KEY` plus the optional
   `fal-client` package, and custom endpoints use `SAM3_HOSTED_URL` and
@@ -198,9 +200,10 @@ Discovery providers:
 - `sam3_exemplar`: SAM3-style exemplar/crop discovery. Mock mode works without
   model setup; real local execution uses the optional SAM3 adapter when
   diagnostics pass.
-- `sam3_auto_masks`: SAM3-style high-recall automatic proposals. Mock mode
-  works without model setup; real local execution uses the optional SAM3
-  adapter with caps and review metadata when diagnostics pass.
+- `sam3_auto_masks`: SAM3 scene sweep. Mock mode works without model setup;
+  real local execution uses SAM3 Tracker automatic mask generation on sampled
+  keyframes plus SAM3 Tracker Video propagation for accepted candidates. It
+  does not use a broad `"object"` concept prompt and it does not require SAM2.
 - `text_detector`: optional open-vocabulary detector scaffold. Text prompts
   become detector candidates first and are not routed directly to SAM2.
 - `class_detector`: optional known-class detector scaffold. Mock mode supports

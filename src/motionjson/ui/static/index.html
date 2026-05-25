@@ -242,6 +242,12 @@
                 <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
               </div>
               <dl id="mainSelectedJobFacts" class="facts"></dl>
+              <div id="mainFailedRunActions" class="inline-actions" hidden>
+                <button id="mainOpenLogsButton" type="button">Open logs</button>
+                <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
+                <button id="mainChangeSetupButton" type="button">Change setup</button>
+                <button id="mainChooseModelButton" type="button">Choose model</button>
+              </div>
             </section>
           </div>
         </section>
@@ -743,6 +749,12 @@
             </div>
             <dl id="selectedJobFacts" class="facts"></dl>
             <button id="cancelJobButton" class="danger-action" type="button" data-tooltip="Request cooperative cancellation for the selected run" disabled>Cancel run</button>
+            <div id="failedRunActions" class="inline-actions" hidden>
+              <button id="openLogsButton" type="button">Open logs</button>
+              <button id="runAgainButton" class="primary-action" type="button">Run again</button>
+              <button id="changeSetupButton" type="button">Change setup</button>
+              <button id="chooseModelButton" type="button">Choose model</button>
+            </div>
           </section>
           <details id="runLogsDisclosure" class="nested-rail-disclosure">
             <summary>Logs and events</summary>

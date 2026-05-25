@@ -130,9 +130,14 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
 - `sam3_concept`, `sam3_exemplar`, and `sam3_auto_masks` are optional SAM3
   discovery modes. With `discovery.config.mock: true`, they run without SAM3,
   GPU, hosted credentials, or network access and write normal candidate review
-  artifacts. Real local SAM3 execution remains capability-gated behind SAM3
-  setup and accepts additive config keys such as `sam3ModelPath`,
-  `sam3Device`, `useVideoSession`, `concept`, `exemplars`, and `box`.
+  artifacts. `sam3_auto_masks` is SAM3 scene sweep: it samples keyframes, runs
+  SAM3 Tracker automatic mask generation, filters/dedupes masks, and tracks
+  accepted candidates with SAM3 Tracker Video. It does not default to the text
+  concept `"object"`. Scene sweep uses the independent `sam3-transformers`
+  extra and does not require SAM2. Concept/exemplar execution remains
+  capability-gated behind official SAM3 setup and accepts additive config keys
+  such as `sam3ModelPath`, `sam3Device`, `useVideoSession`, `concept`,
+  `exemplars`, and `box`.
   Hosted SAM3 can be requested with `providerPreference: "sam3-hosted"` or
   `hosted: true`, plus `hostedProfile` for `roboflow-sam3-pcs`,
   `fal-sam3-image`, or `custom-sam3-compatible`. It requires `allowNetwork:
