@@ -10,10 +10,11 @@ and reuse it as a JSON-controlled layer. The practical output is cached
 raster/alpha media plus compact JSON for timing, transforms, identity, review
 state, rights metadata, and web playback.
 
-Start with the Local UI and open **Model Connections**. The normal path now
-asks you to connect local SAM2/SAM3 or a hosted SAM provider before extraction.
-CPU-only threshold demos still exist for sanity checks, and debug mock mode is
-reserved for contributor smoke tests.
+Start with the Local UI. The normal path is goal-first: choose a task, add a
+video, use **Model setup** to install/check/cache the recommended SAM provider,
+run extraction, recover from failures, review, and export. CPU-only threshold
+demos still exist for sanity checks, and debug mock mode is reserved for
+contributor smoke tests.
 
 ![Local UI first-run checklist](docs/assets/local-ui-first-run.png)
 
@@ -67,11 +68,14 @@ noisier. Trace Everything is expert/experimental, requires explicit
 cost/noise acknowledgement, stays capped, and remains review-gated before
 export.
 
-When configured, SAM2 is the practical lower-cost path for automatic keyframe
-mask proposals and selected-object tracking. SAM3 is optional and best for
-concept prompts, exemplar search, and higher-recall semantic discovery. Hosted
-SAM2/SAM3-style providers require explicit cost/privacy opt-in before network
-tests or hosted runs.
+When configured, SAM3 Scene Sweep is the recommended path for "find everything
+in scene": the UI installs/checks the independent Transformers runtime, caches
+`sam3TrackerModel=facebook/sam3` or a local Hugging Face model directory, and
+then runs keyframe automatic masks plus video tracking. SAM2 prompt tracking is
+still the practical local path for cutting out one prompted object, and SAM2 HF
+automatic masks are offered as the scene-sweep fallback. Hosted SAM2/SAM3-style
+providers require explicit cost/privacy opt-in before network tests or hosted
+runs.
 
 ## Which path should I choose?
 
@@ -79,9 +83,11 @@ tests or hosted runs.
 | --- | --- | --- |
 | CPU/no-model demo | First install check, `Use demo video`, simple CLI threshold demo, `Find moving things`, or `Import masks`. | Python `>=3.10`; 4 GB RAM minimum for tiny demos, 8 GB recommended; no GPU, model weights, or keys. |
 | Local SAM2 | `Cut out one object` with point/box prompts while keeping frames local. | Install/configure SAM2, checkpoint, config, torch/CUDA; 16 GB RAM minimum for small clips, 32 GB recommended; 8 GB VRAM can work for small experiments, 12-16+ GB recommended. |
+| SAM2 HF automatic masks | Fallback for `Find everything in scene` when SAM3 Scene Sweep is blocked. | Uses `facebook/sam2.1-hiera-large` through the independent Transformers path; does not require the official `sam2` package/checkpoint setup. |
 | Hosted SAM2 | SAM2-style tracing without local GPU. | Requires API key, hosted-call opt-in, cost/privacy acknowledgement, and a compatible hosted profile such as `Replicate SAM2 video`. |
-| Local SAM3 | Concept/exemplar discovery on your own CUDA machine. | Use only when official SAM3 package, Python/CUDA runtime, and a real local `sam3.pt` pass diagnostics; 32 GB RAM and 16+ GB VRAM are conservative starting points. |
-| Hosted SAM3 | Text/concept segmentation without local SAM3 hardware. | Requires API key and explicit hosted opt-in for `Roboflow SAM3`, `Fal SAM3 image`, or a custom endpoint. |
+| SAM3 Scene Sweep | `Find everything in scene` with local automatic masks and tracker-video propagation. | Use the UI Model setup actions for install, cache, access check, and smoke test. Default tracker model is `facebook/sam3`; a local Hugging Face `from_pretrained` directory is allowed. A single `sam3.pt` file is not valid for this path. |
+| SAM3 concept/exemplar | Prompted concept or exemplar discovery on your own CUDA machine. | Advanced local path only when official SAM3 package, Python/CUDA runtime, and a real local `sam3.pt` pass diagnostics; 32 GB RAM and 16+ GB VRAM are conservative starting points. |
+| Hosted SAM3 | Text/concept segmentation without local SAM3 hardware. | Requires API key and explicit hosted opt-in for `Roboflow SAM3`, `Fal SAM3 image`, or a custom endpoint. Enable scene sweep only for hosted profiles that explicitly advertise automatic masks. |
 | Motion foreground | CPU moving-object pass on a stable short clip. | No model required; camera motion, shadows, and reflections can become false foreground. |
 | External masks | You already have masks from another tool. | No model required; mask folders/manifests must line up with video frames and object IDs. |
 
@@ -98,7 +104,7 @@ hardware, Colab, SAM2, SAM3, FFmpeg, and Node guidance.
   explicit debug smoke paths.
 - Contributors using Codex to continue the local-first object tracing roadmap.
 
-## 30-second quick start: Local UI and Model Connections
+## 30-second quick start: Local UI and Model setup
 
 After cloning and entering the repository, the one-script path is:
 
@@ -121,15 +127,15 @@ python3 -m motionjson.cli ui --no-open
 
 Open the printed local UI URL. The workspace guides you through goal, project,
 video, model setup, prepared input, run monitoring, review, correction, and
-export one step at a time. The visible UI steps are `Start`, `Video`, `Model`,
-`Prepare & run`, and `Review & export`. In **Model Connections**, choose the
-recommended provider for the goal:
-SAM2 local or Replicate SAM2 video for point/box tracing, SAM3 local or
-Roboflow SAM3 for text concepts, and Fal SAM3 image for frame-by-frame hosted
-fallbacks. After a run starts, the main workspace switches to **Job Center** /
-**Run monitor** so active, failed, canceled, and completed jobs stay visible.
-Use `Show details` for diagnostics and `Show all panels` for the advanced
-dashboard.
+export one step at a time. The visible UI steps are `Start`, `Video`,
+`Model setup`, `Prepare & run`, `Run`, and `Review & export`. In **Model
+setup**, use the recommended path shown for the goal: SAM2 prompt tracking for
+one-object cutout, SAM3 Scene Sweep for everything-in-scene, SAM2 HF automatic
+masks as the fallback, SAM3 concept for text prompts, or no model for reviewing
+an existing result. After a run starts, the main workspace switches to **Run
+monitor** so active, failed, canceled, and completed jobs stay visible. Use
+`Advanced` for diagnostics, raw config, local paths, custom endpoints, and
+manual fallback details.
 
 Contributor-only debug smoke checks use:
 
@@ -231,11 +237,10 @@ Use the checked-in notebooks for the safe first paths:
   displays `/ui/` through Colab's notebook port proxy.
 - [Colab provider-connect UI notebook](notebooks/colab_ui_provider_connect_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_ui_provider_connect_demo.ipynb):
-  launches the Local UI without debug mock mode, includes hosted keys from
-  Colab userdata/getpass, checks GPU status, shows optional local SAM2/SAM3
-  setup cells, and can connect to Roboflow SAM3, Replicate SAM2 video, Fal
-  SAM3 image, or custom SAM-compatible endpoints after explicit cost/privacy
-  opt-in.
+  installs the lightweight UI, launches the same main Local UI, and expects
+  users to configure SAM3 Scene Sweep, SAM2 HF fallback, SAM2 prompt tracking,
+  hosted providers, cache actions, and smoke tests from Model setup. Notebook
+  SAM package/checkpoint cells are advanced fallback/debugging only.
 - [Colab red-ball CLI notebook](notebooks/colab_red_ball_cli_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
   runs
@@ -382,10 +387,12 @@ a component today.
 | `threshold` | Yes | Simple color demos | Good for the red-ball example. |
 | `motion` / `motion_foreground` | Yes | Moving objects on simple backgrounds | CPU-friendly, rough by design. |
 | `external` / `external_masks` | Yes | Masks from another tool | Import mask PNG/JPG/WebP sequences. |
-| `auto_object_proposals` | Local SAM2 or hosted/profiled SAM flow | Clean candidate gallery before selected tracking | Real local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
+| `sam3_auto_masks` | Optional local SAM3 Tracker runtime | Find everything in scene | Uses `sam3TrackerModel=facebook/sam3` or a local Hugging Face model directory. Never pass a single `sam3.pt` file to this Transformers path. |
+| `sam2-hf-auto-masks` | Optional local Transformers runtime | Fallback automatic masks for scene sweep | Uses `facebook/sam2.1-hiera-large`; independent from official SAM2 prompt tracking. |
+| `auto_object_proposals` | Local SAM2 or hosted/profiled SAM flow | Clean candidate gallery before selected tracking | Official local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
 | `sam2-local` | Optional | Promptable segmentation/tracking | Requires SAM2 package, torch, checkpoint, and config. |
 | `sam2-hosted` | Optional | Explicit hosted segmentation experiments | Requires endpoint/auth and opt-in network use. |
-| `sam3-local` / `sam3-hosted` | Optional | Concept, exemplar, and higher-recall discovery | Local SAM3 uses the optional adapter only when Python/CUDA/model diagnostics pass. Hosted SAM3 requires endpoint/auth plus explicit network and cost/privacy acknowledgement. |
+| `sam3-local` / `sam3-hosted` | Optional | Scene sweep, concept, exemplar, and higher-recall discovery | Local scene sweep uses the independent Transformers tracker model. Official local concept/exemplar uses `sam3ModelPath`/`SAM3_LOCAL_MODEL` and a `sam3.pt` checkpoint. Hosted SAM3 requires endpoint/auth plus explicit network and cost/privacy acknowledgement. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |
@@ -424,9 +431,12 @@ Common first checks:
   candidate filters, and track selected candidates only.
 - Trace Everything is blocked: acknowledge the advanced cost/noise warning and
   expect review-required output before export.
-- SAM2 is missing: open Model Connections, install/configure local SAM2, link
-  Replicate SAM2 video, or choose a CPU fallback such as `threshold`, `motion`,
-  or `external`.
+- SAM2 is missing: use Model setup for SAM2 prompt tracking, choose SAM2 HF
+  automatic masks as the scene-sweep fallback, link Replicate SAM2 video, or
+  choose a CPU fallback such as `threshold`, `motion`, or `external`.
+- SAM3 Scene Sweep rejects a `.pt` file: use `sam3TrackerModel=facebook/sam3`
+  or a local Hugging Face model directory. Keep `sam3.pt` paths for Advanced
+  official-package `sam3ModelPath` concept/exemplar setup.
 - Text/class detectors are missing: install and configure the relevant detector
   only if you need those workflows.
 - FFmpeg is missing: JSON and website assets can still work; MP4/WebM rendering

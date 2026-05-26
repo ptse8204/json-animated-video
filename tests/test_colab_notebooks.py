@@ -62,6 +62,10 @@ def test_provider_connect_notebook_opens_ui_before_advanced_model_debug_cells() 
     assert "# MotionJSON Local UI setup" in cell_sources[0]
     assert "Run the first launch cells, then stay in the UI" in cell_sources[0]
     assert "Do model configuration in the UI" in cell_sources[0]
+    assert "sam3TrackerModel=facebook/sam3" in cell_sources[0]
+    assert "Do not paste a single `sam3.pt` checkpoint into the scene-sweep tracker model field" in cell_sources[0]
+    assert '"-e", ".[ui]"' in joined
+    assert "hosted-segmentation,hosted-sam3,hosted-sam-vendors" not in joined
     assert "## Advanced fallback only" in joined
     launch_index = next(index for index, source in enumerate(cell_sources) if "output.serve_kernel_port_as_iframe" in source)
     advanced_index = next(index for index, source in enumerate(cell_sources) if "## Advanced fallback only" in source)
@@ -124,6 +128,7 @@ def test_provider_connect_sam3_source_repo_and_checkpoint_path_are_distinct() ->
     assert "/content/sam3 is the official SAM3 source/package directory, not the checkpoint path" in source
     assert "facebook/sam3 is the Hugging Face repo id, not a local model path" in source
     assert "SAM3_LOCAL_MODEL must be a local checkpoint file path ending in sam3.pt" in source
+    assert "SAM3 Scene Sweep uses sam3TrackerModel=facebook/sam3 or a local Hugging Face model directory" in source
     assert "SAM3_LOCAL_MODEL path (leave blank to skip)" not in source
     assert "https://github.com/facebookresearch/sam3.git" in package_cell
     assert "pip\", \"install\", \"-e\", str(SAM3_SOURCE_DIR)" in package_cell
@@ -152,6 +157,9 @@ def test_provider_connect_sam3_checkpoint_download_is_opt_in_and_validated() -> 
     assert "The Hugging Face token is passed directly and is not printed." in resolver_cell
     assert "Only continue if Meta has approved your access to facebook/sam3" in resolver_cell
     assert "print(token)" not in resolver_cell
+    assert "Use these values only in Model setup -> Advanced SAM3 official package / concept-exemplar config" in _joined_source()
+    assert "sam3ModelPath:" in _joined_source()
+    assert "Copy these values into Model setup -> SAM3 Scene Sweep" not in _joined_source()
 
 
 def test_provider_connect_sam3_readiness_validates_model_before_diagnostics() -> None:

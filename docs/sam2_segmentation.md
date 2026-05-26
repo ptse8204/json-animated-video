@@ -65,10 +65,11 @@ python3 -m motionjson.cli extract input.mp4 \
   --prompt-point 410,230
 ```
 
-In the Local UI, open **Model Connections -> SAM2 local**, paste the checkpoint
-and model config paths, choose the device, run **Diagnose**, then validate the
-run config. The UI never uses a local SAM API sidecar; SAM2 is imported inside
-the MotionJSON process only after setup is explicit.
+In the Local UI, choose **Cut out one object**, then use **Model setup -> SAM2
+prompt tracking**. The normal path exposes install/check/smoke actions first;
+checkpoint and model config paths stay behind **Advanced**. The UI never uses a
+local SAM API sidecar; SAM2 is imported inside the MotionJSON process only
+after setup is explicit.
 
 The provider lazy-imports SAM2 only when no predictor or predictor factory is injected. Tests inject a fake predictor, so CI does not need SAM2, torch, GPUs, credentials, or network.
 
@@ -113,6 +114,31 @@ The adapter:
 This is object proposal and tracking infrastructure, not semantic discovery.
 Text or concept search still needs a detector/SAM3-style provider before SAM2
 receives boxes or masks.
+
+## SAM2 HF Automatic-Mask Fallback
+
+`sam2-hf-auto-masks` is a separate provider for the first-run
+`Find everything in scene` fallback path. It uses the Hugging Face
+Transformers model `facebook/sam2.1-hiera-large` for automatic masks and is
+independent from the official local SAM2 package/checkpoint/config prompt
+tracking provider.
+
+Use it when SAM3 Scene Sweep is blocked and you still want automatic keyframe
+mask proposals from the UI:
+
+```json
+{
+  "providerPreference": "sam2-hf-auto-masks",
+  "sam2HfModel": "facebook/sam2.1-hiera-large",
+  "sam2HfDevice": "cuda"
+}
+```
+
+In Model setup, choose **Change model** from `Find everything in scene`, select
+**SAM2 HF automatic masks**, then use the primary setup action to install,
+cache, check, and smoke-test the runtime. Do not install the official `sam2`
+package or paste SAM2 checkpoint/config paths for this provider unless you also
+want `SAM2 prompt tracking` for one-object prompts.
 
 ## Hosted SAM2 Contract
 

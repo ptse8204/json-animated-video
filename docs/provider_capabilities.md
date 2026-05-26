@@ -129,6 +129,10 @@ Optional SAM2/hosted providers:
   test/client injects behavior.
 - `sam2-local`: local SAM2-compatible segmentation; requires optional SAM2,
   torch, `SAM2_LOCAL_CHECKPOINT`, and `SAM2_LOCAL_CONFIG`.
+- `sam2-hf-auto-masks`: SAM2 HF automatic-mask fallback for
+  everything-in-scene discovery; uses `facebook/sam2.1-hiera-large` through
+  Transformers and does not require the official `sam2` package, SAM2
+  checkpoint, or SAM2 config.
 - `sam2-hosted`: hosted segmentation. `replicate-sam2-video` uses
   `REPLICATE_API_TOKEN` and the optional `replicate` package; custom endpoints
   use `HOSTED_SEGMENTATION_URL` and `HOSTED_SEGMENTATION_API_KEY`. Extraction

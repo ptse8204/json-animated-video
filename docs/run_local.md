@@ -165,6 +165,8 @@ ready to configure the provider:
 
 ```bash
 python3 -m pip install -e ".[sam2]"
+python3 -m pip install -e ".[sam2-transformers]"
+python3 -m pip install -e ".[sam3-transformers]"
 python3 -m pip install -e ".[sam3]"
 python3 -m pip install -e ".[detectors]"
 python3 -m pip install -e ".[yolo]"
@@ -173,12 +175,15 @@ python3 -m pip install -e ".[hosted-sam3]"
 python3 -m pip install -e ".[openrouter]"
 ```
 
-The `sam3` extra prepares MotionJSON-side local SAM3 diagnostics and adapter
-code. Real SAM3 execution still requires the official SAM3 package installed
-separately, Python 3.12+, CUDA-capable torch, model access, and a configured
-`SAM3_LOCAL_MODEL`. A saved model path or provider setting is not enough by
-itself; diagnostics must report the provider as runnable before a real SAM3
-job should be started.
+The `sam3-transformers` extra is the normal local SAM3 Scene Sweep path. It
+uses `sam3TrackerModel=facebook/sam3` by default, or a local Hugging Face
+`from_pretrained` directory, and it does not require SAM2. The `sam3` extra is
+for Advanced official-package concept/exemplar diagnostics and adapter code.
+That path still requires the official SAM3 package installed separately,
+Python 3.12+, CUDA-capable torch, model access, and a configured
+`SAM3_LOCAL_MODEL`/`sam3ModelPath`. A saved model path or provider setting is
+not enough by itself; diagnostics must report the provider as runnable before a
+real SAM3 job should be started.
 
 Then rerun:
 

@@ -55,7 +55,7 @@ remains optional, environment-dependent, or future work.
 | --- | --- |
 | Local SAM2 execution | Optional. Diagnostics report `sam2`, `sam2.automatic_mask_generator`, torch, checkpoint, config, and device status. When configured, `auto_object_proposals` can use bounded SAM2 automatic masks and the shared selected-candidate tracking/review path. The base install does not include SAM2. |
 | Hosted SAM2 execution | Optional/settings-gated. Diagnostics report hosted endpoint/auth env vars and hosted-call opt-in status; network calls are disabled by default. |
-| Local SAM3 execution | Optional. Diagnostics report `sam3`, Python runtime, torch/CUDA, and `SAM3_LOCAL_MODEL` status. Mock SAM3 concept/exemplar/auto-mask modes are available for UI/API smoke checks; real local SAM3 uses the optional adapter only when diagnostics pass. |
+| Local SAM3 execution | Optional. SAM3 Scene Sweep reports independent `sam3-transformers`/Tracker readiness and uses `sam3TrackerModel=facebook/sam3` or a local Hugging Face directory. Advanced official-package concept/exemplar diagnostics report `sam3`, Python runtime, torch/CUDA, and `SAM3_LOCAL_MODEL`/`sam3ModelPath` status. Mock SAM3 concept/exemplar/auto-mask modes are available for UI/API smoke checks. |
 | Hosted SAM3 execution | Optional. Diagnostics report hosted endpoint/auth env vars and hosted opt-in status. Setup checks are no-network; one-frame smoke tests and hosted runs require explicit network, hosted, and cost/privacy acknowledgement. |
 | Text detector discovery | Optional/scaffolded. Diagnostics report `groundingdino` and `TEXT_DETECTOR_MODEL` are unavailable. |
 | Known-class detector discovery | Optional/scaffolded. Diagnostics report `ultralytics` and `CLASS_DETECTOR_MODEL` are unavailable. |

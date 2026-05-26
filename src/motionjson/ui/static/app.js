@@ -5251,7 +5251,7 @@ const MotionJSONUI = (() => {
         <div class="model-setup-summary">
           <div class="model-setup-copy">
             <h3>${escapeHtml(connection.displayLabel || connection.title)}</h3>
-            <p>${escapeHtml(guide.setupSummary || connection.recommendation)}</p>
+            <p>${escapeHtml(connection.recommendation || guide.setupSummary)}</p>
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
         </div>
@@ -5739,7 +5739,7 @@ const MotionJSONUI = (() => {
           status: missingOptional.length ? "optional" : optionalMissing.length ? "optional" : "ready",
           available: !(missingOptional.length || optionalMissing.length),
           detail: missingOptional.length
-            ? `Setup needed for real extraction: ${missingOptional.slice(0, 6).join(", ")}. Open Model Connections for local paths or hosted keys.`
+            ? `Setup needed for real extraction: ${missingOptional.slice(0, 6).join(", ")}. Open Model setup for local paths or hosted keys.`
             : optionalMissing.length
               ? `Provider setup: ${optionalMissing.join("; ")}. Install only the SAM extras you plan to use.`
             : "Configured optional providers reported ready.",
@@ -5755,7 +5755,7 @@ const MotionJSONUI = (() => {
           status: summary.canRunNoModelSmoke ? "ready" : "check",
           available: Boolean(summary.canRunNoModelSmoke),
           detail: summary.canRunNoModelSmoke
-            ? `Create a project or use the demo video, then open Model Connections. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open"}`
+            ? `Create a project or use the demo video, then open Model setup. CLI: ${firstRun.recommendedCommand || "python3 -m motionjson.cli ui --no-open"}`
             : "Run backend diagnostics --text and fix base dependency blockers first.",
         },
       ];

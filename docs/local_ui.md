@@ -4,10 +4,11 @@ The dependency-light local UI lets you inspect MotionJSON provider readiness,
 create local projects, register source videos, draw prompts, start jobs, review
 tracks, correct extraction results, export validated MotionJSON, and save
 reusable motion layers. It runs against the existing SQLite backend and
-filesystem storage. The normal workflow is real-provider-first: connect local
-SAM2/SAM3 or a hosted SAM provider in Model Connections, diagnose setup, then
-validate the generated run config. Debug mock mode remains available only for
-contributor smoke checks.
+filesystem storage. The normal workflow is first-run-user-first: choose a goal,
+add a video, use Model setup to install/check/cache the recommended model
+through server-owned setup jobs, run extraction, recover from failures, review,
+and export. Debug mock mode remains available only for contributor smoke
+checks.
 
 ## Commercial Workspace Mode
 
@@ -44,17 +45,17 @@ The default Local UI opens in one visible guided workflow:
 
 1. `Start`
 2. `Video`
-3. `Model`
+3. `Model setup`
 4. `Prepare & run`
-5. `Review & export`
+5. `Run`
+6. `Review & export`
 
 `Start` begins with a goal-first chooser for nontechnical users. The main
 canvas offers plain-language choices:
 
 - Cut out one object.
-- Find moving things.
 - Find by description.
-- Import masks.
+- Find everything in scene.
 - Review previous result.
 
 When a local video is registered, MotionJSON inspects the source codec. If the
@@ -77,15 +78,16 @@ guides users through:
 
 1. Start.
 2. Video.
-3. Model.
+3. Model setup.
 4. Prepare and run.
-5. Review and export.
+5. Run monitor.
+6. Review and export.
 
 Guided mode now keeps one visible footer action per screen. The footer always
 shows `Back` plus one explicit primary action such as `Add video`, `Continue`,
 `Run trace`, `Run search`, `Run motion scan`, or `Export reviewed objects`.
-Secondary actions such as demo video, diagnose, setup test, or review bulk
-actions stay visually secondary inside the current panel.
+Secondary actions such as demo video, setup state details, `Change model`, or
+review bulk actions stay visually secondary inside the current panel.
 
 After a run starts, the Job Center becomes part of the main workspace instead
 of living only in the details rail. It shows the selected job, active/recent
@@ -123,23 +125,40 @@ Provider warnings stay visible before a run, failed runs open logs, and
 fallback/raster/vector-unavailable diagnostics open automatically in the Run
 monitor or review step.
 
-## Model Connections
+## Model Setup
 
-The main workspace includes a nontechnical Model Connections panel before the
-extraction controls. It recommends concrete SAM providers by workflow:
+The main workspace includes a nontechnical Model setup panel before the
+extraction controls. It recommends exactly one compatible path by default and
+hides alternatives behind `Change model`:
 
-- Trace one object: `sam2-local` when checkpoint/config paths are ready,
-  otherwise Replicate `replicate-sam2-video`.
-- Find objects from text: `sam3-local` when the SAM3 package/model/runtime are
-  ready, otherwise Roboflow `roboflow-sam3-pcs`.
-- Frame-by-frame SAM3 image fallback: Fal `fal-sam3-image`.
-- Custom SAM2/SAM3-compatible endpoints stay in the advanced provider list.
+- Cut out one object: `sam2-local` prompt tracking when checkpoint/config paths
+  are ready, otherwise hosted SAM2 if explicitly selected.
+- Find everything in scene: `sam3-local` Scene Sweep first. The scene-sweep
+  runtime uses `sam3TrackerModel=facebook/sam3` by default or a local Hugging
+  Face `from_pretrained` directory. It must not receive a single `sam3.pt`
+  checkpoint path. `SAM2 HF automatic masks` is the fallback and uses
+  `facebook/sam2.1-hiera-large` without requiring the official `sam2` package.
+- Find by description: SAM3 concept/text providers. A prompt is required.
+- Review previous result: no model setup is required.
+
+Normal mode shows the setup state and one primary action. Raw environment
+variables, local paths, custom endpoints, manual commands, logs, diagnostics,
+and JSON stay behind `Advanced`. The setup state machine is:
+`not_configured`, `checking_environment`, `needs_access`,
+`needs_download_confirmation`, `caching_model`, `installing_runtime`,
+`smoke_testing`, `ready`, and `failed_recoverable`.
 
 The form saves local model paths, selected profile/model, optional endpoint,
 API key replacement, and hosted cost/privacy opt-in through
-`/api/provider-settings`; browser responses never echo raw keys. Diagnose
-checks use `POST /api/provider-settings/PROVIDER_ID/diagnose` and make no
-hosted network calls. Hosted smoke tests require `allowNetwork`,
+`/api/provider-settings`; browser responses never echo raw keys or raw local
+absolute paths. Setup actions run through allowlisted server jobs:
+
+- `POST /api/provider-settings/{providerId}/setup/start`
+- `GET /api/provider-settings/setup-jobs/{jobId}`
+- `POST /api/provider-settings/setup-jobs/{jobId}/cancel`
+
+Diagnose stays lightweight and offline. Cache-model actions require explicit
+network/disk confirmation. Hosted smoke tests require `allowNetwork`,
 `allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke tests require
 `allowHeavyLocal` before importing heavy model runtimes.
 
@@ -254,8 +273,9 @@ provider setup, optional model extras, and FFmpeg status from
 setup clearly marked as diagnostics instead of claiming unavailable providers
 are ready.
 
-The local UI worker starts `sam2-local`, `sam2-hosted`, `sam3-local`,
-`sam3-hosted`, `threshold`, `motion`, and `external` extraction jobs.
+The local UI worker starts `sam2-local`, `sam2-hf-auto-masks`, `sam2-hosted`,
+`sam3-local`, `sam3-hosted`, `threshold`, `motion`, and `external` extraction
+jobs.
 Discovery-owned SAM3 runs still route through the same review/filter/link/export
 path, but the saved run config now records the selected SAM3 engine directly in
 `provider.name` plus `provider.sam3` instead of hiding it behind a threshold
@@ -274,6 +294,9 @@ The UI serves static files under `/ui/` and local JSON routes under `/api/`:
 - `POST /api/provider-settings/PROVIDER_ID/test`
 - `POST /api/provider-settings/PROVIDER_ID/diagnose`
 - `POST /api/provider-settings/PROVIDER_ID/smoke-test`
+- `POST /api/provider-settings/PROVIDER_ID/setup/start`
+- `GET /api/provider-settings/setup-jobs/JOB_ID`
+- `POST /api/provider-settings/setup-jobs/JOB_ID/cancel`
 - `GET /api/run-config/defaults`
 - `POST /api/run-config/validate`
 - `GET /api/exports/formats`
@@ -623,22 +646,22 @@ storage, and exposes the imported scene through the normal job review routes.
 ## Project And Video Flow
 
 1. Open the UI command above.
-2. Choose a goal from the first step. `Cut out one object` is the default safe
-   path; `Find moving things`, `Import masks`, and `Review previous result`
-   can run without optional ML models.
+2. Choose one of the normal goals from the first step: `Cut out one object`,
+   `Find by description`, `Find everything in scene`, or
+   `Review previous result`. Additional technical tasks live behind
+   `Advanced`.
 3. Add or select a source video. Guided mode creates a starter local project
    automatically the first time it needs one. MotionJSON prepares a browser-safe
    preview automatically before `Prepare & run` and `Review & export` open.
-4. Choose mode/provider in Model Connections when the goal needs one. The UI
-   recommends SAM2 local or
-   Replicate for point/box tracing, SAM3 local or Roboflow for text concepts,
-   and Fal SAM3 image as a hosted frame fallback. Provider warnings stay
-   visible before a run.
+4. Use Model setup when the goal needs one. The UI shows one recommended path:
+   SAM2 prompt tracking for point/box tracing, SAM3 Scene Sweep for
+   everything-in-scene, SAM2 HF automatic masks as the fallback, and SAM3
+   concept for text prompts. Provider warnings stay visible before a run.
 5. Add point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay when the selected goal needs them. Prompt coordinates are native
    video pixels, not CSS canvas pixels.
 6. Start extraction from the footer after the generated plan validates. The raw
-   `ExtractionRunConfig` JSON remains available under `View generated JSON`.
+   `ExtractionRunConfig` JSON remains available under `Advanced`.
    The optional advanced model plan panel can create a server-side planner
    config from the selected goal and plain-language intent; generated configs are
    revalidated before `Confirm and start` can create a job.

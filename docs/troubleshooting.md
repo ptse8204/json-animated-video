@@ -105,8 +105,14 @@ No-model alternatives:
 - use `Cut out one object` with SAM2 when point/box tracing is enough;
 - use debug mock mode only for contributor smoke checks.
 
-For local SAM3, verify the official package, compatible Python/CUDA runtime,
-torch/CUDA availability, and a real local `sam3.pt` file:
+For SAM3 Scene Sweep, use Model setup first. The tracker model is
+`sam3TrackerModel=facebook/sam3` by default, or a local Hugging Face
+`from_pretrained` directory. A single `sam3.pt` checkpoint file is not valid
+for this Transformers path.
+
+For Advanced official-package SAM3 concept/exemplar workflows, verify the
+official package, compatible Python/CUDA runtime, torch/CUDA availability, and
+a real local `sam3.pt` file:
 
 ```bash
 python3 -m pip install -e ".[sam3]"
@@ -115,8 +121,9 @@ python3 -m motionjson.cli backend diagnostics --json
 ```
 
 For hosted SAM3, configure `Roboflow SAM3`, `Fal SAM3 image`, or a custom SAM3
-endpoint in Model Connections, then acknowledge hosted cost/privacy before
-running a smoke test or extraction.
+endpoint in Model setup, then acknowledge hosted cost/privacy before running a
+smoke test or extraction. Hosted scene sweep should be enabled only for hosted
+profiles that explicitly advertise automatic mask generation.
 
 ## Text Or Class Detectors Are Missing
 

@@ -134,10 +134,12 @@ Use `build_extraction_run_config_from_args(args)` for the current CLI bridge, or
   SAM3 Tracker automatic mask generation, filters/dedupes masks, and tracks
   accepted candidates with SAM3 Tracker Video. It does not default to the text
   concept `"object"`. Scene sweep uses the independent `sam3-transformers`
-  extra and does not require SAM2. Concept/exemplar execution remains
-  capability-gated behind official SAM3 setup and accepts additive config keys
-  such as `sam3ModelPath`, `sam3Device`, `useVideoSession`, `concept`,
-  `exemplars`, and `box`.
+  extra, defaults `sam3TrackerModel` to `facebook/sam3`, accepts a local Hugging
+  Face `from_pretrained` directory, rejects single `.pt` files for tracker
+  runtime initialization, and does not require SAM2. Concept/exemplar execution
+  remains capability-gated behind official SAM3 setup and accepts additive
+  config keys such as `sam3ModelPath`, `sam3Device`, `useVideoSession`,
+  `concept`, `exemplars`, and `box`.
   Hosted SAM3 can be requested with `providerPreference: "sam3-hosted"` or
   `hosted: true`, plus `hostedProfile` for `roboflow-sam3-pcs`,
   `fal-sam3-image`, or `custom-sam3-compatible`. It requires `allowNetwork:

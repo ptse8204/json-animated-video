@@ -14,9 +14,9 @@ one safe path obvious before it exposes expert controls.
 
 ## Product Rules
 
-- Start with Model Connections. It must be clear which real SAM provider is
-  recommended for the selected workflow, what setup is missing, and whether the
-  next action is local model setup or hosted API linking.
+- Start with the guided first-run flow. Model setup must show one recommended
+  SAM provider for the selected workflow, what setup is missing, and whether
+  the next action is local install/cache/check/smoke or hosted API linking.
 - Keep debug mock mode contributor-only. It must be launched explicitly with
   `--debug-mock` and must never make unavailable SAM/CUDA/provider paths look
   ready.

@@ -25,6 +25,9 @@ provider receives boxes or masks.
   tool. It imports one candidate per object mask directory or manifest entry.
 - `sam_auto_masks`: automatic keyframe mask proposals. It is capability-gated
   behind optional SAM2/torch/model configuration and has a debug mock mode for tests.
+- `sam2_hf_auto_masks`: fallback automatic keyframe mask proposals using
+  `facebook/sam2.1-hiera-large` through Transformers. It is independent from
+  the official local SAM2 package/checkpoint/config provider.
 - `sam3_concept`: optional SAM3-style concept discovery from a text phrase.
   Mock mode writes deterministic candidates without SAM3, GPU, credentials, or
   network calls.
@@ -34,6 +37,8 @@ provider receives boxes or masks.
   candidate/rejected-candidate review shape as the default object proposal
   flow; real local mode uses SAM3 Tracker automatic mask generation on sampled
   keyframes plus SAM3 Tracker Video propagation for accepted candidates.
+  Configure it with `sam3TrackerModel=facebook/sam3` or a local Hugging Face
+  model directory, not a single `sam3.pt` checkpoint file.
 - `text_detector`: scaffold for open-vocabulary detection. Missing detector
   packages or model paths are capability warnings; mock mode can produce local
   boxes for UI smoke checks.
@@ -49,7 +54,7 @@ provider receives boxes or masks.
 | `auto_object_proposals` | Users should click Discover objects and choose from API-returned candidates. | Clean presets may miss small/occluded objects; recall presets can be noisy. | Start with `clean`, retry with `maximum_recall`, and keep review required. |
 | `motion_foreground` | The camera is mostly still and objects move. | Camera motion or shadows become candidates. | Use `external_masks` or review/delete extra tracks. |
 | `external_masks` | Masks or boxes already exist from another local tool. | Mask sequence is missing frames or points at the wrong object. | Validate each object ID and inspect `fallback_diagnostics.json`. |
-| `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, Model Connections diagnostics, or a detector-first workflow. |
+| `sam_auto_masks` | A configured SAM2-style backend should propose visible segments. | Background fragments, floor/wall masks, or missing SAM2 weights. | Use filters, Model setup diagnostics, SAM2 HF automatic masks, or a detector-first workflow. |
 | `text_detector` | Users describe objects with text labels. | Detector package/model is missing or boxes are semantically wrong. | Use SAM3 concept discovery, class detector, or manual/external masks. |
 | `class_detector` | Known classes are enough for the video domain. | YOLO/known-class model is unavailable or returns too many classes. | Limit classes, lower max candidates, or use manual review. |
 
@@ -133,7 +138,7 @@ Local UI text-discovery setup path:
 
 1. Launch `python3 -m motionjson.cli ui --no-open`.
 2. Register a source video and choose `Find objects from text`.
-3. Open Model Connections and choose SAM3 local or Roboflow SAM3. Diagnose
+3. Open Model setup and choose SAM3 concept locally or Roboflow SAM3. Diagnose
    setup, then validate the generated config.
 4. Review the Candidates and Tracks panels before export. If real detector or
    SAM3 dependencies are missing, diagnostics report that status instead of

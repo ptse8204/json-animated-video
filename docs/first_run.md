@@ -1,8 +1,10 @@
 # First Run Setup
 
-Use this page when setting up MotionJSON on a new local machine. The default
-path is CPU/no-model and does not require SAM2, CUDA, detectors, hosted
-services, or network access at runtime.
+Use this page when setting up MotionJSON on a new local machine. The normal
+path is UI-owned: launch the Local UI, choose a goal, add a video, and let
+Model setup install/check/cache the recommended provider through allowlisted
+server jobs. The base install remains CPU/no-model and does not require SAM2,
+SAM3, CUDA, detectors, hosted services, or network access at runtime.
 
 For hardware and provider expectations, see
 [System requirements](system_requirements.md). Start with short clips until the
@@ -34,8 +36,10 @@ Optional extras are only needed for heavier provider families:
 
 | Extra | Use When | Notes |
 | --- | --- | --- |
-| `.[sam2]` | Local SAM2 promptable segmentation/tracking | Also set `SAM2_LOCAL_CHECKPOINT` and `SAM2_LOCAL_CONFIG`. |
-| `.[sam3]` | MotionJSON local SAM3 diagnostics and adapter support | Real local SAM3 still needs official SAM3 package/model access, Python/CUDA compatibility, and `SAM3_LOCAL_MODEL`. |
+| `.[sam2]` | Advanced local SAM2 promptable segmentation/tracking | Also set `SAM2_LOCAL_CHECKPOINT` and `SAM2_LOCAL_CONFIG` when using the official SAM2 package path. |
+| `.[sam2-transformers]` | SAM2 HF automatic-mask fallback for scene sweep | Uses `facebook/sam2.1-hiera-large`; independent from the official `sam2` package/checkpoint setup. |
+| `.[sam3-transformers]` | SAM3 Scene Sweep | Uses the Transformers SAM3 Tracker automatic-mask and tracker-video path. Default `sam3TrackerModel` is `facebook/sam3`. |
+| `.[sam3]` | Advanced official SAM3 concept/exemplar adapter support | Real official-package SAM3 still needs official SAM3 package/model access, Python/CUDA compatibility, and `SAM3_LOCAL_MODEL`/`sam3ModelPath`. |
 | `.[detectors]` | Open-vocabulary text detector candidates | Text prompts become detector boxes before segmentation. |
 | `.[yolo]` | Known-class detector candidates | Useful for common classes when a YOLO model is configured. |
 | `.[hosted-segmentation]` | Explicit hosted SAM2-style endpoint experiments | Network use remains opt-in through provider flags/config. |
@@ -47,16 +51,19 @@ Optional extras are only needed for heavier provider families:
 | Path | Start here when | UI names | Main requirements |
 | --- | --- | --- | --- |
 | CPU/no-model demo | You want the safest first run. | `Use demo video`, `Find moving things`, `Import masks`, or the red-ball CLI demo. | Python `>=3.10`; 4 GB RAM minimum for tiny demos, 8 GB recommended; no GPU or keys. |
-| Local SAM2 | You want prompted object tracing and local media. | `Cut out one object` -> `Model Connections` -> `SAM2 local`. | SAM2 package, checkpoint, config, torch/CUDA; 16 GB RAM minimum for small clips, 32 GB recommended; 8 GB VRAM minimum for small experiments, 12-16+ GB recommended. |
-| Hosted SAM2 | You want SAM2-style tracing without local GPU. | `Model Connections` -> `Replicate SAM2 video` or custom SAM2 endpoint. | API key, hosted-call opt-in, cost/privacy acknowledgement. |
-| Local SAM3 | You want local concept/exemplar discovery. | `Find by description` -> `Model Connections` -> `SAM3 local`. | Official SAM3 package, real local `sam3.pt`, compatible Python/CUDA, 32 GB RAM recommended, 16+ GB VRAM recommended. |
-| Hosted SAM3 | You want text/concept discovery without local SAM3 hardware. | `Model Connections` -> `Roboflow SAM3`, `Fal SAM3 image`, or custom SAM3 endpoint. | API key, hosted-call opt-in, cost/privacy acknowledgement. |
+| Local SAM2 prompt tracking | You want prompted object tracing and local media. | `Cut out one object` -> `Model setup` -> `SAM2 prompt tracking`. | SAM2 package, checkpoint, config, torch/CUDA; 16 GB RAM minimum for small clips, 32 GB recommended; 8 GB VRAM minimum for small experiments, 12-16+ GB recommended. |
+| SAM3 Scene Sweep | You want `Find everything in scene`. | `Find everything in scene` -> `Model setup` -> `SAM3 Scene Sweep`. | UI install/cache/check/smoke actions; default `sam3TrackerModel=facebook/sam3` or a local Hugging Face `from_pretrained` directory. Do not use a single `sam3.pt` file for this path. |
+| SAM2 HF automatic masks | SAM3 Scene Sweep is blocked or unavailable. | `Change model` -> `SAM2 HF automatic masks`. | UI install/cache/check/smoke actions; default model `facebook/sam2.1-hiera-large`; does not require official SAM2. |
+| Hosted SAM2 | You want SAM2-style tracing without local GPU. | `Model setup` -> `Change model` -> `Replicate SAM2 video` or custom SAM2 endpoint. | API key, hosted-call opt-in, cost/privacy acknowledgement. |
+| Official local SAM3 concept/exemplar | You want advanced local concept/exemplar discovery. | `Find by description` -> `Model setup` -> Advanced SAM3 local settings. | Official SAM3 package, real local `sam3.pt`, compatible Python/CUDA, 32 GB RAM recommended, 16+ GB VRAM recommended. |
+| Hosted SAM3 | You want text/concept discovery without local SAM3 hardware. | `Model setup` -> `Roboflow SAM3`, `Fal SAM3 image`, or custom SAM3 endpoint. | API key, hosted-call opt-in, cost/privacy acknowledgement. Hosted scene sweep is enabled only when the hosted profile explicitly advertises automatic masks. |
 | Motion foreground | The object moves against a stable background. | `Find moving things`. | CPU/no-model; false positives are common with camera motion or shadows. |
 | External masks | Another tool already produced masks. | `Import masks`. | Mask directory or manifest with frame/object IDs. |
 
 ## First Diagnostics
 
-Run diagnostics before choosing a provider:
+The Local UI runs lightweight offline diagnostics from Model setup. Use CLI
+diagnostics when you are debugging the Advanced path:
 
 ```bash
 python3 -m motionjson.cli backend diagnostics --text
@@ -74,10 +81,10 @@ python -m motionjson.cli benchmark --fixtures red_ball,whole_frame_regression --
 python -m motionjson.cli ui --no-open
 ```
 
-The UI sidebar includes a First Run checklist backed by the same capability
-diagnostics. Missing optional dependencies, model paths, FFmpeg, CUDA, hosted
-endpoint variables, and detector packages are reported as diagnostics instead of
-being hidden or treated as successful extraction.
+The normal UI hides raw environment variables and local paths behind
+`Advanced`. Missing optional dependencies, model paths, FFmpeg, CUDA, hosted
+settings, and detector packages are reported as setup states or diagnostics
+instead of being hidden or treated as successful extraction.
 
 ## Red-Ball Tutorial
 
@@ -152,21 +159,21 @@ object, and no duplicate-overlap rejection.
 ## UI Project Flow
 
 1. Launch `motionjson ui` or `python3 -m motionjson.cli ui --no-open`.
-2. Start at the guided stepper: `Start`, `Video`, `Model`, `Prepare & run`,
-   and `Review & export`.
+2. Start at the guided stepper: `Start`, `Video`, `Model setup`,
+   `Prepare & run`, `Run`, and `Review & export`.
 3. Keep the left menu collapsed when you want more workspace; reopen it with
    Menu. Open `Show details` only when you need diagnostics, jobs, review,
    corrections, export, or library panels.
-4. Open Model Connections and diagnose the recommended SAM provider for the
-   selected goal. Missing SAM2, SAM3, CUDA, detectors, FFmpeg, model weights,
-   or hosted settings remain visible as diagnostics.
+4. Let Model setup show the one recommended provider for the selected goal.
+   Use the primary button to install runtime dependencies, cache models, check
+   access, or smoke-test through server-owned allowlisted setup jobs.
 5. Register `examples/demo_red_ball.mp4`, choose `Use demo video`, or open an
    existing result. Guided mode creates a starter local project when needed.
-6. Use the `Model` step only for model-backed goals. CPU/no-model workflows
-   report that no SAM model setup is needed.
-7. Use `Cut out one object`, `Find moving things`, `Import masks`, or
-   `Review previous result` for no-model/local paths. Use `Find by
-   description` only after a SAM3 or detector-style provider is diagnosed.
+6. Use the `Model setup` step only for model-backed goals. CPU/no-model
+   workflows report that no SAM model setup is needed.
+7. Use `Cut out one object`, `Find by description`, `Find everything in
+   scene`, or `Review previous result` from the normal goal screen. Additional
+   technical tasks remain available from Advanced.
 8. In `Prepare & run`, validate the readable run plan before starting. Debug
    smoke jobs are available only when the UI was launched with `--debug-mock`.
 9. After a run starts, use **Job Center** / **Run monitor** to inspect the
@@ -183,6 +190,12 @@ object, and no duplicate-overlap rejection.
 - SAM2 reports `missing_dependency`: install the `sam2` extra and configure
   checkpoint/model paths, or use `mock`, `threshold`, `motion`, or `external`
   for no-model work.
+- SAM3 Scene Sweep rejects a `.pt` file: use `sam3TrackerModel=facebook/sam3`
+  or a local Hugging Face model directory. Keep `sam3ModelPath` and
+  `SAM3_LOCAL_MODEL` for Advanced official-package concept/exemplar workflows.
+- SAM2 HF automatic masks reports missing runtime: use Model setup's install
+  action for `SAM2 HF automatic masks`; do not install the official `sam2`
+  package unless you need SAM2 prompt tracking.
 - Text or class detectors report `missing_dependency`: install the detector or
   YOLO extras only when you need those real provider modes; mock class presets
   remain available for local UI and benchmark smoke checks.

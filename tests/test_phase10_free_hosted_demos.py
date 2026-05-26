@@ -227,7 +227,8 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
 
     assert notebook["nbformat"] == 4
     assert "https://github.com/ptse8204/json-animated-video.git" in joined
-    assert '".[ui,hosted-segmentation,hosted-sam3,hosted-sam-vendors]"' in joined
+    assert '".[ui]"' in joined
+    assert "hosted-segmentation,hosted-sam3,hosted-sam-vendors" not in joined
     assert "ROBOFLOW_API_KEY" in joined
     assert "REPLICATE_API_TOKEN" in joined
     assert "FAL_KEY" in joined
@@ -264,8 +265,12 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "No Hugging Face token is required for this path" in joined
     assert "Only continue if Meta has approved your access to facebook/sam3" in joined
     assert "SAM3_LOCAL_MODEL must be a local checkpoint file path ending in sam3.pt" in joined
-    assert "Copy these values into Model setup -> SAM3 Scene Sweep" in joined
-    assert "model path:" in joined
+    assert "sam3TrackerModel=facebook/sam3" in joined
+    assert "Do not paste a single `sam3.pt` checkpoint into the scene-sweep tracker model field" in joined
+    assert "SAM3 Scene Sweep uses sam3TrackerModel=facebook/sam3 or a local Hugging Face model directory" in joined
+    assert "Use these values only in Model setup -> Advanced SAM3 official package / concept-exemplar config" in joined
+    assert "sam3ModelPath:" in joined
+    assert "Copy these values into Model setup -> SAM3 Scene Sweep" not in joined
     assert "device:" in joined
     assert "Path(model_path).exists()" not in joined
     assert "SAM3_LOCAL_MODEL path (leave blank to skip)" not in joined

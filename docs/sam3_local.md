@@ -42,7 +42,8 @@ Keep these paths distinct:
 - `/content/sam3`, or any clone of `facebookresearch/sam3`, is the SAM3
   source/package directory. It lets Python import the official package, but it
   is not the model checkpoint.
-- `facebook/sam3` is a Hugging Face repository id. It is useful when calling
+- `facebook/sam3` is a Hugging Face repository id. It is the default
+  `sam3TrackerModel` value for scene sweep and is also useful when calling
   `hf_hub_download`, but it is not a local file path.
 - `SAM3_LOCAL_MODEL` must point to a local checkpoint file, usually the
   downloaded `sam3.pt` in the Hugging Face cache, for example
@@ -73,7 +74,8 @@ python3 -m motionjson.cli backend diagnostics --json
 ```
 
 Do not paste `facebook/sam3` or `/content/sam3` into `SAM3_LOCAL_MODEL`.
-Paste the local `sam3.pt` file path printed by the resolver command.
+Paste the local `sam3.pt` file path printed by the resolver command only for
+official-package concept/exemplar workflows.
 
 To avoid Hugging Face token setup in Colab, put an approved checkpoint at a
 stable path such as `/content/drive/MyDrive/motionjson-models/sam3.pt`, then
@@ -101,6 +103,18 @@ first. Official SAM3 package, Python 3.12, Hugging Face token, and local
 `sam3.pt` checkpoint checks remain visible for concept/exemplar workflows, but
 they do not make SAM2 a blocker for SAM3 Scene Sweep.
 
+Scene Sweep has its own model setting:
+
+- `sam3TrackerModel`: `facebook/sam3` by default, or a local Hugging Face
+  `from_pretrained` directory.
+- `sam3ModelPath`: an official SAM3 package checkpoint path such as
+  `/.../sam3.pt`, used only by Advanced concept/exemplar workflows.
+
+Do not put a single `.pt` file in `sam3TrackerModel`; Transformers
+`pipeline("mask-generation", model=...)` and
+`Sam3TrackerVideoModel.from_pretrained(...)` require a repo id or
+`from_pretrained` directory.
+
 ## Colab Checkpoint Path Flow
 
 For Colab, the expected local setup order is:
@@ -123,7 +137,7 @@ checkpoint = Path(hf_hub_download(repo_id="facebook/sam3", filename="sam3.pt", t
 if not checkpoint.exists():
     raise RuntimeError(f"SAM3 checkpoint was not found: {checkpoint}")
 os.environ["SAM3_LOCAL_MODEL"] = str(checkpoint)
-print("Use this in Model setup -> SAM3 Scene Sweep -> model path:")
+print("Use this only in Model setup -> Advanced SAM3 official package / concept-exemplar config:")
 print(checkpoint)
 ```
 
@@ -141,6 +155,7 @@ Hugging Face cache, support a Google Drive
 | --- | --- | --- |
 | `SAM3_LOCAL_MODEL=facebook/sam3` | This is a Hugging Face repo id, not a local checkpoint path. | Use `hf_hub_download(repo_id="facebook/sam3", filename="sam3.pt")` and paste the returned local file path. |
 | `SAM3_LOCAL_MODEL=/content/sam3` | This is the cloned source/package directory, not the checkpoint. | Install from `/content/sam3`, but set `SAM3_LOCAL_MODEL` to the downloaded `sam3.pt` file. |
+| `sam3TrackerModel=/path/to/sam3.pt` | Scene sweep received a single checkpoint file. Transformers expects a repo id or local model directory. | Use `sam3TrackerModel=facebook/sam3`, a local Hugging Face `from_pretrained` directory, or the UI Cache model action. Keep `sam3.pt` for `sam3ModelPath`. |
 | Missing `HF_TOKEN` | The gated Hugging Face file cannot be resolved. | Request/confirm access, then set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` without printing it. |
 | User does not want Hugging Face token setup | Official-package SAM3 concept/exemplar still needs an approved checkpoint, but scene sweep can use a SAM3 Tracker-compatible Transformers model path/id. | Use `SAM3_TRACKER_MODEL` for scene sweep, mount Google Drive or paste an approved `sam3.pt` for concept/exemplar, or use hosted concept/image workflows. |
 | Access not approved | Hugging Face rejects the checkpoint download. | Open the model page while signed in, accept the access terms, then rerun the resolver. |
@@ -163,7 +178,6 @@ Common config keys:
 {
   "mock": false,
   "sam3TrackerModel": "facebook/sam3",
-  "sam3ModelPath": "/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt",
   "sam3Device": "cuda",
   "useVideoSession": true,
   "maxCandidatesPerKeyframe": 16,
@@ -172,6 +186,10 @@ Common config keys:
   "maxMaskAreaRatio": 0.9
 }
 ```
+
+For `sam3_auto_masks`, use `sam3TrackerModel`. Add `sam3ModelPath` only when
+you are intentionally configuring Advanced official-package concept/exemplar
+workflows.
 
 Concept discovery:
 
