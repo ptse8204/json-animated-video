@@ -148,6 +148,11 @@ and JSON stay behind `Advanced`. The setup state machine is:
 `needs_download_confirmation`, `caching_model`, `installing_runtime`,
 `smoke_testing`, `ready`, and `failed_recoverable`.
 
+For SAM3 Scene Sweep, `needs_access` is a normal UI step. The Model setup panel
+asks for a Hugging Face token in the main flow, saves it locally as a redacted
+secret, and uses it only for allowlisted `check_access` and `cache_model` jobs.
+Users do not need to pre-set `HF_TOKEN` before launching the UI.
+
 The form saves local model paths, selected profile/model, optional endpoint,
 API key replacement, and hosted cost/privacy opt-in through
 `/api/provider-settings`; browser responses never echo raw keys or raw local
@@ -656,7 +661,9 @@ storage, and exposes the imported scene through the normal job review routes.
 4. Use Model setup when the goal needs one. The UI shows one recommended path:
    SAM2 prompt tracking for point/box tracing, SAM3 Scene Sweep for
    everything-in-scene, SAM2 HF automatic masks as the fallback, and SAM3
-   concept for text prompts. Provider warnings stay visible before a run.
+   concept for text prompts. If SAM3 needs gated Hugging Face access, paste the
+   token in this step and use `Check Hugging Face access`; provider warnings
+   stay visible before a run.
 5. Add point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay when the selected goal needs them. Prompt coordinates are native
    video pixels, not CSS canvas pixels.

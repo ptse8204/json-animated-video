@@ -2681,6 +2681,8 @@ const MotionJSONUI = (() => {
     const cached = latestJob?.action === "cache_model" && latestJob.status === "succeeded";
     const smokeReady = latestJob?.action === "smoke" && latestJob.status === "succeeded";
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
+    const hfCredential = asArray(provider?.credentials).find((credential) => credential?.name === "hf_token");
+    const hfTokenConfigured = hfCredential?.configured === true;
     if (latestJob?.status === "succeeded" && latestJob?.result?.ready === true && (runtimeReady || state.health?.mockMode)) {
       return { status: "ready", label: "Ready", message: latestJob.result.message || readiness.message || "Model setup is ready for this workflow." };
     }
@@ -2688,6 +2690,9 @@ const MotionJSONUI = (() => {
     const needsRuntime = /not_configured|missing|unavailable/i.test(String(readiness.status || "")) || readiness.configured === false;
     if (smokeReady || (runtimeReady && connection?.locality !== "local")) {
       return { status: "ready", label: "Ready", message: readiness.message || "Model setup is ready for this workflow." };
+    }
+    if (runtimeReady && connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && !cached && !hfTokenConfigured) {
+      return { status: "needs_access", label: "Needs Hugging Face access", message: "Paste a Hugging Face token for facebook/sam3, then check access before caching the model." };
     }
     if (runtimeReady && connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && !cached) {
       return { status: "needs_download_confirmation", label: "Confirm model cache", message: "Cache facebook/sam3 before the first scene sweep so extraction does not download unexpectedly." };
@@ -2899,6 +2904,8 @@ const MotionJSONUI = (() => {
       };
     const apiKey = String(values.apiKey || "").trim();
     if (apiKey) payload.apiKey = apiKey;
+    const hfToken = String(values.hfToken || "").trim();
+    if (hfToken) payload.hfToken = hfToken;
     for (const optional of ["hostedProfileId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam2HfDevice", "sam3ModelPath", "sam3Device"]) {
       if (!payload[optional] || payload[optional] === "[LOCAL_PATH_REDACTED]") delete payload[optional];
     }
@@ -5108,8 +5115,16 @@ const MotionJSONUI = (() => {
       }
       const selected = modelConnectionById(state.selectedModelSetupProviderId);
       const selectedReadiness = connectionReadiness(selected);
-      status.textContent = selectedReadiness.label;
-      status.className = `status-chip is-${selectedReadiness.tone}`;
+      const selectedProvider = providerSettingsById(selected.providerId);
+      const selectedSetupState = modelSetupStateForConnection(selected, selectedProvider, setupJobForProvider(selected.providerId));
+      const selectedSetupTone =
+        selectedSetupState.status === "ready"
+          ? "ready"
+          : selectedSetupState.status === "failed_recoverable"
+            ? "bad"
+            : "warn";
+      status.textContent = selectedSetupState.label || selectedReadiness.label;
+      status.className = `status-chip is-${selectedSetupTone}`;
 
       const recommendedId = recommendedConnectionIdForPreset();
       const normalConnections = state.modelSetupAlternativesOpen || state.workflowDashboard
@@ -5117,7 +5132,14 @@ const MotionJSONUI = (() => {
         : compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId || connection.id === recommendedId).slice(0, 1);
       choices.innerHTML = normalConnections.map((connection) => {
           const provider = providerSettingsById(connection.providerId);
-          const summary = connectionReadiness(connection);
+          const readinessSummary = connectionReadiness(connection);
+          const setupState = modelSetupStateForConnection(connection, provider, setupJobForProvider(connection.providerId));
+          const setupReady = setupState.status === "ready";
+          const summary = {
+            label: setupState.label || readinessSummary.label,
+            status: setupState.status || readinessSummary.status,
+            tone: setupReady ? "ready" : setupState.status === "failed_recoverable" ? "bad" : readinessSummary.tone === "bad" ? "bad" : "warn",
+          };
           const active = connection.id === selected.id;
           const hosted = provider?.locality === "hosted";
           const profile = connection.profileId
@@ -5212,18 +5234,44 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<span class="row-meta">No API key required.</span>`;
+      const credentialInputName = (name) => {
+        if (name === "api_key") return "apiKey";
+        if (name === "hf_token") return "hfToken";
+        return String(name || "").replace(/_([a-z])/g, (_match, char) => char.toUpperCase());
+      };
+      const credentialInputMarkup = (credential, options = {}) => {
+        const name = credential?.name || "";
+        const fieldName = credentialInputName(name);
+        const fieldAttribute = name === "api_key" ? 'data-model-setup-field="apiKey"' : `data-model-setup-field="${escapeAttribute(fieldName)}"`;
+        const label = credential?.label || (name === "hf_token" ? "Hugging Face token" : "API key");
+        const placeholder =
+          name === "hf_token"
+            ? "Paste a Hugging Face token for facebook/sam3"
+            : credential?.configured
+              ? "Paste key to replace saved key"
+              : "Paste key";
+        const helper =
+          name === "hf_token"
+            ? `<span class="field-helper">Stored locally, redacted in the browser, and used only by allowlisted Hugging Face access/cache jobs.</span>`
+            : "";
+        return `<label class="${options.normal ? "model-setup-access-token" : ""}">
+          <span>${escapeHtml(label)}</span>
+          <input ${fieldAttribute} type="password" autocomplete="off" value="" placeholder="${escapeAttribute(placeholder)}" aria-label="${escapeAttribute(label)}" />
+          ${helper}
+        </label>`;
+      };
       const endpointField = settingsProvider?.endpointField
         ? `<label>
             <span>${escapeHtml(settingsProvider.endpointField.label || "Endpoint URL")}</span>
             <input data-model-setup-field="endpoint" type="url" value="${escapeAttribute(settings.endpoint || "")}" placeholder="${escapeAttribute(settingsProvider.endpointField.env || "")}" />
           </label>`
         : "";
-      const credentialField = credentials.some((credential) => credential.name === "api_key")
-        ? `<label>
-            <span>API key</span>
-            <input data-model-setup-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(settingsProvider?.name || connection.displayLabel || connection.title)} API key" />
-          </label>`
-        : "";
+      const hfCredential = credentials.find((credential) => credential.name === "hf_token");
+      const showNormalHfAccess = connection.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && hfCredential && !hfCredential.configured;
+      const credentialField = credentials
+        .filter((credential) => !(showNormalHfAccess && credential.name === "hf_token"))
+        .map((credential) => credentialInputMarkup(credential))
+        .join("");
       const setupJob = setupJobForProvider(connection.providerId);
       const setupJobSummary = setupJobStatusSummary(setupJob);
       const setupState = modelSetupStateForConnection(connection, settingsProvider, setupJob);
@@ -5246,6 +5294,15 @@ const MotionJSONUI = (() => {
             ${commandRows}
           </details>`
         : "";
+      const normalAccessCard = showNormalHfAccess
+        ? `<div class="model-setup-access-card">
+            <div>
+              <strong>Hugging Face access</strong>
+              <p>facebook/sam3 may require Meta approval. Paste your Hugging Face token here, then use the setup action to check access before downloading weights.</p>
+            </div>
+            ${credentialInputMarkup(hfCredential, { normal: true })}
+          </div>`
+        : "";
 
       return `
         <div class="model-setup-summary">
@@ -5255,6 +5312,7 @@ const MotionJSONUI = (() => {
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
         </div>
+        <form id="modelSetupForm" class="model-setup-form-shell" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
         <div class="model-setup-state-card is-${escapeAttribute(setupStateTone)}">
           <div>
             <strong>${escapeHtml(setupState.label)}</strong>
@@ -5271,6 +5329,7 @@ const MotionJSONUI = (() => {
             ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide models" : "Change model"}</button>` : ""}
           </div>
         </div>
+        ${normalAccessCard}
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
@@ -5284,7 +5343,7 @@ const MotionJSONUI = (() => {
             ${setupJob?.status === "running" || setupJob?.status === "queued" ? `<button type="button" data-model-setup-action="cancel-setup-job" data-setup-job-id="${escapeAttribute(setupJob.id)}">Cancel setup</button>` : ""}
           </div>
           <div class="model-setup-credentials">${credentialSummary}</div>
-          <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
+          <div class="model-setup-form">
             ${profileField}
             <label>
               <span>Model</span>
@@ -5323,9 +5382,10 @@ const MotionJSONUI = (() => {
               <button type="button" data-model-setup-action="view-setup-logs">View logs</button>
               <button type="button" data-model-setup-action="reset">Reset</button>
             </div>
-          </form>
+          </div>
           <div id="modelSetupJobLog" class="event-log setup-job-log" ${setupJob ? "" : "hidden"}>${setupJobEventsMarkup(setupJob)}</div>
         </details>
+        </form>
       `;
     }
 
@@ -5585,12 +5645,19 @@ const MotionJSONUI = (() => {
             <input data-provider-field="baseUrl" type="url" value="${escapeAttribute(settings.baseUrl || "")}" placeholder="${escapeAttribute(provider.baseUrlField.env || "")}" />
           </label>`
         : "";
-      const credentialField = credentials.some((credential) => credential.name === "api_key")
-        ? `<label>
-            <span>API key</span>
-            <input data-provider-field="apiKey" type="password" autocomplete="off" value="" placeholder="Paste key to replace saved key" aria-label="${escapeAttribute(provider.name)} API key" />
-          </label>`
-        : "";
+      const credentialField = credentials
+        .map((credential) => {
+          const name = credential.name || "";
+          const fieldName = name === "api_key" ? "apiKey" : name === "hf_token" ? "hfToken" : String(name).replace(/_([a-z])/g, (_match, char) => char.toUpperCase());
+          const fieldAttribute = name === "api_key" ? 'data-provider-field="apiKey"' : `data-provider-field="${escapeAttribute(fieldName)}"`;
+          const label = credential.label || (name === "hf_token" ? "Hugging Face token" : "API key");
+          const placeholder = credential.configured ? "Paste value to replace saved value" : "Paste value";
+          return `<label>
+            <span>${escapeHtml(label)}</span>
+            <input ${fieldAttribute} type="password" autocomplete="off" value="" placeholder="${escapeAttribute(placeholder)}" aria-label="${escapeAttribute(provider.name)} ${escapeAttribute(label)}" />
+          </label>`;
+        })
+        .join("");
       const localConfigFields = asArray(provider.localConfigFields)
         .map((field) => {
           const fieldName = String(field.name || "");
@@ -5837,6 +5904,8 @@ const MotionJSONUI = (() => {
       };
       const key = value("[data-provider-field='apiKey']");
       if (key) payload.apiKey = key;
+      const hfToken = value("[data-provider-field='hfToken']");
+      if (hfToken) payload.hfToken = hfToken;
       for (const localPathField of ["sam2CheckpointPath", "sam2ModelConfigPath", "sam3ModelPath"]) {
         if (payload[localPathField] === "[LOCAL_PATH_REDACTED]") delete payload[localPathField];
       }
@@ -5854,6 +5923,7 @@ const MotionJSONUI = (() => {
         baseUrl: value("[data-model-setup-field='baseUrl']"),
         allowHosted: checked("[data-model-setup-field='allowHosted']"),
         apiKey: value("[data-model-setup-field='apiKey']"),
+        hfToken: value("[data-model-setup-field='hfToken']"),
         sam2CheckpointPath: value("[data-model-setup-field='sam2CheckpointPath']"),
         sam2ModelConfigPath: value("[data-model-setup-field='sam2ModelConfigPath']"),
         sam2Device: value("[data-model-setup-field='sam2Device']"),
@@ -9091,10 +9161,10 @@ const MotionJSONUI = (() => {
 
       if (capture.startsWith("model-setup")) {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
         if (guidedStart) guidedStart.style.display = "none";
         if (workflowSteps) workflowSteps.style.display = "none";
@@ -9145,10 +9215,10 @@ const MotionJSONUI = (() => {
         }
       } else if (captureUsesSam3Prepare) {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
         state.selectedProjectId = "project_layout";
         state.selectedVideoId = "video_layout";
@@ -9200,10 +9270,10 @@ const MotionJSONUI = (() => {
         setRunAlert("", "warning-box");
       } else if (capture === "workflow-run") {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
         applyPreset("trace_one_object", { keepProvider: true });
         state.selectedModelSetupProviderId = "sam2-local";
@@ -9264,13 +9334,13 @@ const MotionJSONUI = (() => {
       } else if (capture.startsWith("model-plan")) {
         const showRunMonitor = ["model-plan-queued", "model-plan-running", "model-plan-succeeded"].includes(capture);
         if (shell) {
-          shell.style.display = showRunMonitor && window.innerWidth >= 980 ? "grid" : "block";
+          shell.style.display = "grid";
           if (showRunMonitor && window.innerWidth >= 980) {
             shell.style.gridTemplateColumns = "minmax(0, 1fr) 420px";
           }
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (guidedStart) guidedStart.style.display = "none";
         if (workflowSteps) workflowSteps.style.display = "none";
         if (modelSetupPanel) modelSetupPanel.style.display = "none";
@@ -9436,10 +9506,10 @@ const MotionJSONUI = (() => {
         renderModelPlanPanel();
       } else if (capture === "first-run" || capture === "preview-failed") {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
         if (capture === "preview-failed") {
           applyPreset("trace_one_object", { keepProvider: true, skipAutoAdvance: true });
@@ -9479,10 +9549,10 @@ const MotionJSONUI = (() => {
         if (firstRunPanel) firstRunPanel.style.display = "none";
       } else if (capture === "provider-settings") {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (workspace) workspace.style.display = "none";
         if (rightRail) {
           rightRail.style.display = "block";
@@ -9499,10 +9569,10 @@ const MotionJSONUI = (() => {
       } else if (capture === "advanced-config") {
         applyPreset("text_detector");
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
         if (guidedStart) guidedStart.style.display = "none";
         if (workflowSteps) workflowSteps.style.display = "none";
@@ -9537,10 +9607,10 @@ const MotionJSONUI = (() => {
         }
       } else if (capture === "job-review") {
         if (shell) {
-          shell.style.display = "block";
+          shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
-        if (sidebar) sidebar.style.display = "none";
+        if (sidebar) sidebar.style.display = "";
         if (workspace) workspace.style.display = "none";
         if (rightRail) {
           rightRail.style.display = "grid";
@@ -10745,7 +10815,7 @@ const MotionJSONUI = (() => {
             body: JSON.stringify(modelSetupPayloadFromForm(form)),
           });
           state.providerSettings = response;
-          form.querySelectorAll("[data-model-setup-field='apiKey']").forEach((input) => {
+          form.querySelectorAll("[data-model-setup-field='apiKey'], [data-model-setup-field='hfToken']").forEach((input) => {
             input.value = "";
           });
           state.modelSetupMessage = "Model connection saved. Diagnose checks saved settings without making a hosted network call.";

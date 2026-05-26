@@ -32,6 +32,10 @@ def test_model_setup_normal_path_hides_raw_provider_controls_behind_advanced():
 
     assert "Change model" in before_advanced
     assert "primarySetupAction.label" in before_advanced
+    assert "${normalAccessCard}" in before_advanced
+    assert "Hugging Face access" in detail_body
+    assert "hfToken" in detail_body
+    assert "HF_TOKEN" not in before_advanced
     assert '"cache-model"' in js
     for raw_control in ("sam3ModelPath", "endpoint", "apiKey", "View logs", "Diagnose"):
         assert raw_control not in before_advanced
@@ -45,3 +49,15 @@ def test_model_setup_renders_one_recommended_card_until_change_model():
     assert "modelSetupAlternativesOpen" in js
     assert re.search(r"state\.modelSetupAlternativesOpen\s*\|\|\s*state\.workflowDashboard\s*\?\s*compatibleConnections", js)
     assert "compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId" in js
+
+
+def test_storyboard_shell_keeps_project_rail_and_bottom_cta_in_normal_mode():
+    css = read("src/motionjson/ui/static/app.css")
+    final_overrides = css.rsplit("Final storyboard overrides", 1)[1]
+
+    assert "grid-template-columns: 214px minmax(0, 1fr)" in final_overrides
+    assert ".sidebar" in final_overrides
+    assert "display: flex" in final_overrides
+    assert "#workflowController" in final_overrides
+    assert "position: fixed" in final_overrides
+    assert "left: 214px" in final_overrides

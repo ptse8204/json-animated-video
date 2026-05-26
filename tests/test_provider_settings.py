@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
+import types
+from importlib.machinery import ModuleSpec
 
 import pytest
 
@@ -277,6 +280,84 @@ def test_sam3_scene_sweep_setup_job_is_independent_from_sam2_and_has_actionable_
     assert blocked["status"] == "blocked"
     assert blocked["result"]["networkAttempted"] is False
     assert "network confirmation" in blocked["result"]["message"]
+
+
+def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_path, monkeypatch):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    secret = "hf_saved_token_abcdef123456"
+    seen: dict[str, tuple[str, str | None]] = {}
+    cached_dir = tmp_path / "hf-cache" / "facebook-sam3"
+    cached_dir.mkdir(parents=True)
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
+
+    class FakeHfApi:
+        def model_info(self, repo_id: str, token: str | None = None) -> dict[str, str]:
+            seen["model_info"] = (repo_id, token)
+            return {"id": repo_id}
+
+    def snapshot_download(repo_id: str, token: str | None = None) -> str:
+        seen["snapshot_download"] = (repo_id, token)
+        return str(cached_dir)
+
+    fake_hub.HfApi = FakeHfApi
+    fake_hub.snapshot_download = snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr("motionjson.backend.provider_setup_jobs.find_spec", lambda name: object() if name == "huggingface_hub" else None)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "check_access",
+                "runInline": True,
+                "allowNetwork": True,
+                "settings": {"selectedModel": "facebook/sam3", "hfToken": secret},
+            }
+        ).encode("utf-8"),
+    )
+    checked_text = body.decode("utf-8")
+    checked = decode(body)["setupJob"]
+
+    assert status == 200
+    assert checked["status"] == "succeeded"
+    assert seen["model_info"] == ("facebook/sam3", secret)
+    assert secret not in checked_text
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    settings_text = body.decode("utf-8")
+    settings = decode(body)
+    sam3 = provider_by_id(settings, "sam3-local")
+    hf_credential = next(item for item in sam3["credentials"] if item["name"] == "hf_token")
+
+    assert status == 200
+    assert hf_credential["configured"] is True
+    assert hf_credential["source"] == "local_settings"
+    assert secret not in settings_text
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": "facebook/sam3",
+            }
+        ).encode("utf-8"),
+    )
+    cached_text = body.decode("utf-8")
+    cached = decode(body)["setupJob"]
+
+    assert status == 200
+    assert cached["status"] == "succeeded"
+    assert seen["snapshot_download"] == ("facebook/sam3", secret)
+    assert secret not in cached_text
+    assert str(cached_dir) not in cached_text
 
 
 def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):

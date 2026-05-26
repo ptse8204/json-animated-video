@@ -362,7 +362,15 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "implemented": True,
         "runsInLocalWorker": True,
         "credentialRequired": False,
-        "credentialFields": [],
+        "credentialFields": [
+            {
+                "name": "hf_token",
+                "label": "Hugging Face token",
+                "env": "HF_TOKEN",
+                "required": False,
+                "helpText": "Needed only when facebook/sam3 access is gated or the model is not cached yet.",
+            },
+        ],
         "localConfigFields": [
             {
                 "name": "sam3_model_path",
@@ -375,10 +383,10 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
             {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
         ],
         "modelOptions": [
-            {"id": "sam3/local-model-path", "label": "Configured local SAM3 model"},
-            {"id": CUSTOM_MODEL_ID, "label": "Custom local SAM3 model id"},
+            {"id": SAM3_HF_REPO_ID, "label": "facebook/sam3 (SAM3 Scene Sweep)"},
+            {"id": CUSTOM_MODEL_ID, "label": "Custom HF repo id or local model directory"},
         ],
-        "defaultModel": "sam3/local-model-path",
+        "defaultModel": SAM3_HF_REPO_ID,
         "customModelAllowed": True,
         "capabilities": ["scene sweep", "concept discovery", "exemplar discovery", "SAM3 Tracker video"],
         "supportedGoals": ["trace_one_object", "trace_all_objects", "text_detector"],
@@ -763,14 +771,22 @@ def provider_runtime_settings(
     profile = _profile_definition(definition, settings)
     api_key = ""
     credential_source = "none"
-    credential_field = next(iter(profiled_definition.get("credentialFields", [])), None)
-    if credential_field:
+    credential_values: dict[str, str] = {}
+    credential_sources: dict[str, str] = {}
+    for credential_field in profiled_definition.get("credentialFields", []):
         name = str(credential_field["name"])
         env = str(credential_field.get("env") or "")
         env_value = environ.get(env)
+        if name == "hf_token" and not env_value:
+            env_value = environ.get("HUGGINGFACE_HUB_TOKEN")
         local_value = secrets.get(name)
-        api_key = str(env_value or local_value or "")
-        credential_source = "environment" if env_value else "local_settings" if local_value else "unset"
+        value = str(env_value or local_value or "")
+        source = "environment" if env_value else "local_settings" if local_value else "unset"
+        credential_values[name] = value
+        credential_sources[name] = source
+        if name == "api_key":
+            api_key = value
+            credential_source = source
 
     base_url_field = profiled_definition.get("baseUrlField")
     base_url = ""
@@ -807,6 +823,14 @@ def provider_runtime_settings(
         "base_url_source": base_url_source,
         "endpoint": endpoint,
         "endpoint_source": endpoint_source,
+        "credentials": credential_values,
+        "credential_sources": credential_sources,
+        "hf_token": str(
+            environ.get("HF_TOKEN")
+            or environ.get("HUGGINGFACE_HUB_TOKEN")
+            or credential_values.get("hf_token")
+            or ""
+        ),
         "selected_model": _runtime_effective_model(definition, settings, environ),
         "allow_hosted": bool(settings.get("allow_hosted", False)),
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
@@ -859,13 +883,22 @@ def _apply_settings_payload(
     if "sam3Device" in payload or "sam3_device" in payload:
         settings["sam3_device"] = _optional_text(payload.get("sam3Device", payload.get("sam3_device")))
 
-    api_key = payload.get("apiKey", payload.get("api_key"))
-    clear_key = bool(payload.get("clearApiKey") or payload.get("clear_api_key") or payload.get("apiKeyAction") == "clear")
-    if clear_key:
-        secrets.pop("api_key", None)
-    elif isinstance(api_key, str) and api_key.strip():
-        _ensure_accepts_credentials(_profiled_definition(definition, settings))
-        secrets["api_key"] = _clean_api_key(str(definition["id"]), api_key)
+    profiled_definition = _profiled_definition(definition, settings)
+    for field in profiled_definition.get("credentialFields", []):
+        name = str(field["name"])
+        camel_name = _credential_payload_name(name)
+        value = payload.get(camel_name, payload.get(name))
+        clear_value = bool(
+            payload.get(f"clear{camel_name[0].upper()}{camel_name[1:]}")
+            or payload.get(f"clear_{name}")
+            or payload.get(f"{camel_name}Action") == "clear"
+            or payload.get(f"{name}_action") == "clear"
+        )
+        if clear_value:
+            secrets.pop(name, None)
+        elif isinstance(value, str) and value.strip():
+            _ensure_accepts_credentials(profiled_definition)
+            secrets[name] = _clean_credential(str(definition["id"]), field, value)
 
 
 def save_provider_settings(
@@ -1184,7 +1217,8 @@ def diagnose_provider_settings(
             str(model_status.get("action") or "Request Hugging Face access, authenticate, then save the local sam3.pt checkpoint path."),
             required=False,
         )
-        item("hf_token", "Hugging Face auth for gated downloads", bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")), "HF_TOKEN/HUGGINGFACE_HUB_TOKEN configured." if environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") else "No Hugging Face token environment variable detected.", "Use Check HF access when you want to verify facebook/sam3 access.", required=False)
+        hf_token_ok = bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or secrets.get("hf_token"))
+        item("hf_token", "Hugging Face auth for gated downloads", hf_token_ok, "Hugging Face token configured." if hf_token_ok else "No Hugging Face token is saved for this UI session.", "Paste a Hugging Face token in Model setup, then use Check access before caching facebook/sam3.", required=False)
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id in {"sam2-hosted", "sam3-hosted"}:
         profile = _profile_definition(definition, settings)
@@ -1502,7 +1536,7 @@ def _capability_override(
         "sam2_hf_device": str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or ""),
         "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
         "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
-        "hf_token_configured": bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")),
+        "hf_token_configured": bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or secrets.get("hf_token")),
         "settings_source": "local_settings" if row is not None else "default",
     }
 
@@ -1519,6 +1553,8 @@ def _credential_states(
         name = str(field["name"])
         env = str(field.get("env") or "")
         env_value = environ.get(env)
+        if name == "hf_token" and not env_value:
+            env_value = environ.get("HUGGINGFACE_HUB_TOKEN")
         local_value = secrets.get(name)
         source = "environment" if env_value else "local_settings" if local_value else "unset"
         raw_value = env_value or local_value or ""
@@ -1782,11 +1818,27 @@ def _ensure_accepts_credentials(definition: Mapping[str, Any]) -> None:
         raise ValueError(f"{definition['name']} does not use API keys. Leave mock/local providers credential-free.")
 
 
-def _clean_api_key(provider_id: str, value: str) -> str:
+def _credential_payload_name(name: str) -> str:
+    if name == "api_key":
+        return "apiKey"
+    if name == "hf_token":
+        return "hfToken"
+    parts = [part for part in str(name).split("_") if part]
+    if not parts:
+        return str(name)
+    return parts[0] + "".join(part[:1].upper() + part[1:] for part in parts[1:])
+
+
+def _clean_credential(provider_id: str, field: Mapping[str, Any], value: str) -> str:
     text = value.strip()
     if not _api_key_plausible(text):
-        raise ValueError(f"{provider_id} API key is invalid or too short. Paste the key without spaces.")
+        label = str(field.get("label") or field.get("name") or "credential")
+        raise ValueError(f"{provider_id} {label} is invalid or too short. Paste the value without spaces.")
     return text
+
+
+def _clean_api_key(provider_id: str, value: str) -> str:
+    return _clean_credential(provider_id, {"name": "api_key", "label": "API key"}, value)
 
 
 def _api_key_plausible(value: str) -> bool:

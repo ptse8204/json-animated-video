@@ -15,6 +15,7 @@ from motionjson.provider_settings import (
     diagnose_provider_settings,
     hosted_sam3_smoke_test,
     local_sam_smoke_test,
+    provider_runtime_settings,
     redact_secret_payload,
     redact_secret_text,
     save_provider_settings,
@@ -347,8 +348,8 @@ def _execute_setup_action(
 ) -> dict[str, Any]:
     environ = environ or os.environ
     settings_payload = payload.get("settings") if isinstance(payload.get("settings"), Mapping) else payload
-    if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access"}:
-        if any(key in settings_payload for key in ("selectedModel", "apiKey", "sam2CheckpointPath", "sam2HfDevice", "sam3ModelPath", "endpoint", "allowHosted", "hostedProfileId")):
+    if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access", "cache_model"}:
+        if any(key in settings_payload for key in ("selectedModel", "selected_model", "customModelId", "custom_model_id", "apiKey", "api_key", "hfToken", "hf_token", "sam2CheckpointPath", "sam2_checkpoint_path", "sam2HfDevice", "sam2_hf_device", "sam3ModelPath", "sam3_model_path", "endpoint", "allowHosted", "allow_hosted", "hostedProfileId", "hosted_profile_id")):
             save_provider_settings(conn, user_id=user_id, payload={**dict(settings_payload), "providerId": provider_id}, environ=environ)
 
     if action == "diagnose":
@@ -362,9 +363,11 @@ def _execute_setup_action(
     if action == "install":
         return _run_install_action(provider_id, payload)
     if action == "cache_model":
-        return _cache_model_action(provider_id, payload)
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+        return _cache_model_action(provider_id, payload, token=str(runtime.get("hf_token") or ""))
     if action == "check_access":
-        return _check_sam3_hf_access(payload, environ=environ)
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+        return _check_sam3_hf_access(payload, token=str(runtime.get("hf_token") or ""), environ=environ)
     raise ValueError(f"Setup action is not implemented for {provider_id}: {action}")
 
 
@@ -427,7 +430,7 @@ def _install_command(provider_id: str) -> list[str]:
     return [sys.executable, "-m", "pip", "install", f"motionjson[{extra}]"]
 
 
-def _cache_model_action(provider_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: str = "") -> dict[str, Any]:
     if not _truthy(payload.get("allowNetwork", payload.get("allow_network"))):
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
@@ -487,7 +490,7 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any]) -> dict[st
     if find_spec("huggingface_hub") is None:
         raise ValueError("huggingface_hub is not installed. Install the Transformers setup extra first.")
     from huggingface_hub import snapshot_download  # type: ignore
-    local_dir = snapshot_download(repo_id=model_id)
+    local_dir = snapshot_download(repo_id=model_id, token=token or None)
     return {
         "format": PROVIDER_SETUP_JOB_FORMAT,
         "providerId": provider_id,
@@ -503,8 +506,8 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any]) -> dict[st
     }
 
 
-def _check_sam3_hf_access(payload: Mapping[str, Any], *, environ: Mapping[str, str]) -> dict[str, Any]:
-    token = str(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip()
+def _check_sam3_hf_access(payload: Mapping[str, Any], *, token: str = "", environ: Mapping[str, str]) -> dict[str, Any]:
+    token = str(token or environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or "").strip()
     if not _truthy(payload.get("allowNetwork", payload.get("allow_network"))):
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
@@ -526,7 +529,7 @@ def _check_sam3_hf_access(payload: Mapping[str, Any], *, environ: Mapping[str, s
             "ready": False,
             "networkAttempted": False,
             "heavyLocalAttempted": False,
-            "message": "Set HF_TOKEN or HUGGINGFACE_HUB_TOKEN after Meta approves facebook/sam3 access.",
+            "message": "Paste a Hugging Face token in Model setup after Meta approves facebook/sam3 access, then run Check access again.",
             "tokenConfigured": False,
         }
     if find_spec("huggingface_hub") is None:
