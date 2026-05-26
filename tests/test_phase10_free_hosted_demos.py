@@ -217,9 +217,12 @@ def test_colab_provider_diagnostics_notebook_is_redacted_and_no_model() -> None:
 
 def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_profiles() -> None:
     notebook = json.loads(read("notebooks/colab_ui_provider_connect_demo.ipynb"))
-    joined = "\n".join(
+    cell_sources = [
         "".join(cell.get("source", []))
         for cell in notebook["cells"]
+    ]
+    joined = "\n".join(
+        cell_sources
     )
 
     assert notebook["nbformat"] == 4
@@ -269,6 +272,11 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "CUDA available" in joined
     assert "output.serve_kernel_port_as_iframe" in joined
     assert "output.serve_kernel_port_as_window" in joined
+    assert "Do model configuration in the UI" in cell_sources[0]
+    launch_index = next(index for index, source in enumerate(cell_sources) if "output.serve_kernel_port_as_iframe" in source)
+    advanced_index = next(index for index, source in enumerate(cell_sources) if "## Advanced fallback only" in source)
+    sam2_debug_index = next(index for index, source in enumerate(cell_sources) if "RUN_LOCAL_SAM2_SETUP = False" in source)
+    assert launch_index < advanced_index < sam2_debug_index
     assert "Roboflow SAM3" in joined
     assert "Replicate SAM2 video" in joined
     assert "Fal SAM3 image" in joined

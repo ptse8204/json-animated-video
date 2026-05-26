@@ -54,6 +54,23 @@ def test_provider_connect_notebook_has_no_public_tunnel_or_saved_secret_values()
     assert "secret_json" not in source
 
 
+def test_provider_connect_notebook_opens_ui_before_advanced_model_debug_cells() -> None:
+    notebook = _load_notebook(PROVIDER_NOTEBOOK)
+    cell_sources = ["".join(cell.get("source", [])) for cell in notebook["cells"]]
+    joined = "\n".join(cell_sources)
+
+    assert "# MotionJSON Local UI setup" in cell_sources[0]
+    assert "Run the first launch cells, then stay in the UI" in cell_sources[0]
+    assert "Do model configuration in the UI" in cell_sources[0]
+    assert "## Advanced fallback only" in joined
+    launch_index = next(index for index, source in enumerate(cell_sources) if "output.serve_kernel_port_as_iframe" in source)
+    advanced_index = next(index for index, source in enumerate(cell_sources) if "## Advanced fallback only" in source)
+    sam2_debug_index = next(index for index, source in enumerate(cell_sources) if "RUN_LOCAL_SAM2_SETUP = False" in source)
+    sam3_debug_index = next(index for index, source in enumerate(cell_sources) if "RUN_LOCAL_SAM3_SETUP = False" in source)
+
+    assert launch_index < advanced_index < sam2_debug_index < sam3_debug_index
+
+
 def test_provider_connect_sam2_source_repo_checkpoint_and_config_are_distinct() -> None:
     source = _joined_source()
     package_cell = _cell_with(PROVIDER_NOTEBOOK, "RUN_LOCAL_SAM2_SETUP = False")
@@ -154,6 +171,6 @@ def test_provider_connect_notebook_preserves_hosted_sam3_path() -> None:
 
     assert "Roboflow SAM3" in source
     assert "Fal SAM3 image" in source
-    assert "If you prefer hosted SAM3, skip the local SAM3 package and checkpoint cells." in source
+    assert "If you prefer hosted SAM3, configure it from Model setup." in source
     assert "Hosted SAM3 users can skip local readiness failures" in source
-    assert "do not require `SAM3_LOCAL_MODEL`" in source
+    assert "do not require local SAM3 package or checkpoint cells" in source

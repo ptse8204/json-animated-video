@@ -123,14 +123,16 @@ checkpoint = Path(hf_hub_download(repo_id="facebook/sam3", filename="sam3.pt", t
 if not checkpoint.exists():
     raise RuntimeError(f"SAM3 checkpoint was not found: {checkpoint}")
 os.environ["SAM3_LOCAL_MODEL"] = str(checkpoint)
-print("Paste this into Model Connections -> SAM3 local -> model path:")
+print("Use this in Model setup -> SAM3 Scene Sweep -> model path:")
 print(checkpoint)
 ```
 
-The Colab notebook `notebooks/colab_ui_provider_connect_demo.ipynb` keeps this
-download disabled by default with `RUN_DOWNLOAD_SAM3_CHECKPOINT = False`. It
-also searches the Hugging Face cache, supports a Google Drive
-`GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH`, and lets you paste an existing approved
+The Colab notebook `notebooks/colab_ui_provider_connect_demo.ipynb` launches
+the main Local UI first so users can configure models from Model setup. The
+manual download helpers are under **Advanced fallback only**, keep downloads
+disabled by default with `RUN_DOWNLOAD_SAM3_CHECKPOINT = False`, search the
+Hugging Face cache, support a Google Drive
+`GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH`, and let you paste an existing approved
 `sam3.pt` path before downloading anything.
 
 ## Troubleshooting
