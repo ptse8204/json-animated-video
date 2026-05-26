@@ -246,6 +246,31 @@ CREATE TABLE IF NOT EXISTS provider_settings (
     UNIQUE(user_id, provider_id)
 );
 
+CREATE TABLE IF NOT EXISTS provider_setup_jobs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    provider_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    started_at TEXT,
+    finished_at TEXT,
+    cancel_requested_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS provider_setup_events (
+    id TEXT PRIMARY KEY,
+    setup_job_id TEXT NOT NULL REFERENCES provider_setup_jobs(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_preferences (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -345,6 +370,8 @@ CREATE INDEX IF NOT EXISTS idx_beta_members_user ON beta_members(user_id, disabl
 CREATE INDEX IF NOT EXISTS idx_feedback_project_status ON feedback_items(project_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_error_reports_project_status ON error_reports(project_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_provider_settings_user ON provider_settings(user_id, provider_id);
+CREATE INDEX IF NOT EXISTS idx_provider_setup_jobs_user ON provider_setup_jobs(user_id, provider_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_provider_setup_events_job ON provider_setup_events(setup_job_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user ON user_preferences(user_id, namespace);
 CREATE INDEX IF NOT EXISTS idx_library_assets_owner ON library_assets(owner_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_library_assets_project ON library_assets(project_id, created_at);

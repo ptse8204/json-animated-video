@@ -20,13 +20,13 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "providerSettingsPanel",
         "providerSettingsList",
         "modelSetupPanel",
-        "modelSetupChoices",
-        "Provider settings",
-        "Providers and models",
-        "Connect SAM for extraction",
-        "textDiscoveryProviderSelect",
-    ]:
-        assert expected in html
+            "modelSetupChoices",
+            "Provider settings",
+            "Providers and models",
+            "Choose and install models",
+            "textDiscoveryProviderSelect",
+        ]:
+            assert expected in html
 
     for expected in [
         "/api/provider-settings",

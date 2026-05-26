@@ -48,6 +48,13 @@ from motionjson.backend.library import (
 )
 from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
+from motionjson.backend.provider_setup_jobs import (
+    cancel_provider_setup_job,
+    create_provider_setup_job,
+    provider_setup_actions,
+    public_provider_setup_job,
+    run_provider_setup_job,
+)
 from motionjson.backend.queue import request_cancel_job
 from motionjson.backend.selected_tracking import track_selected_candidates
 from motionjson.backend.workspace import (
@@ -456,6 +463,8 @@ class LocalUIApp:
         self.mock_mode = mock_mode
         self._worker_lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
+        self._provider_setup_lock = threading.Lock()
+        self._provider_setup_threads: dict[str, threading.Thread] = {}
         self.model_connectors = ModelConnectorRegistry()
         self.model_runs = VolatileModelRunStore(max_runs=128)
 
@@ -553,6 +562,9 @@ class LocalUIApp:
                     "/api/provider-settings/{providerId}/test",
                     "/api/provider-settings/{providerId}/diagnose",
                     "/api/provider-settings/{providerId}/smoke-test",
+                    "/api/provider-settings/{providerId}/setup/start",
+                    "/api/provider-settings/setup-jobs/{jobId}",
+                    "/api/provider-settings/setup-jobs/{jobId}/cancel",
                     "/api/model-providers",
                     "/api/model-providers/{providerId}",
                     "/api/model-providers/{providerId}/test",
@@ -608,6 +620,12 @@ class LocalUIApp:
             return self._save_provider_settings(payload)
         if path.startswith("/api/provider-settings/"):
             parts = [part for part in path.split("/") if part]
+            if len(parts) == 4 and parts[2] == "setup-jobs" and method == "GET":
+                return self._provider_setup_job_response(parts[3])
+            if len(parts) == 5 and parts[2] == "setup-jobs" and parts[4] == "cancel" and method == "POST":
+                return self._cancel_provider_setup_job(parts[3], payload)
+            if len(parts) == 5 and parts[3] == "setup" and parts[4] == "start" and method == "POST":
+                return self._start_provider_setup_job(parts[2], payload)
             if len(parts) == 3 and method == "DELETE":
                 return self._reset_provider_settings(parts[2])
             if len(parts) == 4 and parts[3] == "test" and method == "POST":
@@ -1745,6 +1763,82 @@ class LocalUIApp:
                     user_id=user["id"],
                     payload={**payload, "providerId": provider_id},
                 )
+            )
+        finally:
+            conn.close()
+
+    def _start_provider_setup_job(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            job = create_provider_setup_job(conn, user_id=user["id"], provider_id=provider_id, payload=payload)
+            job_id = str(job["id"])
+            if payload.get("runInline") is True or payload.get("run_inline") is True:
+                job = run_provider_setup_job(conn, user_id=user["id"], job_id=job_id, payload=payload)
+                return _public_value(
+                    {
+                        "format": "motionjson.provider_setup_job.v0.1.start",
+                        "setupJob": job,
+                        "actions": provider_setup_actions(provider_id),
+                    }
+                )
+            self._start_provider_setup_thread(job_id, payload)
+            return _public_value(
+                {
+                    "format": "motionjson.provider_setup_job.v0.1.start",
+                    "setupJob": job,
+                    "actions": provider_setup_actions(provider_id),
+                }
+            )
+        finally:
+            conn.close()
+
+    def _start_provider_setup_thread(self, job_id: str, payload: dict[str, Any]) -> None:
+        def run() -> None:
+            conn = self.connection()
+            try:
+                user = self._local_user(conn)
+                run_provider_setup_job(conn, user_id=user["id"], job_id=job_id, payload=payload)
+            finally:
+                conn.close()
+                with self._provider_setup_lock:
+                    self._provider_setup_threads.pop(job_id, None)
+
+        with self._provider_setup_lock:
+            existing = self._provider_setup_threads.get(job_id)
+            if existing is not None and existing.is_alive():
+                return
+            thread = threading.Thread(target=run, name=f"motionjson-provider-setup-{job_id[:8]}", daemon=True)
+            self._provider_setup_threads[job_id] = thread
+            thread.start()
+
+    def _provider_setup_job_response(self, job_id: str) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(
+                {
+                    "format": "motionjson.provider_setup_job.v0.1",
+                    "setupJob": public_provider_setup_job(conn, user_id=user["id"], job_id=job_id, include_events=True),
+                }
+            )
+        finally:
+            conn.close()
+
+    def _cancel_provider_setup_job(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return _public_value(
+                {
+                    "format": "motionjson.provider_setup_job.v0.1",
+                    "setupJob": cancel_provider_setup_job(
+                        conn,
+                        user_id=user["id"],
+                        job_id=job_id,
+                        reason=str(payload.get("reason") or "user_canceled"),
+                    ),
+                }
             )
         finally:
             conn.close()

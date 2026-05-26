@@ -93,13 +93,13 @@ Diagnostics should report missing package, unsupported Python, missing CUDA, or
 missing model path explicitly. They must not claim SAM3 is runnable just because
 the mock discovery modes are available.
 
-In the Local UI, open **Model Connections -> SAM3 local**, save the local model
-path and device, then run **Diagnose**. The checklist reports Python, torch,
-CUDA, SAM3 package import, Hugging Face token status, and model-path readiness
-without making hosted network calls. Local SAM3 runs in-process through
-MotionJSON providers; no local API server workaround is used. Diagnostics
-report scene-sweep readiness separately from concept/exemplar readiness, and
-missing SAM2 is never a SAM3 scene-sweep blocker.
+In the Local UI, use **Start -> Video -> Model setup**. For **Find everything
+in scene**, choose **SAM3 Scene Sweep**, then use the inline install, HF access,
+diagnose, and smoke actions. The scene-sweep checklist reports the independent
+Transformers automatic-mask runtime, Tracker Video runtime, and torch readiness
+first. Official SAM3 package, Python 3.12, Hugging Face token, and local
+`sam3.pt` checkpoint checks remain visible for concept/exemplar workflows, but
+they do not make SAM2 a blocker for SAM3 Scene Sweep.
 
 ## Colab Checkpoint Path Flow
 

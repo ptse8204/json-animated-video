@@ -9,6 +9,11 @@ from motionjson.backend.api import MotionJSONAPI
 from motionjson.backend.api_keys import create_api_key
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
+from motionjson.backend.provider_setup_jobs import (
+    cancel_provider_setup_job,
+    create_provider_setup_job,
+    provider_setup_actions,
+)
 from motionjson.provider_settings import provider_catalog, hosted_sam3_smoke_test, redact_secret_payload, redact_secret_text
 from motionjson.ui.server import LocalUIApp
 
@@ -184,12 +189,140 @@ def test_sam3_local_diagnose_explains_invalid_model_paths(tmp_path, monkeypatch)
     )
     diagnosis = decode(body)
     model_row = next(item for item in diagnosis["checklist"] if item["id"] == "model_path")
+    checklist_ids = {item["id"] for item in diagnosis["checklist"]}
 
     assert status == 200
+    assert {"transformers_package", "sam3_tracker_auto_masks", "sam3_tracker_video"}.issubset(checklist_ids)
     assert model_row["ok"] is False
     assert "Use this file instead" in model_row["detail"]
     assert "[LOCAL_PATH_REDACTED]" in model_row["detail"]
     assert str(checkpoint) not in body.decode("utf-8")
+    assert "SAM2 is not required" in body.decode("utf-8")
+
+
+def test_provider_setup_job_api_allowlists_actions_redacts_and_persists_settings(tmp_path):
+    checkpoint = tmp_path / "sam2.pt"
+    config = tmp_path / "sam2.yaml"
+    checkpoint.write_bytes(b"weights")
+    config.write_text("model:\n  type: test\n", encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "diagnose",
+                "runInline": True,
+                "settings": {
+                    "sam2CheckpointPath": str(checkpoint),
+                    "sam2ModelConfigPath": str(config),
+                    "sam2Device": "cpu",
+                },
+            }
+        ).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["setupJob"]["providerId"] == "sam2-local"
+    assert payload["setupJob"]["action"] == "diagnose"
+    assert payload["setupJob"]["status"] in {"blocked", "succeeded"}
+    assert str(checkpoint) not in body.decode("utf-8")
+    assert "[LOCAL_PATH_REDACTED]" in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    saved = decode(body)
+    sam2 = provider_by_id(saved, "sam2-local")
+    assert status == 200
+    assert sam2["settings"]["sam2CheckpointPath"] == "[LOCAL_PATH_REDACTED]"
+    assert sam2["settings"]["sam2ModelConfigPath"] == "[LOCAL_PATH_REDACTED]"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-local/setup/start",
+        body=json.dumps({"action": "shell", "runInline": True}).encode("utf-8"),
+    )
+    assert status == 400
+    assert "setup action must be one of" in body.decode("utf-8")
+
+
+def test_sam3_scene_sweep_setup_job_is_independent_from_sam2_and_has_actionable_blocks(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    actions = {action["id"]: action for action in provider_setup_actions("sam3-local")}
+
+    assert actions["install"]["label"] == "Install scene sweep"
+    assert "SAM2 is not required" in actions["install"]["description"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "install", "runInline": True, "dryRun": True}).encode("utf-8"),
+    )
+    install = decode(body)
+
+    assert status == 200
+    assert install["setupJob"]["status"] == "succeeded"
+    assert "sam3-transformers" in install["setupJob"]["result"]["command"]
+    assert "sam2" not in install["setupJob"]["result"]["command"].lower()
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "check_access", "runInline": True, "allowNetwork": False}).encode("utf-8"),
+    )
+    blocked = decode(body)["setupJob"]
+
+    assert status == 200
+    assert blocked["status"] == "blocked"
+    assert blocked["result"]["networkAttempted"] is False
+    assert "network confirmation" in blocked["result"]["message"]
+
+
+def test_provider_setup_job_cancel_and_retry_are_public_and_terminal(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        first = create_provider_setup_job(conn, user_id=user["id"], provider_id="sam3-local", payload={"action": "diagnose"})
+        canceled = cancel_provider_setup_job(conn, user_id=user["id"], job_id=first["id"], reason="user_clicked_cancel")
+        retry = create_provider_setup_job(conn, user_id=user["id"], provider_id="sam3-local", payload={"action": "diagnose"})
+    finally:
+        conn.close()
+
+    assert canceled["status"] == "canceled"
+    assert canceled["terminal"] is True
+    assert retry["id"] != first["id"]
+    assert retry["status"] == "queued"
+
+
+def test_hosted_provider_setup_job_redacts_secrets(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    secret = "sk-hosted-sam3-redaction-secret-123456"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-hosted/setup/start",
+        body=json.dumps(
+            {
+                "action": "diagnose",
+                "runInline": True,
+                "settings": {
+                    "hostedProfileId": "custom-sam3-compatible",
+                    "endpoint": "https://provider.example.invalid/sam3",
+                    "apiKey": secret,
+                    "allowHosted": True,
+                },
+            }
+        ).encode("utf-8"),
+    )
+    payload_text = body.decode("utf-8")
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["setupJob"]["providerId"] == "sam3-hosted"
+    assert secret not in payload_text
+    assert "[REDACTED]" in payload_text
 
 
 def test_local_sam_smoke_requires_explicit_heavy_local_ack(tmp_path):

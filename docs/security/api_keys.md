@@ -125,6 +125,21 @@ or exported settings.
 verifies required fields and basic key shape, but it does not call OpenRouter
 or a hosted segmentation service.
 
+The main Local UI Model setup step uses whitelisted setup-job routes for
+install, access-check, diagnose, and smoke actions:
+
+```text
+POST /api/provider-settings/PROVIDER_ID/setup/start
+GET /api/provider-settings/setup-jobs/JOB_ID
+POST /api/provider-settings/setup-jobs/JOB_ID/cancel
+```
+
+The browser selects an action id such as `install`, `diagnose`, `check_access`,
+`test`, or `smoke`; it never sends arbitrary shell commands. SAM3 Scene Sweep
+install uses the independent `sam3-transformers` extra and does not require
+SAM2. Setup-job payloads, logs, results, and failures use the same secret
+redaction policy as provider settings.
+
 `POST /api/provider-settings/sam2-hosted/smoke-test` and
 `POST /api/provider-settings/sam3-hosted/smoke-test` are explicit hosted SAM
 smoke routes. They run only after the request acknowledgement. The

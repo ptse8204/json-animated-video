@@ -82,7 +82,7 @@ def test_provider_connect_sam2_checkpoint_download_is_opt_in_and_validated() -> 
     assert resolver_cell.index("elif RUN_DOWNLOAD_SAM2_CHECKPOINTS:") < resolver_cell.index("download_ckpts.sh")
     assert "set_and_validate_sam2_local_checkpoint(candidates[0])" in resolver_cell
     assert "set_and_validate_sam2_local_config(config_candidates[0])" in resolver_cell
-    assert "Copy these values into Model Connections -> SAM2 local" in _joined_source()
+    assert "Copy these values into Model setup -> SAM2 fallback" in _joined_source()
 
 
 def test_provider_connect_sam2_readiness_validates_paths_before_diagnostics() -> None:
@@ -131,7 +131,7 @@ def test_provider_connect_sam3_checkpoint_download_is_opt_in_and_validated() -> 
     assert "No Hugging Face token is needed for a manual local path" in resolver_cell
     assert "No Hugging Face token is required for this path" in resolver_cell
     assert "To avoid Hugging Face tokens, use MANUAL_SAM3_CHECKPOINT_PATH or RUN_USE_GOOGLE_DRIVE_SAM3_CHECKPOINT" in resolver_cell
-    assert "Or skip local SAM3 and use Roboflow SAM3 or Fal SAM3 image in Model Connections." in resolver_cell
+    assert "Or skip local SAM3 and use Roboflow SAM3 or Fal SAM3 image in Model setup." in resolver_cell
     assert "The Hugging Face token is passed directly and is not printed." in resolver_cell
     assert "Only continue if Meta has approved your access to facebook/sam3" in resolver_cell
     assert "print(token)" not in resolver_cell

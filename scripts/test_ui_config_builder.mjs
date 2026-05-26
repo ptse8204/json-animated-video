@@ -11,18 +11,23 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
+assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/setup/start"));
+assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}"));
+assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}/cancel"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
-assert.equal(ui.WORKFLOW_STEPS.length, 5);
+assert.equal(ui.WORKFLOW_STEPS.length, 6);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
   "source_video",
   "provider_settings",
   "prompt_preview",
+  "run_monitor",
   "review_export",
 ]);
 assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
 assert.equal(ui.workflowNextStepId("source_video", 1), "provider_settings");
 assert.equal(ui.workflowNextStepId("source_video", -1), "choose_goal");
+assert.equal(ui.workflowNextStepId("prompt_preview", 1), "run_monitor");
 assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "choose_goal");
 assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "choose_goal");
 assert.equal(
@@ -62,6 +67,7 @@ const readyWorkflow = ui.workflowReadinessFromSnapshot({
 });
 assert.equal(readyWorkflow.source_video.complete, true);
 assert.equal(readyWorkflow.prompt_preview.complete, true);
+assert.equal(readyWorkflow.run_monitor.status, "done");
 assert.equal(readyWorkflow.review_export.status, "done");
 const sam3SingleNeedsBox = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
@@ -110,8 +116,33 @@ const readyPrepareContract = ui.workflowStepContractFromSnapshot(
   },
   "prompt_preview",
 );
-assert.equal(readyPrepareContract.primaryLabel, "Run trace all");
+assert.equal(readyPrepareContract.primaryLabel, "Run scene sweep");
 assert.equal(readyPrepareContract.enabled, true);
+const failedRunContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_failed",
+    selectedJobStatus: "failed",
+    hasFailure: true,
+  },
+  "run_monitor",
+);
+assert.equal(failedRunContract.primaryLabel, "Change setup");
+assert.equal(failedRunContract.primaryAction, "prepare_new_run");
+assert.equal(failedRunContract.enabled, true);
+const completedRunContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_done",
+    selectedJobStatus: "succeeded",
+    candidateCount: 4,
+  },
+  "run_monitor",
+);
+assert.equal(completedRunContract.primaryLabel, "Continue to review");
+assert.equal(completedRunContract.primaryAction, "continue_to_review");
 const postRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "succeeded",
   hasSelectedJob: true,
@@ -337,7 +368,7 @@ const textPromptDefaultsToSam3 = ui.guidedEnginePlan({
   textDiscoveryProvider: "detector",
 });
 assert.equal(textPromptDefaultsToSam3.providerId, "sam3-local");
-assert.equal(textPromptDefaultsToSam3.displayLabel, "SAM3 local");
+assert.equal(textPromptDefaultsToSam3.displayLabel, "SAM3 Scene Sweep");
 assert.equal(textPromptDefaultsToSam3.discoveryMode, "sam3_concept");
 
 const advancedDetectorFallback = ui.guidedEnginePlan({
@@ -378,7 +409,7 @@ const PROVIDER_STATE_FIXTURES = [
       connectionId: "sam2-local",
       providerId: "sam2-local",
       profileId: "",
-      displayLabel: "SAM2 local",
+      displayLabel: "SAM2 fallback",
       engine: "sam2",
       locality: "local",
       hostedCallsAllowed: false,
@@ -406,7 +437,7 @@ const PROVIDER_STATE_FIXTURES = [
       connectionId: "sam3-local",
       providerId: "sam3-local",
       profileId: "",
-      displayLabel: "SAM3 local",
+      displayLabel: "SAM3 Scene Sweep",
       engine: "sam3",
       locality: "local",
       hostedCallsAllowed: false,
@@ -425,20 +456,6 @@ const PROVIDER_STATE_FIXTURES = [
       locality: "hosted",
       hostedCallsAllowed: false,
       discoveryMode: "sam3_concept",
-    },
-  },
-  {
-    name: "Fal SAM3 hosted exemplar tracking",
-    input: { preset: "trace_one_object", modelConnectionId: "sam3-hosted:fal-sam3-image", hostedSam3AllowHosted: true },
-    expected: {
-      connectionId: "sam3-hosted:fal-sam3-image",
-      providerId: "sam3-hosted",
-      profileId: "fal-sam3-image",
-      displayLabel: "Fal SAM3 image",
-      engine: "sam3",
-      locality: "hosted",
-      hostedCallsAllowed: true,
-      discoveryMode: "sam3_exemplar",
     },
   },
   {
@@ -490,9 +507,9 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 }
 
 const compatibleConnectionExpectations = {
-  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
-  text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:fal-sam3-image", "sam3-hosted:custom-sam3-compatible"],
-  trace_all_objects: ["sam3-local", "sam3-hosted:custom-sam3-compatible"],
+  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:custom-sam3-compatible"],
+  text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  trace_all_objects: ["sam3-local", "sam2-local", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
 };
@@ -703,7 +720,7 @@ assert.equal(traceAllConfig.discovery.config.qualityPreset, "balanced");
 assert.equal(traceAllConfig.discovery.config.trackSelectedOnly, true);
 assert.equal(traceAllConfig.discovery.config.requireReview, true);
 assert.equal(traceAllConfig.provider.name, "mock");
-assert.equal(ui.buildRunPlan(traceAllConfig, { preset: "trace_all_objects" }).title, "Trace all objects");
+assert.equal(ui.buildRunPlan(traceAllConfig, { preset: "trace_all_objects" }).title, "Find everything in scene");
 
 const maximumRecallConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",

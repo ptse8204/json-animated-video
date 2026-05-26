@@ -520,9 +520,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "prepare-sam3-single": "prompt_preview",
       "prepare-sam3-text": "prompt_preview",
       "prepare-sam3-trace-all": "prompt_preview",
-      "workflow-run": "prompt_preview",
+      "workflow-run": "run_monitor",
       "workflow-review": "review_export",
-      "workflow-review-failure": "review_export",
+      "workflow-review-failure": "run_monitor",
       "workflow-correct": "review_export",
       "workflow-export": "review_export",
     };
@@ -531,13 +531,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "source_video",
       "provider_settings",
       "prompt_preview",
+      "run_monitor",
       "review_export",
     ];
-    const workflowPanelAliases = {
+      const workflowPanelAliases = {
       choose_goal: ["choose_goal"],
       source_video: ["project_video", "source_video"],
       provider_settings: ["provider_settings"],
-      prompt_preview: ["prompt_preview"],
+      prompt_preview: ["prompt_preview", "validate_run"],
+      run_monitor: ["run_monitor"],
       review_export: ["review_candidates", "correct_tracks", "export"],
     };
     const workflowScreenAliases = {
@@ -545,6 +547,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       source_video: ["source_video"],
       provider_settings: ["provider_settings"],
       prompt_preview: ["prompt_preview"],
+      run_monitor: ["run_monitor"],
       review_export: ["review_export"],
     };
     if (workflowStates[state]) {
@@ -709,11 +712,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
       failures.push(`${viewport.name}/${state}: goal step should start with Continue to video, no back action, and preview not ready`);
     }
-    if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 5 || stateValue.advancedTaskPanelOpen)) {
-      failures.push(`${viewport.name}/${state}: first goal screen should show five primary goal cards and keep advanced tasks collapsed`);
+    if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 4 || stateValue.advancedTaskPanelOpen)) {
+      failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards and keep advanced tasks collapsed`);
     }
-    if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 local") {
-      failures.push(`${viewport.name}/${state}: SAM3 local should be the active guided model choice`);
+    if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {
+      failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be the active guided model choice`);
     }
     if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Roboflow SAM3") {
       failures.push(`${viewport.name}/${state}: Roboflow SAM3 should be the active guided model choice`);
@@ -721,8 +724,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom hosted SAM3") {
       failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
     }
-    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Add a video" || !stateValue.videoFormVisible)) {
-      failures.push(`${viewport.name}/${state}: setup video section should expose the local video path form`);
+    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Import video and project settings" || !stateValue.videoFormVisible)) {
+      failures.push(`${viewport.name}/${state}: video step should expose import and project settings with the local video path form`);
     }
     if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Add video") {
       failures.push(`${viewport.name}/${state}: setup screen should promote Add video as the primary CTA before preview is ready`);
@@ -730,8 +733,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
     }
-    if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Connect a compatible model") {
-      failures.push(`${viewport.name}/${state}: provider step title should focus on connecting one compatible model`);
+    if (state === "workflow-provider" && stateValue.wizardPanelTitle !== "Choose and install models") {
+      failures.push(`${viewport.name}/${state}: provider step title should focus on choosing and installing one compatible model`);
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
@@ -739,8 +742,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "prepare-sam3-text" && stateValue.workflowPrimaryLabel !== "Run search") {
       failures.push(`${viewport.name}/${state}: SAM3 text prepare should label the primary CTA as Run search`);
     }
-    if (state === "prepare-sam3-trace-all" && stateValue.workflowPrimaryLabel !== "Run trace all") {
-      failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should label the primary CTA as Run trace all`);
+    if (state === "prepare-sam3-trace-all" && stateValue.workflowPrimaryLabel !== "Run scene sweep") {
+      failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should label the primary CTA as Run scene sweep`);
     }
     if (state === "prepare-sam3-single" && (stateValue.pointToolVisible || !stateValue.boxToolVisible || !stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should show box-only prompting and hide mask-provider internals`);
@@ -752,7 +755,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should hide prompt tools and mask-provider internals`);
     }
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
-      failures.push(`${viewport.name}/${state}: prepare step should not show a blocked footer reason when the run CTA is available`);
+      failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {
@@ -762,13 +765,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         failures.push(`${viewport.name}/${state}: review flow should promote Export reviewed objects as the primary CTA`);
       }
     }
-    if (state === "workflow-review-failure" && (!stateValue.postRunGuideVisible || stateValue.postRunStageCount !== 5)) {
-      failures.push(`${viewport.name}/${state}: failed post-run guide should be visible with five guided stages`);
-    }
-    if (["workflow-review", "workflow-review-failure"].includes(state)) {
+    if (state === "workflow-review-failure") {
       const expectedJobId = `job_${state}_layout`;
       if (!stateValue.mainJobCenterVisible || !stateValue.mainSelectedJobFactsText.includes(expectedJobId) || !stateValue.mainJobListText.includes(expectedJobId)) {
-        failures.push(`${viewport.name}/${state}: review step should expose the selected current job in the main job center`);
+        failures.push(`${viewport.name}/${state}: failed run step should expose the selected current job in the main job center`);
       }
     }
     if (state === "workflow-review" && stateValue.mainRunStatusText !== "succeeded") {
@@ -776,15 +776,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (
       state === "workflow-review-failure" &&
-      (stateValue.mainRunStatusText !== "failed" || !/SAM2 model weights unavailable|vector tracks were not produced/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText}`))
+      (stateValue.mainRunStatusText !== "failed" || !/SAM3 Scene Sweep runtime unavailable|vector tracks were not produced/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText}`))
     ) {
       failures.push(`${viewport.name}/${state}: failed review job center should show failed status and provider failure messaging`);
     }
     if (state === "workflow-review" && stateValue.runLogsOpen) {
       failures.push(`${viewport.name}/${state}: review step should keep logs collapsed unless the run failed`);
     }
-    if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || stateValue.reviewStatusSummaryCount < 2 || !stateValue.runLogsOpen || !stateValue.fallbackDiagnosticsOpen || !stateValue.fallbackDiagnosticsVisible || stateValue.fallbackDiagnosticBadCount < 1)) {
-      failures.push(`${viewport.name}/${state}: failed review state should surface logs and fallback diagnostics without extra discovery`);
+    if (state === "workflow-review-failure" && (stateValue.runMonitorSummaryCount < 1 || !stateValue.runLogsOpen)) {
+      failures.push(`${viewport.name}/${state}: failed run state should surface run summary and logs without extra discovery`);
     }
     if (state === "workflow-correct" && (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1)) {
       failures.push(`${viewport.name}/${state}: correction step should keep reviewed objects visible`);

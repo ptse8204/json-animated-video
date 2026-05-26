@@ -1087,13 +1087,14 @@ def diagnose_provider_settings(
     commands: list[str] = []
     docs = definition.get("docs")
 
-    def item(id_: str, label: str, ok: bool, detail: str, action: str = "") -> None:
+    def item(id_: str, label: str, ok: bool, detail: str, action: str = "", *, required: bool = True) -> None:
         checklist.append(
             {
                 "id": id_,
                 "label": label,
                 "status": "ok" if ok else "missing",
                 "ok": ok,
+                "required": required,
                 "detail": redact_secret_text(detail),
                 "action": action,
             }
@@ -1113,17 +1114,24 @@ def diagnose_provider_settings(
         model_path_source = "environment" if environ.get("SAM3_LOCAL_MODEL") else "local_settings" if settings.get("sam3_model_path") else "unset"
         model_status = describe_sam3_model_path(model_path, source=model_path_source)
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
-        item("python", "Python >= 3.12", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for local SAM3.")
-        item("sam3_package", "SAM3 package", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3.")
-        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install CUDA-capable torch for local SAM3.")
+        transformers_ok = find_spec("transformers") is not None
+        tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
+        tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
+        item("transformers_package", "SAM3 Transformers package", transformers_ok, "Python can import transformers." if transformers_ok else "Python cannot import transformers.", "Install the independent sam3-transformers extra. SAM2 is not required.")
+        item("sam3_tracker_auto_masks", "SAM3 Tracker automatic masks", tracker_auto_masks_ok, "Transformers exposes SAM3 Tracker mask-generation classes." if tracker_auto_masks_ok else "Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
+        item("sam3_tracker_video", "SAM3 Tracker Video API", tracker_video_ok, "Transformers exposes SAM3 Tracker Video classes." if tracker_video_ok else "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
+        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
+        item("python", "Python >= 3.12 for concept/exemplar", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for official-package SAM3 concept/exemplar workflows.", required=False)
+        item("sam3_package", "Official SAM3 package for concept/exemplar", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3 for concept/exemplar workflows.", required=False)
         item(
             "model_path",
-            "SAM3 checkpoint file path",
+            "SAM3 checkpoint file path for concept/exemplar",
             bool(model_status["valid"]),
             str(model_status.get("resolvedPath") or model_status.get("reason") or "SAM3_LOCAL_MODEL is not configured."),
             str(model_status.get("action") or "Request Hugging Face access, authenticate, then save the local sam3.pt checkpoint path."),
+            required=False,
         )
-        item("hf_token", "Hugging Face auth", bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")), "HF_TOKEN/HUGGINGFACE_HUB_TOKEN configured." if environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") else "No Hugging Face token environment variable detected.", "Use hf auth login or set HF_TOKEN after access is granted.")
+        item("hf_token", "Hugging Face auth for gated downloads", bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")), "HF_TOKEN/HUGGINGFACE_HUB_TOKEN configured." if environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") else "No Hugging Face token environment variable detected.", "Use Check HF access when you want to verify facebook/sam3 access.", required=False)
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id in {"sam2-hosted", "sam3-hosted"}:
         profile = _profile_definition(definition, settings)
@@ -1141,11 +1149,12 @@ def diagnose_provider_settings(
     else:
         item("provider", "Provider registered", True, definition["name"], "No additional setup checklist is defined.")
 
-    ok = all(entry["ok"] for entry in checklist)
+    ok = all(entry["ok"] for entry in checklist if entry.get("required", True))
     return {
         "format": "motionjson.provider_settings_diagnose.v0.1",
         "providerId": provider_id,
         "status": "ready" if ok and readiness.get("configured") else "needs_setup",
+        "setupState": _setup_state_from_readiness(readiness),
         "ready": bool(ok and readiness.get("configured")),
         "networkAttempted": False,
         "heavyLocalAttempted": False,
@@ -1173,6 +1182,24 @@ def local_sam_smoke_test(
         raise ValueError("Local SAM smoke test requires allowHeavyLocal=true before importing heavy local model runtimes.")
     diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
     smoke: dict[str, Any] | None = None
+    if provider_id == "sam3-local" and _truthy(payload.get("sceneSweep", payload.get("scene_sweep"))):
+        smoke = {
+            "providerName": "sam3-local",
+            "sceneSweep": True,
+            "sam2Required": False,
+            "checks": ["transformers", "torch", "sam3_tracker_auto_masks", "sam3_tracker_video"],
+        } if diagnosis["ready"] else None
+        return {
+            "format": "motionjson.provider_local_sam_smoke_test.v0.1",
+            "providerId": provider_id,
+            "status": "ready" if diagnosis["ready"] else "blocked",
+            "ready": bool(diagnosis["ready"]),
+            "networkAttempted": False,
+            "heavyLocalAttempted": True,
+            "message": "SAM3 Scene Sweep bounded setup smoke completed." if diagnosis["ready"] else "SAM3 Scene Sweep setup is incomplete; no model run was attempted.",
+            "diagnosis": diagnosis,
+            "smokeTest": redact_secret_payload(smoke),
+        }
     if diagnosis["ready"]:
         from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
 
@@ -1344,6 +1371,7 @@ def _public_provider_state(
     }
     provider["credentials"] = _credential_states(definition, settings, secrets, environ)
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
+    provider["setupState"] = _setup_state_from_readiness(provider["readiness"])
     provider["effectiveModel"] = _runtime_effective_model(definition, settings, environ)
     provider["effectiveProfile"] = _public_profile(profile)
     return provider
@@ -1466,6 +1494,42 @@ def _readiness(
     secrets: Mapping[str, str],
     environ: Mapping[str, str],
 ) -> dict[str, Any]:
+    if definition.get("id") == "sam3-local":
+        transformers_ok = find_spec("transformers") is not None
+        torch_ok = find_spec("torch") is not None
+        tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
+        tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
+        missing = []
+        if not transformers_ok:
+            missing.append("sam3-transformers extra")
+        if not torch_ok:
+            missing.append("torch")
+        if not tracker_auto_masks_ok:
+            missing.append("SAM3 Tracker automatic-mask Transformers classes")
+        if not tracker_video_ok:
+            missing.append("SAM3 Tracker Video Transformers classes")
+        if missing:
+            return {
+                "status": "not_configured",
+                "configured": False,
+                "missing": missing,
+                "message": f"Needs SAM3 Scene Sweep setup: {', '.join(missing)}. SAM2 is not required.",
+            }
+        concept_ready = (
+            find_spec("sam3") is not None
+            and bool(describe_sam3_model_path(str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""), source="environment" if environ.get("SAM3_LOCAL_MODEL") else "local_settings").get("valid"))
+        )
+        return {
+            "status": "ready",
+            "configured": True,
+            "missing": [],
+            "message": (
+                "SAM3 Scene Sweep runtime is ready. Concept and exemplar workflows are also ready."
+                if concept_ready
+                else "SAM3 Scene Sweep runtime is ready. Concept and exemplar workflows still need the official SAM3 package and a local sam3.pt checkpoint."
+            ),
+        }
+
     profiled_definition = _profiled_definition(definition, settings)
     profile = _profile_definition(definition, settings)
     missing = []
@@ -1519,6 +1583,24 @@ def _readiness(
         status = "planned"
         message = "Provider surface is planned or scaffolded and remains capability-gated."
     return {"status": status, "configured": not missing, "missing": missing, "message": message}
+
+
+def _setup_state_from_readiness(readiness: Mapping[str, Any]) -> dict[str, Any]:
+    status = str(readiness.get("status") or "")
+    configured = bool(readiness.get("configured"))
+    if status in {"ready", "configured"} and configured:
+        return {"status": "ready", "label": "Ready", "message": readiness.get("message") or "Ready for setup-guided runs."}
+    if status in {"planned", "unsupported"}:
+        return {"status": "blocked", "label": "Blocked", "message": readiness.get("message") or "This provider is not runnable yet."}
+    return {"status": "needs_setup", "label": "Needs setup", "message": readiness.get("message") or "Complete setup before running."}
+
+
+def _sam3_tracker_auto_masks_importable() -> bool:
+    try:
+        from transformers import Sam3TrackerModel, Sam3TrackerProcessor, pipeline  # type: ignore
+    except Exception:
+        return False
+    return Sam3TrackerModel is not None and Sam3TrackerProcessor is not None and pipeline is not None
 
 
 def _model_status(definition: Mapping[str, Any], settings: Mapping[str, Any]) -> dict[str, Any]:
@@ -1579,6 +1661,14 @@ def _truthy(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _sam3_tracker_video_importable() -> bool:
+    try:
+        from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore
+    except Exception:
+        return False
+    return Sam3TrackerVideoModel is not None and Sam3TrackerVideoProcessor is not None
 
 
 def _float_payload(payload: Mapping[str, Any], key: str, default: float) -> float:

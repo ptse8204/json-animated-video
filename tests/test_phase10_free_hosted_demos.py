@@ -243,7 +243,7 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "find_sam2_checkpoint_candidates" in joined
     assert "set_and_validate_sam2_local_checkpoint" in joined
     assert "/content/sam2 is the official SAM2 source/package directory, not the checkpoint path" in joined
-    assert "Copy these values into Model Connections -> SAM2 local" in joined
+    assert "Copy these values into Model setup -> SAM2 fallback" in joined
     assert "RUN_DOWNLOAD_SAM3_CHECKPOINT = False" in joined
     assert "RUN_USE_GOOGLE_DRIVE_SAM3_CHECKPOINT = False" in joined
     assert "GOOGLE_DRIVE_SAM3_CHECKPOINT_PATH" in joined
@@ -261,7 +261,7 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "No Hugging Face token is required for this path" in joined
     assert "Only continue if Meta has approved your access to facebook/sam3" in joined
     assert "SAM3_LOCAL_MODEL must be a local checkpoint file path ending in sam3.pt" in joined
-    assert "Copy these values into Model Connections -> SAM3 local" in joined
+    assert "Copy these values into Model setup -> SAM3 Scene Sweep" in joined
     assert "model path:" in joined
     assert "device:" in joined
     assert "Path(model_path).exists()" not in joined
@@ -272,7 +272,7 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "Roboflow SAM3" in joined
     assert "Replicate SAM2 video" in joined
     assert "Fal SAM3 image" in joined
-    assert "paste temporary credentials into the UI Model Connections form" in joined
+    assert "paste temporary credentials into the UI Model setup cards" in joined
     assert "values hidden" in joined
     assert "print(os.environ[\"HF_TOKEN\"])" not in joined
     assert "print(token)" not in joined

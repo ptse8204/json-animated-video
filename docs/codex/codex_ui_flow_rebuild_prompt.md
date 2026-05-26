@@ -126,7 +126,24 @@ The master agent must synthesize scout feedback and make final decisions.
 
 # Target User Flow
 
-Implement the normal UI around this visible flow:
+Implement the normal UI around the six-panel storyboard reference saved for the
+current phase:
+
+```text
+Start: choose your goal
+-> Video: import & project settings
+-> Model setup: choose & install models
+-> Prepare & run: configure scene sweep or prompts
+-> Running / failed: recover from failure
+-> Review & export: inspect results
+```
+
+The storyboard's structure is the product target: left project rail, top
+stepper, main task area, contextual right-side panels, and a run monitor only
+where it helps. This flow is the main Local UI for all users, including Colab
+users; it is not a separate setup page or notebook helper.
+
+The older abstract flow remains useful as an implementation mnemonic:
 
 ```text
 Start
@@ -146,13 +163,13 @@ Show a compact task chooser with only these primary choices by default:
 
 - Cut out one object
 - Find by description
-- Find moving things
-- Import masks
+- Find everything in scene
 - Review previous result
 
 Move noisy/advanced variants behind an advanced disclosure:
 
-- Trace all objects
+- Find moving things
+- Import masks
 - Discover objects / automatic proposals
 - Propose all visible segments
 - Find known classes
@@ -170,7 +187,7 @@ Show source status as a simple checklist:
 
 The primary action is `Add video` or `Use demo video`. When a preview is preparing, show the current state and block forward movement with one reason.
 
-## Choose model
+## Model setup
 
 Only show this step if the selected workflow requires a model.
 
@@ -180,12 +197,21 @@ For each compatible connection show:
 - status: `Ready`, `Needs path`, `Needs key`, `Needs hosted confirmation`, `Installed but not runnable`, or `Unavailable`,
 - one next action.
 
+Model setup must support UI-driven setup jobs instead of relying on notebook
+instructions. The UI can request only server-owned whitelisted actions:
+install optional extras, verify imports, check model access, run smoke tests,
+persist resolved settings, stream logs, cancel, and retry. It must never submit
+arbitrary shell commands.
+
 Do not expose raw internal names as the main label. Keep provider ID and display label separate in code.
 
 Provider routing requirements:
 
 - Cut out one object: prefer SAM2 local/hosted; allow SAM3 exemplar/box-first when compatible.
 - Find by description: prefer SAM3 local/hosted concept workflow; keep detector fallback advanced.
+- Find everything in scene: recommend SAM3 Scene Sweep when ready; offer SAM2
+  HF/local automatic proposals as fallback; hosted SAM3 scene sweep is enabled
+  only when the hosted profile explicitly advertises automatic masks.
 - Find moving things: no model required; use motion foreground.
 - Import masks: no model required; use external masks.
 - Review previous result: no model required unless user chooses repair/rerun.
@@ -238,7 +264,10 @@ Failed jobs must show:
 
 - short failure headline,
 - likely cause from events/review/fallback diagnostics/provider readiness,
-- action to fix/retry,
+- `Open logs`,
+- `Change setup`,
+- `Run again`,
+- `Choose different model`,
 - collapsible logs.
 
 ## Review result
@@ -322,6 +351,9 @@ This may be returned from one or more endpoints, but the frontend selector shoul
 - `POST /api/jobs/{jobId}/cancel`
 - `POST /api/jobs/{jobId}/validate`
 - `POST /api/jobs/{jobId}/exports`
+- `POST /api/provider-settings/{providerId}/setup/start`
+- `GET /api/provider-settings/setup-jobs/{jobId}`
+- `POST /api/provider-settings/setup-jobs/{jobId}/cancel`
 
 The master agent should decide whether to extend an existing route or add a compact `jobCenter` block to `/api/workspace` and `/api/progress`. Avoid unnecessary new endpoints if existing endpoints can safely carry the normalized state.
 

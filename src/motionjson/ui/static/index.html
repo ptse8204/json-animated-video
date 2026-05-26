@@ -33,7 +33,7 @@
             <p class="section-kicker">Choose a goal</p>
             <nav class="goal-list" aria-label="Extraction wizard presets">
               <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
-              <button class="goal" type="button" data-preset="trace_all_objects" aria-pressed="false">Trace all objects</button>
+              <button class="goal" type="button" data-preset="trace_all_objects" aria-pressed="false">Find everything in scene</button>
               <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
               <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
               <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
@@ -53,7 +53,7 @@
                 <span>Default goal</span>
                 <select id="preferenceDefaultGoal">
                   <option value="trace_one_object">Cut out one object</option>
-                  <option value="trace_all_objects">Trace all objects</option>
+                  <option value="trace_all_objects">Find everything in scene</option>
                   <option value="auto_object_proposals">Discover objects</option>
                   <option value="text_detector">Find objects from text</option>
                   <option value="class_detector">Find known classes</option>
@@ -108,13 +108,16 @@
               <button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong></button>
             </li>
             <li class="is-pending" data-studio-step="provider_settings">
-              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong></button>
+              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model setup</strong></button>
             </li>
             <li class="is-pending" data-studio-step="prompt_preview">
               <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare &amp; run</strong></button>
             </li>
+            <li class="is-pending" data-studio-step="run_monitor">
+              <button type="button" data-workflow-step="run_monitor"><span>5</span><strong>Run</strong></button>
+            </li>
             <li class="is-pending" data-studio-step="review_export">
-              <button type="button" data-workflow-step="review_export"><span>5</span><strong>Review &amp; export</strong></button>
+              <button type="button" data-workflow-step="review_export"><span>6</span><strong>Review &amp; export</strong></button>
             </li>
           </ol>
           <div class="topbar-actions">
@@ -148,13 +151,9 @@
               <span class="goal-card-title">Find by description</span>
               <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
             </button>
-            <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
-              <span class="goal-card-title">Find moving things</span>
-              <span class="goal-card-copy">Use local motion cues without a model.</span>
-            </button>
-            <button class="goal-card" type="button" data-preset="external_masks" aria-pressed="false">
-              <span class="goal-card-title">Import masks</span>
-              <span class="goal-card-copy">Bring prepared masks into review.</span>
+            <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
+              <span class="goal-card-title">Find everything in scene</span>
+              <span class="goal-card-copy">Sweep for visible objects, review candidates, then track accepted objects.</span>
             </button>
             <button class="goal-card" type="button" data-preset="review_existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
@@ -164,9 +163,9 @@
           <details class="advanced-panel advanced-task-panel">
             <summary>Advanced tasks</summary>
             <div class="advanced-goal-list">
-              <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
-                <span class="goal-card-title">Trace all objects</span>
-                <span class="goal-card-copy">Find likely foreground objects for review.</span>
+              <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
+                <span class="goal-card-title">Find moving things</span>
+                <span class="goal-card-copy">Use local motion cues without a model.</span>
               </button>
               <button class="goal-card" type="button" data-preset="auto_object_proposals" aria-pressed="false">
                 <span class="goal-card-title">Discover objects</span>
@@ -175,6 +174,10 @@
               <button class="goal-card" type="button" data-preset="sam_auto_masks" aria-pressed="false">
                 <span class="goal-card-title">Propose all visible segments</span>
                 <span class="goal-card-copy">Use noisier segmentation for expert review.</span>
+              </button>
+              <button class="goal-card" type="button" data-preset="external_masks" aria-pressed="false">
+                <span class="goal-card-title">Import masks</span>
+                <span class="goal-card-copy">Bring prepared masks into review.</span>
               </button>
               <button class="goal-card" type="button" data-preset="class_detector" aria-pressed="false">
                 <span class="goal-card-title">Find known classes</span>
@@ -204,9 +207,10 @@
           >
             <li><button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong><small>Choose what to trace</small></button></li>
             <li><button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong><small>Add source</small></button></li>
-            <li><button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong><small>Connect SAM</small></button></li>
+            <li><button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model setup</strong><small>Install or connect SAM</small></button></li>
             <li><button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare</strong><small>Prompt and run</small></button></li>
-            <li><button type="button" data-workflow-step="review_export"><span>5</span><strong>Review</strong><small>Correct and export</small></button></li>
+            <li><button type="button" data-workflow-step="run_monitor"><span>5</span><strong>Run</strong><small>Progress and logs</small></button></li>
+            <li><button type="button" data-workflow-step="review_export"><span>6</span><strong>Review</strong><small>Correct and export</small></button></li>
           </ol>
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
           <div class="workflow-footer">
@@ -219,7 +223,7 @@
           </div>
         </section>
 
-        <section id="mainJobCenter" class="job-center-panel panel" data-workflow-panel="prompt_preview review_candidates correct_tracks export" aria-label="Job center">
+        <section id="mainJobCenter" class="job-center-panel panel" data-workflow-panel="run_monitor" aria-label="Job center">
           <div class="job-center-heading">
             <div>
               <p class="section-kicker">Job Center</p>
@@ -246,7 +250,7 @@
                 <button id="mainOpenLogsButton" type="button">Open logs</button>
                 <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
                 <button id="mainChangeSetupButton" type="button">Change setup</button>
-                <button id="mainChooseModelButton" type="button">Choose model</button>
+                <button id="mainChooseModelButton" type="button">Choose different model</button>
               </div>
             </section>
           </div>
@@ -270,8 +274,8 @@
           <div class="model-setup-heading">
             <div>
               <p class="section-kicker">Model connections</p>
-              <h2>Connect SAM for extraction</h2>
-              <p class="panel-note">Choose a local or hosted SAM provider for the selected workflow. Planning models are advanced-only; segmentation and discovery come from the providers below.</p>
+              <h2>Choose and install models</h2>
+              <p class="panel-note">Use the recommended local model first, install missing runtime pieces here, or choose a hosted provider after cost and privacy opt-in.</p>
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
@@ -476,8 +480,8 @@
                 <span>Object ID</span>
                 <input id="objectId" type="text" value="object_0" />
               </label>
-              <label id="qualityPresetField" data-workflow-fragment="provider_settings">
-                <span>Discovery quality</span>
+              <label id="qualityPresetField" data-workflow-fragment="provider_settings prompt_preview">
+                <span>Scene sweep quality</span>
                 <select id="discoveryQualityPreset">
                   <option value="clean">Clean</option>
                   <option value="balanced">Balanced</option>
@@ -519,7 +523,7 @@
                 <span>Mask provider</span>
                 <select id="maskProviderSelect"></select>
               </label>
-              <label id="deviceField" data-workflow-fragment="provider_settings">
+              <label id="deviceField" data-workflow-fragment="provider_settings prompt_preview">
                 <span>Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>
@@ -530,16 +534,16 @@
               </label>
             </div>
 
-            <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel" data-workflow-fragment="provider_settings">
-              <summary>Trace Everything</summary>
+            <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel" data-workflow-fragment="prompt_preview">
+              <summary>Scene sweep controls</summary>
               <div class="trace-everything-controls">
                 <label class="track-toggle">
                   <input id="traceEverythingMode" type="checkbox" />
-                  <span>Use expert noisy discovery</span>
+                  <span>Keep high-recall raw segments for review</span>
                 </label>
                 <label class="track-toggle">
                   <input id="traceEverythingAck" type="checkbox" />
-                  <span>I understand this can be slower, noisier, and blocked from export until reviewed</span>
+                  <span>I understand noisy segments stay blocked from export until reviewed</span>
                 </label>
               </div>
             </details>
@@ -753,7 +757,7 @@
               <button id="openLogsButton" type="button">Open logs</button>
               <button id="runAgainButton" class="primary-action" type="button">Run again</button>
               <button id="changeSetupButton" type="button">Change setup</button>
-              <button id="chooseModelButton" type="button">Choose model</button>
+              <button id="chooseModelButton" type="button">Choose different model</button>
             </div>
           </section>
           <details id="runLogsDisclosure" class="nested-rail-disclosure">
