@@ -279,6 +279,49 @@ def test_sam3_scene_sweep_setup_job_is_independent_from_sam2_and_has_actionable_
     assert "network confirmation" in blocked["result"]["message"]
 
 
+def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "cache_model", "runInline": True, "dryRun": True, "allowNetwork": False, "allowDisk": True}).encode("utf-8"),
+    )
+    blocked = decode(body)["setupJob"]
+
+    assert status == 200
+    assert blocked["status"] == "blocked"
+    assert blocked["setupState"]["status"] == "failed_recoverable"
+    assert blocked["result"]["networkAttempted"] is False
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps({"action": "cache_model", "runInline": True, "dryRun": True, "allowNetwork": True, "allowDisk": True}).encode("utf-8"),
+    )
+    cached = decode(body)["setupJob"]
+
+    assert status == 200
+    assert cached["status"] == "succeeded"
+    assert cached["setupState"]["status"] == "ready"
+    assert cached["result"]["model"] == "facebook/sam2.1-hiera-large"
+    assert "cache_model" in {action["id"] for action in provider_setup_actions("sam2-hf-auto-masks")}
+
+
+def test_sam2_hf_fallback_provider_is_distinct_from_official_sam2_setup(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    payload = decode(body)
+    provider = provider_by_id(payload, "sam2-hf-auto-masks")
+
+    assert status == 200
+    assert provider["name"] == "SAM2 HF automatic masks"
+    assert provider["supportsAutoMasks"] is True
+    assert provider["supportedGoals"] == ["trace_all_objects"]
+    assert "official SAM2 checkpoint/config" in provider["warning"]
+
+
 def test_provider_setup_job_cancel_and_retry_are_public_and_terminal(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     conn = app.connection()

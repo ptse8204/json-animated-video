@@ -18,6 +18,7 @@ classifiers = [
 [project.optional-dependencies]
 ui = []
 sam2 = ["torch>=2.1", "sam2"]
+sam2-transformers = ["torch>=2.7", "transformers>=5.0", "accelerate>=1.0"]
 sam3 = ["torch>=2.7"]
 sam3-transformers = ["torch>=2.7", "transformers>=5.0", "accelerate>=1.0"]
 detectors = ["groundingdino-py>=0.4"]

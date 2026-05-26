@@ -28,6 +28,7 @@ from .providers.discovery import (
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
+    SAM2HFAutomaticMasksDiscoveryProvider,
     SAM3AutoMasksDiscoveryProvider,
     SAM3ConceptDiscoveryProvider,
     SAM3ExemplarDiscoveryProvider,
@@ -112,7 +113,7 @@ def add_extract_args(p: argparse.ArgumentParser) -> None:
         "--mask-provider",
         "--mode",
         dest="mask_provider",
-        choices=["external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted"],
+        choices=["external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted"],
         default="threshold",
     )
     p.add_argument("--mask-dir", type=str, help="Mask directory for --mask-provider external")
@@ -413,6 +414,8 @@ def build_discovery_provider(args: argparse.Namespace):
         return MotionForegroundDiscoveryProvider(), config
     if mode == "sam_auto_masks":
         return SamAutoMasksDiscoveryProvider(), config
+    if mode == "sam2_hf_auto_masks":
+        return SAM2HFAutomaticMasksDiscoveryProvider(), config
     if mode == "sam3_concept":
         return SAM3ConceptDiscoveryProvider(), config
     if mode == "sam3_exemplar":

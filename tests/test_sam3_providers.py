@@ -3,6 +3,8 @@ from __future__ import annotations
 import builtins
 import io
 import os
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +23,7 @@ from motionjson.providers.sam3 import (
     HostedSAM3DiscoveryBackend,
     LocalSAM3DiscoveryBackend,
     describe_sam3_model_path,
+    describe_sam3_tracker_model,
     find_sam3_checkpoint_candidates,
     normalize_sam3_output,
 )
@@ -514,6 +517,78 @@ def test_sam3_scene_sweep_does_not_import_sam2(monkeypatch):
     records = backend.discover_auto_masks(video_source(), {"keyframes": [0]}, RunContext())
 
     assert len(records) == 1
+
+
+def test_sam3_scene_sweep_defaults_to_facebook_sam3_transformers_model(monkeypatch):
+    captured = {}
+
+    def fake_pipeline(task, *, model, device):
+        captured["task"] = task
+        captured["model"] = model
+        captured["device"] = device
+        return FakeSceneMaskGenerator()
+
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(pipeline=fake_pipeline))
+
+    records = LocalSAM3DiscoveryBackend().discover_auto_masks(video_source(), {"keyframes": [0]}, RunContext())
+
+    assert captured["task"] == "mask-generation"
+    assert captured["model"] == "facebook/sam3"
+    assert records[0]["object_id"] == "sam3_scene_0000_001"
+
+
+def test_sam3_scene_sweep_rejects_checkpoint_path_before_transformers_pipeline(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam3.pt"
+    checkpoint.write_bytes(b"placeholder")
+
+    def fail_pipeline(*args, **kwargs):
+        raise AssertionError("pipeline should not be called for a .pt scene-sweep model")
+
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(pipeline=fail_pipeline))
+
+    with pytest.raises(ProviderConfigError, match="sam3TrackerModel=facebook/sam3"):
+        LocalSAM3DiscoveryBackend().discover_auto_masks(
+            video_source(),
+            {"sam3TrackerModel": str(checkpoint), "keyframes": [0]},
+            RunContext(),
+        )
+
+
+def test_sam3_scene_sweep_rejects_checkpoint_path_before_transformers_import(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam3.pt"
+    checkpoint.write_bytes(b"placeholder")
+    real_import = builtins.__import__
+
+    def fail_transformers_import(name, *args, **kwargs):
+        if name == "transformers" or name.startswith("transformers."):
+            raise AssertionError("transformers should not be imported for invalid scene-sweep model input")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_transformers_import)
+
+    with pytest.raises(ProviderConfigError, match="sam3TrackerModel=facebook/sam3"):
+        LocalSAM3DiscoveryBackend().discover_auto_masks(
+            video_source(),
+            {"sam3TrackerModel": str(checkpoint), "keyframes": [0]},
+            RunContext(),
+        )
+
+
+def test_sam3_scene_sweep_accepts_local_hf_model_directory(tmp_path, monkeypatch):
+    model_dir = tmp_path / "sam3-hf"
+    model_dir.mkdir()
+    captured = {}
+
+    def fake_pipeline(task, *, model, device):
+        captured["model"] = model
+        return FakeSceneMaskGenerator()
+
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(pipeline=fake_pipeline))
+
+    LocalSAM3DiscoveryBackend().discover_auto_masks(video_source(), {"sam3TrackerModel": str(model_dir), "keyframes": [0]}, RunContext())
+
+    assert captured["model"] == str(model_dir)
+    assert describe_sam3_tracker_model(model_dir)["valueKind"] == "hf_model_directory"
 
 
 def test_local_sam3_backend_validates_missing_model_path():

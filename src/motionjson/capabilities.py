@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
-from motionjson.providers.sam3 import describe_sam3_model_path
+from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+from motionjson.providers.sam3 import describe_sam3_model_path, describe_sam3_tracker_model
 
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
@@ -410,6 +411,7 @@ def provider_capabilities(
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
     sam3_model = _sam3_model_path_status(sam3_model_path)
+    sam3_tracker_model = describe_sam3_tracker_model(os.environ.get("SAM3_TRACKER_MODEL"), source="environment" if os.environ.get("SAM3_TRACKER_MODEL") else "default")
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -439,6 +441,16 @@ def provider_capabilities(
         if reason
     ]
     sam2_auto_ready = bool(sam2_auto_installed and checkpoint["exists"] and model_config["exists"] and torch_info["torchInstalled"])
+    sam2_hf_reasons = [
+        reason
+        for reason in (
+            None if transformers_installed else "Python module 'transformers' is not importable.",
+            None if torch_info["torchInstalled"] else "torch is not installed.",
+        )
+        if reason
+    ]
+    sam2_hf_ready = bool(transformers_installed and torch_info["torchInstalled"])
+    sam2_hf_status = "ready" if sam2_hf_ready else "missing_dependency"
     if not sam2_installed or not torch_info["torchInstalled"]:
         sam2_local_status = "missing_dependency"
     elif (checkpoint["configured"] and not checkpoint["exists"]) or (model_config["configured"] and not model_config["exists"]):
@@ -706,6 +718,37 @@ def provider_capabilities(
             metadata={"checkpoint": checkpoint, "modelConfig": model_config, "cuda": torch_info},
         ),
         ProviderCapability(
+            name="sam2-hf-auto-masks",
+            kind="discovery_provider",
+            available=sam2_hf_ready,
+            configured=True,
+            installed=bool(transformers_installed and torch_info["torchInstalled"]),
+            runnable=sam2_hf_ready,
+            status=sam2_hf_status,
+            supports=["automatic_keyframe_masks", "huggingface_transformers", "candidate_review", "sam2_hf_auto_masks"],
+            reasons=sam2_hf_reasons,
+            install_hint="Install .[sam2-transformers] and cache facebook/sam2.1-hiera-large from Model setup. Official SAM2 checkpoint/config is not required.",
+            device=torch_info.get("device"),
+            no_model_safe=False,
+            network_required=False,
+            needs_model_path=False,
+            mock_available=True,
+            optional_extra="sam2-transformers",
+            checks=[
+                _check("transformers_import", "ok" if transformers_installed else "missing", None if transformers_installed else "transformers package is not importable"),
+                _check("torch_import", "ok" if torch_info["torchInstalled"] else "missing", None if torch_info["torchInstalled"] else "torch package is not importable"),
+                _check("default_model", "ready", "Default Hugging Face model id.", SAM2_HF_AUTO_MASKS_DEFAULT_MODEL),
+            ],
+            metadata={
+                "uiDescription": "SAM2 HF automatic masks for scene-sweep fallback, separate from official SAM2 prompt tracking.",
+                "whenToUse": "Use as fallback for finding everything when SAM3 Scene Sweep is blocked.",
+                "discoveryMode": "sam2_hf_auto_masks",
+                "defaultModel": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+                "officialSam2Required": False,
+                "mockRunnable": cv_ready and pil_ready,
+            },
+        ),
+        ProviderCapability(
             name="sam2-hosted",
             kind="mask_provider",
             available=hosted_configured and hosted_endpoint_valid and not hosted_settings_only and hosted_profile_dependency_ready,
@@ -799,6 +842,7 @@ def provider_capabilities(
                     "reasons": sam3_scene_sweep_reasons,
                     "optionalExtra": "sam3-transformers",
                     "requiresSam2": False,
+                    "trackerModel": sam3_tracker_model,
                 },
                 "mockRunnable": cv_ready and pil_ready,
             },
@@ -921,8 +965,8 @@ def provider_capabilities(
             no_model_safe=False,
             network_required=False,
             needs_gpu=True,
-            needs_model_path=True,
-            model_paths=[sam3_model],
+            needs_model_path=False,
+            model_paths=[],
             mock_available=True,
             optional_extra="sam3-transformers",
             metadata={
@@ -930,6 +974,7 @@ def provider_capabilities(
                 "whenToUse": "Use to find everything visible in the scene with SAM3-only dependencies.",
                 "discoveryMode": "sam3_auto_masks",
                 "requiresSam2": False,
+                "trackerModel": sam3_tracker_model,
                 "mockRunnable": cv_ready and pil_ready,
             },
         ),

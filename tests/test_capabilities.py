@@ -355,10 +355,11 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
         assert provider["available"] is True
         assert provider["runnable"] is True
         assert provider["status"] == "ready"
-        assert provider["needsModelPath"] is True
+        assert provider["needsModelPath"] is (name != "sam3-auto-masks")
         assert provider["needsGpu"] is True
         assert provider["mockAvailable"] is True
     assert _provider(report, "sam3-local")["metadata"]["runtime"]["pythonSupported"] is True
+    assert _provider(report, "sam3-auto-masks")["metadata"]["trackerModel"]["resolvedModel"] == "facebook/sam3"
 
 
 def test_sam3_local_requires_cuda_for_real_execution(tmp_path, monkeypatch) -> None:

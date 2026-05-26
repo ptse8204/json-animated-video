@@ -13,12 +13,13 @@ PROJECT_CONFIG_SCHEMA = "motionjson.project_config.v0.1"
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
-MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted"}
+MASK_PROVIDERS = {"external", "threshold", "motion", "mock", "sam2", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-local", "sam3-hosted"}
 FALLBACK_MASK_PROVIDERS = {"threshold", "motion"}
 PROMPT_KINDS = {"point", "positive_point", "negative_point", "box", "mask"}
 DISCOVERY_MODES = {
     "manual_prompt",
     "auto_object_proposals",
+    "sam2_hf_auto_masks",
     "sam_auto_masks",
     "sam3_concept",
     "sam3_exemplar",
@@ -34,6 +35,7 @@ DISCOVERY_PROVIDER_PREFERENCES = {
     "auto",
     "mock",
     "sam2-local",
+    "sam2-hf-auto-masks",
     "sam2-hosted",
     "sam3-local",
     "sam3-hosted",

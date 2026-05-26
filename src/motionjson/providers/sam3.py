@@ -140,6 +140,63 @@ def describe_sam3_model_path(
     return status
 
 
+def describe_sam3_tracker_model(
+    value: str | Path | None,
+    *,
+    env: str = "SAM3_TRACKER_MODEL",
+    source: str = "unset",
+) -> dict[str, Any]:
+    """Describe a Transformers SAM3 Tracker model id or local model directory.
+
+    SAM3 scene sweep uses Hugging Face Transformers `from_pretrained` inputs:
+    a repo id such as `facebook/sam3` or a local snapshot/model directory. It
+    must not use the single official-package `sam3.pt` checkpoint file.
+    """
+
+    raw = str(value or "").strip()
+    if not raw:
+        raw = SAM3_HF_REPO_ID
+        source = "default"
+    status: dict[str, Any] = {
+        "env": env,
+        "configured": bool(raw),
+        "exists": False,
+        "valid": False,
+        "source": source,
+        "model": raw,
+        "resolvedModel": None,
+        "valueKind": "unset",
+        "reason": None,
+        "action": "Use the UI Model setup step to cache facebook/sam3 for scene sweep, or choose a local Hugging Face model directory.",
+    }
+    if is_probably_hf_repo_id(raw):
+        status.update({"valid": True, "valueKind": "huggingface_repo_id", "resolvedModel": raw})
+        return status
+
+    model_path = Path(raw).expanduser()
+    status["model"] = str(model_path)
+    if model_path.is_file() or raw.endswith(".pt"):
+        status["exists"] = model_path.exists()
+        status["valueKind"] = "checkpoint_file" if model_path.name == SAM3_CHECKPOINT_FILENAME or raw.endswith(".pt") else "file"
+        status["reason"] = (
+            "SAM3 Scene Sweep uses Hugging Face Transformers and needs `sam3TrackerModel=facebook/sam3` "
+            "or a local Hugging Face model directory. A single .pt checkpoint is only for the advanced "
+            "official SAM3 package concept/exemplar path (`sam3ModelPath`), not scene sweep."
+        )
+        status["action"] = "In Model setup, cache the SAM3 Scene Sweep model or set sam3TrackerModel to facebook/sam3."
+        return status
+    if model_path.exists() and model_path.is_dir():
+        status.update({"exists": True, "valid": True, "valueKind": "hf_model_directory", "resolvedModel": str(model_path)})
+        return status
+    status["valueKind"] = "missing_path"
+    status["reason"] = (
+        f"Configured SAM3 Tracker model is neither a Hugging Face repo id nor an existing local model directory: {model_path}. "
+        "Use facebook/sam3 or cache/select a local Hugging Face model directory."
+    )
+    status["action"] = "Use Model setup -> Cache model, or paste a local Hugging Face model directory in Advanced."
+    return status
+
+
 def _to_numpy(value: Any) -> Any:
     if hasattr(value, "detach"):
         value = value.detach()
@@ -514,6 +571,7 @@ class LocalSAM3DiscoveryBackend:
             self._tracker_mask_generator = self.tracker_mask_generator_factory()
             self._prefer_tracker_video = True
             return self._tracker_mask_generator
+        model_id = _tracker_model_id(config, fallback=self.model_path)
         try:
             from transformers import pipeline  # type: ignore
         except ImportError as exc:
@@ -521,7 +579,6 @@ class LocalSAM3DiscoveryBackend:
                 "sam3_auto_masks scene sweep requires Hugging Face Transformers SAM3 Tracker mask-generation support. "
                 "Install the independent sam3-transformers extra or use discovery.config.mock=true; SAM2 is not required."
             ) from exc
-        model_id = _tracker_model_id(config, fallback=self.model_path)
         device = _transformers_device(self.device)
         try:
             self._tracker_mask_generator = pipeline("mask-generation", model=model_id, device=device)
@@ -539,6 +596,7 @@ class LocalSAM3DiscoveryBackend:
             self._tracker_video_model = self.tracker_video_model_factory()
             self._tracker_video_processor = self.tracker_video_processor_factory()
             return self._tracker_video_model, self._tracker_video_processor
+        model_id = _tracker_model_id(config, fallback=self.model_path)
         try:
             from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore
         except ImportError as exc:
@@ -546,7 +604,6 @@ class LocalSAM3DiscoveryBackend:
                 "SAM3 scene sweep found masks, but SAM3 Tracker Video is not importable for propagation. "
                 "Install the independent sam3-transformers extra; SAM2 is not required."
             ) from exc
-        model_id = _tracker_model_id(config, fallback=self.model_path)
         try:
             self._tracker_video_model = Sam3TrackerVideoModel.from_pretrained(model_id, device_map="auto")
             self._tracker_video_processor = Sam3TrackerVideoProcessor.from_pretrained(model_id)
@@ -1090,18 +1147,46 @@ def _records_include_video_sequence(records: Sequence[Mapping[str, Any]], frame_
 
 
 def _tracker_model_id(config: Mapping[str, Any], *, fallback: str | Path | None) -> str:
-    value = (
+    explicit_tracker = (
         config.get("sam3TrackerModel")
         or config.get("sam3_tracker_model")
         or config.get("sam3HfModel")
         or config.get("sam3_hf_model")
-        or config.get("model")
         or os.environ.get("SAM3_TRACKER_MODEL")
         or os.environ.get("SAM3_HF_MODEL")
-        or fallback
+    )
+    if explicit_tracker:
+        status = describe_sam3_tracker_model(str(explicit_tracker), source="configuration")
+        if not status["valid"]:
+            raise ProviderConfigError(str(status["reason"]))
+        return str(status["resolvedModel"])
+
+    legacy_scene_model = config.get("model")
+    if legacy_scene_model:
+        status = describe_sam3_tracker_model(str(legacy_scene_model), source="configuration")
+        if not status["valid"]:
+            raise ProviderConfigError(str(status["reason"]))
+        return str(status["resolvedModel"])
+
+    if config.get("sam3ModelPath") or config.get("sam3_model_path"):
+        status = describe_sam3_tracker_model(str(config.get("sam3ModelPath") or config.get("sam3_model_path")), source="configuration")
+        if not status["valid"]:
+            raise ProviderConfigError(str(status["reason"]))
+
+    if fallback:
+        status = describe_sam3_tracker_model(str(fallback), source="configuration")
+        if status["valid"]:
+            return str(status["resolvedModel"])
+
+    value = (
+        explicit_tracker
+        or legacy_scene_model
         or SAM3_HF_REPO_ID
     )
-    return str(value).strip() or SAM3_HF_REPO_ID
+    status = describe_sam3_tracker_model(str(value).strip() or SAM3_HF_REPO_ID, source="default")
+    if not status["valid"]:
+        raise ProviderConfigError(str(status["reason"]))
+    return str(status["resolvedModel"])
 
 
 def _transformers_device(device: str) -> int | str:

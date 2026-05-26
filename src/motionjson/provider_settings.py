@@ -13,7 +13,8 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from motionjson.backend.usage import utc_now
-from motionjson.providers.sam3 import describe_sam3_model_path
+from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+from motionjson.providers.sam3 import SAM3_HF_REPO_ID, describe_sam3_model_path, describe_sam3_tracker_model
 
 
 PROVIDER_SETTINGS_FORMAT = "motionjson.local_provider_settings.v0.1"
@@ -311,6 +312,46 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "privacy": "Frames or frame-derived data may leave this machine when hosted calls are enabled.",
         "warning": "Hosted segmentation is opt-in. Confirm cost and privacy before sending frames off-device.",
         "docs": "docs/security/api_keys.md",
+    },
+    {
+        "id": "sam2-hf-auto-masks",
+        "name": "SAM2 HF automatic masks",
+        "capabilityName": "sam2-hf-auto-masks",
+        "kind": "discovery_provider",
+        "locality": "local",
+        "implemented": True,
+        "runsInLocalWorker": True,
+        "credentialRequired": False,
+        "credentialFields": [],
+        "localConfigFields": [
+            {"name": "sam2_hf_device", "label": "Device", "env": "SAM2_HF_DEVICE", "required": False},
+        ],
+        "modelOptions": [
+            {"id": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL, "label": "facebook/sam2.1-hiera-large"},
+            { "id": CUSTOM_MODEL_ID, "label": "Custom HF SAM2 model directory or repo id" },
+        ],
+        "defaultModel": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+        "customModelAllowed": True,
+        "capabilities": ["automatic masks", "Hugging Face Transformers", "scene-sweep fallback"],
+        "supportedGoals": ["trace_all_objects"],
+        "supportedPromptTypes": [],
+        "supportsConcept": False,
+        "supportsExemplar": False,
+        "supportsAutoMasks": True,
+        "supportsTracking": False,
+        "hardware": "CPU, MPS, or CUDA depending on torch/Transformers setup",
+        "cost": {"status": "zero_local", "label": "Free local runtime"},
+        "privacy": "Frames stay on this machine. Model caching may download weights after confirmation.",
+        "warning": "This is the HF automatic-mask fallback for scene sweep. It is separate from official SAM2 prompt tracking and does not use official SAM2 checkpoint/config paths.",
+        "setupGuide": {
+            "recommendedFor": "Fallback for finding everything in scene when SAM3 Scene Sweep is blocked.",
+            "setupSummary": "Install the SAM2 Transformers extra, cache facebook/sam2.1-hiera-large, then run a smoke test.",
+            "commands": [
+                "pip install 'motionjson[sam2-transformers]'",
+                "python -c \"from transformers import pipeline; pipeline('mask-generation', model='facebook/sam2.1-hiera-large')\"",
+            ],
+        },
+        "docs": "docs/sam2_segmentation.md",
     },
     {
         "id": "sam3-local",
@@ -771,6 +812,7 @@ def provider_runtime_settings(
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
         "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
         "sam2_device": str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or ""),
+        "sam2_hf_device": str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or ""),
         "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
         "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
         "configured": readiness["configured"],
@@ -810,6 +852,8 @@ def _apply_settings_payload(
         settings["sam2_model_config_path"] = _optional_text(payload.get("sam2ModelConfigPath", payload.get("sam2_model_config_path")))
     if "sam2Device" in payload or "sam2_device" in payload:
         settings["sam2_device"] = _optional_text(payload.get("sam2Device", payload.get("sam2_device")))
+    if "sam2HfDevice" in payload or "sam2_hf_device" in payload:
+        settings["sam2_hf_device"] = _optional_text(payload.get("sam2HfDevice", payload.get("sam2_hf_device")))
     if "sam3ModelPath" in payload or "sam3_model_path" in payload:
         settings["sam3_model_path"] = _optional_text(payload.get("sam3ModelPath", payload.get("sam3_model_path")))
     if "sam3Device" in payload or "sam3_device" in payload:
@@ -1109,10 +1153,18 @@ def diagnose_provider_settings(
         item("model_config", "Model config path", bool(model_config and Path(model_config).exists()), model_config or "SAM2_LOCAL_CONFIG is not configured.", "Use the matching SAM2 config YAML.")
         item("device", "Device", True, str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or "auto/cpu"), "Choose cpu, mps, cuda, or cuda:0.")
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
+    elif provider_id == "sam2-hf-auto-masks":
+        model = _runtime_effective_model(definition, settings, environ) or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+        item("transformers_package", "SAM2 Transformers package", find_spec("transformers") is not None, "Python can import transformers." if find_spec("transformers") is not None else "Python cannot import transformers.", "Install the independent sam2-transformers extra. Official SAM2 is not required.")
+        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
+        item("model_id", "HF model id or directory", True, f"Selected model: {model}", "Use Cache model if the model is not already available locally.")
+        item("official_sam2", "Official SAM2 checkpoint/config", True, "Not required for SAM2 HF automatic masks.", "", required=False)
+        commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id == "sam3-local":
         model_path = str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or "")
         model_path_source = "environment" if environ.get("SAM3_LOCAL_MODEL") else "local_settings" if settings.get("sam3_model_path") else "unset"
         model_status = describe_sam3_model_path(model_path, source=model_path_source)
+        tracker_model_status = describe_sam3_tracker_model(environ.get("SAM3_TRACKER_MODEL") or settings.get("selected_model") or SAM3_HF_REPO_ID, source="environment" if environ.get("SAM3_TRACKER_MODEL") else "local_settings" if settings.get("selected_model") else "default")
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         transformers_ok = find_spec("transformers") is not None
         tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
@@ -1120,6 +1172,7 @@ def diagnose_provider_settings(
         item("transformers_package", "SAM3 Transformers package", transformers_ok, "Python can import transformers." if transformers_ok else "Python cannot import transformers.", "Install the independent sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_auto_masks", "SAM3 Tracker automatic masks", tracker_auto_masks_ok, "Transformers exposes SAM3 Tracker mask-generation classes." if tracker_auto_masks_ok else "Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_video", "SAM3 Tracker Video API", tracker_video_ok, "Transformers exposes SAM3 Tracker Video classes." if tracker_video_ok else "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
+        item("sam3_tracker_model", "SAM3 Tracker model id or directory", bool(tracker_model_status["valid"]), str(tracker_model_status.get("resolvedModel") or tracker_model_status.get("reason") or "facebook/sam3"), str(tracker_model_status.get("action") or "Use Cache model for facebook/sam3."), required=True)
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
         item("python", "Python >= 3.12 for concept/exemplar", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for official-package SAM3 concept/exemplar workflows.", required=False)
         item("sam3_package", "Official SAM3 package for concept/exemplar", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3 for concept/exemplar workflows.", required=False)
@@ -1176,8 +1229,8 @@ def local_sam_smoke_test(
 ) -> dict[str, Any]:
     """Run a bounded local SAM setup smoke check without network access."""
 
-    if provider_id not in {"sam2-local", "sam3-local"}:
-        raise ValueError("Local SAM smoke tests are only available for sam2-local or sam3-local.")
+    if provider_id not in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
+        raise ValueError("Local SAM smoke tests are only available for sam2-local, sam2-hf-auto-masks, or sam3-local.")
     if not _truthy(payload.get("allowHeavyLocal", payload.get("allow_heavy_local"))):
         raise ValueError("Local SAM smoke test requires allowHeavyLocal=true before importing heavy local model runtimes.")
     diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
@@ -1219,6 +1272,19 @@ def local_sam_smoke_test(
                 )
                 records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={"max_candidates": 1})
                 smoke = {"providerName": "sam2-local", "recordCount": len(list(records)), "frameShape": [8, 8, 3]}
+            elif provider_id == "sam2-hf-auto-masks":
+                import numpy as np
+
+                from motionjson.providers.sam2 import LocalSAM2HFAutomaticMaskProposalBackend
+
+                backend = LocalSAM2HFAutomaticMaskProposalBackend.from_config(
+                    {
+                        "sam2HfModel": runtime.get("selected_model") or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+                        "sam2HfDevice": runtime.get("sam2_hf_device") or "cpu",
+                    }
+                )
+                records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={"max_candidates": 1})
+                smoke = {"providerName": "sam2-hf-auto-masks", "recordCount": len(list(records)), "frameShape": [8, 8, 3], "officialSam2Required": False}
             else:
                 from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 
@@ -1364,6 +1430,7 @@ def _public_provider_state(
         "sam2CheckpointPath": settings.get("sam2_checkpoint_path") or "",
         "sam2ModelConfigPath": settings.get("sam2_model_config_path") or "",
         "sam2Device": settings.get("sam2_device") or "",
+        "sam2HfDevice": settings.get("sam2_hf_device") or "",
         "sam3ModelPath": settings.get("sam3_model_path") or "",
         "sam3Device": settings.get("sam3_device") or "",
         "updatedAt": row["updated_at"] if row is not None else None,
@@ -1432,6 +1499,7 @@ def _capability_override(
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
         "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
         "sam2_device": str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or ""),
+        "sam2_hf_device": str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or ""),
         "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
         "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
         "hf_token_configured": bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN")),
@@ -1529,6 +1597,27 @@ def _readiness(
                 else "SAM3 Scene Sweep runtime is ready. Concept and exemplar workflows still need the official SAM3 package and a local sam3.pt checkpoint."
             ),
         }
+    if definition.get("id") == "sam2-hf-auto-masks":
+        transformers_ok = find_spec("transformers") is not None
+        torch_ok = find_spec("torch") is not None
+        missing = []
+        if not transformers_ok:
+            missing.append("sam2-transformers extra")
+        if not torch_ok:
+            missing.append("torch")
+        if missing:
+            return {
+                "status": "not_configured",
+                "configured": False,
+                "missing": missing,
+                "message": f"Needs SAM2 HF fallback setup: {', '.join(missing)}. Official SAM2 checkpoint/config is not required.",
+            }
+        return {
+            "status": "ready",
+            "configured": True,
+            "missing": [],
+            "message": "SAM2 HF automatic-mask fallback is ready. It uses Hugging Face Transformers, not official SAM2 checkpoint/config paths.",
+        }
 
     profiled_definition = _profiled_definition(definition, settings)
     profile = _profile_definition(definition, settings)
@@ -1590,9 +1679,16 @@ def _setup_state_from_readiness(readiness: Mapping[str, Any]) -> dict[str, Any]:
     configured = bool(readiness.get("configured"))
     if status in {"ready", "configured"} and configured:
         return {"status": "ready", "label": "Ready", "message": readiness.get("message") or "Ready for setup-guided runs."}
+    missing = " ".join(str(item) for item in readiness.get("missing") or [])
+    message = str(readiness.get("message") or "")
+    lower = f"{missing} {message}".lower()
+    if "token" in lower or "access" in lower or "hf_" in lower or "hugging face" in lower:
+        return {"status": "needs_access", "label": "Needs access", "message": readiness.get("message") or "Sign in or confirm model access before caching."}
+    if "download" in lower or "cache" in lower or "model" in lower:
+        return {"status": "needs_download_confirmation", "label": "Needs download confirmation", "message": readiness.get("message") or "Confirm model caching before downloading weights."}
     if status in {"planned", "unsupported"}:
         return {"status": "blocked", "label": "Blocked", "message": readiness.get("message") or "This provider is not runnable yet."}
-    return {"status": "needs_setup", "label": "Needs setup", "message": readiness.get("message") or "Complete setup before running."}
+    return {"status": "not_configured", "label": "Not configured", "message": readiness.get("message") or "Complete setup before running."}
 
 
 def _sam3_tracker_auto_masks_importable() -> bool:
@@ -1629,6 +1725,8 @@ def _runtime_effective_model(
         "openai": "OPENAI_DEFAULT_MODEL",
         "sam3-hosted": "SAM3_HOSTED_MODEL",
         "sam2-hosted": "HOSTED_SEGMENTATION_MODEL",
+        "sam2-hf-auto-masks": "SAM2_HF_AUTO_MASKS_MODEL",
+        "sam3-local": "SAM3_TRACKER_MODEL",
     }
     env = env_defaults.get(str(definition["id"]))
     if env and not settings.get("selected_model") and environ.get(env):

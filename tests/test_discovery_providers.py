@@ -148,6 +148,7 @@ def test_discovery_provider_schemas_cover_phase5_modes():
     assert modes == {
         "manual_prompt",
         "auto_object_proposals",
+        "sam2_hf_auto_masks",
         "sam_auto_masks",
         "sam3_concept",
         "sam3_exemplar",

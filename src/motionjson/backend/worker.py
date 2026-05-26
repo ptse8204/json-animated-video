@@ -32,6 +32,7 @@ from motionjson.providers.discovery import (
     MockObjectDiscoveryProvider,
     MotionForegroundDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
+    SAM2HFAutomaticMasksDiscoveryProvider,
     SAM3AutoMasksDiscoveryProvider,
     SAM3ConceptDiscoveryProvider,
     SAM3ExemplarDiscoveryProvider,
@@ -331,7 +332,13 @@ def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> t
         provider_preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or "auto")
         if discovery_config.get("mock") or provider_preference == "mock":
             return MockObjectDiscoveryProvider(), "automatic object proposal mock discovery configured", True
+        if provider_preference == "sam2-hf-auto-masks":
+            return SAM2HFAutomaticMasksDiscoveryProvider(), "SAM2 HF automatic masks configured", False
         return SAM2AutomaticProposalDiscoveryProvider(), "SAM2 automatic object proposals configured", False
+    if mode == "sam2_hf_auto_masks":
+        if discovery_config.get("mock"):
+            return SAM2HFAutomaticMasksDiscoveryProvider(), "SAM2 HF automatic-mask mock discovery configured", True
+        return SAM2HFAutomaticMasksDiscoveryProvider(), "SAM2 HF automatic masks configured", False
     if mode == "text_detector":
         return TextDetectorDiscoveryProvider(), "text detector mock discovery configured", True
     if mode == "sam_auto_masks":

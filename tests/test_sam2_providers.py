@@ -1,4 +1,6 @@
 import builtins
+import sys
+import types
 
 import numpy as np
 import pytest
@@ -6,7 +8,13 @@ import pytest
 from motionjson.cli import build_parser, build_provider
 from motionjson.providers.base import BatchSegmentationRequest, ProviderConfigError, ProviderExecutionError
 from motionjson.providers.mask_cache import MaskCache
-from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2AutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
+from motionjson.providers.sam2 import (
+    SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+    HostedSAM2SegmentationProvider,
+    LocalSAM2AutomaticMaskProposalBackend,
+    LocalSAM2HFAutomaticMaskProposalBackend,
+    LocalSAM2SegmentationProvider,
+)
 from motionjson.video import VideoInfo
 
 
@@ -52,6 +60,17 @@ class FakeBatchSAM2Predictor:
             mask[1:3, 2:4] = 255
             masks.append(mask)
         return masks
+
+
+class FakeHFAutoMaskGenerator:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, image, *, points_per_batch=64):
+        self.calls.append({"pointsPerBatch": points_per_batch})
+        mask = np.zeros((8, 8), dtype=np.uint8)
+        mask[2:6, 2:6] = 255
+        return {"masks": [mask], "boxes": [[2, 2, 4, 4]], "scores": [0.92]}
 
 
 def test_local_sam2_provider_uses_injected_predictor_and_propagates_masks(tmp_path):
@@ -185,6 +204,72 @@ def test_local_sam2_auto_proposal_backend_lazy_import_failure_after_valid_paths(
 
     with pytest.raises(ProviderConfigError, match="optional sam2 package"):
         backend.propose_masks(np.zeros((4, 5, 3), dtype=np.uint8), frame_index=0, config={})
+
+
+def test_local_sam2_hf_auto_masks_defaults_to_facebook_model(monkeypatch):
+    captured = {}
+
+    def fake_pipeline(task, *, model, device):
+        captured["task"] = task
+        captured["model"] = model
+        captured["device"] = device
+        return FakeHFAutoMaskGenerator()
+
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(pipeline=fake_pipeline))
+    backend = LocalSAM2HFAutomaticMaskProposalBackend()
+
+    records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={})
+
+    assert captured["task"] == "mask-generation"
+    assert captured["model"] == SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+    assert len(records) == 1
+
+
+def test_local_sam2_hf_auto_masks_rejects_official_checkpoint_file(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
+    checkpoint.write_bytes(b"placeholder")
+
+    def fail_pipeline(*args, **kwargs):
+        raise AssertionError("pipeline should not be called for official SAM2 checkpoint files")
+
+    monkeypatch.setitem(sys.modules, "transformers", types.SimpleNamespace(pipeline=fail_pipeline))
+    backend = LocalSAM2HFAutomaticMaskProposalBackend(model=str(checkpoint))
+
+    with pytest.raises(ProviderConfigError, match="official SAM2 prompt-tracking setup"):
+        backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={})
+
+
+def test_local_sam2_hf_auto_masks_rejects_checkpoint_before_transformers_import(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
+    checkpoint.write_bytes(b"placeholder")
+    real_import = builtins.__import__
+
+    def fail_transformers_import(name, *args, **kwargs):
+        if name == "transformers" or name.startswith("transformers."):
+            raise AssertionError("transformers should not be imported for invalid SAM2 HF model input")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_transformers_import)
+    backend = LocalSAM2HFAutomaticMaskProposalBackend(model=str(checkpoint))
+
+    with pytest.raises(ProviderConfigError, match="official SAM2 prompt-tracking setup"):
+        backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={})
+
+
+def test_local_sam2_hf_auto_masks_does_not_import_official_sam2(monkeypatch):
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "sam2" or name.startswith("sam2."):
+            raise AssertionError("SAM2 HF automatic masks should not import official sam2")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    backend = LocalSAM2HFAutomaticMaskProposalBackend(generator=FakeHFAutoMaskGenerator())
+
+    records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={})
+
+    assert len(records) == 1
 
 
 class FakeHostedClient:

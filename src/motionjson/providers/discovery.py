@@ -14,13 +14,14 @@ from ..masks import ExternalMaskProvider
 from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
-from .sam2 import LocalSAM2AutomaticMaskProposalBackend
+from .sam2 import LocalSAM2AutomaticMaskProposalBackend, LocalSAM2HFAutomaticMaskProposalBackend
 from .sam3 import LocalSAM3DiscoveryBackend
 
 
 DISCOVERY_MODES = {
     "manual_prompt",
     "auto_object_proposals",
+    "sam2_hf_auto_masks",
     "sam_auto_masks",
     "sam3_concept",
     "sam3_exemplar",
@@ -106,6 +107,22 @@ DISCOVERY_PROVIDER_SCHEMAS: dict[str, dict[str, Any]] = {
             "overlap_threshold": "number 0..1",
             "max_candidates": "integer",
             "mock": "boolean",
+        },
+        "noModelSafe": False,
+        "mockAvailable": True,
+    },
+    "sam2_hf_auto_masks": {
+        "mode": "sam2_hf_auto_masks",
+        "title": "SAM2 HF automatic masks",
+        "description": "Hugging Face Transformers SAM2 automatic keyframe masks, separate from official SAM2 checkpoint/config prompt tracking.",
+        "whenToUse": "Use as a fallback for finding everything in the scene when SAM3 Scene Sweep is blocked.",
+        "inputs": ["quality preset", "keyframes", "filter controls", "optional mock"],
+        "configSchema": {
+            "sam2HfModel": "Hugging Face repo id or local HF model directory, default facebook/sam2.1-hiera-large",
+            "providerPreference": "sam2-hf-auto-masks",
+            "mock": "boolean",
+            "maxCandidatesPerKeyframe": "integer",
+            "maxObjects": "integer",
         },
         "noModelSafe": False,
         "mockAvailable": True,
@@ -835,6 +852,34 @@ class SamAutoMasksDiscoveryProvider:
 
 
 @dataclass
+class SAM2HFAutomaticMasksDiscoveryProvider:
+    backend: Any | None = None
+    backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
+    name: str = "sam2_hf_auto_masks"
+    provider_name: str = "sam2-hf-auto-masks"
+
+    def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
+        if config.get("mock"):
+            max_candidates = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates"), 3))
+            labels = [f"SAM2 HF proposal {index + 1}" for index in range(max_candidates)]
+            return _mock_box_candidates(
+                video,
+                {**dict(config), "labels": labels, "metadata": {"providerName": self.provider_name, "mock": True}},
+                ctx,
+                self.name,
+                "Mock SAM2 HF automatic-mask proposal",
+            )
+        backend = self.backend
+        if backend is None:
+            backend = self.backend_factory(config) if self.backend_factory is not None else LocalSAM2HFAutomaticMaskProposalBackend.from_config(config)
+        return SAM2AutomaticProposalDiscoveryProvider(
+            backend=backend,
+            name=self.name,
+            provider_name=getattr(backend, "provider_name", self.provider_name),
+        ).propose(video, {**dict(config), "providerPreference": "sam2-hf-auto-masks"}, ctx)
+
+
+@dataclass
 class SAM2AutomaticProposalDiscoveryProvider:
     backend: Any | None = None
     backend_factory: Callable[[Mapping[str, Any]], Any] | None = None
@@ -843,9 +888,9 @@ class SAM2AutomaticProposalDiscoveryProvider:
 
     def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
         provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "sam2-local")
-        if provider_preference not in {"auto", "sam2-local", "sam_auto_masks"}:
+        if provider_preference not in {"auto", "sam2-local", "sam2-hf-auto-masks", "sam_auto_masks"}:
             raise ProviderConfigError(
-                f"{self.name} SAM2 automatic proposals require providerPreference 'auto' or 'sam2-local', got {provider_preference!r}"
+                f"{self.name} SAM2 automatic proposals require providerPreference 'auto', 'sam2-local', or 'sam2-hf-auto-masks', got {provider_preference!r}"
             )
         backend = self._backend(config)
         if hasattr(backend, "propose") and backend is not self:
@@ -995,6 +1040,8 @@ class SAM2AutomaticProposalDiscoveryProvider:
             return self.backend
         if self.backend_factory is not None:
             self.backend = self.backend_factory(config)
+        elif str(config.get("providerPreference") or config.get("provider_preference") or "") == "sam2-hf-auto-masks":
+            self.backend = LocalSAM2HFAutomaticMaskProposalBackend.from_config(config)
         else:
             self.backend = LocalSAM2AutomaticMaskProposalBackend.from_config(config)
         return self.backend

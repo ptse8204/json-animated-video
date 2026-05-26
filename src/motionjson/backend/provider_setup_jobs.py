@@ -20,6 +20,8 @@ from motionjson.provider_settings import (
     save_provider_settings,
     test_provider_settings,
 )
+from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+from motionjson.providers.sam3 import SAM3_HF_REPO_ID
 
 
 PROVIDER_SETUP_JOB_FORMAT = "motionjson.provider_setup_job.v0.1"
@@ -40,6 +42,14 @@ def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
                 "heavyLocalAttempted": True,
             },
             {
+                "id": "cache_model",
+                "label": "Cache model",
+                "description": "Download/cache facebook/sam3 for SAM3 Scene Sweep after explicit network and disk confirmation.",
+                "requiresConfirmation": True,
+                "networkAttempted": True,
+                "heavyLocalAttempted": False,
+            },
+            {
                 "id": "check_access",
                 "label": "Check Hugging Face access",
                 "description": "Verify that the runtime can access facebook/sam3 after the user confirms network use.",
@@ -51,6 +61,40 @@ def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
                 "id": "diagnose",
                 "label": "Diagnose",
                 "description": "Check saved SAM3 settings without importing heavy runtimes or making network calls.",
+                "networkAttempted": False,
+                "heavyLocalAttempted": False,
+            },
+            {
+                "id": "smoke",
+                "label": "Run smoke test",
+                "description": "Run a bounded local smoke test after explicit heavy-runtime confirmation.",
+                "requiresConfirmation": True,
+                "networkAttempted": False,
+                "heavyLocalAttempted": True,
+            },
+        ]
+    if provider_id == "sam2-hf-auto-masks":
+        return [
+            {
+                "id": "install",
+                "label": "Install SAM2 HF fallback",
+                "description": "Install MotionJSON's independent SAM2 Transformers fallback. Official SAM2 checkpoint/config is not required.",
+                "requiresConfirmation": True,
+                "networkAttempted": True,
+                "heavyLocalAttempted": True,
+            },
+            {
+                "id": "cache_model",
+                "label": "Cache model",
+                "description": "Download/cache facebook/sam2.1-hiera-large after explicit network and disk confirmation.",
+                "requiresConfirmation": True,
+                "networkAttempted": True,
+                "heavyLocalAttempted": False,
+            },
+            {
+                "id": "diagnose",
+                "label": "Diagnose",
+                "description": "Check Transformers and torch imports without network or model load.",
                 "networkAttempted": False,
                 "heavyLocalAttempted": False,
             },
@@ -237,6 +281,7 @@ def public_provider_setup_job(
         "finishedAt": row["finished_at"],
         "cancelRequestedAt": row["cancel_requested_at"],
         "terminal": row["status"] in TERMINAL_SETUP_JOB_STATUSES,
+        "setupState": _setup_state_for_job(row["status"], row["action"], result),
     }
     if include_events:
         public["events"] = list_provider_setup_events(conn, user_id=user_id, job_id=job_id)
@@ -303,7 +348,7 @@ def _execute_setup_action(
     environ = environ or os.environ
     settings_payload = payload.get("settings") if isinstance(payload.get("settings"), Mapping) else payload
     if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access"}:
-        if any(key in settings_payload for key in ("selectedModel", "apiKey", "sam2CheckpointPath", "sam3ModelPath", "endpoint", "allowHosted", "hostedProfileId")):
+        if any(key in settings_payload for key in ("selectedModel", "apiKey", "sam2CheckpointPath", "sam2HfDevice", "sam3ModelPath", "endpoint", "allowHosted", "hostedProfileId")):
             save_provider_settings(conn, user_id=user_id, payload={**dict(settings_payload), "providerId": provider_id}, environ=environ)
 
     if action == "diagnose":
@@ -311,11 +356,13 @@ def _execute_setup_action(
     if action == "test":
         return test_provider_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
     if action == "smoke":
-        if provider_id in {"sam2-local", "sam3-local"}:
+        if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
             return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
         return hosted_sam3_smoke_test(conn, user_id=user_id, payload={**dict(payload), "providerId": provider_id}, environ=environ)
     if action == "install":
         return _run_install_action(provider_id, payload)
+    if action == "cache_model":
+        return _cache_model_action(provider_id, payload)
     if action == "check_access":
         return _check_sam3_hf_access(payload, environ=environ)
     raise ValueError(f"Setup action is not implemented for {provider_id}: {action}")
@@ -368,6 +415,7 @@ def _run_install_action(provider_id: str, payload: Mapping[str, Any]) -> dict[st
 def _install_command(provider_id: str) -> list[str]:
     extras = {
         "sam3-local": "sam3-transformers",
+        "sam2-hf-auto-masks": "sam2-transformers",
         "sam2-local": "sam2",
     }
     extra = extras.get(provider_id)
@@ -377,6 +425,82 @@ def _install_command(provider_id: str) -> list[str]:
     if (root / "pyproject.toml").exists():
         return [sys.executable, "-m", "pip", "install", "-e", f".[{extra}]"]
     return [sys.executable, "-m", "pip", "install", f"motionjson[{extra}]"]
+
+
+def _cache_model_action(provider_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    if not _truthy(payload.get("allowNetwork", payload.get("allow_network"))):
+        return {
+            "format": PROVIDER_SETUP_JOB_FORMAT,
+            "providerId": provider_id,
+            "action": "cache_model",
+            "status": "blocked",
+            "ready": False,
+            "networkAttempted": False,
+            "heavyLocalAttempted": False,
+            "message": "Model caching needs explicit network confirmation.",
+        }
+    if not _truthy(payload.get("allowDisk", payload.get("allow_disk", payload.get("allowDownload", payload.get("allow_download"))))):
+        return {
+            "format": PROVIDER_SETUP_JOB_FORMAT,
+            "providerId": provider_id,
+            "action": "cache_model",
+            "status": "blocked",
+            "ready": False,
+            "networkAttempted": False,
+            "heavyLocalAttempted": False,
+            "message": "Model caching needs explicit disk/download confirmation.",
+        }
+    default_model = SAM3_HF_REPO_ID if provider_id == "sam3-local" else SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+    model_id = str(payload.get("model") or payload.get("modelId") or payload.get("model_id") or default_model).strip() or default_model
+    if model_id.endswith(".pt") or Path(model_id).expanduser().is_file():
+        raise ValueError(
+            "Model caching expects a Hugging Face repo id or local model directory, not a single .pt checkpoint file."
+        )
+    local_candidate = Path(model_id).expanduser()
+    if local_candidate.exists() and local_candidate.is_dir():
+        return {
+            "format": PROVIDER_SETUP_JOB_FORMAT,
+            "providerId": provider_id,
+            "action": "cache_model",
+            "status": "succeeded",
+            "ready": True,
+            "networkAttempted": False,
+            "heavyLocalAttempted": False,
+            "message": "Selected local model directory is available.",
+            "model": model_id,
+            "localModelDir": str(local_candidate),
+            "progress": {"percent": 100, "known": True, "label": "Model directory found"},
+        }
+    if _truthy(payload.get("dryRun", payload.get("dry_run"))):
+        return {
+            "format": PROVIDER_SETUP_JOB_FORMAT,
+            "providerId": provider_id,
+            "action": "cache_model",
+            "status": "succeeded",
+            "ready": True,
+            "dryRun": True,
+            "networkAttempted": False,
+            "heavyLocalAttempted": False,
+            "message": f"Cache dry run accepted for {model_id}.",
+            "model": model_id,
+        }
+    if find_spec("huggingface_hub") is None:
+        raise ValueError("huggingface_hub is not installed. Install the Transformers setup extra first.")
+    from huggingface_hub import snapshot_download  # type: ignore
+    local_dir = snapshot_download(repo_id=model_id)
+    return {
+        "format": PROVIDER_SETUP_JOB_FORMAT,
+        "providerId": provider_id,
+        "action": "cache_model",
+        "status": "succeeded",
+        "ready": True,
+        "networkAttempted": True,
+        "heavyLocalAttempted": False,
+        "message": f"Cached {model_id}. Use this model from the UI; local paths are redacted in browser responses.",
+        "model": model_id,
+        "localModelDir": str(local_dir),
+        "progress": {"percent": 100, "known": True, "label": "Model cached"},
+    }
 
 
 def _check_sam3_hf_access(payload: Mapping[str, Any], *, environ: Mapping[str, str]) -> dict[str, Any]:
@@ -432,6 +556,8 @@ def _normalize_action(provider_id: str, action: Any) -> str:
         "install_scene_sweep": "install",
         "install_fallback": "install",
         "check_hf_access": "check_access",
+        "cache": "cache_model",
+        "cache-model": "cache_model",
     }
     normalized = aliases.get(normalized, normalized)
     allowed = {entry["id"] for entry in provider_setup_actions(provider_id)}
@@ -476,6 +602,26 @@ def _record_setup_event(
             utc_now(),
         ),
     )
+
+
+def _setup_state_for_job(status: str, action: str, result: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = str(status or "queued")
+    action = str(action or "")
+    if normalized == "succeeded" and result.get("ready") is True:
+        return {"status": "ready", "label": "Ready", "message": result.get("message") or "Setup is ready."}
+    if normalized in {"failed", "blocked", "canceled"}:
+        return {"status": "failed_recoverable", "label": "Needs recovery", "message": result.get("message") or f"Setup {normalized}."}
+    if action == "diagnose":
+        return {"status": "checking_environment", "label": "Checking environment", "message": "Checking local imports and saved setup."}
+    if action == "cache_model":
+        return {"status": "caching_model", "label": "Caching model", "message": "Downloading or resolving the selected model cache."}
+    if action == "install":
+        return {"status": "installing_runtime", "label": "Installing runtime", "message": "Installing allowlisted optional runtime dependencies."}
+    if action == "smoke":
+        return {"status": "smoke_testing", "label": "Smoke testing", "message": "Running a bounded setup smoke test."}
+    if action == "check_access":
+        return {"status": "needs_access", "label": "Checking access", "message": "Checking Hugging Face access."}
+    return {"status": "checking_environment", "label": "Checking setup", "message": "Setup action is queued."}
 
 
 def _finish_setup_job(

@@ -15,6 +15,8 @@ from ..video import VideoInfo
 from .base import BatchSegmentationRequest, ProviderConfigError, ProviderExecutionError
 from .mask_cache import MaskCache, normalize_binary_mask
 
+SAM2_HF_AUTO_MASKS_DEFAULT_MODEL = "facebook/sam2.1-hiera-large"
+
 
 class JsonTransport(Protocol):
     def post_json(self, url: str, payload: Mapping[str, Any], *, headers: Mapping[str, str] | None = None) -> Mapping[str, Any]:
@@ -165,6 +167,113 @@ class LocalSAM2AutomaticMaskProposalBackend:
             else:
                 raise ProviderExecutionError("SAM2 automatic mask records must be mappings or mask arrays.")
         return normalized
+
+
+@dataclass
+class LocalSAM2HFAutomaticMaskProposalBackend:
+    """SAM2 automatic masks through Hugging Face Transformers.
+
+    This is intentionally separate from the official local SAM2 checkpoint and
+    YAML-config provider. It accepts only `from_pretrained` inputs: a Hugging
+    Face repo id or a local HF model directory.
+    """
+
+    model: str | Path | None = None
+    device: str = "cpu"
+    generator: Any | None = None
+    generator_factory: Any | None = None
+    provider_name: str = "sam2-hf-auto-masks"
+    _generator: Any | None = field(default=None, init=False)
+
+    @classmethod
+    def from_config(cls, config: Mapping[str, Any]) -> "LocalSAM2HFAutomaticMaskProposalBackend":
+        model = (
+            config.get("sam2HfModel")
+            or config.get("sam2_hf_model")
+            or config.get("sam2AutoMaskModel")
+            or config.get("sam2_auto_mask_model")
+            or os.environ.get("SAM2_HF_AUTO_MASKS_MODEL")
+            or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+        )
+        device = str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or config.get("device") or os.environ.get("SAM2_HF_DEVICE") or "cpu")
+        return cls(model=model, device=device)
+
+    def propose_masks(self, frame_rgb: np.ndarray, *, frame_index: int, config: Mapping[str, Any]) -> Sequence[Mapping[str, Any]]:
+        generator = self._ensure_generator(config)
+        image = Image.fromarray(np.asarray(frame_rgb, dtype=np.uint8)).convert("RGB")
+        if hasattr(generator, "generate"):
+            records = generator.generate(np.asarray(image))
+        elif hasattr(generator, "propose_masks"):
+            records = generator.propose_masks(np.asarray(image), frame_index=frame_index, config=config)
+        elif callable(generator):
+            try:
+                records = generator(image, points_per_batch=int(config.get("pointsPerBatch") or config.get("points_per_batch") or 64))
+            except TypeError:
+                try:
+                    records = generator(np.asarray(image), frame_index=frame_index, config=config)
+                except TypeError:
+                    records = generator(image)
+        else:
+            raise ProviderExecutionError("SAM2 HF automatic mask generator must expose generate(), propose_masks(), or be callable.")
+        return LocalSAM2AutomaticMaskProposalBackend._normalize_records(records)
+
+    def _ensure_generator(self, config: Mapping[str, Any]) -> Any:
+        if self.generator is not None:
+            return self.generator
+        if self._generator is not None:
+            return self._generator
+        if self.generator_factory is not None:
+            self._generator = self.generator_factory()
+            return self._generator
+        model_id = _hf_sam2_model_id(config, fallback=self.model)
+        try:
+            from transformers import pipeline  # type: ignore
+        except ImportError as exc:
+            raise ProviderConfigError(
+                "SAM2 HF automatic masks require Hugging Face Transformers. Use Model setup to install/cache "
+                "the SAM2 HF fallback, or choose official SAM2 prompt tracking in Advanced."
+            ) from exc
+        try:
+            self._generator = pipeline("mask-generation", model=model_id, device=_transformers_device(self.device))
+        except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
+            raise ProviderConfigError(f"SAM2 HF automatic-mask pipeline could not be initialized: {exc}") from exc
+        return self._generator
+
+
+def _hf_sam2_model_id(config: Mapping[str, Any], *, fallback: str | Path | None = None) -> str:
+    value = (
+        config.get("sam2HfModel")
+        or config.get("sam2_hf_model")
+        or config.get("sam2AutoMaskModel")
+        or config.get("sam2_auto_mask_model")
+        or os.environ.get("SAM2_HF_AUTO_MASKS_MODEL")
+        or fallback
+        or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+    )
+    raw = str(value or "").strip() or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+    if "/" in raw and not raw.startswith(("/", ".", "~")) and not raw.endswith(".pt"):
+        return raw
+    path = Path(raw).expanduser()
+    if path.exists() and path.is_dir():
+        return str(path)
+    if path.is_file() or raw.endswith(".pt"):
+        raise ProviderConfigError(
+            "SAM2 HF automatic masks use a Hugging Face repo id or local HF model directory. "
+            "A single .pt checkpoint belongs to the official SAM2 prompt-tracking setup, not the SAM2 HF automatic-mask fallback."
+        )
+    raise ProviderConfigError(
+        f"SAM2 HF automatic-mask model is neither a repo id nor an existing local model directory: {raw}. "
+        "Use facebook/sam2.1-hiera-large or cache a local HF model directory from Model setup."
+    )
+
+
+def _transformers_device(device: str) -> int | str:
+    normalized = str(device or "").strip().lower()
+    if normalized.startswith("cuda"):
+        return 0
+    if normalized == "mps":
+        return "mps"
+    return -1
 
 
 @dataclass
