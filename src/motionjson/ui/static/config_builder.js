@@ -174,6 +174,9 @@ function guidedEnginePlan(input, preset) {
     return { providerName: connectionProvider === "sam2-hosted" ? "sam2-hosted" : connectionProvider || "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode };
   }
   if (preset.id === "trace_all_objects") {
+    if (connectionProvider === "sam2-hf-auto-masks") {
+      return { providerName: "sam2-hf-auto-masks", discoveryMode: "sam2_hf_auto_masks" };
+    }
     if (connectionProvider === "sam2-local") {
       return { providerName: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode };
     }
@@ -264,7 +267,7 @@ export function objectDiscoveryConfig(input, advanced) {
     mock: Boolean(input.debugMockMode),
     qualityPreset,
     intent: preset.intent,
-    providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
+    providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
     sam2Checkpoint: input.localSam2CheckpointPath || advanced.localSam2CheckpointPath || null,
     sam2ModelConfig: input.localSam2ModelConfigPath || advanced.localSam2ModelConfigPath || null,
     sam2Device: input.localSam2Device || advanced.localSam2Device || advanced.device || "auto",
@@ -290,6 +293,12 @@ export function objectDiscoveryConfig(input, advanced) {
   };
 }
 
+function sam3TrackerModelForInput(input = {}, advanced = {}) {
+  const value = String(input.sam3TrackerModel || input.localSam3TrackerModel || advanced.sam3TrackerModel || advanced.localSam3TrackerModel || "").trim();
+  if (!value || value === "sam3/local-model-path") return "facebook/sam3";
+  return value;
+}
+
 export function buildRunConfig(input) {
   const preset = WIZARD_PRESETS.find((item) => item.id === input.presetId) || WIZARD_PRESETS[0];
   const advanced = { ...DEFAULT_ADVANCED, ...(input.advanced || {}) };
@@ -312,6 +321,13 @@ export function buildRunConfig(input) {
   const maxCandidates = Number(input.discoveryMaxCandidates || advanced.maxObjects || 12);
   if (preset.id === "auto_object_proposals" || preset.id === "trace_all_objects") {
     Object.assign(discoveryConfig, objectDiscoveryConfig({ ...input, providerName }, advanced));
+  }
+  if (discoveryMode === "sam2_hf_auto_masks") {
+    Object.assign(discoveryConfig, {
+      providerPreference: "sam2-hf-auto-masks",
+      sam2HfModel: input.localSam2HfModel || advanced.localSam2HfModel || "facebook/sam2.1-hiera-large",
+      sam2HfDevice: input.localSam2HfDevice || advanced.localSam2HfDevice || advanced.device || "auto",
+    });
   }
   if (preset.id === "text_detector") {
     if (input.discoveryText) {
@@ -362,8 +378,8 @@ export function buildRunConfig(input) {
     discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
     discoveryConfig.hosted = hosted;
     discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;
-    discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
-    discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    if (hosted) discoveryConfig.model = input.hostedSam3Model || null;
+    else discoveryConfig.sam3TrackerModel = sam3TrackerModelForInput(input, advanced);
     discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
     discoveryConfig.allowNetwork = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
     discoveryConfig.acknowledgeCostPrivacy = hosted ? Boolean(input.hostedSam3AllowHosted) : false;

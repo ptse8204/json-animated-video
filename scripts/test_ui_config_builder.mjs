@@ -359,8 +359,24 @@ assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
 assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
 assert.equal(sam3TraceAllConfig.discovery.config.sceneSweep, true);
 assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, true);
+assert.equal(sam3TraceAllConfig.discovery.config.sam3TrackerModel, "facebook/sam3");
+assert.equal("sam3ModelPath" in sam3TraceAllConfig.discovery.config, false);
+assert.equal("model" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("concept" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("text" in sam3TraceAllConfig.discovery.config, false);
+
+const sam2HfTraceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "sam2-hf-auto-masks",
+  objectId: "object_0",
+  objectLabel: "all objects",
+  keyframes: new Set([0, 12]),
+  qualityPreset: "balanced",
+});
+assert.equal(sam2HfTraceAllConfig.provider.name, "sam2-hf-auto-masks");
+assert.equal(sam2HfTraceAllConfig.discovery.mode, "sam2_hf_auto_masks");
+assert.equal(sam2HfTraceAllConfig.discovery.config.providerPreference, "sam2-hf-auto-masks");
+assert.equal(sam2HfTraceAllConfig.discovery.config.sam2HfModel, "facebook/sam2.1-hiera-large");
 
 const textPromptDefaultsToSam3 = ui.guidedEnginePlan({
   preset: "text_detector",
@@ -409,7 +425,7 @@ const PROVIDER_STATE_FIXTURES = [
       connectionId: "sam2-local",
       providerId: "sam2-local",
       profileId: "",
-      displayLabel: "SAM2 fallback",
+      displayLabel: "SAM2 prompt tracking",
       engine: "sam2",
       locality: "local",
       hostedCallsAllowed: false,
@@ -456,6 +472,20 @@ const PROVIDER_STATE_FIXTURES = [
       locality: "hosted",
       hostedCallsAllowed: false,
       discoveryMode: "sam3_concept",
+    },
+  },
+  {
+    name: "SAM2 HF automatic masks fallback",
+    input: { preset: "trace_all_objects", modelConnectionId: "sam2-hf-auto-masks" },
+    expected: {
+      connectionId: "sam2-hf-auto-masks",
+      providerId: "sam2-hf-auto-masks",
+      profileId: "",
+      displayLabel: "SAM2 HF automatic masks",
+      engine: "sam2",
+      locality: "local",
+      hostedCallsAllowed: false,
+      discoveryMode: "sam2_hf_auto_masks",
     },
   },
   {
@@ -507,9 +537,9 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 }
 
 const compatibleConnectionExpectations = {
-  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:custom-sam3-compatible"],
+  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
   text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
-  trace_all_objects: ["sam3-local", "sam2-local", "sam3-hosted:custom-sam3-compatible"],
+  trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
 };
@@ -521,6 +551,12 @@ for (const [preset, expectedIds] of Object.entries(compatibleConnectionExpectati
     `${preset}: compatible guided model connections`,
   );
 }
+
+assert.deepEqual(
+  ui.compatibleModelConnectionsForPreset("trace_one_object", { includeAdvanced: true }).map((connection) => connection.id),
+  ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:custom-sam3-compatible"],
+  "SAM3 one-object connections stay available only in the Advanced model list",
+);
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");

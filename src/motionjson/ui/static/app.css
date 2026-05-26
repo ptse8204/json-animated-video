@@ -848,6 +848,15 @@ input[type="range"] {
   text-align: left;
 }
 
+.project-rail-card {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .workspace-preferences {
   margin-top: 12px;
 }
@@ -2781,6 +2790,48 @@ button,
   background: var(--bad-soft);
 }
 
+.model-setup-state-card {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  border: 1px solid #dbe6e4;
+  border-left-width: 4px;
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+.model-setup-state-card > div {
+  min-width: 0;
+}
+
+.model-setup-state-card.is-ready {
+  border-left-color: var(--ready);
+  background: var(--ready-soft);
+}
+
+.model-setup-state-card.is-warn {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.model-setup-state-card.is-bad {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.model-setup-normal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.model-setup-advanced {
+  margin-top: 0;
+}
+
 .setup-job-log[hidden] {
   display: none !important;
 }
@@ -3270,6 +3321,10 @@ button,
 
   .model-plan-compose,
   .model-setup-summary {
+    display: grid;
+  }
+
+  .model-setup-state-card {
     display: grid;
   }
 
@@ -3822,6 +3877,12 @@ body {
   max-width: 1120px;
   margin-right: auto;
   margin-left: auto;
+}
+
+.app-shell:not(.is-workflow-dashboard) .config-actions,
+.app-shell:not(.is-workflow-dashboard) #rawConfigDisclosure,
+.app-shell:not(.is-workflow-dashboard) .compact-advanced-actions {
+  display: none;
 }
 
 .workspace-grid {

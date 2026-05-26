@@ -29,19 +29,12 @@
         </div>
 
         <div id="sidebarNavigationContent" class="sidebar-content">
-          <section class="sidebar-section">
-            <p class="section-kicker">Choose a goal</p>
-            <nav class="goal-list" aria-label="Extraction wizard presets">
-              <button class="goal is-active" type="button" data-preset="trace_one_object" aria-pressed="true" aria-current="step">Cut out one object</button>
-              <button class="goal" type="button" data-preset="trace_all_objects" aria-pressed="false">Find everything in scene</button>
-              <button class="goal" type="button" data-preset="auto_object_proposals" aria-pressed="false">Discover objects</button>
-              <button class="goal" type="button" data-preset="text_detector" aria-pressed="false">Find objects from text</button>
-              <button class="goal" type="button" data-preset="class_detector" aria-pressed="false">Find known classes</button>
-              <button class="goal" type="button" data-preset="sam_auto_masks" aria-pressed="false">Propose all visible segments</button>
-              <button class="goal" type="button" data-preset="motion_foreground" aria-pressed="false">Find moving objects</button>
-              <button class="goal" type="button" data-preset="external_masks" aria-pressed="false">Import external masks</button>
-              <button class="goal" type="button" data-preset="review_existing" aria-pressed="false">Review existing result</button>
-            </nav>
+          <section class="sidebar-section project-rail-summary" aria-label="Projects">
+            <p class="section-kicker">Projects</p>
+            <div class="project-rail-card">
+              <strong id="projectRailTitle">Local project</strong>
+              <span id="projectRailMeta" class="row-meta">Choose a goal, then add a video.</span>
+            </div>
           </section>
 
           <details class="compact-panel disclosure-panel">
@@ -279,8 +272,8 @@
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
-          <div id="modelSetupChoices" class="model-choice-grid" aria-label="SAM model connection choices"></div>
-          <div id="modelSetupDetail" class="model-setup-detail" aria-live="polite"></div>
+          <div id="modelSetupChoices" class="model-choice-grid" data-workflow-fragment="provider_settings" aria-label="SAM model connection choices"></div>
+          <div id="modelSetupDetail" class="model-setup-detail" data-workflow-fragment="provider_settings" aria-live="polite"></div>
         </section>
 
         <section class="workspace-grid">
@@ -460,7 +453,7 @@
             </div>
           </article>
 
-          <article class="panel wizard-panel" data-workflow-panel="provider_settings prompt_preview" aria-label="Extraction wizard">
+          <article class="panel wizard-panel" data-workflow-panel="prompt_preview" aria-label="Extraction wizard">
             <div class="panel-heading">
               <div>
                 <h2 id="wizardPanelTitle">Choose extraction mode</h2>

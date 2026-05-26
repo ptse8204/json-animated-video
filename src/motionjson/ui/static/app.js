@@ -56,7 +56,7 @@ const MotionJSONUI = (() => {
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
-  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted"]);
+  const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-local", "sam3-hosted"]);
   const SHELL_STORAGE_KEYS = {
     sidebarCollapsed: "motionjson.localUi.sidebarCollapsed",
     railCollapsed: "motionjson.localUi.railCollapsed",
@@ -73,12 +73,25 @@ const MotionJSONUI = (() => {
       providerId: "sam2-local",
       engine: "sam2",
       locality: "local",
-      displayLabel: "SAM2 fallback",
-      workflow: "Prompt tracking and fallback proposals",
-      title: "SAM2 local fallback",
-      capabilities: ["point", "box", "tracking", "auto_masks"],
-      recommendation: "Fallback for prompt tracking or automatic proposals when SAM3 Scene Sweep is unavailable.",
+      displayLabel: "SAM2 prompt tracking",
+      workflow: "Trace one object",
+      title: "SAM2 prompt tracking",
+      capabilities: ["point", "box", "tracking"],
+      recommendation: "Recommended local path for cutting out one prompted object.",
       nextAction: "Install SAM2 fallback or save checkpoint and config paths",
+      profileId: "",
+    },
+    {
+      id: "sam2-hf-auto-masks",
+      providerId: "sam2-hf-auto-masks",
+      engine: "sam2",
+      locality: "local",
+      displayLabel: "SAM2 HF automatic masks",
+      workflow: "Find everything fallback",
+      title: "SAM2 HF automatic masks",
+      capabilities: ["auto_masks", "scene_sweep"],
+      recommendation: "Fallback for finding everything in scene when SAM3 Scene Sweep is blocked.",
+      nextAction: "Install the SAM2 Transformers fallback and cache facebook/sam2.1-hiera-large",
       profileId: "",
     },
     {
@@ -149,9 +162,12 @@ const MotionJSONUI = (() => {
   ];
   const MODEL_FREE_PRESETS = new Set(["motion_foreground", "external_masks", "review_existing"]);
   const MODEL_CONNECTION_PRIORITY = {
-    trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:custom-sam3-compatible"],
-    trace_all_objects: ["sam3-local", "sam2-local", "sam3-hosted:custom-sam3-compatible"],
+    trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
+    trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
     text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  };
+  const ADVANCED_MODEL_CONNECTIONS = {
+    trace_one_object: ["sam3-local", "sam3-hosted:custom-sam3-compatible"],
   };
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
@@ -445,6 +461,7 @@ const MotionJSONUI = (() => {
     libraryStatus: "Not loaded",
     importStatus: "",
     selectedModelSetupProviderId: "sam2-local",
+    modelSetupAlternativesOpen: false,
     providerSetupJobs: {},
     selectedProviderSetupJobId: "",
     modelSetupMessage: "",
@@ -887,12 +904,18 @@ const MotionJSONUI = (() => {
     }
 
     if (activeStep === "provider_settings") {
+      const connection = modelConnectionById(state.selectedModelSetupProviderId || recommendedConnectionIdForPreset(snapshot.selectedPreset || state.selectedPreset));
+      const provider = providerSettingsById(connection?.providerId || "");
+      const setupState = modelSetupStateForConnection(connection, provider, connection ? setupJobForProvider(connection.providerId) : null);
+      const setupAction = modelSetupPrimaryActionForState(setupState, connection);
+      const ready = setupState.status === "ready";
       return {
         id: activeStep,
-        primaryLabel: "Save and continue",
-        primaryAction: "save_model_setup",
-        enabled: hasModelSetupForm,
-        blockedReason: "Choose one compatible model connection before continuing.",
+        primaryLabel: ready ? "Continue to prepare" : setupAction.label,
+        primaryAction: ready ? "continue_to_prepare" : "run_model_setup_action",
+        modelSetupAction: setupAction.id,
+        enabled: ready || Boolean(hasModelSetupForm || connection),
+        blockedReason: ready ? "" : setupState.message || "Choose one compatible model connection before continuing.",
         successAdvanceTo: "prompt_preview",
         backTarget: "source_video",
       };
@@ -1400,6 +1423,7 @@ const MotionJSONUI = (() => {
 
   function providerLabel(providerId, profileId = "") {
     if (providerId === "sam2-local") return "SAM2 local";
+    if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
     if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
     if (providerId === "sam2-hosted") return "Hosted SAM2";
     if (providerId === "sam3-local") return "SAM3 local";
@@ -1426,6 +1450,7 @@ const MotionJSONUI = (() => {
     const explicit = modelConnectionByConnectionId(input.modelConnectionId);
     if (explicit) return explicit;
     if (input.maskProvider === "sam2-local") return modelConnectionByConnectionId("sam2-local");
+    if (input.maskProvider === "sam2-hf-auto-masks") return modelConnectionByConnectionId("sam2-hf-auto-masks");
     if (input.maskProvider === "sam2-hosted") return modelConnectionByConnectionId("sam2-hosted:replicate-sam2-video");
     if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local") return modelConnectionByConnectionId("sam3-local");
     if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted") {
@@ -1519,6 +1544,9 @@ const MotionJSONUI = (() => {
       return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode, profileId, connection });
     }
     if (presetName === "trace_all_objects") {
+      if (providerId === "sam2-hf-auto-masks") {
+        return enginePlanFromContract(contract, input, { providerId: "sam2-hf-auto-masks", discoveryMode: "sam2_hf_auto_masks", connection });
+      }
       if (providerId === "sam2-local") {
         return enginePlanFromContract(contract, input, { providerId: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode, connection });
       }
@@ -1565,7 +1593,7 @@ const MotionJSONUI = (() => {
       mock: Boolean(input.debugMockMode),
       qualityPreset,
       intent: defaults.intent,
-      providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
+      providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
       sam2Checkpoint: input.localSam2CheckpointPath || null,
       sam2ModelConfig: input.localSam2ModelConfigPath || null,
       sam2Device: input.localSam2Device || input.device || "auto",
@@ -1608,10 +1636,27 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function sam3TrackerModelForInput(input = {}) {
+    const value = String(input.localSam3TrackerModel || input.sam3TrackerModel || "").trim();
+    if (!value || value === "sam3/local-model-path") return "facebook/sam3";
+    return value;
+  }
+
   function buildDiscoveryConfig(input, promptsForConfig) {
     const keyframes = parseKeyframes(input.keyframes);
     if (input.discoveryMode === "auto_object_proposals") {
       return objectDiscoveryConfig(input);
+    }
+    if (input.discoveryMode === "sam2_hf_auto_masks") {
+      const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
+      return {
+        ...objectDiscoveryConfig({ ...input, providerName: "sam2-hf-auto-masks" }),
+        providerPreference: "sam2-hf-auto-masks",
+        sam2HfModel: input.localSam2HfModel || input.sam2HfModel || "facebook/sam2.1-hiera-large",
+        sam2HfDevice: input.localSam2HfDevice || input.device || "auto",
+        maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
+        maxObjects: defaults.maxObjects,
+      };
     }
     if (input.discoveryMode === "text_detector") {
       return {
@@ -1670,7 +1715,7 @@ const MotionJSONUI = (() => {
     if (input.discoveryMode === "sam3_auto_masks") {
       const hosted = input.providerName === "sam3-hosted";
       const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
-      return {
+      const config = {
         sceneSweep: true,
         useTransformersTracker: !hosted,
         pointsPerBatch: toInteger(input.pointsPerBatch, 64),
@@ -1678,8 +1723,6 @@ const MotionJSONUI = (() => {
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" : null,
-        model: hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || null,
-        sam3ModelPath: input.localSam3ModelPath || null,
         sam3Device: input.localSam3Device || input.device || "cuda",
         keyframes,
         maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
@@ -1693,6 +1736,12 @@ const MotionJSONUI = (() => {
         acknowledgeCostPrivacy: hosted ? Boolean(input.hostedSam3AllowHosted) : false,
         mock: false,
       };
+      if (hosted) {
+        config.model = input.hostedSam3Model || null;
+      } else {
+        config.sam3TrackerModel = sam3TrackerModelForInput(input);
+      }
+      return config;
     }
     if (input.discoveryMode === "sam_auto_masks") {
       return {
@@ -2437,10 +2486,12 @@ const MotionJSONUI = (() => {
     const hostedSam2Provider = providerSettingsById("sam2-hosted");
     const hostedSam3Provider = providerSettingsById("sam3-hosted");
     const localSam2Provider = providerSettingsById("sam2-local");
+    const localSam2HfProvider = providerSettingsById("sam2-hf-auto-masks");
     const localSam3Provider = providerSettingsById("sam3-local");
     const hostedSam2Settings = hostedSam2Provider?.settings || {};
     const hostedSam3Settings = hostedSam3Provider?.settings || {};
     const localSam2Settings = localSam2Provider?.settings || {};
+    const localSam2HfSettings = localSam2HfProvider?.settings || {};
     const localSam3Settings = localSam3Provider?.settings || {};
     return {
       preset: state.selectedPreset,
@@ -2491,6 +2542,9 @@ const MotionJSONUI = (() => {
       localSam2CheckpointPath: localSam2Settings.sam2CheckpointPath || "",
       localSam2ModelConfigPath: localSam2Settings.sam2ModelConfigPath || "",
       localSam2Device: localSam2Settings.sam2Device || "",
+      localSam2HfModel: providerEffectiveModel(localSam2HfProvider) || "facebook/sam2.1-hiera-large",
+      localSam2HfDevice: localSam2HfSettings.sam2HfDevice || "",
+      localSam3TrackerModel: providerEffectiveModel(localSam3Provider) || "facebook/sam3",
       localSam3ModelPath: localSam3Settings.sam3ModelPath || "",
       localSam3Device: localSam3Settings.sam3Device || "",
     };
@@ -2537,14 +2591,17 @@ const MotionJSONUI = (() => {
     return true;
   }
 
-  function compatibleModelConnectionsForPreset(presetId = state.selectedPreset) {
+  function compatibleModelConnectionsForPreset(presetId = state.selectedPreset, options = {}) {
     if (!goalRequiresModel(presetId)) return [];
     const priority = MODEL_CONNECTION_PRIORITY[presetId] || [];
+    const advancedPriority = ADVANCED_MODEL_CONNECTIONS[presetId] || [];
+    const visibleIds = options.includeAdvanced ? [...priority, ...advancedPriority] : priority;
     return MODEL_CONNECTIONS
       .filter((connection) => connectionSupportsGoal(connection, presetId))
+      .filter((connection) => !visibleIds.length || visibleIds.includes(connection.id))
       .sort((a, b) => {
-        const aIndex = priority.includes(a.id) ? priority.indexOf(a.id) : priority.length;
-        const bIndex = priority.includes(b.id) ? priority.indexOf(b.id) : priority.length;
+        const aIndex = visibleIds.includes(a.id) ? visibleIds.indexOf(a.id) : visibleIds.length;
+        const bIndex = visibleIds.includes(b.id) ? visibleIds.indexOf(b.id) : visibleIds.length;
         return aIndex - bIndex || MODEL_CONNECTIONS.indexOf(a) - MODEL_CONNECTIONS.indexOf(b);
       });
   }
@@ -2601,6 +2658,78 @@ const MotionJSONUI = (() => {
       label: status === "succeeded" ? "Setup complete" : status === "running" || status === "queued" ? "Setup running" : humanizeReviewCode(status),
       message: result.message || job.error || `Setup ${status}.`,
     };
+  }
+
+  function modelSetupStateForConnection(connection, provider = null, latestJob = null) {
+    const readiness = provider?.readiness || {};
+    const backendState = latestJob?.setupState || provider?.setupState || {};
+    const jobStatus = String(latestJob?.status || "").toLowerCase();
+    if (latestJob && !latestJob.terminal) {
+      return {
+        status: backendState.status || (latestJob.action === "cache_model" ? "caching_model" : latestJob.action === "install" ? "installing_runtime" : latestJob.action === "smoke" ? "smoke_testing" : "checking_environment"),
+        label: backendState.label || setupJobStatusSummary(latestJob).label,
+        message: backendState.message || setupJobStatusSummary(latestJob).message,
+      };
+    }
+    if (latestJob && ["failed", "blocked", "canceled", "cancelled"].includes(jobStatus)) {
+      return {
+        status: "failed_recoverable",
+        label: "Needs recovery",
+        message: latestJob.result?.message || latestJob.error || "Setup did not finish. Retry or choose a different model.",
+      };
+    }
+    const cached = latestJob?.action === "cache_model" && latestJob.status === "succeeded";
+    const smokeReady = latestJob?.action === "smoke" && latestJob.status === "succeeded";
+    const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
+    if (latestJob?.status === "succeeded" && latestJob?.result?.ready === true && (runtimeReady || state.health?.mockMode)) {
+      return { status: "ready", label: "Ready", message: latestJob.result.message || readiness.message || "Model setup is ready for this workflow." };
+    }
+    const needsAccess = /access|token|credential|key|hugging face|hf_/i.test(`${readiness.status || ""} ${readiness.message || ""} ${asArray(readiness.missing).join(" ")}`);
+    const needsRuntime = /not_configured|missing|unavailable/i.test(String(readiness.status || "")) || readiness.configured === false;
+    if (smokeReady || (runtimeReady && connection?.locality !== "local")) {
+      return { status: "ready", label: "Ready", message: readiness.message || "Model setup is ready for this workflow." };
+    }
+    if (runtimeReady && connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && !cached) {
+      return { status: "needs_download_confirmation", label: "Confirm model cache", message: "Cache facebook/sam3 before the first scene sweep so extraction does not download unexpectedly." };
+    }
+    if (runtimeReady && connection?.providerId === "sam2-hf-auto-masks" && !cached) {
+      return { status: "needs_download_confirmation", label: "Confirm model cache", message: "Cache facebook/sam2.1-hiera-large before using the SAM2 HF fallback." };
+    }
+    if (runtimeReady) {
+      return { status: "ready", label: "Ready", message: readiness.message || "Model setup is ready for this workflow." };
+    }
+    if (needsAccess) {
+      return { status: "needs_access", label: "Needs access", message: readiness.message || "Sign in or confirm model/provider access before continuing." };
+    }
+    if (needsRuntime) {
+      return { status: "not_configured", label: "Needs setup", message: readiness.message || connection?.nextAction || "Install the required runtime from this setup step." };
+    }
+    return {
+      status: backendState.status || "not_configured",
+      label: backendState.label || "Needs setup",
+      message: backendState.message || readiness.message || "Complete setup before running.",
+    };
+  }
+
+  function modelSetupPrimaryActionForState(stateInfo = {}, connection = null) {
+    const status = String(stateInfo.status || "not_configured");
+    const providerId = connection?.providerId || "";
+    if (["checking_environment", "caching_model", "installing_runtime", "smoke_testing"].includes(status)) {
+      return { id: "cancel-setup-job", label: "Cancel setup", primary: false };
+    }
+    if (status === "needs_access") {
+      return { id: providerId.includes("hosted") ? "test" : "check-access", label: providerId.includes("hosted") ? "Check access" : "Check Hugging Face access", primary: true };
+    }
+    if (status === "needs_download_confirmation") {
+      return { id: "cache-model", label: "Cache model", primary: true };
+    }
+    if (status === "ready") {
+      return { id: "smoke", label: "Run smoke test", primary: false };
+    }
+    if (status === "failed_recoverable") {
+      return { id: providerId === "sam3-local" || providerId === "sam2-hf-auto-masks" || providerId === "sam2-local" ? "install" : "diagnose", label: "Retry setup", primary: true };
+    }
+    return { id: "install", label: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
   }
 
   function setupJobEventsMarkup(job) {
@@ -2764,12 +2893,13 @@ const MotionJSONUI = (() => {
         sam2CheckpointPath: String(values.sam2CheckpointPath || "").trim(),
         sam2ModelConfigPath: String(values.sam2ModelConfigPath || "").trim(),
         sam2Device: String(values.sam2Device || "").trim(),
+        sam2HfDevice: String(values.sam2HfDevice || "").trim(),
         sam3ModelPath: String(values.sam3ModelPath || "").trim(),
         sam3Device: String(values.sam3Device || "").trim(),
       };
     const apiKey = String(values.apiKey || "").trim();
     if (apiKey) payload.apiKey = apiKey;
-    for (const optional of ["hostedProfileId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam3ModelPath", "sam3Device"]) {
+    for (const optional of ["hostedProfileId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam2HfDevice", "sam3ModelPath", "sam3Device"]) {
       if (!payload[optional] || payload[optional] === "[LOCAL_PATH_REDACTED]") delete payload[optional];
     }
     return payload;
@@ -4278,7 +4408,7 @@ const MotionJSONUI = (() => {
           (
             ["studioBottomCta", "runPlanAlert", "modelPlanPanel"].includes(panel.id) ||
             (panel.id === "mainJobCenter" && activeStep !== "run_monitor" && !state.selectedJobId) ||
-            (panel.id === "modelSetupPanel" && (!goalRequiresModel(state.selectedPreset) || (!state.selectedVideoId && state.selectedPreset !== "review_existing")))
+            (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
         const visible = !hiddenInSimpleMode && (showAll || ((!railDetail || showReviewDetails) && matchesVisibleStep));
         setElementWorkflowHidden(panel, !visible);
@@ -4606,6 +4736,12 @@ const MotionJSONUI = (() => {
           setWorkflowStep("review_export", { focusStep: true });
         } else if (contract.primaryAction === "save_model_setup") {
           await saveSelectedModelSetupAndContinue();
+        } else if (contract.primaryAction === "run_model_setup_action") {
+          const action = contract.modelSetupAction || "diagnose";
+          const setupButton = [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action]")]
+            .find((item) => item.dataset.modelSetupAction === action);
+          if (!setupButton) throw new Error("Model setup action is not available for the selected provider.");
+          setupButton.click();
         } else if (contract.primaryAction === "run_prepared_workflow") {
           await validateAndStartGuidedRun();
         } else if (contract.primaryAction === "cancel_run") {
@@ -4823,12 +4959,16 @@ const MotionJSONUI = (() => {
     function renderWorkspace() {
       const summary = $("#workspaceSummary");
       const recent = $("#workspaceRecent");
+      const projectRailTitle = $("#projectRailTitle");
+      const projectRailMeta = $("#projectRailMeta");
       if (!state.workspace) {
         setFacts(summary, {
           status: state.errors.workspace || "not loaded",
           projects: "not reported",
           providers: "not reported",
         });
+        if (projectRailTitle) projectRailTitle.textContent = "Local project";
+        if (projectRailMeta) projectRailMeta.textContent = state.errors.workspace || "Choose a goal, then add a video.";
         recent.innerHTML = `<div class="${state.errors.workspace ? "error-state" : "empty-state"}">${escapeHtml(state.errors.workspace || "Workspace summary has not loaded yet.")}</div>`;
         return;
       }
@@ -4845,6 +4985,9 @@ const MotionJSONUI = (() => {
       const tasks = asArray(state.workspace.guidedTasks).slice(0, 4);
       const videos = asArray(state.workspace.recentVideos).slice(0, 3);
       const jobs = asArray(state.workspace.recentJobs).slice(0, 3);
+      const selectedProject = state.projects.find((item) => item.id === state.selectedProjectId) || state.projects[0] || null;
+      if (projectRailTitle) projectRailTitle.textContent = selectedProject?.name || "Local project";
+      if (projectRailMeta) projectRailMeta.textContent = state.selectedVideoId ? "Video selected" : "Add a video in step 2.";
       recent.innerHTML = `
         <div class="workspace-block">
           <strong>Guided tasks</strong>
@@ -4951,7 +5094,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const compatibleConnections = compatibleModelConnectionsForPreset();
+      const compatibleConnections = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.workflowDashboard || state.modelSetupAlternativesOpen });
       if (!compatibleConnections.length) {
         status.textContent = "Unavailable";
         status.className = "status-chip is-bad";
@@ -4968,7 +5111,11 @@ const MotionJSONUI = (() => {
       status.textContent = selectedReadiness.label;
       status.className = `status-chip is-${selectedReadiness.tone}`;
 
-      choices.innerHTML = compatibleConnections.map((connection) => {
+      const recommendedId = recommendedConnectionIdForPreset();
+      const normalConnections = state.modelSetupAlternativesOpen || state.workflowDashboard
+        ? compatibleConnections
+        : compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId || connection.id === recommendedId).slice(0, 1);
+      choices.innerHTML = normalConnections.map((connection) => {
           const provider = providerSettingsById(connection.providerId);
           const summary = connectionReadiness(connection);
           const active = connection.id === selected.id;
@@ -5039,6 +5186,8 @@ const MotionJSONUI = (() => {
                 ? "sam2ModelConfigPath"
                 : fieldName === "sam2_device"
                   ? "sam2Device"
+                  : fieldName === "sam2_hf_device"
+                    ? "sam2HfDevice"
                   : fieldName === "sam3_model_path"
                     ? "sam3ModelPath"
                     : fieldName === "sam3_device"
@@ -5077,8 +5226,19 @@ const MotionJSONUI = (() => {
         : "";
       const setupJob = setupJobForProvider(connection.providerId);
       const setupJobSummary = setupJobStatusSummary(setupJob);
+      const setupState = modelSetupStateForConnection(connection, settingsProvider, setupJob);
+      const primarySetupAction = modelSetupPrimaryActionForState(setupState, connection);
+      const setupStateTone =
+        setupState.status === "ready"
+          ? "ready"
+          : setupState.status === "failed_recoverable"
+            ? "bad"
+            : ["checking_environment", "caching_model", "installing_runtime", "smoke_testing"].includes(setupState.status)
+              ? "neutral"
+              : "warn";
+      const hasAlternatives = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: true }).length > 1;
       const local = !hosted;
-      const canInstall = connection.providerId === "sam3-local" || connection.providerId === "sam2-local";
+      const canInstall = connection.providerId === "sam3-local" || connection.providerId === "sam2-local" || connection.providerId === "sam2-hf-auto-masks";
       const canCheckAccess = connection.providerId === "sam3-local" || hosted;
       const manualCommands = commandRows
         ? `<details class="provider-setup-commands">
@@ -5094,58 +5254,78 @@ const MotionJSONUI = (() => {
             <p>${escapeHtml(guide.setupSummary || connection.recommendation)}</p>
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
-          <div class="model-setup-credentials">${credentialSummary}</div>
         </div>
-        <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status">${escapeHtml(resultMessage)}</div>
-        <div class="model-setup-job is-${escapeAttribute(setupJobSummary.tone)}">
+        <div class="model-setup-state-card is-${escapeAttribute(setupStateTone)}">
           <div>
-            <strong>${escapeHtml(setupJobSummary.label)}</strong>
-            <span class="row-meta">${escapeHtml(setupJobSummary.message)}</span>
+            <strong>${escapeHtml(setupState.label)}</strong>
+            <span class="row-meta">${escapeHtml(resultMessage || setupState.message)}</span>
           </div>
-          ${setupJob?.status === "running" || setupJob?.status === "queued" ? `<button type="button" data-model-setup-action="cancel-setup-job" data-setup-job-id="${escapeAttribute(setupJob.id)}">Cancel setup</button>` : ""}
+          <div class="model-setup-normal-actions">
+            <button
+              type="button"
+              data-model-setup-action="${escapeAttribute(primarySetupAction.id)}"
+              ${primarySetupAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
+              hidden
+              aria-hidden="true"
+            >${escapeHtml(primarySetupAction.label)}</button>
+            ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide models" : "Change model"}</button>` : ""}
+          </div>
         </div>
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
-        ${manualCommands}
-        <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
-          ${profileField}
-          <label>
-            <span>Model</span>
-            <select data-model-setup-field="selectedModel">
-              ${modelOptions
-                .map((option) => `<option value="${escapeAttribute(option.id)}" ${option.id === selectedModel ? "selected" : ""}>${escapeHtml(option.label || option.id)}</option>`)
-                .join("")}
-            </select>
-          </label>
-          ${
-            settingsProvider?.customModelAllowed
-              ? `<label class="model-setup-custom-model" ${customHidden ? "hidden" : ""}>
-                  <span>Custom model id</span>
-                  <input data-model-setup-field="customModelId" type="text" value="${escapeAttribute(settings.customModelId || "")}" />
-                </label>`
-              : ""
-          }
-          ${localFields}
-          ${endpointField}
-          ${credentialField}
-          ${
-            hosted
-              ? `<label class="track-toggle model-hosted-toggle">
-                  <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
-                  <span>I understand hosted calls can send frames off-device and may cost money</span>
-                </label>`
-              : ""
-          }
-          <div class="model-setup-actions">
-            ${canInstall ? `<button type="button" data-model-setup-action="install">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : "Install fallback"}</button>` : ""}
-            ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
-            <button type="button" data-model-setup-action="save">Save setup</button>
-            <button type="button" data-model-setup-action="diagnose">Diagnose</button>
-            <button type="button" data-model-setup-action="smoke">Run smoke test</button>
-            <button type="button" data-model-setup-action="view-setup-logs">View logs</button>
-            <button type="button" data-model-setup-action="reset">Reset</button>
+        <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
+        <details class="advanced-panel model-setup-advanced">
+          <summary>Advanced</summary>
+          ${manualCommands}
+          <div class="model-setup-job is-${escapeAttribute(setupJobSummary.tone)}">
+            <div>
+              <strong>${escapeHtml(setupJobSummary.label)}</strong>
+              <span class="row-meta">${escapeHtml(setupJobSummary.message)}</span>
+            </div>
+            ${setupJob?.status === "running" || setupJob?.status === "queued" ? `<button type="button" data-model-setup-action="cancel-setup-job" data-setup-job-id="${escapeAttribute(setupJob.id)}">Cancel setup</button>` : ""}
           </div>
-        </form>
-        <div id="modelSetupJobLog" class="event-log setup-job-log" ${setupJob ? "" : "hidden"}>${setupJobEventsMarkup(setupJob)}</div>
+          <div class="model-setup-credentials">${credentialSummary}</div>
+          <form id="modelSetupForm" class="model-setup-form" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
+            ${profileField}
+            <label>
+              <span>Model</span>
+              <select data-model-setup-field="selectedModel">
+                ${modelOptions
+                  .map((option) => `<option value="${escapeAttribute(option.id)}" ${option.id === selectedModel ? "selected" : ""}>${escapeHtml(option.label || option.id)}</option>`)
+                  .join("")}
+              </select>
+            </label>
+            ${
+              settingsProvider?.customModelAllowed
+                ? `<label class="model-setup-custom-model" ${customHidden ? "hidden" : ""}>
+                    <span>Custom model id</span>
+                    <input data-model-setup-field="customModelId" type="text" value="${escapeAttribute(settings.customModelId || "")}" />
+                  </label>`
+                : ""
+            }
+            ${localFields}
+            ${endpointField}
+            ${credentialField}
+            ${
+              hosted
+                ? `<label class="track-toggle model-hosted-toggle">
+                    <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+                    <span>I understand hosted calls can send frames off-device and may cost money</span>
+                  </label>`
+                : ""
+            }
+            <div class="model-setup-actions">
+              ${canInstall ? `<button type="button" data-model-setup-action="install">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : connection.providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install fallback"}</button>` : ""}
+              ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
+              <button type="button" data-model-setup-action="cache-model">Cache model</button>
+              <button type="button" data-model-setup-action="save">Save setup</button>
+              <button type="button" data-model-setup-action="diagnose">Diagnose</button>
+              <button type="button" data-model-setup-action="smoke">Run smoke test</button>
+              <button type="button" data-model-setup-action="view-setup-logs">View logs</button>
+              <button type="button" data-model-setup-action="reset">Reset</button>
+            </div>
+          </form>
+          <div id="modelSetupJobLog" class="event-log setup-job-log" ${setupJob ? "" : "hidden"}>${setupJobEventsMarkup(setupJob)}</div>
+        </details>
       `;
     }
 
@@ -5419,6 +5599,7 @@ const MotionJSONUI = (() => {
               sam2_checkpoint_path: "sam2CheckpointPath",
               sam2_model_config_path: "sam2ModelConfigPath",
               sam2_device: "sam2Device",
+              sam2_hf_device: "sam2HfDevice",
               sam3_model_path: "sam3ModelPath",
               sam3_device: "sam3Device",
             }[fieldName] || fieldName;
@@ -5650,6 +5831,7 @@ const MotionJSONUI = (() => {
         sam2CheckpointPath: value("[data-provider-field='sam2CheckpointPath']"),
         sam2ModelConfigPath: value("[data-provider-field='sam2ModelConfigPath']"),
         sam2Device: value("[data-provider-field='sam2Device']"),
+        sam2HfDevice: value("[data-provider-field='sam2HfDevice']"),
         sam3ModelPath: value("[data-provider-field='sam3ModelPath']"),
         sam3Device: value("[data-provider-field='sam3Device']"),
       };
@@ -5675,6 +5857,7 @@ const MotionJSONUI = (() => {
         sam2CheckpointPath: value("[data-model-setup-field='sam2CheckpointPath']"),
         sam2ModelConfigPath: value("[data-model-setup-field='sam2ModelConfigPath']"),
         sam2Device: value("[data-model-setup-field='sam2Device']"),
+        sam2HfDevice: value("[data-model-setup-field='sam2HfDevice']"),
         sam3ModelPath: value("[data-model-setup-field='sam3ModelPath']"),
         sam3Device: value("[data-model-setup-field='sam3Device']"),
       });
@@ -7818,8 +8001,9 @@ const MotionJSONUI = (() => {
 
     function applyPreset(presetName, options = {}) {
       state.selectedPreset = PRESETS[presetName] ? presetName : "auto_object_proposals";
+      state.modelSetupAlternativesOpen = false;
       if (goalRequiresModel(state.selectedPreset)) {
-        state.selectedModelSetupProviderId = recommendedConnectionIdForPreset(state.selectedPreset);
+        if (!options.keepProvider) state.selectedModelSetupProviderId = recommendedConnectionIdForPreset(state.selectedPreset);
       } else if (state.activeWorkflowStep === "provider_settings") {
         state.activeWorkflowStep = "prompt_preview";
       }
@@ -10522,6 +10706,7 @@ const MotionJSONUI = (() => {
       const choice = event.target.closest("[data-model-setup-provider]");
       if (choice) {
         state.selectedModelSetupProviderId = choice.dataset.modelSetupProvider;
+        state.modelSetupAlternativesOpen = false;
         state.modelSetupMessage = "";
         state.modelSetupTone = "neutral";
         renderModelSetup();
@@ -10539,7 +10724,11 @@ const MotionJSONUI = (() => {
       button.disabled = true;
       setModelSetupMessage(`${action} in progress...`, "neutral");
       try {
-        if (action === "cancel-setup-job") {
+        if (action === "change-model") {
+          state.modelSetupAlternativesOpen = !state.modelSetupAlternativesOpen;
+          setModelSetupMessage(state.modelSetupAlternativesOpen ? "Choose a different compatible model." : "", "neutral");
+          renderModelSetup();
+        } else if (action === "cancel-setup-job") {
           await cancelProviderSetupJob(button.dataset.setupJobId || state.selectedProviderSetupJobId);
         } else if (action === "view-setup-logs") {
           const log = $("#modelSetupJobLog");
@@ -10575,27 +10764,47 @@ const MotionJSONUI = (() => {
             : {
                 settings: form ? modelSetupPayloadFromForm(form) : {},
                 saveFirst: true,
-                allowNetwork: window.confirm("Check Hugging Face facebook/sam3 access now? This makes a network request using HF_TOKEN or HUGGINGFACE_HUB_TOKEN."),
+                allowNetwork: Boolean(state.health?.mockMode) || window.confirm("Check Hugging Face access now? This makes a network request only after your confirmation."),
               };
           await startProviderSetupJob(providerId, hosted ? "test" : "check_access", body);
         } else if (action === "install") {
-          const confirmed = window.confirm(
+          const confirmed = Boolean(state.health?.mockMode) || window.confirm(
             providerId === "sam3-local"
               ? "Install SAM3 Scene Sweep dependencies now? This runs a whitelisted pip install for the sam3-transformers extra."
-              : "Install SAM2 fallback dependencies now? This runs a whitelisted pip install for the sam2 extra.",
+              : providerId === "sam2-hf-auto-masks"
+                ? "Install SAM2 HF automatic-mask dependencies now? This runs a whitelisted pip install for the sam2-transformers extra."
+                : "Install SAM2 fallback dependencies now? This runs a whitelisted pip install for the sam2 extra.",
           );
           if (!confirmed) {
             setModelSetupMessage("Install canceled.", "neutral");
             return;
           }
           await startProviderSetupJob(providerId, "install", {
+            dryRun: Boolean(state.health?.mockMode),
+            settings: form ? modelSetupPayloadFromForm(form) : {},
+            saveFirst: true,
+          });
+        } else if (action === "cache-model") {
+          const confirmed = Boolean(state.health?.mockMode) || window.confirm("Cache the selected model now? This can download model weights and use local disk space.");
+          if (!confirmed) {
+            setModelSetupMessage("Model cache canceled.", "neutral");
+            return;
+          }
+          await startProviderSetupJob(providerId, "cache_model", {
+            allowNetwork: true,
+            allowDisk: true,
+            dryRun: Boolean(state.health?.mockMode),
+            model:
+              providerId === "sam3-local"
+                ? sam3TrackerModelForInput(collectFormState($))
+                : providerEffectiveModel(providerSettingsById(providerId)) || (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3"),
             settings: form ? modelSetupPayloadFromForm(form) : {},
             saveFirst: true,
           });
         } else if (action === "smoke") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
-          const confirmed = window.confirm(
+          const confirmed = Boolean(state.health?.mockMode) || window.confirm(
             hosted
               ? "Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost."
               : "Run a local SAM smoke test? This can import heavy local model packages and touch configured model files.",
@@ -10606,7 +10815,7 @@ const MotionJSONUI = (() => {
           }
           const body = hosted
             ? { allowNetwork: true, allowHosted: true, acknowledgeCostPrivacy: true, prompt: $("#textPrompt")?.value || "object" }
-            : { allowHeavyLocal: true, sceneSweep: providerId === "sam3-local" && state.selectedPreset === "trace_all_objects", videoPath: selectedVideoPath() };
+            : { allowHeavyLocal: true, dryRun: Boolean(state.health?.mockMode), sceneSweep: providerId === "sam3-local" && state.selectedPreset === "trace_all_objects", videoPath: selectedVideoPath() };
           await startProviderSetupJob(providerId, "smoke", {
             ...body,
             settings: form ? modelSetupPayloadFromForm(form) : {},
@@ -10744,6 +10953,8 @@ const MotionJSONUI = (() => {
     modelPlanSourceIds,
     modelSetupPayloadFromValues,
     modelSetupProviderSummary,
+    modelSetupStateForConnection,
+    modelSetupPrimaryActionForState,
     jobCenterStateFromSnapshot,
     normalizedModelConnection,
     normalizeJobLifecycle,
