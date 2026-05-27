@@ -44,7 +44,11 @@ const CAPTURE_STATES = [
   "model-setup-sam3-roboflow",
   "model-setup-sam3-custom",
   "model-setup-hosted-warning",
+  "model-setup-confirm-access",
   "model-setup-confirm-cache",
+  "model-setup-cache-running",
+  "model-setup-cache-failed",
+  "model-setup-cache-success",
   "model-setup-missing",
   "model-setup-invalid",
   "model-setup-success",
@@ -634,6 +638,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
           modelSetupConfirmationVisible: visible(document.querySelector(".model-setup-confirmation")),
           modelSetupConfirmationText: document.querySelector(".model-setup-confirmation")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          modelSetupProgressVisible: visible(document.querySelector(".model-setup-progress-card")),
+          modelSetupProgressText: document.querySelector(".model-setup-progress-card")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
           configSaveLoadOpen: document.querySelector(".compact-advanced-actions")?.open === true,
           startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
@@ -731,8 +737,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-confirm-cache" && stateValue.activeModelChoice !== "SAM2 HF automatic masks") {
       failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
     }
+    if (state === "model-setup-confirm-access" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {
+      failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be active for the access confirmation`);
+    }
+    if (state === "model-setup-confirm-access" && (!stateValue.modelSetupConfirmationVisible || !/Check Hugging Face access/.test(stateValue.modelSetupConfirmationText) || !/network/.test(stateValue.modelSetupConfirmationText))) {
+      failures.push(`${viewport.name}/${state}: access confirmation should be visible with network flag`);
+    }
     if (state === "model-setup-confirm-cache" && (!stateValue.modelSetupConfirmationVisible || !/Cache model/.test(stateValue.modelSetupConfirmationText) || !/network/.test(stateValue.modelSetupConfirmationText) || !/disk/.test(stateValue.modelSetupConfirmationText))) {
       failures.push(`${viewport.name}/${state}: cache confirmation should be visible with network and disk flags`);
+    }
+    if (state === "model-setup-cache-running" && (!stateValue.modelSetupProgressVisible || !/Downloading or resolving Hugging Face snapshot|Caching model|Setup running/.test(stateValue.modelSetupProgressText))) {
+      failures.push(`${viewport.name}/${state}: active cache job should show normal-mode setup progress`);
+    }
+    if (state === "model-setup-cache-failed" && (!stateValue.modelSetupProgressVisible || !/Model cache failed|Cache model/.test(stateValue.modelSetupProgressText))) {
+      failures.push(`${viewport.name}/${state}: failed cache job should keep a visible normal-mode progress/result block`);
+    }
+    if (state === "model-setup-cache-success" && (!stateValue.modelSetupProgressVisible || !/Model cached|100%|Setup complete/.test(stateValue.modelSetupProgressText))) {
+      failures.push(`${viewport.name}/${state}: successful cache job should show completion progress`);
     }
     if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Import video and project settings" || !stateValue.videoFormVisible)) {
       failures.push(`${viewport.name}/${state}: video step should expose import and project settings with the local video path form`);

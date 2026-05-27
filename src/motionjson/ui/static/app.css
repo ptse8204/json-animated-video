@@ -2790,6 +2790,84 @@ button,
   background: var(--bad-soft);
 }
 
+.model-setup-progress-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  gap: 14px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid #dbe6e4;
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: #f8fbff;
+}
+
+.model-setup-progress-card.is-ready {
+  border-left-color: var(--ready);
+  background: var(--ready-soft);
+}
+
+.model-setup-progress-card.is-bad {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.model-setup-progress-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.model-setup-progress-meter {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.model-setup-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: #dbe6e4;
+}
+
+.model-setup-progress-bar {
+  display: block;
+  width: var(--model-setup-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.model-setup-progress-card.is-ready .model-setup-progress-bar {
+  background: var(--ready);
+}
+
+.model-setup-progress-card.is-bad .model-setup-progress-bar {
+  background: var(--bad);
+}
+
+.model-setup-progress-bar.is-indeterminate {
+  position: absolute;
+  left: -35%;
+  width: 35%;
+  animation: model-setup-progress-slide 1.35s ease-in-out infinite;
+}
+
+.model-setup-progress-bar.is-static {
+  opacity: 0.72;
+}
+
+@keyframes model-setup-progress-slide {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(385%);
+  }
+}
+
 .model-setup-state-card {
   display: flex;
   gap: var(--space-sm);
@@ -5048,7 +5126,8 @@ body {
 
 .model-setup-summary,
 .model-setup-state-card,
-.model-setup-access-card {
+.model-setup-access-card,
+.model-setup-progress-card {
   border-radius: 8px;
 }
 
@@ -5162,6 +5241,7 @@ body {
 
   .goal-card-grid,
   .model-setup-access-card,
+  .model-setup-progress-card,
   .model-setup-confirmation,
   .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel {
     grid-template-columns: minmax(0, 1fr);

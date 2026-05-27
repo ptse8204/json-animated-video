@@ -8,7 +8,7 @@ import sys
 import uuid
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from motionjson.backend.usage import utc_now
 from motionjson.provider_settings import (
@@ -28,6 +28,7 @@ from motionjson.providers.sam3 import SAM3_HF_REPO_ID
 
 PROVIDER_SETUP_JOB_FORMAT = "motionjson.provider_setup_job.v0.1"
 TERMINAL_SETUP_JOB_STATUSES = {"succeeded", "failed", "canceled", "blocked"}
+SetupProgressCallback = Callable[[str, str, int | float | None, bool], None]
 
 
 def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
@@ -205,7 +206,13 @@ def create_provider_setup_job(
         """,
         row,
     )
-    _record_setup_event(conn, job_id=row["id"], event_type="queued", message=f"{provider_id} setup action queued.", metadata={"action": action})
+    _record_setup_event(
+        conn,
+        job_id=row["id"],
+        event_type="queued",
+        message=f"{provider_id} setup action queued.",
+        metadata={"action": action, "progress": _progress_payload(known=False, percent=0, label="Queued")},
+    )
     conn.commit()
     return public_provider_setup_job(conn, user_id=user_id, job_id=row["id"], include_events=True)
 
@@ -231,31 +238,72 @@ def run_provider_setup_job(
         "UPDATE provider_setup_jobs SET status = 'running', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?",
         (now, now, job_id),
     )
-    _record_setup_event(conn, job_id=job_id, event_type="started", message=f"{provider_id} setup action started.", metadata={"action": action})
+    _record_setup_event(
+        conn,
+        job_id=job_id,
+        event_type="started",
+        message=f"{provider_id} setup action started.",
+        metadata={"action": action, "progress": _progress_payload(known=False, percent=5, label=_started_progress_label(action))},
+    )
     conn.commit()
+
+    def emit_progress(event_type: str, label: str, percent: int | float | None = None, known: bool = False) -> None:
+        _record_setup_event(
+            conn,
+            job_id=job_id,
+            event_type=event_type,
+            message=label,
+            metadata={"action": action, "progress": _progress_payload(known=known, percent=percent, label=label)},
+        )
+        conn.commit()
 
     try:
         _raise_if_canceled(conn, job_id)
-        result = _execute_setup_action(conn, user_id=user_id, provider_id=provider_id, action=action, payload=effective_payload, environ=environ)
+        result = _execute_setup_action(
+            conn,
+            user_id=user_id,
+            provider_id=provider_id,
+            action=action,
+            payload=effective_payload,
+            environ=environ,
+            progress=emit_progress,
+        )
         _raise_if_canceled(conn, job_id)
     except _SetupCanceled as exc:
         _finish_setup_job(conn, job_id=job_id, status="canceled", result={"message": str(exc)}, error=str(exc))
     except Exception as exc:
         message = redact_secret_text(str(exc) or type(exc).__name__)
-        _record_setup_event(conn, job_id=job_id, event_type="failed", message=message, metadata={"action": action})
-        _finish_setup_job(conn, job_id=job_id, status="failed", result={"message": message}, error=message)
+        failed_result = {
+            "message": message,
+            "progress": _progress_payload(known=False, percent=0, label=_failed_progress_label(action)),
+        }
+        _record_setup_event(
+            conn,
+            job_id=job_id,
+            event_type="failed",
+            message=message,
+            metadata={"action": action, "progress": failed_result["progress"]},
+        )
+        _finish_setup_job(conn, job_id=job_id, status="failed", result=failed_result, error=message)
     else:
         status = "succeeded" if _result_ready_or_ok(result) else str(result.get("status") or "blocked")
         if status not in TERMINAL_SETUP_JOB_STATUSES:
             status = "succeeded" if result.get("ready") is True else "blocked"
+        terminal_progress = _normalized_progress(result.get("progress")) or _terminal_progress_for_action(action, status)
         _record_setup_event(
             conn,
             job_id=job_id,
             event_type=status,
             message=str(result.get("message") or f"{provider_id} setup action finished."),
-            metadata={"action": action, "ready": result.get("ready")},
+            metadata={"action": action, "ready": result.get("ready"), "progress": terminal_progress},
         )
-        _finish_setup_job(conn, job_id=job_id, status=status, result=result, error=None if status == "succeeded" else result.get("message"))
+        _finish_setup_job(
+            conn,
+            job_id=job_id,
+            status=status,
+            result={**dict(result), "progress": terminal_progress},
+            error=None if status == "succeeded" else result.get("message"),
+        )
     return public_provider_setup_job(conn, user_id=user_id, job_id=job_id, include_events=True)
 
 
@@ -285,6 +333,7 @@ def public_provider_setup_job(
         "terminal": row["status"] in TERMINAL_SETUP_JOB_STATUSES,
         "setupState": _setup_state_for_job(row["status"], row["action"], result),
     }
+    public["progress"] = _setup_progress_for_job(conn, row, result)
     if include_events:
         public["events"] = list_provider_setup_events(conn, user_id=user_id, job_id=job_id)
     return public
@@ -346,6 +395,7 @@ def _execute_setup_action(
     action: str,
     payload: Mapping[str, Any],
     environ: Mapping[str, str] | None = None,
+    progress: SetupProgressCallback | None = None,
 ) -> dict[str, Any]:
     environ = environ or os.environ
     settings_payload = payload.get("settings") if isinstance(payload.get("settings"), Mapping) else payload
@@ -368,7 +418,7 @@ def _execute_setup_action(
         cache_payload = dict(payload)
         if not any(cache_payload.get(key) for key in ("model", "modelId", "model_id")):
             cache_payload["model"] = runtime.get("selected_model") or runtime.get("runtime_model")
-        result = _cache_model_action(provider_id, cache_payload, token=str(runtime.get("hf_token") or ""))
+        result = _cache_model_action(provider_id, cache_payload, token=str(runtime.get("hf_token") or ""), progress=progress)
         if result.get("ready") is True and result.get("localModelDir"):
             record_provider_model_cache(
                 conn,
@@ -444,7 +494,13 @@ def _install_command(provider_id: str) -> list[str]:
     return [sys.executable, "-m", "pip", "install", f"motionjson[{extra}]"]
 
 
-def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: str = "") -> dict[str, Any]:
+def _cache_model_action(
+    provider_id: str,
+    payload: Mapping[str, Any],
+    *,
+    token: str = "",
+    progress: SetupProgressCallback | None = None,
+) -> dict[str, Any]:
     if not _truthy(payload.get("allowNetwork", payload.get("allow_network"))):
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
@@ -455,6 +511,7 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
             "networkAttempted": False,
             "heavyLocalAttempted": False,
             "message": "Model caching needs explicit network confirmation.",
+            "progress": _progress_payload(known=False, percent=0, label="Waiting for network confirmation"),
         }
     if not _truthy(payload.get("allowDisk", payload.get("allow_disk", payload.get("allowDownload", payload.get("allow_download"))))):
         return {
@@ -466,18 +523,25 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
             "networkAttempted": False,
             "heavyLocalAttempted": False,
             "message": "Model caching needs explicit disk/download confirmation.",
+            "progress": _progress_payload(known=False, percent=0, label="Waiting for disk confirmation"),
         }
     default_model = SAM3_HF_REPO_ID if provider_id == "sam3-local" else SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
     model_id = str(payload.get("model") or payload.get("modelId") or payload.get("model_id") or default_model).strip() or default_model
+    if progress:
+        progress("resolving_model", "Resolving selected model", 10, False)
     if model_id.endswith(".pt") or Path(model_id).expanduser().is_file():
         raise ValueError(
             "Model caching expects a Hugging Face repo id or local model directory, not a single .pt checkpoint file."
         )
     local_candidate = Path(model_id).expanduser()
     if local_candidate.exists() and local_candidate.is_dir():
+        if progress:
+            progress("verifying_cache", "Verifying local model directory", 85, False)
         ok, detail = _local_from_pretrained_dir_status(local_candidate)
         if not ok:
             raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, detail, network_attempted=False))
+        if progress:
+            progress("cached", "Model directory found", 100, True)
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
             "providerId": provider_id,
@@ -489,9 +553,11 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
             "message": "Selected local model directory is available.",
             "model": model_id,
             "localModelDir": str(local_candidate),
-            "progress": {"percent": 100, "known": True, "label": "Model directory found"},
+            "progress": _progress_payload(known=True, percent=100, label="Model directory found"),
         }
     if _truthy(payload.get("dryRun", payload.get("dry_run"))):
+        if progress:
+            progress("cached", "Cache dry run accepted", 100, True)
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
             "providerId": provider_id,
@@ -503,17 +569,24 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
             "heavyLocalAttempted": False,
             "message": f"Cache dry run accepted for {model_id}.",
             "model": model_id,
+            "progress": _progress_payload(known=True, percent=100, label="Cache dry run accepted"),
         }
     if find_spec("huggingface_hub") is None:
         raise ValueError("huggingface_hub is not installed. Install the Transformers setup extra first.")
     from huggingface_hub import snapshot_download  # type: ignore
     try:
+        if progress:
+            progress("downloading_cache", "Downloading or resolving Hugging Face snapshot", 35, False)
         local_dir = snapshot_download(repo_id=model_id, token=token or None)
     except Exception as exc:
         raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, exc, network_attempted=True)) from exc
+    if progress:
+        progress("verifying_cache", "Verifying cached model", 85, False)
     ok, detail = _local_from_pretrained_dir_status(Path(str(local_dir)).expanduser())
     if not ok:
         raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, detail, network_attempted=True))
+    if progress:
+        progress("cached", "Model cached", 100, True)
     return {
         "format": PROVIDER_SETUP_JOB_FORMAT,
         "providerId": provider_id,
@@ -525,7 +598,7 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
         "message": f"Cached {model_id}. Use this model from the UI; local paths are redacted in browser responses.",
         "model": model_id,
         "localModelDir": str(local_dir),
-        "progress": {"percent": 100, "known": True, "label": "Model cached"},
+        "progress": _progress_payload(known=True, percent=100, label="Model cached"),
     }
 
 
@@ -667,6 +740,108 @@ def _record_setup_event(
     )
 
 
+def _setup_progress_for_job(conn: sqlite3.Connection, row: sqlite3.Row, result: Mapping[str, Any]) -> dict[str, Any]:
+    result_progress = _normalized_progress(result.get("progress"))
+    if result_progress:
+        return result_progress
+    event_progress = _latest_setup_event_progress(conn, job_id=str(row["id"]))
+    if event_progress:
+        return event_progress
+    return _default_progress_for_action(str(row["action"] or ""), str(row["status"] or "queued"))
+
+
+def _latest_setup_event_progress(conn: sqlite3.Connection, *, job_id: str) -> dict[str, Any] | None:
+    rows = conn.execute(
+        """
+        SELECT metadata_json
+        FROM provider_setup_events
+        WHERE setup_job_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 12
+        """,
+        (job_id,),
+    ).fetchall()
+    for row in rows:
+        progress = _json_dict(row["metadata_json"]).get("progress")
+        normalized = _normalized_progress(progress)
+        if normalized:
+            return normalized
+    return None
+
+
+def _normalized_progress(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, Mapping):
+        return None
+    return _progress_payload(
+        known=bool(value.get("known")),
+        percent=value.get("percent"),
+        label=str(value.get("label") or "Setup in progress"),
+    )
+
+
+def _progress_payload(*, known: bool, percent: Any, label: str) -> dict[str, Any]:
+    try:
+        numeric = float(percent if percent is not None else 0)
+    except (TypeError, ValueError):
+        numeric = 0.0
+    numeric = min(max(numeric, 0.0), 100.0)
+    percent_value: int | float = int(numeric) if numeric.is_integer() else numeric
+    clean_label = redact_secret_text(label or "Setup in progress")
+    if len(clean_label) > 180:
+        clean_label = f"{clean_label[:177]}..."
+    return {"known": bool(known), "percent": percent_value, "label": clean_label}
+
+
+def _started_progress_label(action: str) -> str:
+    return {
+        "cache_model": "Resolving selected model",
+        "check_access": "Checking Hugging Face access",
+        "install": "Installing optional runtime",
+        "smoke": "Running setup smoke test",
+        "diagnose": "Checking saved setup",
+        "test": "Checking hosted setup",
+    }.get(str(action or ""), "Setup running")
+
+
+def _failed_progress_label(action: str) -> str:
+    return {
+        "cache_model": "Model cache failed",
+        "check_access": "Access check failed",
+        "install": "Install failed",
+        "smoke": "Smoke test failed",
+        "diagnose": "Setup check failed",
+        "test": "Hosted setup check failed",
+    }.get(str(action or ""), "Setup failed")
+
+
+def _terminal_progress_for_action(action: str, status: str) -> dict[str, Any]:
+    if status == "succeeded":
+        label = {
+            "cache_model": "Model cached",
+            "check_access": "Access check complete",
+            "install": "Runtime installed",
+            "smoke": "Smoke test complete",
+            "diagnose": "Setup check complete",
+            "test": "Hosted setup check complete",
+        }.get(str(action or ""), "Setup complete")
+        return _progress_payload(known=True, percent=100, label=label)
+    if status in {"failed", "blocked", "canceled"}:
+        return _progress_payload(known=False, percent=0, label=_failed_progress_label(action) if status != "blocked" else "Setup needs confirmation")
+    return _default_progress_for_action(action, status)
+
+
+def _default_progress_for_action(action: str, status: str) -> dict[str, Any]:
+    if status == "queued":
+        return _progress_payload(known=False, percent=0, label="Queued")
+    if status == "running":
+        return _progress_payload(known=False, percent=5, label=_started_progress_label(action))
+    if status == "succeeded":
+        return _terminal_progress_for_action(action, status)
+    if status in {"failed", "blocked", "canceled"}:
+        return _terminal_progress_for_action(action, status)
+    return _progress_payload(known=False, percent=0, label="Setup pending")
+
+
 def _setup_state_for_job(status: str, action: str, result: Mapping[str, Any]) -> dict[str, Any]:
     normalized = str(status or "queued")
     action = str(action or "")
@@ -683,7 +858,7 @@ def _setup_state_for_job(status: str, action: str, result: Mapping[str, Any]) ->
     if action == "smoke":
         return {"status": "smoke_testing", "label": "Smoke testing", "message": "Running a bounded setup smoke test."}
     if action == "check_access":
-        return {"status": "needs_access", "label": "Checking access", "message": "Checking Hugging Face access."}
+        return {"status": "checking_environment", "label": "Checking access", "message": "Checking Hugging Face access."}
     return {"status": "checking_environment", "label": "Checking setup", "message": "Setup action is queued."}
 
 

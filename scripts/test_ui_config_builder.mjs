@@ -303,6 +303,45 @@ const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
 assert.equal(sam3BlockedAccessJobState.status, "needs_access");
 assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
 
+const sam3ActiveAccessJobState = ui.modelSetupStateForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready" },
+  },
+  {
+    action: "check_access",
+    status: "running",
+    terminal: false,
+    setupState: {
+      status: "needs_access",
+      label: "Checking access",
+      message: "Checking Hugging Face access.",
+    },
+    result: {},
+  },
+);
+assert.equal(sam3ActiveAccessJobState.status, "checking_environment");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3ActiveAccessJobState, { providerId: "sam3-local" }).label, "Cancel setup");
+
+const sam3CacheAccessBlockedState = ui.modelSetupStateForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready" },
+  },
+  {
+    action: "cache_model",
+    status: "blocked",
+    terminal: true,
+    result: {
+      message: "Hugging Face returned 403 for facebook/sam3. Confirm access with a configured token before caching.",
+    },
+  },
+);
+assert.equal(sam3CacheAccessBlockedState.status, "needs_access");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+
 const sam2CacheState = ui.modelSetupStateForConnection(
   { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
   {
@@ -322,6 +361,18 @@ const sam2CacheState = ui.modelSetupStateForConnection(
 assert.equal(sam2CacheState.status, "needs_download_confirmation");
 assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Cache model");
 
+const staleNotConfiguredState = ui.modelSetupStateForConnection(
+  { id: "sam2-local", providerId: "sam2-local", locality: "local" },
+  {
+    id: "sam2-local",
+    readiness: { configured: true, status: "ready", message: "Runtime ready." },
+    setupState: { status: "not_configured", label: "Needs setup", message: "Historical stale setup state." },
+  },
+  null,
+);
+assert.equal(staleNotConfiguredState.status, "ready");
+assert.equal(ui.modelSetupPrimaryActionForState(staleNotConfiguredState, { providerId: "sam2-local" }).label, "Continue to prepare");
+
 const cacheConfirmation = ui.modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
   model: "facebook/sam2.1-hiera-large",
 });
@@ -330,13 +381,48 @@ assert.equal(cacheConfirmation.providerId, "sam2-hf-auto-masks");
 assert.ok(cacheConfirmation.flags.includes("disk"));
 assert.ok(cacheConfirmation.flags.includes("network"));
 
+const accessConfirmation = ui.modelSetupConfirmationForAction("check-access", "sam3-local", {
+  model: "facebook/sam3",
+  settingsPayload: ui.modelSetupPayloadFromValues("sam3-local", {
+    selectedModel: "facebook/sam3",
+    hfToken: "hf_snapshot_only_for_test",
+  }),
+});
+assert.equal(accessConfirmation.providerId, "sam3-local");
+assert.equal(accessConfirmation.action, "check-access");
+assert.equal(accessConfirmation.model, "facebook/sam3");
+assert.equal(accessConfirmation.settingsPayload.hfToken, "hf_snapshot_only_for_test");
+
+const activeCacheJob = {
+  action: "cache_model",
+  status: "running",
+  terminal: false,
+  progress: { known: false, percent: 35, label: "Downloading or resolving Hugging Face snapshot" },
+  result: {},
+};
+const activeCacheState = ui.modelSetupStateForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  { id: "sam3-local", readiness: { configured: true, status: "ready" } },
+  activeCacheJob,
+);
+assert.equal(activeCacheState.status, "caching_model");
+assert.equal(ui.modelSetupPrimaryActionForState(activeCacheState, { providerId: "sam3-local" }).label, "Cancel setup");
+assert.deepEqual(ui.setupJobProgressSummary(activeCacheJob), {
+  known: false,
+  percent: 35,
+  label: "Downloading or resolving Hugging Face snapshot",
+});
+
 const appJs = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
 assert.equal(appJs.includes("window.confirm"), false);
 const confirmationHandler = appJs.slice(
   appJs.indexOf("const confirmationButton = event.target.closest"),
   appJs.indexOf("const button = event.target.closest(\"[data-model-setup-action]\")"),
 );
-assert.ok(confirmationHandler.includes("Keep the current form DOM until the confirmed action reads password fields."));
+assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction"));
+assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction = null;"));
+assert.ok(appJs.includes("function modelSetupPayloadForAction"));
+assert.ok(appJs.includes("model-setup-progress-card"));
 assert.equal(/state\.pendingModelSetupConfirmation = null;\s*renderModelSetup\(\);\s*const setupButton/.test(confirmationHandler), false);
 
 const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {

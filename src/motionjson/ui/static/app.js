@@ -468,6 +468,7 @@ const MotionJSONUI = (() => {
     modelSetupMessage: "",
     modelSetupTone: "neutral",
     pendingModelSetupConfirmation: null,
+    confirmedModelSetupAction: null,
     modelPlanRun: null,
     modelPlanValidation: null,
     modelPlanMessage: "",
@@ -2671,22 +2672,90 @@ const MotionJSONUI = (() => {
     const status = String(job.status || "queued");
     const tone = status === "succeeded" ? "ready" : status === "failed" || status === "blocked" || status === "canceled" ? "bad" : "neutral";
     const result = job.result || {};
+    const progress = setupJobProgressSummary(job);
     return {
       tone,
       label: status === "succeeded" ? "Setup complete" : status === "running" || status === "queued" ? "Setup running" : humanizeReviewCode(status),
       message: result.message || job.error || `Setup ${status}.`,
+      progress,
     };
   }
 
-  function modelSetupStateForConnection(connection, provider = null, latestJob = null) {
+  function setupJobProgressSummary(job) {
+    const normalize = (progress) => {
+      if (!progress || typeof progress !== "object") return null;
+      const rawPercent = Number(progress.percent);
+      const percent = Number.isFinite(rawPercent) ? Math.min(Math.max(rawPercent, 0), 100) : 0;
+      const label = String(progress.label || "").trim() || "Setup in progress";
+      return { known: progress.known === true, percent, label };
+    };
+    const eventProgress = asArray(job?.events)
+      .slice()
+      .reverse()
+      .map((event) => normalize(event?.metadata?.progress))
+      .find(Boolean);
+    return normalize(job?.progress) || normalize(job?.result?.progress) || eventProgress;
+  }
+
+  function setupJobProgressCard(job, summary = setupJobStatusSummary(job)) {
+    if (!job) return "";
+    const action = String(job.action || "");
+    if (!["install", "check_access", "cache_model", "smoke", "test", "diagnose"].includes(action)) return "";
+    const progress = summary.progress || setupJobProgressSummary(job);
+    if (!progress && !["queued", "running"].includes(String(job.status || ""))) return "";
+    const normalizedProgress = progress || { known: false, percent: 0, label: summary.message || "Setup in progress" };
+    const status = String(job.status || "queued");
+    const tone = summary.tone || (status === "succeeded" ? "ready" : status === "failed" || status === "blocked" || status === "canceled" ? "bad" : "neutral");
+    const active = status === "queued" || status === "running";
+    const percent = Math.min(Math.max(Number(normalizedProgress.percent) || 0, 0), 100);
+    const displayPercent = normalizedProgress.known || active ? percent : 100;
+    const barClass = normalizedProgress.known ? "" : active ? "is-indeterminate" : "is-static";
+    const meterText = normalizedProgress.known ? `${Math.round(percent)}%` : active ? "In progress" : "Needs attention";
+    const progressAttrs = normalizedProgress.known
+      ? `aria-valuenow="${escapeAttribute(String(Math.round(percent)))}"`
+      : "";
+    return `
+      <div class="model-setup-progress-card is-${escapeAttribute(tone)}" role="status" aria-live="polite">
+        <div class="model-setup-progress-copy">
+          <strong>${escapeHtml(summary.label || humanizeReviewCode(status))}</strong>
+          <span class="row-meta">${escapeHtml(normalizedProgress.label || summary.message || "Setup in progress")}</span>
+        </div>
+        <div class="model-setup-progress-meter">
+          <div
+            class="model-setup-progress-track"
+            role="progressbar"
+            aria-label="${escapeAttribute(summary.label || "Setup progress")}"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            ${progressAttrs}
+          >
+            <span class="model-setup-progress-bar ${barClass}" style="--model-setup-progress: ${escapeAttribute(String(displayPercent))}%;"></span>
+          </div>
+          <span class="row-meta">${escapeHtml(meterText)}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  function modelSetupDecisionForConnection(connection, provider = null, latestJob = null) {
     const readiness = provider?.readiness || {};
     const backendState = latestJob?.setupState || provider?.setupState || {};
     const jobStatus = String(latestJob?.status || "").toLowerCase();
     if (latestJob && !latestJob.terminal) {
+      const statusByAction = {
+        cache_model: "caching_model",
+        install: "installing_runtime",
+        smoke: "smoke_testing",
+        check_access: "checking_environment",
+        diagnose: "checking_environment",
+        test: "checking_environment",
+      };
+      const activeStatus = statusByAction[latestJob.action] || backendState.status || "checking_environment";
       return {
-        status: backendState.status || (latestJob.action === "cache_model" ? "caching_model" : latestJob.action === "install" ? "installing_runtime" : latestJob.action === "smoke" ? "smoke_testing" : "checking_environment"),
+        status: activeStatus,
         label: backendState.label || setupJobStatusSummary(latestJob).label,
         message: backendState.message || setupJobStatusSummary(latestJob).message,
+        nextAction: "cancel_setup_job",
       };
     }
     if (latestJob && ["failed", "blocked", "canceled", "cancelled"].includes(jobStatus)) {
@@ -2706,6 +2775,14 @@ const MotionJSONUI = (() => {
           message: failedMessage || "Confirm provider access before caching the model.",
         };
       }
+      if (failedAction === "cache_model") {
+        return {
+          status: "needs_download_confirmation",
+          label: "Cache model",
+          message: failedMessage || "Cache the selected model again after resolving the local setup issue.",
+          nextAction: "cache_model",
+        };
+      }
       if (backendState.status && backendState.status !== "ready" && failedAction !== "smoke") {
         return backendState;
       }
@@ -2715,7 +2792,11 @@ const MotionJSONUI = (() => {
         message: latestJob.result?.message || latestJob.error || "Setup did not finish. Retry or choose a different model.",
       };
     }
-    if (provider?.setupState?.status) {
+    const providerSetupStatus = String(provider?.setupState?.status || "");
+    if (["needs_access", "needs_download_confirmation", "needs_path", "failed_recoverable"].includes(providerSetupStatus)) {
+      return provider.setupState;
+    }
+    if (providerSetupStatus === "ready" && (readiness.configured === true || readiness.status === "ready" || readiness.status === "configured")) {
       return provider.setupState;
     }
     const cached = latestJob?.action === "cache_model" && latestJob.status === "succeeded";
@@ -2756,6 +2837,10 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function modelSetupStateForConnection(connection, provider = null, latestJob = null) {
+    return modelSetupDecisionForConnection(connection, provider, latestJob);
+  }
+
   function modelSetupPrimaryActionForState(stateInfo = {}, connection = null) {
     const status = String(stateInfo.status || "not_configured");
     const nextAction = String(stateInfo.nextAction || "");
@@ -2773,9 +2858,11 @@ const MotionJSONUI = (() => {
       return { id: nextAction === "cache_model" ? "cache-model" : "diagnose", label: nextAction === "cache_model" ? "Cache model" : "Diagnose", primary: true };
     }
     if (status === "ready") {
-      return { id: "smoke", label: "Run smoke test", primary: false };
+      return { id: "continue-to-prepare", label: "Continue to prepare", primary: true };
     }
     if (status === "failed_recoverable") {
+      if (nextAction === "check_access") return { id: "check-access", label: "Check Hugging Face access", primary: true };
+      if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
       return { id: providerId === "sam3-local" || providerId === "sam2-hf-auto-masks" || providerId === "sam2-local" ? "install" : "diagnose", label: "Retry setup", primary: true };
     }
     if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
@@ -2816,6 +2903,7 @@ const MotionJSONUI = (() => {
       message: copy[normalized] || "Confirm this setup action before continuing.",
       model,
       flags,
+      settingsPayload: options.settingsPayload && typeof options.settingsPayload === "object" ? { ...options.settingsPayload } : {},
       requiresConfirmation: ["check-access", "test", "install", "cache-model", "smoke"].includes(normalized),
       hosted: Boolean(hosted),
     };
@@ -5393,6 +5481,7 @@ const MotionJSONUI = (() => {
             ${credentialInputMarkup(hfCredential, { normal: true })}
           </div>`
         : "";
+      const setupProgressCard = setupJobProgressCard(setupJob, setupJobSummary);
       const pendingConfirmation = state.pendingModelSetupConfirmation?.providerId === connection.providerId
         ? state.pendingModelSetupConfirmation
         : null;
@@ -5439,8 +5528,9 @@ const MotionJSONUI = (() => {
             ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide models" : "Change model"}</button>` : ""}
           </div>
         </div>
-        ${normalAccessCard}
         ${confirmationCard}
+        ${normalAccessCard}
+        ${setupProgressCard}
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
@@ -6044,6 +6134,20 @@ const MotionJSONUI = (() => {
       });
     }
 
+    function modelSetupPayloadForAction(form, action, providerId, confirmed = false) {
+      const snapshot = confirmed ? state.confirmedModelSetupAction : null;
+      if (
+        snapshot &&
+        snapshot.action === action &&
+        snapshot.providerId === providerId &&
+        snapshot.settingsPayload &&
+        typeof snapshot.settingsPayload === "object"
+      ) {
+        return { ...snapshot.settingsPayload };
+      }
+      return form ? modelSetupPayloadFromForm(form) : {};
+    }
+
     function setModelSetupMessage(message, tone = "neutral") {
       state.modelSetupMessage = message || "";
       state.modelSetupTone = tone || "neutral";
@@ -6074,7 +6178,14 @@ const MotionJSONUI = (() => {
     }
 
     async function pollProviderSetupJob(jobId) {
-      const deadline = Date.now() + 5 * 60 * 1000;
+      const initialJob = state.providerSetupJobs[jobId] || {};
+      const maxWaitMs =
+        initialJob.action === "cache_model"
+          ? 60 * 60 * 1000
+          : initialJob.action === "install"
+            ? 30 * 60 * 1000
+            : 5 * 60 * 1000;
+      const deadline = Date.now() + maxWaitMs;
       while (Date.now() < deadline) {
         await new Promise((resolvePromise) => window.setTimeout(resolvePromise, 900));
         const payload = await api(`/api/provider-settings/setup-jobs/${encodeURIComponent(jobId)}`);
@@ -9314,6 +9425,10 @@ const MotionJSONUI = (() => {
         state.jobArtifacts = [];
         state.jobReview = null;
         state.reviewTracks = [];
+        state.providerSetupJobs = {};
+        state.selectedProviderSetupJobId = "";
+        state.pendingModelSetupConfirmation = null;
+        state.confirmedModelSetupAction = null;
         if (modelSetupPanel) {
           modelSetupPanel.style.display = "grid";
           modelSetupPanel.style.maxWidth = "1040px";
@@ -9327,7 +9442,11 @@ const MotionJSONUI = (() => {
           "model-setup-sam3-custom": ["sam3-hosted:custom-sam3-compatible", "Custom hosted SAM3 is selected. Save endpoint, key, and hosted opt-in before testing.", "warn", "trace_one_object"],
           "model-setup-missing": ["sam3-hosted:roboflow-sam3-pcs", "Paste a server-side Roboflow API key before hosted SAM3 concept discovery can run.", "bad"],
           "model-setup-invalid": ["sam3-hosted:roboflow-sam3-pcs", "Roboflow API key is invalid or too short. Paste the key without spaces.", "bad"],
+          "model-setup-confirm-access": ["sam3-local", "Confirm the Hugging Face access check before caching facebook/sam3.", "warn", "trace_all_objects"],
           "model-setup-confirm-cache": ["sam2-hf-auto-masks", "SAM2 HF fallback is selected. Confirm the model cache action before using automatic masks.", "warn", "trace_all_objects"],
+          "model-setup-cache-running": ["sam3-local", "Caching facebook/sam3 for scene sweep.", "neutral", "trace_all_objects"],
+          "model-setup-cache-failed": ["sam3-local", "Model cache failed before verification. Review the message and cache again.", "bad", "trace_all_objects"],
+          "model-setup-cache-success": ["sam3-local", "facebook/sam3 is cached and ready for scene sweep.", "ready", "trace_all_objects"],
           "model-setup-success": ["sam2-local", "Diagnose found the local SAM2 paths and package imports needed for extraction.", "ready"],
         }[capture];
         if (captureState) {
@@ -9345,7 +9464,69 @@ const MotionJSONUI = (() => {
           if (capture === "model-setup-confirm-cache") {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
               model: "facebook/sam2.1-hiera-large",
+              settingsPayload: modelSetupPayloadFromValues("sam2-hf-auto-masks", {
+                selectedModel: "facebook/sam2.1-hiera-large",
+              }),
             });
+          }
+          if (capture === "model-setup-confirm-access") {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction("check-access", "sam3-local", {
+              model: "facebook/sam3",
+              settingsPayload: modelSetupPayloadFromValues("sam3-local", {
+                selectedModel: "facebook/sam3",
+              }),
+            });
+          }
+          if (capture === "model-setup-cache-running" || capture === "model-setup-cache-failed" || capture === "model-setup-cache-success") {
+            const status = capture === "model-setup-cache-running" ? "running" : capture === "model-setup-cache-failed" ? "failed" : "succeeded";
+            const terminal = status !== "running";
+            const toneProgress =
+              status === "succeeded"
+                ? { known: true, percent: 100, label: "Model cached" }
+                : status === "failed"
+                  ? { known: false, percent: 0, label: "Model cache failed" }
+                  : { known: false, percent: 35, label: "Downloading or resolving Hugging Face snapshot" };
+            const jobId = `capture-${capture}`;
+            state.providerSetupJobs[jobId] = {
+              id: jobId,
+              providerId: "sam3-local",
+              action: "cache_model",
+              status,
+              terminal,
+              result: {
+                ready: status === "succeeded",
+                message:
+                  status === "succeeded"
+                    ? "Model cached. Continue to prepare when you are ready."
+                    : status === "failed"
+                      ? "Download was interrupted before verification. Cache model again after the network is stable."
+                      : "Downloading or resolving the selected model cache.",
+                progress: toneProgress,
+              },
+              progress: toneProgress,
+              setupState: {
+                status: status === "running" ? "caching_model" : status === "succeeded" ? "ready" : "failed_recoverable",
+                label: status === "running" ? "Caching model" : status === "succeeded" ? "Ready" : "Needs recovery",
+                message:
+                  status === "running"
+                    ? "Downloading or resolving the selected model cache."
+                    : status === "succeeded"
+                      ? "Model cached. Continue to prepare when you are ready."
+                      : "Download was interrupted before verification. Cache model again after the network is stable.",
+              },
+              events: [
+                {
+                  id: `${jobId}-progress`,
+                  type: status === "running" ? "downloading_cache" : status === "succeeded" ? "cached" : "failed",
+                  message: toneProgress.label,
+                  metadata: { progress: toneProgress },
+                  createdAt: "2026-05-27T18:00:00Z",
+                },
+              ],
+              createdAt: "2026-05-27T18:00:00Z",
+              updatedAt: "2026-05-27T18:00:01Z",
+            };
+            state.selectedProviderSetupJobId = jobId;
           }
           renderModelSetup();
           if (capture === "model-setup-invalid") {
@@ -10958,11 +11139,22 @@ const MotionJSONUI = (() => {
           renderWorkflowStepper();
           return;
         }
+        state.confirmedModelSetupAction = {
+          action: pending.action,
+          providerId: pending.providerId,
+          model: pending.model,
+          flags: asArray(pending.flags),
+          settingsPayload: pending.settingsPayload && typeof pending.settingsPayload === "object" ? { ...pending.settingsPayload } : {},
+        };
         state.pendingModelSetupConfirmation = null;
-        // Keep the current form DOM until the confirmed action reads password fields.
+        renderModelSetup();
+        renderWorkflowStepper();
         const setupButton = [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action]")]
           .find((item) => item.dataset.modelSetupAction === pending.action);
-        if (!setupButton) throw new Error("Model setup action is not available for the selected provider.");
+        if (!setupButton) {
+          state.confirmedModelSetupAction = null;
+          throw new Error("Model setup action is not available for the selected provider.");
+        }
         setupButton.dataset.modelSetupConfirmed = "true";
         setupButton.click();
         return;
@@ -10973,13 +11165,17 @@ const MotionJSONUI = (() => {
       const action = button.dataset.modelSetupAction;
       const confirmed = button.dataset.modelSetupConfirmed === "true";
       if (confirmed) delete button.dataset.modelSetupConfirmed;
+      const confirmedSnapshot = confirmed ? state.confirmedModelSetupAction : null;
       const connection = modelConnectionById(state.selectedModelSetupProviderId);
       if (!connection) return;
       const form = $("#modelSetupForm");
-      const providerId = form?.dataset.providerSettingsId || connection.providerId;
+      const providerId = confirmedSnapshot?.providerId || form?.dataset.providerSettingsId || connection.providerId;
       button.disabled = true;
       setModelSetupMessage(`${action} in progress...`, "neutral");
       try {
+        if (confirmed && (!confirmedSnapshot || confirmedSnapshot.action !== action || confirmedSnapshot.providerId !== providerId)) {
+          throw new Error("Confirmed setup action no longer matches the selected provider.");
+        }
         if (action === "change-model") {
           state.modelSetupAlternativesOpen = !state.modelSetupAlternativesOpen;
           setModelSetupMessage(state.modelSetupAlternativesOpen ? "Choose a different compatible model." : "", "neutral");
@@ -11015,10 +11211,12 @@ const MotionJSONUI = (() => {
         } else if (action === "check-access" || action === "test") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           if (!hosted && !confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted,
               model: providerEffectiveModel(provider),
+              settingsPayload: formPayload,
             });
             setModelSetupMessage("Confirm Hugging Face access check before continuing.", "warn");
             renderModelSetup();
@@ -11026,18 +11224,20 @@ const MotionJSONUI = (() => {
             return;
           }
           const body = hosted
-            ? { settings: form ? modelSetupPayloadFromForm(form) : {}, saveFirst: true }
+            ? { settings: formPayload, saveFirst: true }
             : {
-                settings: form ? modelSetupPayloadFromForm(form) : {},
+                settings: formPayload,
                 saveFirst: true,
                 allowNetwork: Boolean(state.health?.mockMode) || confirmed,
               };
           await startProviderSetupJob(providerId, hosted ? "test" : "check_access", body);
         } else if (action === "install") {
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           if (!confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted: false,
               model: providerEffectiveModel(providerSettingsById(providerId)),
+              settingsPayload: formPayload,
             });
             setModelSetupMessage("Confirm install before continuing.", "warn");
             renderModelSetup();
@@ -11046,11 +11246,11 @@ const MotionJSONUI = (() => {
           }
           await startProviderSetupJob(providerId, "install", {
             dryRun: Boolean(state.health?.mockMode),
-            settings: form ? modelSetupPayloadFromForm(form) : {},
+            settings: formPayload,
             saveFirst: true,
           });
         } else if (action === "cache-model") {
-          const formPayload = form ? modelSetupPayloadFromForm(form) : {};
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           const selectedCacheModel =
             formPayload.customModelId ||
             (formPayload.selectedModel === "__custom__" ? "" : formPayload.selectedModel) ||
@@ -11060,6 +11260,7 @@ const MotionJSONUI = (() => {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted: false,
               model: selectedCacheModel,
+              settingsPayload: formPayload,
             });
             setModelSetupMessage("Confirm model cache before continuing.", "warn");
             renderModelSetup();
@@ -11077,10 +11278,12 @@ const MotionJSONUI = (() => {
         } else if (action === "smoke") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           if (!confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted,
               model: providerEffectiveModel(provider),
+              settingsPayload: formPayload,
             });
             setModelSetupMessage("Confirm smoke test before continuing.", "warn");
             renderModelSetup();
@@ -11092,7 +11295,7 @@ const MotionJSONUI = (() => {
             : { allowHeavyLocal: true, dryRun: Boolean(state.health?.mockMode), sceneSweep: providerId === "sam3-local" && state.selectedPreset === "trace_all_objects", videoPath: selectedVideoPath() };
           await startProviderSetupJob(providerId, "smoke", {
             ...body,
-            settings: form ? modelSetupPayloadFromForm(form) : {},
+            settings: formPayload,
             saveFirst: true,
           });
         } else if (action === "reset") {
@@ -11104,6 +11307,7 @@ const MotionJSONUI = (() => {
       } catch (error) {
         setModelSetupMessage(error.message, "bad");
       } finally {
+        if (confirmed) state.confirmedModelSetupAction = null;
         button.disabled = false;
       }
     });
@@ -11228,6 +11432,9 @@ const MotionJSONUI = (() => {
     modelSetupPayloadFromValues,
     modelSetupConfirmationForAction,
     modelSetupProviderSummary,
+    setupJobProgressSummary,
+    setupJobStatusSummary,
+    modelSetupDecisionForConnection,
     modelSetupStateForConnection,
     modelSetupPrimaryActionForState,
     jobCenterStateFromSnapshot,

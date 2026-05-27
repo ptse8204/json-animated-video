@@ -324,6 +324,8 @@ def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_pat
 
     assert status == 200
     assert checked["status"] == "succeeded"
+    assert checked["progress"] == {"known": True, "percent": 100, "label": "Access check complete"}
+    assert any(event["metadata"].get("progress") for event in checked["events"])
     assert seen["model_info"] == ("facebook/sam3", secret)
     assert secret not in checked_text
 
@@ -356,9 +358,20 @@ def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_pat
 
     assert status == 200
     assert cached["status"] == "succeeded"
+    assert cached["progress"] == {"known": True, "percent": 100, "label": "Model cached"}
     assert seen["snapshot_download"] == ("facebook/sam3", secret)
     assert secret not in cached_text
     assert str(cached_dir) not in cached_text
+    progress_events = [event for event in cached["events"] if event["metadata"].get("progress")]
+    progress_types = {event["type"] for event in progress_events}
+    progress_text = json.dumps(progress_events)
+
+    assert {"queued", "resolving_model", "downloading_cache", "verifying_cache", "cached", "succeeded"} <= progress_types
+    assert "Downloading or resolving Hugging Face snapshot" in progress_text
+    assert "Verifying cached model" in progress_text
+    assert "Model cached" in progress_text
+    assert secret not in progress_text
+    assert str(cached_dir) not in progress_text
 
 
 def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
@@ -375,6 +388,7 @@ def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
     assert blocked["status"] == "blocked"
     assert blocked["setupState"]["status"] == "failed_recoverable"
     assert blocked["result"]["networkAttempted"] is False
+    assert blocked["progress"]["label"] == "Waiting for network confirmation"
 
     status, _headers, body = app.handle(
         "POST",
@@ -387,6 +401,7 @@ def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
     assert cached["status"] == "succeeded"
     assert cached["setupState"]["status"] == "ready"
     assert cached["result"]["model"] == "facebook/sam2.1-hiera-large"
+    assert cached["progress"] == {"known": True, "percent": 100, "label": "Cache dry run accepted"}
     assert "cache_model" in {action["id"] for action in provider_setup_actions("sam2-hf-auto-masks")}
 
 
