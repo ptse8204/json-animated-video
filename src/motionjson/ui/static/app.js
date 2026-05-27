@@ -3084,8 +3084,7 @@ const MotionJSONUI = (() => {
     return payload;
   }
 
-  function selectedCapabilityWarnings(config, $) {
-    const warnings = [];
+  function capabilityWarningLookupsForConfig(config) {
     const preference = config.discovery.config?.providerPreference;
     const discoveryName =
       config.discovery.mode === "sam3_auto_masks"
@@ -3093,13 +3092,54 @@ const MotionJSONUI = (() => {
         : preference === "sam3-hosted" || preference === "sam3-local"
           ? preference
           : config.discovery.mode;
-    const discovery = providerByName(discoveryName, "discovery_provider") || providerByName(String(config.discovery.mode || "").replaceAll("_", "-"), "discovery_provider");
-    const mask = providerByName(config.provider.name, "mask_provider") || providerByName(config.provider.name, "discovery_provider");
+    const lookups = [];
+    if (discoveryName) {
+      lookups.push({
+        name: discoveryName,
+        kind: "discovery_provider",
+        aliases: [String(config.discovery.mode || "").replaceAll("_", "-")],
+      });
+    }
+    if (config.provider.name && !(config.provider.name === "sam3-local" && config.discovery.mode === "sam3_auto_masks")) {
+      const kind = config.provider.name.startsWith("sam3-") ? "discovery_provider" : "mask_provider";
+      lookups.push({
+        name: config.provider.name,
+        kind,
+        aliases: kind === "mask_provider" ? [{ name: config.provider.name, kind: "discovery_provider" }] : [],
+      });
+    }
+    return lookups.filter((lookup, index, entries) =>
+      entries.findIndex((entry) => entry.name === lookup.name && entry.kind === lookup.kind) === index,
+    );
+  }
+
+  function capabilityWarningNamesForConfig(config) {
+    return capabilityWarningLookupsForConfig(config).map((lookup) => lookup.name);
+  }
+
+  function providerForCapabilityWarningLookup(lookup) {
+    const provider = providerByName(lookup.name, lookup.kind) || providerByName(lookup.name);
+    if (provider) return provider;
+    for (const alias of asArray(lookup.aliases)) {
+      const aliasName = typeof alias === "string" ? alias : alias?.name;
+      const aliasKind = typeof alias === "string" ? lookup.kind : alias?.kind || lookup.kind;
+      const matched = providerByName(aliasName, aliasKind) || providerByName(aliasName);
+      if (matched) return matched;
+    }
+    return null;
+  }
+
+  function selectedCapabilityWarnings(config, $) {
+    const warnings = [];
+    const providersForWarnings = capabilityWarningLookupsForConfig(config)
+      .map(providerForCapabilityWarningLookup)
+      .filter(Boolean)
+      .filter((provider, index, providers) => providers.findIndex((item) => item?.name === provider?.name) === index);
     const device = $("#deviceSelect").value;
     const hasPointOrBox = config.prompts.some((prompt) => ["point", "positive_point", "box"].includes(prompt.kind));
     const hasBox = config.prompts.some((prompt) => prompt.kind === "box");
 
-    for (const provider of [discovery, mask].filter(Boolean).filter((provider, index, providers) => providers.findIndex((item) => item?.name === provider?.name) === index)) {
+    for (const provider of providersForWarnings) {
       if (!provider.available || provider.runnable === false) {
         const reasons = asArray(provider.reasons).join(" ");
         const setup = provider.available && provider.runnable === false ? "configured but not runnable yet" : provider.status || "unavailable";
@@ -9349,7 +9389,41 @@ const MotionJSONUI = (() => {
       const modelSetupPanel = document.querySelector("#modelSetupPanel");
       const modelPlanPanel = document.querySelector("#modelPlanPanel");
       const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
-      const captureUsesSam3Prepare = ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all"].includes(capture);
+      const captureUsesSam3Prepare = ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(capture);
+      const markCaptureCapabilityReady = (capabilityName, { message = "Ready for this workflow." } = {}) => {
+        if (!state.capabilities?.providers) return;
+        state.capabilities.providers = state.capabilities.providers.map((provider) =>
+          provider.name === capabilityName
+            ? {
+                ...provider,
+                available: true,
+                configured: true,
+                installed: true,
+                runnable: true,
+                status: "ready",
+                reasons: [],
+                installHint: provider.installHint || message,
+              }
+            : provider,
+        );
+      };
+      const markCaptureCapabilityBlocked = (capabilityName, { status = "missing_dependency", reasons = [], installHint = "Complete Model setup before running." } = {}) => {
+        if (!state.capabilities?.providers) return;
+        state.capabilities.providers = state.capabilities.providers.map((provider) =>
+          provider.name === capabilityName
+            ? {
+                ...provider,
+                available: false,
+                configured: false,
+                installed: false,
+                runnable: false,
+                status,
+                reasons: asArray(reasons),
+                installHint,
+              }
+            : provider,
+        );
+      };
       const markCaptureProviderReady = (providerId, { hostedProfileId = "", allowHosted = false, message = "Ready for this workflow." } = {}) => {
         if (!state.providerSettings?.providers) return;
         state.providerSettings.providers = state.providerSettings.providers.map((provider) =>
@@ -9447,6 +9521,8 @@ const MotionJSONUI = (() => {
           "model-setup-cache-running": ["sam3-local", "Caching facebook/sam3 for scene sweep.", "neutral", "trace_all_objects"],
           "model-setup-cache-failed": ["sam3-local", "Model cache failed before verification. Review the message and cache again.", "bad", "trace_all_objects"],
           "model-setup-cache-success": ["sam3-local", "facebook/sam3 is cached and ready for scene sweep.", "ready", "trace_all_objects"],
+          "model-setup-sam3-missing-runtime": ["sam3-local", "Install the SAM3 Scene Sweep runtime before caching facebook/sam3.", "bad", "trace_all_objects"],
+          "model-setup-sam3-missing-cache": ["sam3-local", "SAM3 Scene Sweep runtime is installed. Cache facebook/sam3 before running.", "warn", "trace_all_objects"],
           "model-setup-success": ["sam2-local", "Diagnose found the local SAM2 paths and package imports needed for extraction.", "ready"],
         }[capture];
         if (captureState) {
@@ -9456,6 +9532,15 @@ const MotionJSONUI = (() => {
           state.modelSetupTone = captureState[2];
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") state.modelSetupAlternativesOpen = true;
           if (captureState[0] === "sam3-local") markCaptureProviderReady("sam3-local");
+          if (capture === "model-setup-sam3-missing-runtime") {
+            markCaptureCapabilityBlocked("sam3-auto-masks", {
+              reasons: ["SAM3 Tracker automatic-mask Transformers classes are not importable."],
+              installHint: "Install MotionJSON's independent SAM3 Transformers runtime. SAM2 is not required.",
+            });
+          }
+          if (capture === "model-setup-sam3-missing-cache") {
+            markCaptureCapabilityReady("sam3-auto-masks", { message: "SAM3 Scene Sweep runtime is installed." });
+          }
           if (captureState[0] === "sam2-local") markCaptureProviderReady("sam2-local");
           if (captureState[0] === "sam2-hf-auto-masks") markCaptureProviderReady("sam2-hf-auto-masks", { message: "SAM2 HF fallback runtime is available. Cache the selected model before running automatic masks." });
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") markCaptureProviderReady("sam3-hosted", { hostedProfileId: "custom-sam3-compatible", allowHosted: true });
@@ -9586,16 +9671,29 @@ const MotionJSONUI = (() => {
           state.selectedModelSetupProviderId = "sam3-hosted:roboflow-sam3-pcs";
           markCaptureProviderReady("sam3-hosted", { hostedProfileId: "roboflow-sam3-pcs", allowHosted: true });
           $("#textPrompt").value = "red ball";
-        } else if (capture === "prepare-sam3-trace-all") {
+        } else if (capture === "prepare-sam3-trace-all" || capture === "prepare-sam3-trace-all-runtime-ready" || capture === "prepare-sam3-trace-all-missing-runtime") {
           applyPreset("trace_all_objects", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-local";
-          markCaptureProviderReady("sam3-local");
+          if (capture === "prepare-sam3-trace-all-missing-runtime") {
+            markCaptureCapabilityBlocked("sam3-auto-masks", {
+              reasons: ["SAM3 Tracker automatic-mask Transformers classes are not importable."],
+              installHint: "Install MotionJSON's independent SAM3 Transformers runtime. SAM2 is not required.",
+            });
+          } else if (capture === "prepare-sam3-trace-all-runtime-ready") {
+            markCaptureCapabilityReady("sam3-auto-masks", { message: "SAM3 Scene Sweep runtime is ready." });
+            markCaptureCapabilityBlocked("sam3-local", {
+              reasons: ["Python module 'sam3' is not importable. SAM3_LOCAL_MODEL is only required for concept and exemplar workflows."],
+              installHint: "Install the official SAM3 package and configure sam3.pt only for advanced concept/exemplar workflows.",
+            });
+          } else {
+            markCaptureProviderReady("sam3-local");
+          }
           $("#discoveryQualityPreset").value = "balanced";
         }
         renderModelSetup();
         renderPresetFields();
         renderConfigPreview();
-        setRunAlert("", "warning-box");
+        if (capture !== "prepare-sam3-trace-all-missing-runtime") setRunAlert("", "warning-box");
       } else if (capture === "workflow-run") {
         if (shell) {
           shell.style.display = "grid";
@@ -11437,6 +11535,7 @@ const MotionJSONUI = (() => {
     modelSetupDecisionForConnection,
     modelSetupStateForConnection,
     modelSetupPrimaryActionForState,
+    capabilityWarningNamesForConfig,
     jobCenterStateFromSnapshot,
     normalizedModelConnection,
     normalizeJobLifecycle,

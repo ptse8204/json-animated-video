@@ -282,6 +282,106 @@ def test_sam3_scene_sweep_setup_job_is_independent_from_sam2_and_has_actionable_
     assert "network confirmation" in blocked["result"]["message"]
 
 
+def test_sam3_scene_sweep_diagnose_and_smoke_do_not_require_official_sam3_adapter(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    model_dir = tmp_path / "facebook-sam3-cache"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    def fake_find_spec(name: str):
+        if name in {"transformers", "torch"}:
+            return ModuleSpec(name, loader=None)
+        if name == "sam3":
+            return None
+        return None
+
+    monkeypatch.setattr("motionjson.provider_settings.find_spec", fake_find_spec)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_auto_masks_importable", lambda: True)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_video_importable", lambda: True)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "diagnose", "runInline": True}).encode("utf-8"),
+    )
+    diagnosis = decode(body)["setupJob"]["result"]
+    checklist = {item["id"]: item for item in diagnosis["checklist"]}
+
+    assert status == 200
+    assert diagnosis["ready"] is True
+    assert diagnosis["setupState"]["runnable"] is True
+    assert checklist["sam3_package"]["required"] is False
+    assert checklist["sam3_package"]["ok"] is False
+    assert checklist["model_path"]["required"] is False
+    assert checklist["model_path"]["ok"] is False
+    assert checklist["sam3_tracker_auto_masks"]["ok"] is True
+    assert checklist["sam3_tracker_video"]["ok"] is True
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True, "sceneSweep": True}).encode("utf-8"),
+    )
+    smoke = decode(body)["setupJob"]
+
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert smoke["result"]["ready"] is True
+    assert smoke["result"]["smokeTest"]["sceneSweep"] is True
+    assert smoke["result"]["smokeTest"]["sam2Required"] is False
+    assert "SAM3_LOCAL_MODEL" not in smoke["result"]["message"]
+
+
+def test_sam3_scene_sweep_diagnose_blocks_on_tracker_runtime_not_checkpoint_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    def fake_find_spec(name: str):
+        if name in {"transformers", "torch"}:
+            return ModuleSpec(name, loader=None)
+        if name == "sam3":
+            return None
+        return None
+
+    monkeypatch.setattr("motionjson.provider_settings.find_spec", fake_find_spec)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_auto_masks_importable", lambda: False)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_video_importable", lambda: False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "diagnose", "runInline": True}).encode("utf-8"),
+    )
+    text = body.decode("utf-8")
+    diagnosis = decode(body)["setupJob"]["result"]
+    checklist = {item["id"]: item for item in diagnosis["checklist"]}
+
+    assert status == 200
+    assert diagnosis["ready"] is False
+    assert checklist["sam3_tracker_auto_masks"]["ok"] is False
+    assert checklist["sam3_tracker_auto_masks"]["required"] is True
+    assert checklist["model_path"]["required"] is False
+    assert "SAM3 Tracker automatic-mask" in text
+    assert "SAM3 local adapter requires SAM3_LOCAL_MODEL" not in diagnosis["message"]
+
+
 def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_path, monkeypatch):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
     secret = "hf_saved_token_abcdef123456"

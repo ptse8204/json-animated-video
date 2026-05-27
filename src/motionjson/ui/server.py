@@ -1477,20 +1477,22 @@ class LocalUIApp:
             for provider in self._capability_report().get("providers", [])
             if isinstance(provider, dict)
         }
-        provider_kind = "discovery_provider" if config.provider.name in {"sam3-local", "sam3-hosted"} else "mask_provider"
-        self._append_provider_warning(
-            warnings,
-            providers,
-            kind=provider_kind,
-            name=config.provider.name,
-            field="provider.name",
-        )
+        if not (config.provider.name == "sam3-local" and config.discovery.mode == "sam3_auto_masks"):
+            provider_kind = "discovery_provider" if config.provider.name in {"sam3-local", "sam3-hosted"} else "mask_provider"
+            self._append_provider_warning(
+                warnings,
+                providers,
+                kind=provider_kind,
+                name=config.provider.name,
+                field="provider.name",
+            )
         if config.discovery.mode:
+            discovery_name = "sam3-auto-masks" if config.discovery.mode == "sam3_auto_masks" else config.discovery.mode
             self._append_provider_warning(
                 warnings,
                 providers,
                 kind="discovery_provider",
-                name=config.discovery.mode,
+                name=discovery_name,
                 field="discovery.mode",
             )
 

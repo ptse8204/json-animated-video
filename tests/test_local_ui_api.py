@@ -427,6 +427,83 @@ def test_local_ui_validation_warns_when_configured_provider_is_not_runnable(tmp_
     assert warning["action"] == "Enable hosted network use explicitly."
 
 
+def test_local_ui_validation_uses_sam3_auto_masks_for_scene_sweep_warnings(tmp_path, monkeypatch):
+    def validate_with_report(report: dict) -> dict:
+        monkeypatch.setattr(ui_server, "build_capability_report", lambda **_kwargs: report)
+        app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+        status, _headers, body = app.handle(
+            "POST",
+            "/api/run-config/validate",
+            body=json.dumps(
+                {
+                    "schema": "motionjson.extraction_run_config.v0.1",
+                    "input": {"path": "local-ui://assets/asset_1"},
+                    "output": {"directory": str(tmp_path / "out")},
+                    "sampling": {"sample_fps": 12, "max_frames": 2},
+                    "provider": {"name": "sam3-local"},
+                    "discovery": {
+                        "mode": "sam3_auto_masks",
+                        "config": {
+                            "sceneSweep": True,
+                            "providerPreference": "sam3-local",
+                            "sam3TrackerModel": "facebook/sam3",
+                        },
+                    },
+                    "prompts": [],
+                }
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        return decode(body)
+
+    official_adapter_unavailable = {
+        "schema": "motionjson.provider_diagnostics.v0.1",
+        "summary": {"providersReady": 1, "providersTotal": 2},
+        "environment": {},
+        "providers": [
+            {
+                "name": "sam3-local",
+                "kind": "discovery_provider",
+                "available": False,
+                "runnable": False,
+                "status": "missing_dependency",
+                "reasons": ["Python module 'sam3' is not importable. SAM3 local adapter requires SAM3_LOCAL_MODEL."],
+                "installHint": "Install official SAM3 only for advanced concept/exemplar workflows.",
+            },
+            {
+                "name": "sam3-auto-masks",
+                "kind": "discovery_provider",
+                "available": True,
+                "runnable": True,
+                "status": "ready",
+                "reasons": [],
+                "installHint": "Install the sam3-transformers extra.",
+            },
+        ],
+    }
+
+    payload = validate_with_report(official_adapter_unavailable)
+    assert payload["valid"] is True
+    assert "SAM3_LOCAL_MODEL" not in json.dumps(payload["warnings"])
+    assert "sam3-local" not in {warning.get("provider") for warning in payload["warnings"]}
+
+    scene_sweep_unavailable = copy.deepcopy(official_adapter_unavailable)
+    scene_sweep_unavailable["providers"][1].update(
+        {
+            "available": False,
+            "runnable": False,
+            "status": "missing_dependency",
+            "reasons": ["Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor."],
+        }
+    )
+    payload = validate_with_report(scene_sweep_unavailable)
+    warnings = [warning for warning in payload["warnings"] if warning["code"] == "provider_unavailable"]
+
+    assert [warning["provider"] for warning in warnings] == ["sam3-auto-masks"]
+    assert "SAM3_LOCAL_MODEL" not in json.dumps(warnings)
+    assert "Transformers does not expose" in json.dumps(warnings)
+
+
 def test_local_ui_serves_static_shell(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
 

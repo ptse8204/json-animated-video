@@ -49,12 +49,16 @@ const CAPTURE_STATES = [
   "model-setup-cache-running",
   "model-setup-cache-failed",
   "model-setup-cache-success",
+  "model-setup-sam3-missing-runtime",
+  "model-setup-sam3-missing-cache",
   "model-setup-missing",
   "model-setup-invalid",
   "model-setup-success",
   "prepare-sam3-single",
   "prepare-sam3-text",
   "prepare-sam3-trace-all",
+  "prepare-sam3-trace-all-runtime-ready",
+  "prepare-sam3-trace-all-missing-runtime",
   "model-plan-preview",
   "model-plan-warning",
   "model-plan-confirmation",
@@ -525,6 +529,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "prepare-sam3-single": "prompt_preview",
       "prepare-sam3-text": "prompt_preview",
       "prepare-sam3-trace-all": "prompt_preview",
+      "prepare-sam3-trace-all-runtime-ready": "prompt_preview",
+      "prepare-sam3-trace-all-missing-runtime": "prompt_preview",
       "workflow-run": "run_monitor",
       "workflow-review": "review_export",
       "workflow-review-failure": "run_monitor",
@@ -614,6 +620,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           workflowFocusStart: document.documentElement.dataset.workflowFocusStart || "",
           workflowFocusedElement: String(document.activeElement?.tagName || "") + "#" + String(document.activeElement?.id || "") + "." + String(document.activeElement?.className || "") + ":" + String(document.activeElement?.textContent || "").trim().slice(0, 30),
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
+          providerWarningText: document.querySelector("#providerWarning")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
           activeModelChoice: document.querySelector("#modelSetupChoices .model-choice-card.is-active strong")?.textContent?.trim() || "",
           maskProviderFieldVisible: visible(document.querySelector("#maskProviderField")),
@@ -773,7 +780,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "prepare-sam3-text" && stateValue.workflowPrimaryLabel !== "Run search") {
       failures.push(`${viewport.name}/${state}: SAM3 text prepare should label the primary CTA as Run search`);
     }
-    if (state === "prepare-sam3-trace-all" && stateValue.workflowPrimaryLabel !== "Run scene sweep") {
+    if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && stateValue.workflowPrimaryLabel !== "Run scene sweep") {
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should label the primary CTA as Run scene sweep`);
     }
     if (state === "prepare-sam3-single" && (stateValue.pointToolVisible || !stateValue.boxToolVisible || !stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
@@ -782,8 +789,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "prepare-sam3-text" && (!stateValue.textPromptVisible || stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 text prepare should keep only the text prompt visible in the guided path`);
     }
-    if (state === "prepare-sam3-trace-all" && (stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
+    if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && (stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should hide prompt tools and mask-provider internals`);
+    }
+    if (state === "prepare-sam3-trace-all-runtime-ready" && /SAM3_LOCAL_MODEL|sam3-local:/.test(stateValue.providerWarningText)) {
+      failures.push(`${viewport.name}/${state}: scene sweep should not show the advanced sam3-local checkpoint warning`);
+    }
+    if (state === "prepare-sam3-trace-all-missing-runtime" && (!/sam3-auto-masks/.test(stateValue.providerWarningText) || /SAM3_LOCAL_MODEL/.test(stateValue.providerWarningText))) {
+      failures.push(`${viewport.name}/${state}: missing scene sweep runtime should warn on sam3-auto-masks only; saw ${JSON.stringify(stateValue.providerWarningText).slice(0, 220)}`);
     }
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
       failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
@@ -884,7 +897,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
-      if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all"].includes(state) && viewport.name === "mobile-390") {
+      if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {

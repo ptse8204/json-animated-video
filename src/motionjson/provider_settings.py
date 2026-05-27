@@ -1386,7 +1386,11 @@ def diagnose_provider_settings(
         model_path = str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or "")
         model_path_source = "environment" if environ.get("SAM3_LOCAL_MODEL") else "local_settings" if settings.get("sam3_model_path") else "unset"
         model_status = describe_sam3_model_path(model_path, source=model_path_source)
-        tracker_model_status = describe_sam3_tracker_model(environ.get("SAM3_TRACKER_MODEL") or settings.get("selected_model") or SAM3_HF_REPO_ID, source="environment" if environ.get("SAM3_TRACKER_MODEL") else "local_settings" if settings.get("selected_model") else "default")
+        tracker_model_value = environ.get("SAM3_TRACKER_MODEL") or _runtime_effective_model(definition, settings, environ) or SAM3_HF_REPO_ID
+        tracker_model_status = describe_sam3_tracker_model(
+            tracker_model_value,
+            source="environment" if environ.get("SAM3_TRACKER_MODEL") else "local_settings" if settings.get("selected_model") else "default",
+        )
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         transformers_ok = find_spec("transformers") is not None
         torch_ok = find_spec("torch") is not None

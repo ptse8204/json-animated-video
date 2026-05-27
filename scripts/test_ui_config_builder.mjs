@@ -532,6 +532,9 @@ assert.equal("sam3ModelPath" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("model" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("concept" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("text" in sam3TraceAllConfig.discovery.config, false);
+assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig), ["sam3-auto-masks"]);
+assert.doesNotMatch(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig).join(" "), /sam3-local|SAM3_LOCAL_MODEL/);
+assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3SingleObjectConfig), ["sam3-local"]);
 
 const sam2HfTraceAllConfig = ui.buildRunConfig({
   preset: "trace_all_objects",
