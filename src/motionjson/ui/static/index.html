@@ -30,11 +30,15 @@
 
         <div id="sidebarNavigationContent" class="sidebar-content">
           <section class="sidebar-section project-rail-summary" aria-label="Projects">
-            <p class="section-kicker">Projects</p>
+            <div class="project-rail-heading">
+              <p class="section-kicker">Projects</p>
+              <button id="projectRailNewButton" type="button" data-create-project>+ New</button>
+            </div>
             <div class="project-rail-card">
               <strong id="projectRailTitle">Local project</strong>
               <span id="projectRailMeta" class="row-meta">Choose a goal, then add a video.</span>
             </div>
+            <div id="projectRailList" class="project-rail-list" aria-label="Recent projects"></div>
           </section>
 
           <details class="compact-panel disclosure-panel">

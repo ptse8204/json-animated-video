@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
-from motionjson.providers.sam3 import describe_sam3_model_path, describe_sam3_tracker_model
+from motionjson.providers.sam3 import SAM3_HF_REPO_ID, describe_sam3_model_path, describe_sam3_tracker_model
 
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
@@ -113,6 +113,16 @@ def _module_available(module: str) -> bool:
         return importlib.util.find_spec(module) is not None
     except (ImportError, ModuleNotFoundError, ValueError):
         return False
+
+
+def _module_attr_available(module: str, attr: str) -> bool:
+    if not _module_available(module):
+        return False
+    try:
+        imported = __import__(module, fromlist=[attr])
+    except Exception:
+        return False
+    return hasattr(imported, attr)
 
 
 def _dependency(name: str, module: str, install_hint: str | None = None) -> DependencyStatus:
@@ -306,8 +316,8 @@ def dependency_statuses() -> list[DependencyStatus]:
         _dependency("jsonschema", "jsonschema", "Install jsonschema for MotionJSON validation."),
         _dependency("tqdm", "tqdm", "Install tqdm for CLI extraction progress."),
         _dependency("sam2", "sam2", "Install SAM2 separately only when using sam2-local."),
-        _dependency("sam3", "sam3", "Install SAM3 separately only when using optional sam3-local discovery."),
-        _dependency("transformers", "transformers", "Install .[sam3-transformers] only when using SAM3 scene sweep."),
+        _dependency("sam3", "sam3", "Install the official SAM3 package only for advanced concept/exemplar workflows."),
+        _dependency("transformers", "transformers", "Install .[sam3-transformers] for SAM3 Scene Sweep; SAM2 is not required."),
         _dependency("torch", "torch", "Install torch separately only when using local ML providers."),
     ]
 
@@ -411,7 +421,22 @@ def provider_capabilities(
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
     sam3_model = _sam3_model_path_status(sam3_model_path)
-    sam3_tracker_model = describe_sam3_tracker_model(os.environ.get("SAM3_TRACKER_MODEL"), source="environment" if os.environ.get("SAM3_TRACKER_MODEL") else "default")
+    sam3_tracker_model_value = (
+        os.environ.get("SAM3_TRACKER_MODEL")
+        or sam3_local_settings.get("custom_model_id")
+        or sam3_local_settings.get("selected_model")
+        or SAM3_HF_REPO_ID
+    )
+    sam3_tracker_model_source = (
+        "environment"
+        if os.environ.get("SAM3_TRACKER_MODEL")
+        else "local_settings"
+        if sam3_local_settings.get("custom_model_id") or sam3_local_settings.get("selected_model")
+        else "default"
+    )
+    sam3_tracker_model = describe_sam3_tracker_model(sam3_tracker_model_value, source=sam3_tracker_model_source)
+    sam3_tracker_auto_masks_installed = _module_attr_available("transformers", "Sam3TrackerModel") and _module_attr_available("transformers", "Sam3TrackerProcessor")
+    sam3_tracker_video_installed = _module_attr_available("transformers", "Sam3TrackerVideoModel") and _module_attr_available("transformers", "Sam3TrackerVideoProcessor")
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -492,14 +517,25 @@ def provider_capabilities(
     sam3_scene_sweep_reasons = [
         reason
         for reason in (
-            None if transformers_installed else "Python module 'transformers' is not importable.",
+            None if transformers_installed else "Python module 'transformers' is not importable. Use Model setup -> Install scene sweep.",
+            None if not transformers_installed or sam3_tracker_auto_masks_installed else "Installed Transformers does not expose SAM3 Tracker automatic-mask classes. Upgrade the sam3-transformers extra from Model setup.",
+            None if not transformers_installed or sam3_tracker_video_installed else "Installed Transformers does not expose SAM3 Tracker Video classes. Upgrade the sam3-transformers extra from Model setup.",
+            None if sam3_tracker_model.get("valid") else str(sam3_tracker_model.get("reason") or "SAM3 Tracker model is not a Hugging Face repo id or local model directory."),
             None if torch_info["torchInstalled"] else "torch is not installed.",
         )
         if reason
     ]
-    sam3_scene_sweep_ready = bool(transformers_installed and torch_info["torchInstalled"])
-    if not transformers_installed or not torch_info["torchInstalled"]:
+    sam3_scene_sweep_ready = bool(
+        transformers_installed
+        and sam3_tracker_auto_masks_installed
+        and sam3_tracker_video_installed
+        and sam3_tracker_model.get("valid")
+        and torch_info["torchInstalled"]
+    )
+    if not transformers_installed or not torch_info["torchInstalled"] or not sam3_tracker_auto_masks_installed or not sam3_tracker_video_installed:
         sam3_scene_sweep_status = "missing_dependency"
+    elif not sam3_tracker_model.get("valid"):
+        sam3_scene_sweep_status = "missing_model"
     else:
         sam3_scene_sweep_status = "ready"
     if not sam3_installed or not torch_info["torchInstalled"]:
@@ -806,9 +842,9 @@ def provider_capabilities(
             installed=bool(sam3_installed and torch_info["torchInstalled"]),
             runnable=sam3_local_ready,
             status=sam3_local_status,
-            supports=["concept_discovery", "exemplar_discovery", "scene_sweep", "automatic_masks", "video_tracking", "local_model"],
+            supports=["concept_discovery", "exemplar_discovery", "advanced_official_sam3_package", "local_checkpoint"],
             reasons=sam3_local_reasons,
-            install_hint="Install SAM3/torch for concept/exemplar workflows or .[sam3-transformers] for SAM3 scene sweep. SAM2 is not required.",
+            install_hint="Install the official SAM3 package and configure sam3ModelPath only for advanced concept/exemplar workflows. Use sam3-auto-masks for normal SAM3 Scene Sweep.",
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
@@ -833,8 +869,8 @@ def provider_capabilities(
             metadata={
                 "model": sam3_model,
                 "runtime": sam3_runtime,
-                "uiDescription": "Optional local SAM3 family for concept, exemplar, and higher-recall discovery.",
-                "whenToUse": "Use when a compatible SAM3 environment and model are configured.",
+                "uiDescription": "Advanced official SAM3 package adapter for concept/exemplar workflows.",
+                "whenToUse": "Use only when the official SAM3 package and a local sam3.pt checkpoint are configured.",
                 "semanticDiscovery": True,
                 "sceneSweep": {
                     "ready": sam3_scene_sweep_ready,
@@ -964,9 +1000,9 @@ def provider_capabilities(
             device=torch_info.get("device"),
             no_model_safe=False,
             network_required=False,
-            needs_gpu=True,
-            needs_model_path=False,
-            model_paths=[],
+            needs_gpu=False,
+            needs_model_path=not bool(sam3_tracker_model.get("valid")),
+            model_paths=[] if sam3_tracker_model.get("valid") else [sam3_tracker_model],
             mock_available=True,
             optional_extra="sam3-transformers",
             metadata={
@@ -1348,11 +1384,9 @@ def build_capability_report(
         and provider.name
         in {
             "sam2-local",
+            "sam2-hf-auto-masks",
             "sam2-hosted",
-            "sam3-local",
             "sam3-hosted",
-            "sam3-concept",
-            "sam3-exemplar",
             "sam3-auto-masks",
             "openrouter",
             "sam_auto_masks",
@@ -1385,7 +1419,7 @@ def build_capability_report(
             "localFreeRunnableProviders": local_free_providers,
             "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
             "firstRun": {
-                "ready": any(name in runnable_providers for name in ("sam2-local", "sam2-hosted", "sam3-local", "sam3-hosted")),
+                "ready": any(name in runnable_providers for name in ("sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-auto-masks", "sam3-hosted")),
                 "recommendedCommand": "python3 -m motionjson.cli ui --no-open",
                 "recommendedDemoCommand": "python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4 && python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo_red_ball --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12",
                 "nextActions": [

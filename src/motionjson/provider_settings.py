@@ -374,11 +374,11 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "localConfigFields": [
             {
                 "name": "sam3_model_path",
-                "label": "SAM3 checkpoint file path",
+                "label": "Advanced SAM3 checkpoint file path",
                 "env": "SAM3_LOCAL_MODEL",
-                "required": True,
+                "required": False,
                 "placeholder": "/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt",
-                "helpText": "Use the local sam3.pt checkpoint file path. Do not enter /content/sam3 or facebook/sam3.",
+                "helpText": "Only for advanced official-package concept/exemplar workflows. Do not enter /content/sam3 or facebook/sam3.",
             },
             {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
         ],
@@ -388,7 +388,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         ],
         "defaultModel": SAM3_HF_REPO_ID,
         "customModelAllowed": True,
-        "capabilities": ["scene sweep", "concept discovery", "exemplar discovery", "SAM3 Tracker video"],
+        "capabilities": ["scene sweep via HF tracker", "advanced concept discovery", "advanced exemplar discovery", "SAM3 Tracker video"],
         "supportedGoals": ["trace_one_object", "trace_all_objects", "text_detector"],
         "supportedPromptTypes": ["box"],
         "supportsConcept": True,
@@ -398,10 +398,10 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "hardware": "CUDA-capable local SAM3 environment",
         "cost": {"status": "zero_local", "label": "Free local runtime"},
         "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Scene sweep can use the independent sam3-transformers extra. Concept/exemplar workflows require the official SAM3 package plus a local sam3.pt checkpoint path.",
+        "warning": "Normal scene sweep uses the independent sam3-transformers extra and facebook/sam3 access. Concept/exemplar workflows are advanced and require the official SAM3 package plus a local sam3.pt checkpoint path.",
         "setupGuide": {
             "recommendedFor": "Best local path for scene-wide discovery, concept prompts such as 'red ball', and one-object SAM3 tracking.",
-            "setupSummary": "For scene sweep, install the sam3-transformers extra. For concept/exemplar workflows, install the official SAM3 source package, separately resolve facebook/sam3 sam3.pt from Hugging Face, then save the returned local checkpoint file path as SAM3_LOCAL_MODEL.",
+            "setupSummary": "For scene sweep, install the sam3-transformers extra, paste a Hugging Face token if the model is gated, and cache facebook/sam3 from the UI. For advanced concept/exemplar workflows, install the official SAM3 source package and save a local sam3.pt checkpoint path.",
             "commands": [
                 "pip install 'motionjson[sam3-transformers]'",
                 "conda create -n sam3 python=3.12",

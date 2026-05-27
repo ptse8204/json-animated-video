@@ -4610,6 +4610,56 @@ body {
   background: #f8fafc;
 }
 
+.brand {
+  min-height: 42px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid #dfe7ef;
+}
+
+.brand-mark {
+  width: 18px;
+  height: 18px;
+}
+
+.brand strong {
+  font-size: 12px;
+}
+
+.brand span {
+  font-size: 11px;
+}
+
+.sidebar-toggle,
+.collapsed-goal-label {
+  display: none;
+}
+
+.sidebar-content {
+  gap: 10px;
+}
+
+.sidebar-content > details {
+  display: none;
+}
+
+.project-rail-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-rail-heading button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d5dee7;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #0b2240;
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .workspace {
   height: 100vh;
   overflow-y: auto;
@@ -4647,6 +4697,128 @@ body {
   padding: 0 10px;
   border-radius: 6px;
   font-size: 12px;
+}
+
+.project-rail-card {
+  display: none;
+}
+
+.project-rail-list {
+  display: grid;
+  gap: 3px;
+}
+
+.project-rail-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: #17202a;
+  text-align: left;
+}
+
+.project-rail-item:hover,
+.project-rail-item.is-active {
+  border-color: #cfe0f4;
+  background: #eaf3ff;
+}
+
+.project-rail-item.is-active {
+  box-shadow: inset 3px 0 0 #0b63ce;
+}
+
+.project-rail-item strong,
+.project-rail-item small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-rail-item strong {
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.project-rail-item small,
+.project-rail-empty {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.project-rail-folder {
+  width: 14px;
+  height: 11px;
+  margin-top: 3px;
+  border: 1.5px solid #516176;
+  border-radius: 2px;
+  position: relative;
+}
+
+.project-rail-folder::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -1px;
+  width: 7px;
+  height: 4px;
+  border: 1.5px solid #516176;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: inherit;
+}
+
+.app-shell:not(.is-workflow-dashboard) .advanced-task-panel {
+  display: none;
+}
+
+.app-shell:not(.is-workflow-dashboard) .model-setup-detail > .model-setup-summary {
+  display: none;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 320px);
+  gap: 14px 18px;
+  max-width: 960px;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .panel-heading {
+  grid-column: 1 / -1;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .workflow-fragment[data-workflow-fragment="source_video"] {
+  grid-column: 1;
+  grid-row: 2 / span 5;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #guidedProjectSummary,
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #projectWorkspaceDisclosure {
+  grid-column: 2;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #guidedProjectSummary {
+  grid-row: 2;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #projectWorkspaceDisclosure {
+  grid-row: 3;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-poster-shell {
+  width: 100%;
+  min-height: 190px;
 }
 
 .studio-progress {
@@ -4958,8 +5130,17 @@ body {
   }
 
   .goal-card-grid,
-  .model-setup-access-card {
+  .model-setup-access-card,
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .panel-heading,
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .workflow-fragment[data-workflow-fragment="source_video"],
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #guidedProjectSummary,
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #projectWorkspaceDisclosure {
+    grid-column: 1;
+    grid-row: auto;
   }
 
   .goal-card {

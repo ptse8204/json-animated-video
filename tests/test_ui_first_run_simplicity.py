@@ -57,7 +57,16 @@ def test_storyboard_shell_keeps_project_rail_and_bottom_cta_in_normal_mode():
 
     assert "grid-template-columns: 214px minmax(0, 1fr)" in final_overrides
     assert ".sidebar" in final_overrides
+    assert ".project-rail-list" in final_overrides
+    assert ".sidebar-content > details" in final_overrides
     assert "display: flex" in final_overrides
     assert "#workflowController" in final_overrides
     assert "position: fixed" in final_overrides
     assert "left: 214px" in final_overrides
+
+
+def test_advanced_discover_objects_has_compatible_model_connections():
+    js = read("src/motionjson/ui/static/app.js")
+
+    assert 'auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"]' in js
+    assert 'presetId === "auto_object_proposals"' in js

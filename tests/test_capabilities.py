@@ -16,6 +16,7 @@ def _provider(report: dict, name: str) -> dict:
 
 def _pretend_sam3_runtime_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(capabilities, "_module_available", lambda module: True)
+    monkeypatch.setattr(capabilities, "_module_attr_available", lambda module, attr: True)
     monkeypatch.setattr(
         capabilities,
         "cuda_status",
@@ -317,6 +318,7 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
     monkeypatch.setenv("SAM2_LOCAL_CONFIG", str(sam2_config))
     monkeypatch.setenv("SAM3_LOCAL_MODEL", str(sam3_model))
     monkeypatch.setattr(capabilities, "_module_available", lambda module: True)
+    monkeypatch.setattr(capabilities, "_module_attr_available", lambda module, attr: True)
     monkeypatch.setattr(
         capabilities,
         "cuda_status",
@@ -356,10 +358,28 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
         assert provider["runnable"] is True
         assert provider["status"] == "ready"
         assert provider["needsModelPath"] is (name != "sam3-auto-masks")
-        assert provider["needsGpu"] is True
+        assert provider["needsGpu"] is (name != "sam3-auto-masks")
         assert provider["mockAvailable"] is True
     assert _provider(report, "sam3-local")["metadata"]["runtime"]["pythonSupported"] is True
     assert _provider(report, "sam3-auto-masks")["metadata"]["trackerModel"]["resolvedModel"] == "facebook/sam3"
+
+
+def test_first_run_summary_does_not_make_advanced_sam3_package_a_scene_sweep_blocker(monkeypatch) -> None:
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    monkeypatch.setattr(capabilities, "_module_available", lambda module: module not in {"sam3", "transformers", "torch"})
+    monkeypatch.setattr(capabilities, "_module_attr_available", lambda module, attr: False)
+
+    report = capabilities.build_capability_report()
+    summary = capabilities.format_capability_report(report)
+
+    missing = report["summary"]["missingOptional"]
+    assert "sam3-auto-masks" in missing
+    assert "sam3-local" not in missing
+    assert "sam3-concept" not in missing
+    assert "sam3-exemplar" not in missing
+    assert "sam3-auto-masks [sam3-transformers]" in summary
+    assert "sam3-local [sam3]" not in summary
+    assert "SAM3 local adapter requires SAM3_LOCAL_MODEL" not in summary
 
 
 def test_sam3_local_requires_cuda_for_real_execution(tmp_path, monkeypatch) -> None:
@@ -411,7 +431,7 @@ def test_sam3_local_capability_explains_huggingface_repo_id(monkeypatch) -> None
     assert provider["status"] == "missing_model"
     assert provider["metadata"]["model"]["valueKind"] == "huggingface_repo_id"
     assert "Hugging Face repo id" in " ".join(provider["reasons"])
-    assert "Hugging Face repo id" in capabilities.format_capability_report(report)
+    assert "Hugging Face repo id" not in capabilities.format_capability_report(report)
 
 
 def test_sam3_local_capability_explains_colab_source_directory(monkeypatch) -> None:

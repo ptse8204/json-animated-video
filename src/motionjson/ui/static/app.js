@@ -117,7 +117,7 @@ const MotionJSONUI = (() => {
       title: "SAM3 Scene Sweep",
       capabilities: ["scene_sweep", "concept", "box", "tracking", "auto_masks"],
       recommendation: "Recommended local path for finding everything in the scene with SAM3 Tracker masks and video tracking.",
-      nextAction: "Install scene sweep, check access, or save SAM3 model path",
+      nextAction: "Install scene sweep, check Hugging Face access, then cache facebook/sam3",
       profileId: "",
     },
     {
@@ -164,6 +164,7 @@ const MotionJSONUI = (() => {
   const MODEL_CONNECTION_PRIORITY = {
     trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
     trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
+    auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
     text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
   };
   const ADVANCED_MODEL_CONNECTIONS = {
@@ -2585,6 +2586,9 @@ const MotionJSONUI = (() => {
     if (presetId === "trace_all_objects") {
       return meta?.supportsAutoMasks === true || capabilities.has("auto_masks");
     }
+    if (presetId === "auto_object_proposals") {
+      return meta?.supportsAutoMasks === true || capabilities.has("auto_masks") || capabilities.has("scene_sweep");
+    }
     if (presetId === "text_detector") {
       return meta?.supportsConcept === true || capabilities.has("concept");
     }
@@ -4407,6 +4411,12 @@ const MotionJSONUI = (() => {
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       shell?.classList.toggle("is-workflow-dashboard", showAll);
+      if (shell) {
+        for (const className of Array.from(shell.classList)) {
+          if (className.startsWith("is-workflow-step-")) shell.classList.remove(className);
+        }
+        shell.classList.add(`is-workflow-step-${activeStep.replace(/_/g, "-")}`);
+      }
       for (const panel of workflowPanels()) {
         const railDetail = panel.matches("details.rail-section");
         const matchesVisibleStep = visibleStepIds.some((stepId) => panelMatchesWorkflowStep(panel, stepId));
@@ -6006,9 +6016,13 @@ const MotionJSONUI = (() => {
 
     function renderProjects() {
       const select = $("#projectSelect");
+      const railList = $("#projectRailList");
       $("#projectCount").textContent = `${state.projects.length} project${state.projects.length === 1 ? "" : "s"}`;
       if (!state.projects.length) {
         if (select) select.innerHTML = `<option value="">${escapeHtml(state.errors.projects || "No local projects yet")}</option>`;
+        if (railList) {
+          railList.innerHTML = `<div class="project-rail-empty">No projects yet.</div>`;
+        }
         state.selectedProjectId = "";
         renderGuidedStart();
         renderWorkflowStepper();
@@ -6022,6 +6036,25 @@ const MotionJSONUI = (() => {
           .map((project) => `<option value="${escapeAttribute(project.id)}">${escapeHtml(project.name)}</option>`)
           .join("");
         select.value = state.selectedProjectId;
+      }
+      if (railList) {
+        railList.innerHTML = state.projects
+          .slice(0, 7)
+          .map((project, index) => {
+            const active = project.id === state.selectedProjectId;
+            const created = project.created_at || project.createdAt || "";
+            const meta = active ? "Current project" : created ? created.split("T")[0] : index === 0 ? "Recent project" : "Local project";
+            return `
+              <button class="project-rail-item ${active ? "is-active" : ""}" type="button" data-project-rail-id="${escapeAttribute(project.id)}" aria-pressed="${active}">
+                <span class="project-rail-folder" aria-hidden="true"></span>
+                <span>
+                  <strong>${escapeHtml(project.name || "Untitled project")}</strong>
+                  <small>${escapeHtml(meta)}</small>
+                </span>
+              </button>
+            `;
+          })
+          .join("");
       }
       renderGuidedStart();
       renderWorkflowStepper();
@@ -10534,6 +10567,27 @@ const MotionJSONUI = (() => {
         state.errors.projects = error.message;
         renderProjects();
       }
+    });
+
+    $("#projectRailNewButton")?.addEventListener("click", () => {
+      setWorkflowStep("choose_goal", { focusStep: true });
+      $("#projectName")?.focus?.({ preventScroll: false });
+    });
+
+    $("#projectRailList")?.addEventListener("click", async (event) => {
+      const button = event.target.closest("[data-project-rail-id]");
+      if (!button) return;
+      state.selectedProjectId = button.dataset.projectRailId || "";
+      state.selectedVideoId = "";
+      state.selectedJobId = "";
+      state.selectedJob = null;
+      state.jobEvents = [];
+      state.jobArtifacts = [];
+      state.reviewTracks = [];
+      await refreshProjectData();
+      renderProjects();
+      renderVideos();
+      setWorkflowStep("source_video", { focusStep: true });
     });
 
     $("#projectSelect").addEventListener("change", async (event) => {
