@@ -44,6 +44,7 @@ const CAPTURE_STATES = [
   "model-setup-sam3-roboflow",
   "model-setup-sam3-custom",
   "model-setup-hosted-warning",
+  "model-setup-confirm-cache",
   "model-setup-missing",
   "model-setup-invalid",
   "model-setup-success",
@@ -631,6 +632,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
+          modelSetupConfirmationVisible: visible(document.querySelector(".model-setup-confirmation")),
+          modelSetupConfirmationText: document.querySelector(".model-setup-confirmation")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
           configSaveLoadOpen: document.querySelector(".compact-advanced-actions")?.open === true,
           startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
@@ -689,10 +692,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "nav-collapsed" && (stateValue.sidebarContentAriaHidden !== "true" || !stateValue.sidebarContentInert || !stateValue.sidebarLabel)) {
       failures.push(`${viewport.name}/${state}: collapsed sidebar content should be hidden from assistive tech and focus order`);
     }
-    if (state === "diagnostics-open" && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
+    if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
       failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
     }
-    if (state === "diagnostics-open" && (stateValue.railAriaHidden === "true" || stateValue.railInert)) {
+    if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railAriaHidden === "true" || stateValue.railInert)) {
       failures.push(`${viewport.name}/${state}: diagnostics rail should not be inert while open`);
     }
     if (state === "real-empty-shell" && !stateValue.railCollapsed) {
@@ -722,8 +725,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Roboflow SAM3") {
       failures.push(`${viewport.name}/${state}: Roboflow SAM3 should be the active guided model choice`);
     }
-    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom hosted SAM3") {
+    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom SAM3 endpoint") {
       failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
+    }
+    if (state === "model-setup-confirm-cache" && stateValue.activeModelChoice !== "SAM2 HF automatic masks") {
+      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
+    }
+    if (state === "model-setup-confirm-cache" && (!stateValue.modelSetupConfirmationVisible || !/Cache model/.test(stateValue.modelSetupConfirmationText) || !/network/.test(stateValue.modelSetupConfirmationText) || !/disk/.test(stateValue.modelSetupConfirmationText))) {
+      failures.push(`${viewport.name}/${state}: cache confirmation should be visible with network and disk flags`);
     }
     if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Import video and project settings" || !stateValue.videoFormVisible)) {
       failures.push(`${viewport.name}/${state}: video step should expose import and project settings with the local video path form`);

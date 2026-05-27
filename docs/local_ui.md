@@ -148,6 +148,13 @@ and JSON stay behind `Advanced`. The setup state machine is:
 `needs_download_confirmation`, `caching_model`, `installing_runtime`,
 `smoke_testing`, `ready`, and `failed_recoverable`.
 
+Local SAM2 HF and SAM3 Scene Sweep setup also includes a server-side
+`modelCache` state. MotionJSON treats a model as runnable only when the runtime
+is available and the selected Hugging Face repo or local `from_pretrained`
+directory is already resolved locally. Cache state is derived from saved setup,
+local model directories, previous setup jobs, and Hugging Face cache inspection
+without exposing raw local paths in browser responses.
+
 For SAM3 Scene Sweep, `needs_access` is a normal UI step. The Model setup panel
 asks for a Hugging Face token in the main flow, saves it locally as a redacted
 secret, and uses it only for allowlisted `check_access` and `cache_model` jobs.
@@ -163,7 +170,10 @@ absolute paths. Setup actions run through allowlisted server jobs:
 - `POST /api/provider-settings/setup-jobs/{jobId}/cancel`
 
 Diagnose stays lightweight and offline. Cache-model actions require explicit
-network/disk confirmation. Hosted smoke tests require `allowNetwork`,
+network/disk confirmation. The Local UI renders setup confirmations in-page
+instead of using native browser confirmation dialogs, so Colab/proxied browser
+sessions can inspect the pending action, provider, model, network, disk,
+heavy-runtime, and cancel state. Hosted smoke tests require `allowNetwork`,
 `allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke tests require
 `allowHeavyLocal` before importing heavy model runtimes.
 

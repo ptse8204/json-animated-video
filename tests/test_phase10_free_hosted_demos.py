@@ -277,6 +277,9 @@ def test_colab_ui_provider_connect_notebook_uses_private_colab_proxy_and_vendor_
     assert "CUDA available" in joined
     assert "output.serve_kernel_port_as_iframe" in joined
     assert "output.serve_kernel_port_as_window" in joined
+    assert "Disconnect and delete Colab runtime" in joined
+    assert "RUN_DELETE_COLAB_RUNTIME = False" in joined
+    assert "runtime.unassign()" in joined
     assert "Do model configuration in the UI" in cell_sources[0]
     launch_index = next(index for index, source in enumerate(cell_sources) if "output.serve_kernel_port_as_iframe" in source)
     advanced_index = next(index for index, source in enumerate(cell_sources) if "## Advanced fallback only" in source)

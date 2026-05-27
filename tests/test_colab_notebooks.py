@@ -73,6 +73,9 @@ def test_provider_connect_notebook_opens_ui_before_advanced_model_debug_cells() 
     sam3_debug_index = next(index for index, source in enumerate(cell_sources) if "RUN_LOCAL_SAM3_SETUP = False" in source)
 
     assert launch_index < advanced_index < sam2_debug_index < sam3_debug_index
+    assert "Disconnect and delete Colab runtime" in joined
+    assert "RUN_DELETE_COLAB_RUNTIME = False" in joined
+    assert "runtime.unassign()" in joined
 
 
 def test_provider_connect_sam2_source_repo_checkpoint_and_config_are_distinct() -> None:

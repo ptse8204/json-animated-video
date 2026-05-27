@@ -21,6 +21,8 @@ PROVIDER_SETTINGS_FORMAT = "motionjson.local_provider_settings.v0.1"
 PROVIDER_CATALOG_FORMAT = "motionjson.provider_registry.v0.1"
 
 CUSTOM_MODEL_ID = "__custom__"
+LOCAL_MODEL_CACHE_PROVIDER_IDS = {"sam2-hf-auto-masks", "sam3-local"}
+LOCAL_MODEL_CACHE_KEYS = {"cached_model_id", "resolved_model_dir", "model_cache_updated_at"}
 
 SAM2_HOSTED_PROFILES: list[dict[str, Any]] = [
     {
@@ -813,6 +815,8 @@ def provider_runtime_settings(
         endpoint_source = "profile_default"
 
     readiness = _readiness(definition, settings, secrets, environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ, include_runtime_path=True)
+    runtime_model = str(model_cache.get("runtimeModel") or _runtime_effective_model(definition, settings, environ))
     return {
         "providerId": provider_id,
         "hosted_profile_id": _selected_hosted_profile_id(definition, settings),
@@ -832,6 +836,9 @@ def provider_runtime_settings(
             or ""
         ),
         "selected_model": _runtime_effective_model(definition, settings, environ),
+        "runtime_model": runtime_model,
+        "resolved_model_dir": str(model_cache.get("localModelDir") or ""),
+        "model_cache": model_cache,
         "allow_hosted": bool(settings.get("allow_hosted", False)),
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
         "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
@@ -843,6 +850,182 @@ def provider_runtime_settings(
         "readiness": readiness,
         "settings_source": "local_settings" if row is not None else "default",
     }
+
+
+def record_provider_model_cache(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    model_id: str,
+    local_model_dir: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Persist a locally resolved from_pretrained directory without exposing it publicly."""
+
+    definition = _definition(provider_id)
+    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return provider_settings_response(conn, user_id=user_id, environ=environ)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    settings["cached_model_id"] = str(model_id or "").strip()
+    settings["resolved_model_dir"] = str(local_model_dir or "").strip()
+    settings["model_cache_updated_at"] = utc_now()
+    try:
+        model_path = Path(str(model_id or "")).expanduser()
+        if model_path.exists() and model_path.is_dir():
+            settings["selected_model"] = CUSTOM_MODEL_ID
+            settings["custom_model_id"] = str(model_path)
+    except OSError:
+        pass
+    _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
+    return provider_settings_response(conn, user_id=user_id, environ=environ)
+
+
+def _module_available(name: str) -> bool:
+    if name in sys.modules:
+        return True
+    try:
+        return find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError, ValueError):
+        return False
+
+
+def _local_from_pretrained_dir_status(path: Path) -> tuple[bool, str]:
+    try:
+        if not path.exists():
+            return False, "Local model directory does not exist."
+        if not path.is_dir():
+            return False, "Selected model path is not a directory. Use a Hugging Face repo id or local from_pretrained directory."
+        if not os.access(path, os.R_OK):
+            return False, "Local model directory is not readable by this process."
+        if any(path.rglob("*.incomplete")):
+            return False, "Local model directory contains incomplete download files. Retry Cache model after checking disk/network access."
+        if not (path / "config.json").exists():
+            return False, "Local model directory is missing config.json and may not be loadable with from_pretrained."
+    except OSError as exc:
+        return False, f"Local model directory could not be inspected: {type(exc).__name__}: {exc}."
+    return True, "Local from_pretrained model directory is available."
+
+
+def _looks_like_local_model_path(raw: str) -> bool:
+    return raw.startswith(("/", ".", "~")) or raw.lower().startswith("file://") or "\\" in raw
+
+
+def _looks_like_hf_repo_id(raw: str) -> bool:
+    return "/" in raw and not _looks_like_local_model_path(raw) and not raw.endswith(".pt")
+
+
+def _hf_cache_error_message(exc: Exception, model_id: str) -> str:
+    name = type(exc).__name__
+    text = redact_secret_text(str(exc) or name)
+    lowered = text.lower()
+    if "offline" in lowered:
+        return f"Offline mode is enabled and {model_id} is not cached locally. Disable offline mode or cache the model first."
+    if "not found" in lowered or "cannot find" in lowered or "localentrynotfound" in name.lower():
+        return f"{model_id} is not cached locally yet. Use Cache model after confirming network and disk access."
+    if "permission" in lowered or "denied" in lowered:
+        return "MotionJSON cannot read the Hugging Face cache directory. Fix local permissions or choose a readable model directory."
+    if "no space" in lowered or "enospc" in lowered or "disk" in lowered:
+        return "Local disk space is insufficient for this model cache. Free disk space or choose another cache location."
+    if "corrupt" in lowered:
+        return "The Hugging Face cache entry appears corrupted. Delete the partial cache and run Cache model again."
+    return f"Local Hugging Face cache inspection for {model_id} did not find a runnable cache: {text}"
+
+
+def _model_cache_state(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    secrets: Mapping[str, str],
+    environ: Mapping[str, str],
+    *,
+    include_runtime_path: bool = False,
+) -> dict[str, Any]:
+    provider_id = str(definition["id"])
+    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return {"required": False, "cached": True, "status": "not_required", "networkAttempted": False}
+
+    model_id = _runtime_effective_model(definition, settings, environ)
+    cached_model_id = str(settings.get("cached_model_id") or "").strip()
+    saved_dir = str(settings.get("resolved_model_dir") or "").strip()
+    token = str(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or secrets.get("hf_token") or "").strip()
+    base: dict[str, Any] = {
+        "required": True,
+        "providerId": provider_id,
+        "model": model_id,
+        "cached": False,
+        "status": "not_cached",
+        "source": "unresolved",
+        "networkAttempted": False,
+        "localPathKnown": False,
+        "message": "Model cache has not been resolved yet.",
+    }
+
+    def cached_state(local_dir: str, *, source: str, message: str) -> dict[str, Any]:
+        result = {
+            **base,
+            "cached": True,
+            "status": "cached",
+            "source": source,
+            "localPathKnown": True,
+            "localPathDisplay": "[LOCAL_PATH_REDACTED]",
+            "message": message,
+        }
+        if include_runtime_path:
+            result["localModelDir"] = local_dir
+            result["runtimeModel"] = local_dir
+        return result
+
+    if saved_dir and (not cached_model_id or cached_model_id == model_id):
+        saved_path = Path(saved_dir).expanduser()
+        ok, detail = _local_from_pretrained_dir_status(saved_path)
+        if ok:
+            return cached_state(str(saved_path), source="saved_cache", message="Previously cached local model directory is available.")
+        base.update({"status": "invalid_cache", "source": "saved_cache", "message": detail, "nextAction": "cache_model"})
+        return base
+
+    raw = str(model_id or "").strip()
+    if not raw:
+        base.update({"status": "missing_model", "message": "No model id or local model directory is selected.", "nextAction": "choose_model"})
+        return base
+    if raw == "[LOCAL_PATH_REDACTED]":
+        base.update({"status": "invalid_model", "message": "The saved model path was redacted in the browser. Choose the local model directory again from Model setup.", "nextAction": "choose_model"})
+        return base
+    if raw.endswith(".pt"):
+        base.update(
+            {
+                "status": "invalid_model",
+                "message": "A single .pt checkpoint is not valid for this from_pretrained model path. Choose a Hugging Face repo id or local model directory.",
+                "nextAction": "choose_model",
+            }
+        )
+        return base
+    if _looks_like_local_model_path(raw):
+        path = Path(raw.replace("file://", "", 1)).expanduser()
+        ok, detail = _local_from_pretrained_dir_status(path)
+        if ok:
+            return cached_state(str(path), source="local_directory", message=detail)
+        base.update({"status": "invalid_model", "source": "local_directory", "message": detail, "nextAction": "choose_model"})
+        return base
+    if not _looks_like_hf_repo_id(raw):
+        base.update({"status": "invalid_model", "message": f"{raw} is neither a Hugging Face repo id nor a local model directory.", "nextAction": "choose_model"})
+        return base
+    if not _module_available("huggingface_hub"):
+        base.update({"status": "cache_unknown", "message": "huggingface_hub is not installed, so MotionJSON cannot inspect the local model cache. Install the Transformers setup extra first.", "nextAction": "install"})
+        return base
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+
+        local_dir = snapshot_download(repo_id=raw, token=token or None, local_files_only=True)
+        path = Path(str(local_dir)).expanduser()
+        ok, detail = _local_from_pretrained_dir_status(path)
+        if not ok:
+            base.update({"status": "invalid_cache", "source": "hf_cache", "message": detail, "nextAction": "cache_model"})
+            return base
+        return cached_state(str(path), source="hf_cache", message=f"{raw} is already available in the local Hugging Face cache.")
+    except Exception as exc:
+        base.update({"status": "not_cached", "source": "hf_cache", "message": _hf_cache_error_message(exc, raw), "nextAction": "cache_model"})
+        return base
 
 
 def _apply_settings_payload(
@@ -1160,6 +1343,8 @@ def diagnose_provider_settings(
     settings = dict(settings)
     _apply_settings_payload(definition, settings, secrets, payload, validate_profile=False)
     readiness = _readiness(definition, settings, secrets, environ)
+    credentials = _credential_states(definition, settings, secrets, environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ)
     checklist: list[dict[str, Any]] = []
     commands: list[str] = []
     docs = definition.get("docs")
@@ -1188,9 +1373,13 @@ def diagnose_provider_settings(
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id == "sam2-hf-auto-masks":
         model = _runtime_effective_model(definition, settings, environ) or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+        device = str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or "auto/cpu")
+        device_problem = _device_problem(device, torch_ok=find_spec("torch") is not None)
         item("transformers_package", "SAM2 Transformers package", find_spec("transformers") is not None, "Python can import transformers." if find_spec("transformers") is not None else "Python cannot import transformers.", "Install the independent sam2-transformers extra. Official SAM2 is not required.")
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
         item("model_id", "HF model id or directory", True, f"Selected model: {model}", "Use Cache model if the model is not already available locally.")
+        item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local cache access.")
+        item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
         item("official_sam2", "Official SAM2 checkpoint/config", True, "Not required for SAM2 HF automatic masks.", "", required=False)
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id == "sam3-local":
@@ -1200,13 +1389,18 @@ def diagnose_provider_settings(
         tracker_model_status = describe_sam3_tracker_model(environ.get("SAM3_TRACKER_MODEL") or settings.get("selected_model") or SAM3_HF_REPO_ID, source="environment" if environ.get("SAM3_TRACKER_MODEL") else "local_settings" if settings.get("selected_model") else "default")
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         transformers_ok = find_spec("transformers") is not None
+        torch_ok = find_spec("torch") is not None
+        device = str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "auto/cpu")
+        device_problem = _device_problem(device, torch_ok=torch_ok)
         tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
         tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
         item("transformers_package", "SAM3 Transformers package", transformers_ok, "Python can import transformers." if transformers_ok else "Python cannot import transformers.", "Install the independent sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_auto_masks", "SAM3 Tracker automatic masks", tracker_auto_masks_ok, "Transformers exposes SAM3 Tracker mask-generation classes." if tracker_auto_masks_ok else "Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_video", "SAM3 Tracker Video API", tracker_video_ok, "Transformers exposes SAM3 Tracker Video classes." if tracker_video_ok else "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_model", "SAM3 Tracker model id or directory", bool(tracker_model_status["valid"]), str(tracker_model_status.get("resolvedModel") or tracker_model_status.get("reason") or "facebook/sam3"), str(tracker_model_status.get("action") or "Use Cache model for facebook/sam3."), required=True)
-        item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
+        item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local Hugging Face cache access.")
+        item("torch_package", "PyTorch", torch_ok, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
+        item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
         item("python", "Python >= 3.12 for concept/exemplar", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for official-package SAM3 concept/exemplar workflows.", required=False)
         item("sam3_package", "Official SAM3 package for concept/exemplar", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3 for concept/exemplar workflows.", required=False)
         item(
@@ -1237,15 +1431,18 @@ def diagnose_provider_settings(
         item("provider", "Provider registered", True, definition["name"], "No additional setup checklist is defined.")
 
     ok = all(entry["ok"] for entry in checklist if entry.get("required", True))
+    setup_state = _setup_state_for_provider(definition, readiness, model_cache, credentials)
+    runnable = bool(ok and readiness.get("configured") and setup_state.get("runnable", setup_state.get("status") == "ready"))
     return {
         "format": "motionjson.provider_settings_diagnose.v0.1",
         "providerId": provider_id,
-        "status": "ready" if ok and readiness.get("configured") else "needs_setup",
-        "setupState": _setup_state_from_readiness(readiness),
-        "ready": bool(ok and readiness.get("configured")),
+        "status": "ready" if runnable else "needs_setup",
+        "setupState": setup_state,
+        "ready": runnable,
         "networkAttempted": False,
         "heavyLocalAttempted": False,
-        "message": readiness.get("message") or ("Ready" if ok else "Setup is incomplete."),
+        "message": setup_state.get("message") or readiness.get("message") or ("Ready" if ok else "Setup is incomplete."),
+        "modelCache": model_cache,
         "checklist": checklist,
         "commands": commands,
         "docs": docs,
@@ -1472,7 +1669,8 @@ def _public_provider_state(
     }
     provider["credentials"] = _credential_states(definition, settings, secrets, environ)
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
-    provider["setupState"] = _setup_state_from_readiness(provider["readiness"])
+    provider["modelCache"] = _model_cache_state(definition, settings, secrets, environ)
+    provider["setupState"] = _setup_state_for_provider(definition, provider["readiness"], provider["modelCache"], provider["credentials"])
     provider["effectiveModel"] = _runtime_effective_model(definition, settings, environ)
     provider["effectiveProfile"] = _public_profile(profile)
     return provider
@@ -1612,6 +1810,9 @@ def _readiness(
             missing.append("SAM3 Tracker automatic-mask Transformers classes")
         if not tracker_video_ok:
             missing.append("SAM3 Tracker Video Transformers classes")
+        device_problem = _device_problem(str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""), torch_ok=torch_ok)
+        if device_problem:
+            missing.append(device_problem)
         if missing:
             return {
                 "status": "not_configured",
@@ -1641,6 +1842,9 @@ def _readiness(
             missing.append("sam2-transformers extra")
         if not torch_ok:
             missing.append("torch")
+        device_problem = _device_problem(str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or ""), torch_ok=torch_ok)
+        if device_problem:
+            missing.append(device_problem)
         if missing:
             return {
                 "status": "not_configured",
@@ -1710,6 +1914,31 @@ def _readiness(
     return {"status": status, "configured": not missing, "missing": missing, "message": message}
 
 
+def _device_problem(device: str, *, torch_ok: bool) -> str:
+    normalized = str(device or "").strip().lower()
+    if not normalized or normalized in {"auto", "cpu"}:
+        return ""
+    if not torch_ok:
+        return f"{device} requested but torch is not installed"
+    try:
+        import torch  # type: ignore
+    except Exception as exc:
+        return f"{device} requested but torch could not be imported: {type(exc).__name__}"
+    if normalized.startswith("cuda"):
+        try:
+            if not bool(torch.cuda.is_available()):
+                return f"{device} requested but CUDA is not available; choose cpu or a CUDA runtime"
+        except Exception as exc:
+            return f"{device} requested but CUDA status could not be checked: {type(exc).__name__}"
+    if normalized == "mps":
+        try:
+            if not bool(getattr(torch.backends, "mps", None) and torch.backends.mps.is_available()):
+                return "mps requested but Apple MPS is not available; choose cpu or an MPS-capable runtime"
+        except Exception as exc:
+            return f"mps requested but MPS status could not be checked: {type(exc).__name__}"
+    return ""
+
+
 def _setup_state_from_readiness(readiness: Mapping[str, Any]) -> dict[str, Any]:
     status = str(readiness.get("status") or "")
     configured = bool(readiness.get("configured"))
@@ -1725,6 +1954,72 @@ def _setup_state_from_readiness(readiness: Mapping[str, Any]) -> dict[str, Any]:
     if status in {"planned", "unsupported"}:
         return {"status": "blocked", "label": "Blocked", "message": readiness.get("message") or "This provider is not runnable yet."}
     return {"status": "not_configured", "label": "Not configured", "message": readiness.get("message") or "Complete setup before running."}
+
+
+def _setup_state_for_provider(
+    definition: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    model_cache: Mapping[str, Any],
+    credentials: list[dict[str, Any]],
+) -> dict[str, Any]:
+    provider_id = str(definition.get("id") or "")
+    base = _setup_state_from_readiness(readiness)
+    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return base
+    preflight = {
+        "runtimeAvailable": bool(readiness.get("configured")),
+        "accessConfigured": any(item.get("name") == "hf_token" and item.get("configured") for item in credentials) if provider_id == "sam3-local" else True,
+        "accessVerified": bool(model_cache.get("cached")) or provider_id != "sam3-local",
+        "modelCached": bool(model_cache.get("cached")),
+        "smokeTested": False,
+        "runnable": bool(readiness.get("configured") and model_cache.get("cached")),
+    }
+    if not readiness.get("configured"):
+        return {**base, "preflight": preflight, "runnable": False, "nextAction": "install"}
+    if model_cache.get("cached"):
+        return {
+            "status": "ready",
+            "label": "Ready",
+            "message": model_cache.get("message") or "Model setup is ready for this workflow.",
+            "preflight": preflight,
+            "runnable": True,
+            "nextAction": "continue",
+        }
+    if provider_id == "sam3-local" and not preflight["accessConfigured"] and model_cache.get("status") in {"not_cached", "cache_unknown"}:
+        return {
+            "status": "needs_access",
+            "label": "Needs Hugging Face access",
+            "message": "Paste a Hugging Face token for facebook/sam3, then check access before caching the model.",
+            "preflight": preflight,
+            "runnable": False,
+            "nextAction": "check_access",
+        }
+    if model_cache.get("status") in {"invalid_model", "invalid_cache", "missing_model"}:
+        return {
+            "status": "needs_path",
+            "label": "Needs model directory",
+            "message": str(model_cache.get("message") or "Choose a valid Hugging Face repo id or local from_pretrained directory."),
+            "preflight": preflight,
+            "runnable": False,
+            "nextAction": "choose_model",
+        }
+    if model_cache.get("status") == "cache_unknown":
+        return {
+            "status": "not_configured",
+            "label": "Needs setup",
+            "message": str(model_cache.get("message") or "Install setup tools before checking the local model cache."),
+            "preflight": preflight,
+            "runnable": False,
+            "nextAction": "install",
+        }
+    return {
+        "status": "needs_download_confirmation",
+        "label": "Confirm model cache",
+        "message": str(model_cache.get("message") or "Cache the selected model before running."),
+        "preflight": preflight,
+        "runnable": False,
+        "nextAction": "cache_model",
+    }
 
 
 def _sam3_tracker_auto_masks_importable() -> bool:

@@ -5062,6 +5062,37 @@ body {
   background: #fff8e7;
 }
 
+.model-setup-confirmation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #d99016;
+  border-left: 4px solid #d99016;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.model-setup-confirmation p {
+  margin: 4px 0 8px;
+  color: #5c6670;
+  font-size: 12px;
+}
+
+.model-setup-confirmation-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.model-setup-confirmation-actions button:last-child {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
 .model-setup-access-card p {
   margin: 4px 0 0;
   color: #5c6670;
@@ -5131,6 +5162,7 @@ body {
 
   .goal-card-grid,
   .model-setup-access-card,
+  .model-setup-confirmation,
   .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel {
     grid-template-columns: minmax(0, 1fr);
   }

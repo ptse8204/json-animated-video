@@ -467,6 +467,7 @@ const MotionJSONUI = (() => {
     selectedProviderSetupJobId: "",
     modelSetupMessage: "",
     modelSetupTone: "neutral",
+    pendingModelSetupConfirmation: null,
     modelPlanRun: null,
     modelPlanValidation: null,
     modelPlanMessage: "",
@@ -810,6 +811,8 @@ const MotionJSONUI = (() => {
     const requiresModel = goalRequiresModel(snapshot.selectedPreset || state.selectedPreset);
     const hasVideo = Boolean(snapshot.selectedVideoId);
     const hasResult = Boolean(snapshot.selectedJobId) && (snapshot.selectedPreset || state.selectedPreset) === "review_existing";
+    const previewStatus = String(snapshot.videoPreviewStatus || "");
+    const previewReason = snapshot.videoPreviewReason || "";
     const videoPathValue = typeof document !== "undefined" ? document.querySelector("#videoPath")?.value.trim() || "" : "";
     const importPathValue = typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() || "" : "";
     const hasModelSetupForm = typeof document !== "undefined" ? Boolean(document.querySelector("#modelSetupForm")) : snapshot.providerSummaryTone === "ready" || snapshot.providerSummaryTone === "warn";
@@ -883,6 +886,17 @@ const MotionJSONUI = (() => {
         };
       }
       if (hasVideo) {
+        if (previewStatus === "failed" || previewStatus === "blocked") {
+          return {
+            id: activeStep,
+            primaryLabel: "Retry preview",
+            primaryAction: "retry_preview",
+            enabled: true,
+            blockedReason: previewReason || "Browser preview could not be prepared.",
+            successAdvanceTo: "source_video",
+            backTarget: "choose_goal",
+          };
+        }
         return {
           id: activeStep,
           primaryLabel: requiresModel ? "Continue to model" : "Continue to prepare",
@@ -2682,6 +2696,9 @@ const MotionJSONUI = (() => {
         message: latestJob.result?.message || latestJob.error || "Setup did not finish. Retry or choose a different model.",
       };
     }
+    if (provider?.setupState?.status) {
+      return provider.setupState;
+    }
     const cached = latestJob?.action === "cache_model" && latestJob.status === "succeeded";
     const smokeReady = latestJob?.action === "smoke" && latestJob.status === "succeeded";
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
@@ -2722,6 +2739,7 @@ const MotionJSONUI = (() => {
 
   function modelSetupPrimaryActionForState(stateInfo = {}, connection = null) {
     const status = String(stateInfo.status || "not_configured");
+    const nextAction = String(stateInfo.nextAction || "");
     const providerId = connection?.providerId || "";
     if (["checking_environment", "caching_model", "installing_runtime", "smoke_testing"].includes(status)) {
       return { id: "cancel-setup-job", label: "Cancel setup", primary: false };
@@ -2732,13 +2750,56 @@ const MotionJSONUI = (() => {
     if (status === "needs_download_confirmation") {
       return { id: "cache-model", label: "Cache model", primary: true };
     }
+    if (status === "needs_path") {
+      return { id: nextAction === "cache_model" ? "cache-model" : "diagnose", label: nextAction === "cache_model" ? "Cache model" : "Diagnose", primary: true };
+    }
     if (status === "ready") {
       return { id: "smoke", label: "Run smoke test", primary: false };
     }
     if (status === "failed_recoverable") {
       return { id: providerId === "sam3-local" || providerId === "sam2-hf-auto-masks" || providerId === "sam2-local" ? "install" : "diagnose", label: "Retry setup", primary: true };
     }
+    if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
     return { id: "install", label: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
+  }
+
+  function modelSetupConfirmationForAction(action, providerId, options = {}) {
+    const normalized = String(action || "");
+    const provider = providerSettingsById(providerId) || {};
+    const hosted = options.hosted ?? provider.locality === "hosted";
+    const model = options.model || providerEffectiveModel(provider) || provider.defaultModel || "";
+    const labels = {
+      "check-access": "Check Hugging Face access",
+      test: "Check access",
+      install: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
+      "cache-model": "Cache model",
+      smoke: hosted ? "Run hosted smoke test" : "Run local smoke test",
+    };
+    const flags = [];
+    if (["check-access", "cache-model", "install"].includes(normalized) || hosted) flags.push("network");
+    if (normalized === "cache-model") flags.push("disk");
+    if (normalized === "install" || (normalized === "smoke" && !hosted)) flags.push("heavy local runtime");
+    if (hosted && normalized === "smoke") flags.push("hosted cost/privacy");
+    const copy = {
+      "check-access": "This checks Hugging Face access for the selected local model after your confirmation.",
+      test: "This checks saved hosted setup fields without sending frames.",
+      install: "This runs the allowlisted optional dependency install for the selected local provider.",
+      "cache-model": "This resolves or downloads the selected model into the local Hugging Face cache or validates a local model directory.",
+      smoke: hosted
+        ? "This can contact the hosted provider and may incur cost after your confirmation."
+        : "This imports local model runtimes and checks the selected local setup.",
+    };
+    return {
+      action: normalized,
+      providerId,
+      providerLabel: provider.name || providerId,
+      label: labels[normalized] || humanizeReviewCode(normalized),
+      message: copy[normalized] || "Confirm this setup action before continuing.",
+      model,
+      flags,
+      requiresConfirmation: ["check-access", "test", "install", "cache-model", "smoke"].includes(normalized),
+      hosted: Boolean(hosted),
+    };
   }
 
   function setupJobEventsMarkup(job) {
@@ -4878,7 +4939,7 @@ const MotionJSONUI = (() => {
         rail.setAttribute("aria-hidden", String(collapsed));
         rail.inert = collapsed;
       }
-      if (detailsToggle) detailsToggle.setAttribute("aria-expanded", String(Boolean(state.workflowDashboard)));
+      if (detailsToggle) detailsToggle.setAttribute("aria-expanded", String(!collapsed));
       if (railCloseButton) {
         railCloseButton.setAttribute("aria-expanded", String(!collapsed));
       }
@@ -5313,6 +5374,26 @@ const MotionJSONUI = (() => {
             ${credentialInputMarkup(hfCredential, { normal: true })}
           </div>`
         : "";
+      const pendingConfirmation = state.pendingModelSetupConfirmation?.providerId === connection.providerId
+        ? state.pendingModelSetupConfirmation
+        : null;
+      const confirmationCard = pendingConfirmation
+        ? `<div class="model-setup-confirmation" role="alert">
+            <div>
+              <strong>${escapeHtml(pendingConfirmation.label)}</strong>
+              <p>${escapeHtml(pendingConfirmation.message)}</p>
+              <div class="provider-detail">
+                ${detailChip(pendingConfirmation.providerLabel || connection.providerId)}
+                ${pendingConfirmation.model ? detailChip(pendingConfirmation.model) : ""}
+                ${asArray(pendingConfirmation.flags).map((flag) => detailChip(flag)).join("")}
+              </div>
+            </div>
+            <div class="model-setup-confirmation-actions">
+              <button type="button" data-model-setup-confirmation="cancel">Cancel</button>
+              <button type="button" data-model-setup-confirmation="confirm">${escapeHtml(pendingConfirmation.label)}</button>
+            </div>
+          </div>`
+        : "";
 
       return `
         <div class="model-setup-summary">
@@ -5340,6 +5421,7 @@ const MotionJSONUI = (() => {
           </div>
         </div>
         ${normalAccessCard}
+        ${confirmationCard}
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
@@ -5967,6 +6049,7 @@ const MotionJSONUI = (() => {
         state.selectedProviderSetupJobId = job.id;
       }
       renderModelSetup();
+      renderWorkflowStepper();
       if (job?.id && !job.terminal) pollProviderSetupJob(job.id);
       return job;
     }
@@ -5982,9 +6065,11 @@ const MotionJSONUI = (() => {
         const summary = setupJobStatusSummary(job);
         setModelSetupMessage(summary.message, summary.tone);
         renderModelSetup();
+        renderWorkflowStepper();
         if (job.terminal) {
           await refreshAll();
           renderModelSetup();
+          renderWorkflowStepper();
           return job;
         }
       }
@@ -5998,6 +6083,7 @@ const MotionJSONUI = (() => {
       });
       if (payload.setupJob?.id) state.providerSetupJobs[payload.setupJob.id] = payload.setupJob;
       renderModelSetup();
+      renderWorkflowStepper();
       return payload.setupJob;
     }
 
@@ -9222,6 +9308,7 @@ const MotionJSONUI = (() => {
           "model-setup-sam3-custom": ["sam3-hosted:custom-sam3-compatible", "Custom hosted SAM3 is selected. Save endpoint, key, and hosted opt-in before testing.", "warn", "trace_one_object"],
           "model-setup-missing": ["sam3-hosted:roboflow-sam3-pcs", "Paste a server-side Roboflow API key before hosted SAM3 concept discovery can run.", "bad"],
           "model-setup-invalid": ["sam3-hosted:roboflow-sam3-pcs", "Roboflow API key is invalid or too short. Paste the key without spaces.", "bad"],
+          "model-setup-confirm-cache": ["sam2-hf-auto-masks", "SAM2 HF fallback is selected. Confirm the model cache action before using automatic masks.", "warn", "trace_all_objects"],
           "model-setup-success": ["sam2-local", "Diagnose found the local SAM2 paths and package imports needed for extraction.", "ready"],
         }[capture];
         if (captureState) {
@@ -9229,11 +9316,18 @@ const MotionJSONUI = (() => {
           state.selectedModelSetupProviderId = captureState[0];
           state.modelSetupMessage = captureState[1];
           state.modelSetupTone = captureState[2];
+          if (captureState[0] === "sam3-hosted:custom-sam3-compatible") state.modelSetupAlternativesOpen = true;
           if (captureState[0] === "sam3-local") markCaptureProviderReady("sam3-local");
           if (captureState[0] === "sam2-local") markCaptureProviderReady("sam2-local");
+          if (captureState[0] === "sam2-hf-auto-masks") markCaptureProviderReady("sam2-hf-auto-masks", { message: "SAM2 HF fallback runtime is available. Cache the selected model before running automatic masks." });
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") markCaptureProviderReady("sam3-hosted", { hostedProfileId: "custom-sam3-compatible", allowHosted: true });
           if (captureState[0] === "sam3-hosted:roboflow-sam3-pcs") markCaptureProviderReady("sam3-hosted", { hostedProfileId: "roboflow-sam3-pcs", allowHosted: true });
           if (captureState[0] === "sam2-hosted:replicate-sam2-video") markCaptureProviderReady("sam2-hosted", { hostedProfileId: "replicate-sam2-video", allowHosted: true });
+          if (capture === "model-setup-confirm-cache") {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
+              model: "facebook/sam2.1-hiera-large",
+            });
+          }
           renderModelSetup();
           if (capture === "model-setup-invalid") {
             const keyInput = document.querySelector("[data-model-setup-field='apiKey']");
@@ -9281,6 +9375,7 @@ const MotionJSONUI = (() => {
         if (capture === "prepare-sam3-single") {
           applyPreset("trace_one_object", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-local";
+          state.modelSetupAlternativesOpen = true;
           markCaptureProviderReady("sam3-local");
           state.prompts = [
             { id: "prompt_prepare_box", kind: "box", frame_index: 36, object_id: "selected_object", label: "Selected object", data: { x: 610, y: 248, w: 410, h: 468 } },
@@ -10791,29 +10886,22 @@ const MotionJSONUI = (() => {
         } else if (action === "smoke-test") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
-          const confirmMessage = hosted
-            ? "Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost."
-            : "Run a local SAM smoke test? This can import heavy local model packages and touch configured model files.";
-          if (!window.confirm(confirmMessage)) {
-            if (result) result.textContent = hosted ? "Hosted smoke test canceled." : "Local smoke test canceled.";
-            return;
-          }
-          const body = hosted
-            ? {
-                allowNetwork: true,
-                allowHosted: true,
-                acknowledgeCostPrivacy: true,
-                prompt: "object",
-              }
-            : {
-                allowHeavyLocal: true,
-                videoPath: selectedVideoPath(),
-              };
-          const payload = await api(`/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test`, {
-            method: "POST",
-            body: JSON.stringify(body),
+          const hostedProfileId = provider?.settings?.hostedProfileId || provider?.defaultHostedProfile || "";
+          state.selectedModelSetupProviderId =
+            providerId === "sam3-hosted"
+              ? `sam3-hosted:${hostedProfileId || "roboflow-sam3-pcs"}`
+              : providerId === "sam2-hosted"
+                ? `sam2-hosted:${hostedProfileId || "replicate-sam2-video"}`
+                : providerId;
+          state.pendingModelSetupConfirmation = modelSetupConfirmationForAction("smoke", providerId, {
+            hosted,
+            model: providerEffectiveModel(provider),
           });
-          if (result) result.textContent = payload.message || (hosted ? "Hosted SAM smoke test completed." : "Local SAM smoke test completed.");
+          if (result) result.textContent = "Confirm the smoke test in Model setup.";
+          setWorkflowStep("provider_settings", { focusStep: true });
+          renderModelSetup();
+          renderWorkflowStepper();
+          return;
         } else if (action === "reset") {
           await api(`/api/provider-settings/${encodeURIComponent(providerId)}`, { method: "DELETE", body: JSON.stringify({}) });
           await refreshAll();
@@ -10833,14 +10921,39 @@ const MotionJSONUI = (() => {
         state.modelSetupAlternativesOpen = false;
         state.modelSetupMessage = "";
         state.modelSetupTone = "neutral";
+        state.pendingModelSetupConfirmation = null;
         renderModelSetup();
         renderModelPlanPanel();
+        renderWorkflowStepper();
+        return;
+      }
+
+      const confirmationButton = event.target.closest("[data-model-setup-confirmation]");
+      if (confirmationButton) {
+        const pending = state.pendingModelSetupConfirmation;
+        if (!pending) return;
+        if (confirmationButton.dataset.modelSetupConfirmation === "cancel") {
+          state.pendingModelSetupConfirmation = null;
+          setModelSetupMessage(`${pending.label} canceled.`, "neutral");
+          renderModelSetup();
+          renderWorkflowStepper();
+          return;
+        }
+        state.pendingModelSetupConfirmation = null;
+        renderModelSetup();
+        const setupButton = [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action]")]
+          .find((item) => item.dataset.modelSetupAction === pending.action);
+        if (!setupButton) throw new Error("Model setup action is not available for the selected provider.");
+        setupButton.dataset.modelSetupConfirmed = "true";
+        setupButton.click();
         return;
       }
 
       const button = event.target.closest("[data-model-setup-action]");
       if (!button) return;
       const action = button.dataset.modelSetupAction;
+      const confirmed = button.dataset.modelSetupConfirmed === "true";
+      if (confirmed) delete button.dataset.modelSetupConfirmed;
       const connection = modelConnectionById(state.selectedModelSetupProviderId);
       if (!connection) return;
       const form = $("#modelSetupForm");
@@ -10883,24 +10996,33 @@ const MotionJSONUI = (() => {
         } else if (action === "check-access" || action === "test") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
+          if (!hosted && !confirmed && !state.health?.mockMode) {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
+              hosted,
+              model: providerEffectiveModel(provider),
+            });
+            setModelSetupMessage("Confirm Hugging Face access check before continuing.", "warn");
+            renderModelSetup();
+            renderWorkflowStepper();
+            return;
+          }
           const body = hosted
             ? { settings: form ? modelSetupPayloadFromForm(form) : {}, saveFirst: true }
             : {
                 settings: form ? modelSetupPayloadFromForm(form) : {},
                 saveFirst: true,
-                allowNetwork: Boolean(state.health?.mockMode) || window.confirm("Check Hugging Face access now? This makes a network request only after your confirmation."),
+                allowNetwork: Boolean(state.health?.mockMode) || confirmed,
               };
           await startProviderSetupJob(providerId, hosted ? "test" : "check_access", body);
         } else if (action === "install") {
-          const confirmed = Boolean(state.health?.mockMode) || window.confirm(
-            providerId === "sam3-local"
-              ? "Install SAM3 Scene Sweep dependencies now? This runs a whitelisted pip install for the sam3-transformers extra."
-              : providerId === "sam2-hf-auto-masks"
-                ? "Install SAM2 HF automatic-mask dependencies now? This runs a whitelisted pip install for the sam2-transformers extra."
-                : "Install SAM2 fallback dependencies now? This runs a whitelisted pip install for the sam2 extra.",
-          );
-          if (!confirmed) {
-            setModelSetupMessage("Install canceled.", "neutral");
+          if (!confirmed && !state.health?.mockMode) {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
+              hosted: false,
+              model: providerEffectiveModel(providerSettingsById(providerId)),
+            });
+            setModelSetupMessage("Confirm install before continuing.", "warn");
+            renderModelSetup();
+            renderWorkflowStepper();
             return;
           }
           await startProviderSetupJob(providerId, "install", {
@@ -10909,32 +11031,41 @@ const MotionJSONUI = (() => {
             saveFirst: true,
           });
         } else if (action === "cache-model") {
-          const confirmed = Boolean(state.health?.mockMode) || window.confirm("Cache the selected model now? This can download model weights and use local disk space.");
-          if (!confirmed) {
-            setModelSetupMessage("Model cache canceled.", "neutral");
+          const formPayload = form ? modelSetupPayloadFromForm(form) : {};
+          const selectedCacheModel =
+            formPayload.customModelId ||
+            (formPayload.selectedModel === "__custom__" ? "" : formPayload.selectedModel) ||
+            providerEffectiveModel(providerSettingsById(providerId)) ||
+            (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3");
+          if (!confirmed && !state.health?.mockMode) {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
+              hosted: false,
+              model: selectedCacheModel,
+            });
+            setModelSetupMessage("Confirm model cache before continuing.", "warn");
+            renderModelSetup();
+            renderWorkflowStepper();
             return;
           }
           await startProviderSetupJob(providerId, "cache_model", {
             allowNetwork: true,
             allowDisk: true,
             dryRun: Boolean(state.health?.mockMode),
-            model:
-              providerId === "sam3-local"
-                ? sam3TrackerModelForInput(collectFormState($))
-                : providerEffectiveModel(providerSettingsById(providerId)) || (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3"),
-            settings: form ? modelSetupPayloadFromForm(form) : {},
+            model: selectedCacheModel,
+            settings: formPayload,
             saveFirst: true,
           });
         } else if (action === "smoke") {
           const provider = providerSettingsById(providerId);
           const hosted = provider?.locality === "hosted";
-          const confirmed = Boolean(state.health?.mockMode) || window.confirm(
-            hosted
-              ? "Run a hosted SAM smoke test? This can send a generated frame or setup request to the configured provider and may incur provider cost."
-              : "Run a local SAM smoke test? This can import heavy local model packages and touch configured model files.",
-          );
-          if (!confirmed) {
-            setModelSetupMessage(hosted ? "Hosted smoke test canceled." : "Local smoke test canceled.", "neutral");
+          if (!confirmed && !state.health?.mockMode) {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
+              hosted,
+              model: providerEffectiveModel(provider),
+            });
+            setModelSetupMessage("Confirm smoke test before continuing.", "warn");
+            renderModelSetup();
+            renderWorkflowStepper();
             return;
           }
           const body = hosted
@@ -11076,6 +11207,7 @@ const MotionJSONUI = (() => {
     modelPlanRequestFromInput,
     modelPlanSourceIds,
     modelSetupPayloadFromValues,
+    modelSetupConfirmationForAction,
     modelSetupProviderSummary,
     modelSetupStateForConnection,
     modelSetupPrimaryActionForState,

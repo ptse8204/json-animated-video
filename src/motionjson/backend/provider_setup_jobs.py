@@ -16,6 +16,7 @@ from motionjson.provider_settings import (
     hosted_sam3_smoke_test,
     local_sam_smoke_test,
     provider_runtime_settings,
+    record_provider_model_cache,
     redact_secret_payload,
     redact_secret_text,
     save_provider_settings,
@@ -364,7 +365,20 @@ def _execute_setup_action(
         return _run_install_action(provider_id, payload)
     if action == "cache_model":
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
-        return _cache_model_action(provider_id, payload, token=str(runtime.get("hf_token") or ""))
+        cache_payload = dict(payload)
+        if not any(cache_payload.get(key) for key in ("model", "modelId", "model_id")):
+            cache_payload["model"] = runtime.get("selected_model") or runtime.get("runtime_model")
+        result = _cache_model_action(provider_id, cache_payload, token=str(runtime.get("hf_token") or ""))
+        if result.get("ready") is True and result.get("localModelDir"):
+            record_provider_model_cache(
+                conn,
+                user_id=user_id,
+                provider_id=provider_id,
+                model_id=str(result.get("model") or cache_payload.get("model") or ""),
+                local_model_dir=str(result.get("localModelDir") or ""),
+                environ=environ,
+            )
+        return result
     if action == "check_access":
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
         return _check_sam3_hf_access(payload, token=str(runtime.get("hf_token") or ""), environ=environ)
@@ -461,6 +475,9 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
         )
     local_candidate = Path(model_id).expanduser()
     if local_candidate.exists() and local_candidate.is_dir():
+        ok, detail = _local_from_pretrained_dir_status(local_candidate)
+        if not ok:
+            raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, detail, network_attempted=False))
         return {
             "format": PROVIDER_SETUP_JOB_FORMAT,
             "providerId": provider_id,
@@ -490,7 +507,13 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
     if find_spec("huggingface_hub") is None:
         raise ValueError("huggingface_hub is not installed. Install the Transformers setup extra first.")
     from huggingface_hub import snapshot_download  # type: ignore
-    local_dir = snapshot_download(repo_id=model_id, token=token or None)
+    try:
+        local_dir = snapshot_download(repo_id=model_id, token=token or None)
+    except Exception as exc:
+        raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, exc, network_attempted=True)) from exc
+    ok, detail = _local_from_pretrained_dir_status(Path(str(local_dir)).expanduser())
+    if not ok:
+        raise ValueError(_local_model_setup_error(provider_id, "cache_model", model_id, detail, network_attempted=True))
     return {
         "format": PROVIDER_SETUP_JOB_FORMAT,
         "providerId": provider_id,
@@ -504,6 +527,43 @@ def _cache_model_action(provider_id: str, payload: Mapping[str, Any], *, token: 
         "localModelDir": str(local_dir),
         "progress": {"percent": 100, "known": True, "label": "Model cached"},
     }
+
+
+def _local_from_pretrained_dir_status(path: Path) -> tuple[bool, str]:
+    try:
+        if not path.exists():
+            return False, "local model directory does not exist"
+        if not path.is_dir():
+            return False, "selected model path is not a directory"
+        if not os.access(path, os.R_OK):
+            return False, "local model directory is not readable"
+        if any(path.rglob("*.incomplete")):
+            return False, "local model directory contains incomplete download files"
+        if not (path / "config.json").exists():
+            return False, "local model directory is missing config.json for from_pretrained"
+    except OSError as exc:
+        return False, f"local model directory could not be inspected: {type(exc).__name__}: {exc}"
+    return True, "local model directory is available"
+
+
+def _local_model_setup_error(provider_id: str, action: str, model_id: str, error: Any, *, network_attempted: bool) -> str:
+    text = redact_secret_text(str(error) or type(error).__name__)
+    lowered = text.lower()
+    next_action = "Retry Cache model after fixing local disk/cache access."
+    if "permission" in lowered or "denied" in lowered:
+        next_action = "Fix local file permissions or choose a readable model directory."
+    elif "no space" in lowered or "enospc" in lowered or "disk" in lowered:
+        next_action = "Free disk space or choose a Hugging Face cache location with more space."
+    elif "incomplete" in lowered or "corrupt" in lowered:
+        next_action = "Delete the partial cache entry and run Cache model again."
+    elif "config.json" in lowered or "not a directory" in lowered or "does not exist" in lowered:
+        next_action = "Choose a valid Hugging Face repo id or local from_pretrained directory."
+    elif "offline" in lowered:
+        next_action = "Disable offline mode or choose a model that is already cached locally."
+    return (
+        f"Local model setup failed during {action} for {provider_id} ({model_id}); "
+        f"network attempted: {str(network_attempted).lower()}. {text} {next_action}"
+    )
 
 
 def _check_sam3_hf_access(payload: Mapping[str, Any], *, token: str = "", environ: Mapping[str, str]) -> dict[str, Any]:

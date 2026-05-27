@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -256,6 +257,56 @@ const hostedReadySummary = ui.modelSetupProviderSummary(
 );
 assert.equal(hostedReadySummary.tone, "ready");
 assert.equal(hostedReadySummary.action, "Test setup");
+
+const sam3NeedsAccessState = ui.modelSetupStateForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready" },
+    setupState: {
+      status: "needs_access",
+      label: "Needs Hugging Face access",
+      message: "Paste a Hugging Face token for facebook/sam3.",
+      runnable: false,
+      nextAction: "check_access",
+    },
+    modelCache: { cached: false },
+  },
+  null,
+);
+assert.equal(sam3NeedsAccessState.status, "needs_access");
+assert.notEqual(sam3NeedsAccessState.message, "Ready for this workflow.");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+
+const sam2CacheState = ui.modelSetupStateForConnection(
+  { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
+  {
+    id: "sam2-hf-auto-masks",
+    readiness: { configured: true, status: "ready" },
+    setupState: {
+      status: "needs_download_confirmation",
+      label: "Confirm model cache",
+      message: "Cache facebook/sam2.1-hiera-large before running.",
+      runnable: false,
+      nextAction: "cache_model",
+    },
+    modelCache: { cached: false },
+  },
+  null,
+);
+assert.equal(sam2CacheState.status, "needs_download_confirmation");
+assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Cache model");
+
+const cacheConfirmation = ui.modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
+  model: "facebook/sam2.1-hiera-large",
+});
+assert.equal(cacheConfirmation.requiresConfirmation, true);
+assert.equal(cacheConfirmation.providerId, "sam2-hf-auto-masks");
+assert.ok(cacheConfirmation.flags.includes("disk"));
+assert.ok(cacheConfirmation.flags.includes("network"));
+
+const appJs = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
+assert.equal(appJs.includes("window.confirm"), false);
 
 const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {
   selectedModel: " gpt-5.4-mini ",

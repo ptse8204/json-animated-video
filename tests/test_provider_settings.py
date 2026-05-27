@@ -288,6 +288,7 @@ def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_pat
     seen: dict[str, tuple[str, str | None]] = {}
     cached_dir = tmp_path / "hf-cache" / "facebook-sam3"
     cached_dir.mkdir(parents=True)
+    (cached_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
 
     fake_hub = types.ModuleType("huggingface_hub")
     fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
@@ -387,6 +388,101 @@ def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
     assert cached["setupState"]["status"] == "ready"
     assert cached["result"]["model"] == "facebook/sam2.1-hiera-large"
     assert "cache_model" in {action["id"] for action in provider_setup_actions("sam2-hf-auto-masks")}
+
+
+def test_local_model_cache_persists_and_survives_ui_reload_with_redaction(tmp_path):
+    model_dir = tmp_path / "mock-sam2-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    (model_dir / "README.md").write_text("mock local model\n", encoding="utf-8")
+    db_path = tmp_path / "backend.sqlite"
+    storage_root = tmp_path / "storage"
+    app = LocalUIApp(db_path=db_path, storage_root=storage_root, mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    text = body.decode("utf-8")
+    setup_job = decode(body)["setupJob"]
+
+    assert status == 200
+    assert setup_job["status"] == "succeeded"
+    assert setup_job["result"]["networkAttempted"] is False
+    assert str(model_dir) not in text
+
+    reloaded = LocalUIApp(db_path=db_path, storage_root=storage_root, mock_mode=False)
+    status, _headers, body = reloaded.handle("GET", "/api/provider-settings")
+    text = body.decode("utf-8")
+    provider = provider_by_id(decode(body), "sam2-hf-auto-masks")
+
+    assert status == 200
+    assert provider["modelCache"]["cached"] is True
+    assert provider["modelCache"]["status"] == "cached"
+    assert provider["modelCache"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
+    assert str(model_dir) not in text
+
+
+def test_hugging_face_cache_probe_uses_local_files_only_and_reports_cached(tmp_path, monkeypatch):
+    model_dir = tmp_path / "hf-cache" / "snapshot"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    calls: dict[str, object] = {}
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
+
+    def snapshot_download(**kwargs):
+        calls.update(kwargs)
+        return str(model_dir)
+
+    fake_hub.snapshot_download = snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr("motionjson.provider_settings.find_spec", lambda name: object() if name == "huggingface_hub" else None)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    provider = provider_by_id(decode(body), "sam3-local")
+
+    assert status == 200
+    assert provider["modelCache"]["cached"] is True
+    assert provider["modelCache"]["source"] == "hf_cache"
+    assert calls["repo_id"] == "facebook/sam3"
+    assert calls["local_files_only"] is True
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_hugging_face_cache_probe_reports_actionable_missing_cache(tmp_path, monkeypatch):
+    class FakeLocalEntryNotFoundError(Exception):
+        pass
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
+
+    def snapshot_download(**_kwargs):
+        raise FakeLocalEntryNotFoundError("Local entry not found")
+
+    fake_hub.snapshot_download = snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr("motionjson.provider_settings.find_spec", lambda name: object() if name == "huggingface_hub" else None)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    provider = provider_by_id(decode(body), "sam3-local")
+
+    assert status == 200
+    assert provider["modelCache"]["cached"] is False
+    assert provider["modelCache"]["status"] == "not_cached"
+    assert "Cache model" in provider["modelCache"]["message"]
+    assert provider["setupState"]["status"] in {"not_configured", "needs_access", "needs_download_confirmation"}
 
 
 def test_sam2_hf_fallback_provider_is_distinct_from_official_sam2_setup(tmp_path):
