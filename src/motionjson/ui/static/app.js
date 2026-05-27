@@ -2690,6 +2690,25 @@ const MotionJSONUI = (() => {
       };
     }
     if (latestJob && ["failed", "blocked", "canceled", "cancelled"].includes(jobStatus)) {
+      const failedAction = String(latestJob.action || "");
+      const failedMessage = String(latestJob.result?.message || latestJob.error || "");
+      if (failedAction === "check_access" && !/huggingface_hub is not installed/i.test(failedMessage)) {
+        return {
+          status: "needs_access",
+          label: connection?.providerId === "sam3-local" ? "Needs Hugging Face access" : "Needs access",
+          message: failedMessage || "Check access again after updating credentials.",
+        };
+      }
+      if (failedAction === "cache_model" && /access|token|credential|hugging face|hf_|gated|401|403/i.test(failedMessage)) {
+        return {
+          status: "needs_access",
+          label: connection?.providerId === "sam3-local" ? "Needs Hugging Face access" : "Needs access",
+          message: failedMessage || "Confirm provider access before caching the model.",
+        };
+      }
+      if (backendState.status && backendState.status !== "ready" && failedAction !== "smoke") {
+        return backendState;
+      }
       return {
         status: "failed_recoverable",
         label: "Needs recovery",
@@ -10940,7 +10959,7 @@ const MotionJSONUI = (() => {
           return;
         }
         state.pendingModelSetupConfirmation = null;
-        renderModelSetup();
+        // Keep the current form DOM until the confirmed action reads password fields.
         const setupButton = [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action]")]
           .find((item) => item.dataset.modelSetupAction === pending.action);
         if (!setupButton) throw new Error("Model setup action is not available for the selected provider.");

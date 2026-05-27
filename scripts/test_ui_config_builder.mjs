@@ -278,6 +278,31 @@ assert.equal(sam3NeedsAccessState.status, "needs_access");
 assert.notEqual(sam3NeedsAccessState.message, "Ready for this workflow.");
 assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
 
+const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready" },
+    setupState: {
+      status: "needs_access",
+      label: "Needs Hugging Face access",
+      message: "Paste a Hugging Face token for facebook/sam3.",
+      runnable: false,
+      nextAction: "check_access",
+    },
+  },
+  {
+    action: "check_access",
+    status: "blocked",
+    terminal: true,
+    result: {
+      message: "Paste a Hugging Face token in Model setup after Meta approves facebook/sam3 access, then run Check access again.",
+    },
+  },
+);
+assert.equal(sam3BlockedAccessJobState.status, "needs_access");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+
 const sam2CacheState = ui.modelSetupStateForConnection(
   { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
   {
@@ -307,6 +332,12 @@ assert.ok(cacheConfirmation.flags.includes("network"));
 
 const appJs = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
 assert.equal(appJs.includes("window.confirm"), false);
+const confirmationHandler = appJs.slice(
+  appJs.indexOf("const confirmationButton = event.target.closest"),
+  appJs.indexOf("const button = event.target.closest(\"[data-model-setup-action]\")"),
+);
+assert.ok(confirmationHandler.includes("Keep the current form DOM until the confirmed action reads password fields."));
+assert.equal(/state\.pendingModelSetupConfirmation = null;\s*renderModelSetup\(\);\s*const setupButton/.test(confirmationHandler), false);
 
 const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {
   selectedModel: " gpt-5.4-mini ",
