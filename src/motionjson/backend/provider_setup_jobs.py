@@ -446,7 +446,7 @@ def _execute_setup_action(
     environ = environ or os.environ
     settings_payload = payload.get("settings") if isinstance(payload.get("settings"), Mapping) else payload
     if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access", "cache_model", "prepare_model"}:
-        if any(key in settings_payload for key in ("selectedModel", "selected_model", "customModelId", "custom_model_id", "apiKey", "api_key", "hfToken", "hf_token", "sam2CheckpointPath", "sam2_checkpoint_path", "sam2HfDevice", "sam2_hf_device", "sam3ModelPath", "sam3_model_path", "endpoint", "allowHosted", "allow_hosted", "hostedProfileId", "hosted_profile_id")):
+        if any(key in settings_payload for key in ("selectedModel", "selected_model", "customModelId", "custom_model_id", "apiKey", "api_key", "hfToken", "hf_token", "sam2CheckpointPath", "sam2_checkpoint_path", "sam2Device", "sam2_device", "sam2HfDevice", "sam2_hf_device", "sam3ModelPath", "sam3_model_path", "sam3Device", "sam3_device", "endpoint", "allowHosted", "allow_hosted", "hostedProfileId", "hosted_profile_id")):
             save_provider_settings(conn, user_id=user_id, payload={**dict(settings_payload), "providerId": provider_id}, environ=environ)
 
     if action == "diagnose":
@@ -455,7 +455,7 @@ def _execute_setup_action(
         return test_provider_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
     if action == "smoke":
         if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
-            return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
+            return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ, progress=progress)
         return hosted_sam3_smoke_test(conn, user_id=user_id, payload={**dict(payload), "providerId": provider_id}, environ=environ)
     if action == "prepare_model":
         return _prepare_model_action(
@@ -542,6 +542,8 @@ def _prepare_model_action(
     preflight = setup_state.get("preflight") if isinstance(setup_state.get("preflight"), Mapping) else {}
     next_action = str(setup_state.get("nextAction") or "")
     checklist = diagnosis.get("checklist") if isinstance(diagnosis.get("checklist"), list) else []
+    requested_model = str(payload.get("model") or payload.get("modelId") or payload.get("model_id") or "").strip()
+    requested_model_is_local_dir = bool(requested_model and Path(requested_model).expanduser().is_dir())
     runtime_missing = _runtime_blockers_for_prepare(provider_id, checklist)
     runtime_ready = bool(diagnosis.get("ready") or preflight.get("runtimeAvailable")) and not runtime_missing
 
@@ -558,7 +560,7 @@ def _prepare_model_action(
             progress_label="Runtime setup needed",
         )
 
-    if provider_id == "sam3-local" and setup_state.get("status") == "needs_access":
+    if provider_id == "sam3-local" and setup_state.get("status") == "needs_access" and not requested_model_is_local_dir:
         return _prepare_blocked_result(
             provider_id,
             message=setup_state.get("message") or "Hugging Face access is needed before caching facebook/sam3.",
@@ -622,19 +624,32 @@ def _prepare_model_action(
         )
 
     if progress:
-        progress("prepare_smoke", "Running bounded local smoke test", 88, True)
+        progress(
+            "prepare_smoke",
+            "Loading model on the selected device and running bounded warmup" if provider_id == "sam3-local" else "Running bounded local smoke test",
+            88,
+            True,
+        )
     smoke_payload = {
         **dict(payload),
         "allowHeavyLocal": True,
         "sceneSweep": bool(provider_id == "sam3-local"),
     }
-    smoke_result = local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=smoke_payload, environ=environ)
+    smoke_result = local_sam_smoke_test(
+        conn,
+        user_id=user_id,
+        provider_id=provider_id,
+        payload=smoke_payload,
+        environ=environ,
+        progress=progress,
+    )
     ready = bool(smoke_result.get("ready"))
+    smoke_status = str(smoke_result.get("status") or "")
     return {
         "format": PROVIDER_SETUP_JOB_FORMAT,
         "providerId": provider_id,
         "action": "prepare_model",
-        "status": "succeeded" if ready else "blocked",
+        "status": "succeeded" if ready else "failed" if smoke_status == "failed" else "blocked",
         "ready": ready,
         "networkAttempted": bool(cache_result and cache_result.get("networkAttempted")),
         "heavyLocalAttempted": True,

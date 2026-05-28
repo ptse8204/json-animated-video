@@ -27,6 +27,7 @@ from motionjson.provider_settings import (
     redact_secret_payload,
     redact_secret_text,
 )
+from motionjson.providers.base import ProviderConfigError
 from motionjson.ui.server import LocalUIApp
 
 
@@ -56,10 +57,15 @@ class FakeHostedSAM3Transport:
         }
 
 
-def install_fake_torch(monkeypatch):
+def install_fake_torch(monkeypatch, *, cuda: bool = False):
     fake_torch = types.ModuleType("torch")
     fake_torch.__spec__ = ModuleSpec("torch", loader=None)
-    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+    fake_torch.cuda = types.SimpleNamespace(
+        is_available=lambda: cuda,
+        get_device_name=lambda index=0: f"Fake CUDA {index}",
+        device_count=lambda: 1 if cuda else 0,
+        mem_get_info=lambda index=0: (6 * 1024 * 1024 * 1024, 8 * 1024 * 1024 * 1024),
+    )
     fake_torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     return fake_torch
@@ -82,14 +88,39 @@ def install_fake_transformers_for_sam2(monkeypatch, seen: dict[str, object]):
     return fake_transformers
 
 
-def install_fake_transformers_for_sam3(monkeypatch):
+def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | None = None, *, device_type: str = "cuda"):
     fake_transformers = types.ModuleType("transformers")
     fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
     fake_transformers.Sam3TrackerModel = object
     fake_transformers.Sam3TrackerProcessor = object
     fake_transformers.Sam3TrackerVideoModel = object
     fake_transformers.Sam3TrackerVideoProcessor = object
-    fake_transformers.pipeline = lambda *_args, **_kwargs: None
+
+    class FakeDevice:
+        type = device_type
+
+        def __str__(self):
+            return f"{device_type}:0" if device_type == "cuda" else device_type
+
+    class FakeParam:
+        device = FakeDevice()
+
+    class FakeModel:
+        def parameters(self):
+            return iter([FakeParam()])
+
+    class FakePipeline:
+        model = FakeModel()
+
+        def __call__(self, _image, **_kwargs):
+            return {"masks": [[[0, 1], [1, 0]]], "boxes": [[0, 0, 1, 1]], "scores": [1.0], "labels": ["object"]}
+
+    def pipeline(task, model=None, device=None):
+        if seen is not None:
+            seen["pipeline"] = {"task": task, "model": model, "device": device}
+        return FakePipeline()
+
+    fake_transformers.pipeline = pipeline
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
     monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_auto_masks_importable", lambda: True)
     monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_video_importable", lambda: True)
@@ -333,6 +364,8 @@ def test_sam3_scene_sweep_setup_job_is_independent_from_sam2_and_has_actionable_
 
 def test_sam3_scene_sweep_diagnose_and_smoke_do_not_require_official_sam3_adapter(tmp_path, monkeypatch):
     monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch)
     model_dir = tmp_path / "facebook-sam3-cache"
     model_dir.mkdir()
     (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
@@ -374,12 +407,14 @@ def test_sam3_scene_sweep_diagnose_and_smoke_do_not_require_official_sam3_adapte
     checklist = {item["id"]: item for item in diagnosis["checklist"]}
 
     assert status == 200
-    assert diagnosis["ready"] is True
-    assert diagnosis["setupState"]["runnable"] is True
+    assert diagnosis["ready"] is False
+    assert diagnosis["setupState"]["status"] == "needs_smoke"
+    assert diagnosis["setupState"]["runnable"] is False
     assert checklist["sam3_package"]["required"] is False
     assert checklist["sam3_package"]["ok"] is False
     assert checklist["model_path"]["required"] is False
     assert checklist["model_path"]["ok"] is False
+    assert checklist["runtime_warmup"]["ok"] is False
     assert checklist["sam3_tracker_auto_masks"]["ok"] is True
     assert checklist["sam3_tracker_video"]["ok"] is True
 
@@ -785,8 +820,9 @@ def test_prepare_model_records_cache_smokes_and_refreshes_public_settings(tmp_pa
 
 def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(tmp_path, monkeypatch):
     monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
-    install_fake_torch(monkeypatch)
-    install_fake_transformers_for_sam3(monkeypatch)
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch, seen)
     model_dir = tmp_path / "mock-sam3-from-pretrained"
     model_dir.mkdir()
     (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
@@ -819,13 +855,19 @@ def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(t
     assert smoke["status"] == "succeeded"
     assert smoke["result"]["smokeTest"]["sceneSweep"] is True
     assert smoke["result"]["smokeTest"]["runtimeModelSource"] == "saved_cache"
+    assert smoke["result"]["smokeTest"]["loadedOnCuda"] is True
+    assert smoke["result"]["smokeTest"]["warmupStatus"] == "succeeded"
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert seen["pipeline"]["device"] == 0  # type: ignore[index]
+    event_types = {event["type"] for event in smoke["events"]}
+    assert {"loading_transformers_pipeline", "model_device_verified", "warmup_succeeded", "ready_for_extraction"}.issubset(event_types)
     assert "SAM3_LOCAL_MODEL" not in smoke["result"]["message"]
     assert str(model_dir) not in body.decode("utf-8")
 
 
 def test_sam3_diagnose_reports_cached_scene_sweep_without_checkpoint_path(tmp_path, monkeypatch):
     monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
-    install_fake_torch(monkeypatch)
+    install_fake_torch(monkeypatch, cuda=True)
     install_fake_transformers_for_sam3(monkeypatch)
     model_dir = tmp_path / "mock-sam3-from-pretrained"
     model_dir.mkdir()
@@ -854,12 +896,190 @@ def test_sam3_diagnose_reports_cached_scene_sweep_without_checkpoint_path(tmp_pa
     checklist = {item["id"]: item for item in diagnosis["checklist"]}
 
     assert status == 200
-    assert diagnosis["ready"] is True
+    assert diagnosis["ready"] is False
+    assert diagnosis["setupState"]["status"] == "needs_smoke"
     assert checklist["sam3_tracker_model"]["ok"] is True
     assert "server-side" in checklist["sam3_tracker_model"]["detail"]
+    assert checklist["runtime_warmup"]["ok"] is False
     assert checklist["model_path"]["required"] is False
     assert checklist["model_path"]["ok"] is False
     assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_advanced_local_path_endpoint_is_explicit_raw_display_only(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    assert status == 200
+    assert str(model_dir) not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings/sam3-local/advanced-local-paths")
+    payload = decode(body)
+    assert status == 200
+    assert payload["available"] is True
+    assert payload["cachedSceneSweepModelDir"] == str(model_dir)
+    assert payload["localModelDirDisplayRaw"] == str(model_dir)
+    assert payload["serverPathRecorded"] is True
+
+
+def test_sam3_cuda_required_smoke_fails_when_torch_has_no_cuda(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=False)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    job = decode(body)["setupJob"]
+    assert status == 200
+    assert job["status"] == "failed"
+    assert "CUDA is not available" in job["result"]["message"]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_cuda_smoke_fails_if_pipeline_loads_on_cpu(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch, device_type="cpu")
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    job = decode(body)["setupJob"]
+    assert status == 200
+    assert job["status"] == "failed"
+    assert "loaded on cpu" in job["result"]["message"]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_prepare_model_preserves_runtime_failure_status(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch, device_type="cpu")
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "prepare_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "allowHeavyLocal": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    job = decode(body)["setupJob"]
+    assert status == 200
+    assert job["status"] == "failed"
+    assert "loaded on cpu" in job["result"]["message"]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_runtime_verification_invalidates_when_device_changes(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    provider = provider_by_id(decode(body), "sam3-local")
+    assert status == 200
+    assert provider["runtimeVerification"]["verified"] is True
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps({"providerId": "sam3-local", "sam3Device": "cpu"}).encode("utf-8"),
+    )
+    provider = provider_by_id(decode(body), "sam3-local")
+    assert status == 200
+    assert provider["runtimeVerification"]["verified"] is False
+    assert provider["setupState"]["status"] == "needs_smoke"
 
 
 def test_legacy_sam2_hf_smoke_route_is_local_and_requires_ack(tmp_path, monkeypatch):
@@ -902,7 +1122,10 @@ def test_legacy_sam2_hf_smoke_route_is_local_and_requires_ack(tmp_path, monkeypa
     assert str(model_dir) not in body.decode("utf-8")
 
 
-def test_worker_cached_runtime_providers_use_raw_paths_without_public_config_leak(tmp_path):
+def test_worker_cached_runtime_providers_require_verified_runtime_without_public_config_leak(tmp_path, monkeypatch):
+    seen_sam2: dict[str, object] = {}
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam2(monkeypatch, seen_sam2)
     sam2_dir = tmp_path / "mock-sam2-from-pretrained"
     sam3_dir = tmp_path / "mock-sam3-from-pretrained"
     sam2_dir.mkdir()
@@ -931,6 +1154,42 @@ def test_worker_cached_runtime_providers_use_raw_paths_without_public_config_lea
     conn = app.connection()
     try:
         user = app._local_user(conn)
+        with pytest.raises(ProviderConfigError, match="Run Prepare local model or Run smoke test"):
+            _cached_local_runtime_discovery_provider(
+                conn,
+                user_id=user["id"],
+                discovery_mode="sam2_hf_auto_masks",
+                discovery_config={"providerPreference": "sam2-hf-auto-masks", "sam2HfModel": "facebook/sam2.1-hiera-large"},
+            )
+        with pytest.raises(ProviderConfigError, match="Run Prepare local model or Run smoke test"):
+            _cached_local_runtime_discovery_provider(
+                conn,
+                user_id=user["id"],
+                discovery_mode="sam3_auto_masks",
+                discovery_config={"providerPreference": "sam3-local", "sam3TrackerModel": "facebook/sam3"},
+            )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+    install_fake_transformers_for_sam3(monkeypatch)
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
         sam2_provider, sam2_config = _cached_local_runtime_discovery_provider(
             conn,
             user_id=user["id"],
@@ -954,12 +1213,17 @@ def test_worker_cached_runtime_providers_use_raw_paths_without_public_config_lea
     assert str(getattr(sam3_provider[0], "backend").model_path) == str(sam3_dir)
     assert "sam2HfModel" not in sam2_config
     assert "sam3TrackerModel" not in sam3_config
+    assert sam2_config["runtimeContractPublic"]["modelPathStatus"] == "recorded_server_side"
+    assert sam3_config["runtimeContractPublic"]["providerId"] == "sam3-local"
+    assert sam3_config["runtimeContractPublic"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
     assert str(sam2_dir) not in json.dumps(sam2_config)
     assert str(sam3_dir) not in json.dumps(sam3_config)
     assert sam2_runtime["runtimeModel"] == str(sam2_dir)
     assert sam2_runtime["runtimeModelSource"] == "saved_cache"
+    assert sam2_runtime["runtimeVerification"]["verified"] is True
     assert sam3_runtime["runtimeModel"] == str(sam3_dir)
     assert sam3_runtime["runtimeModelSource"] == "saved_cache"
+    assert sam3_runtime["runtimeVerification"]["verified"] is True
 
 
 def test_hugging_face_cache_probe_uses_local_files_only_and_reports_cached(tmp_path, monkeypatch):

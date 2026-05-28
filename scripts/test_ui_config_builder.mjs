@@ -454,12 +454,22 @@ const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
       model: "facebook/sam3",
       message: "Previously cached local model directory is available.",
     },
+    runtimeVerification: {
+      verified: true,
+      loadedOnCuda: true,
+      deviceActual: "cuda:0",
+      warmupStatus: "succeeded",
+      message: "Cached model loaded and warmed up successfully.",
+    },
   },
   { status: "ready", message: "Model setup is ready." },
   null,
 );
-assert.equal(cachedPlaybookSteps.find((step) => step.id === "record").status, "done");
-assert.match(cachedPlaybookSteps.find((step) => step.id === "record").detail, /server-side/);
+assert.deepEqual(cachedPlaybookSteps.map((step) => step.label), ["Environment", "Download", "Load on GPU", "Warm up", "Ready to run"]);
+assert.equal(cachedPlaybookSteps.find((step) => step.id === "download").status, "done");
+assert.match(cachedPlaybookSteps.find((step) => step.id === "download").detail, /server-side/);
+assert.equal(cachedPlaybookSteps.find((step) => step.id === "load_gpu").status, "done");
+assert.equal(cachedPlaybookSteps.find((step) => step.id === "warmup").status, "done");
 
 const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -520,6 +530,9 @@ assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction"));
 assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction = null;"));
 assert.ok(appJs.includes("function modelSetupPayloadForAction"));
 assert.ok(appJs.includes("model-setup-progress-card"));
+assert.ok(appJs.includes("Cached SAM3 Scene Sweep model directory"));
+assert.ok(appJs.includes("data-copy-advanced-model-path"));
+assert.equal(appJs.includes('data-model-setup-field="cachedSceneSweepModelDir"'), false);
 assert.equal(/state\.pendingModelSetupConfirmation = null;\s*renderModelSetup\(\);\s*const setupButton/.test(confirmationHandler), false);
 
 const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {

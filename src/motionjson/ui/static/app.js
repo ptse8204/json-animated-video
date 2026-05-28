@@ -10,6 +10,7 @@ const MotionJSONUI = (() => {
     "/api/provider-settings/{providerId}/test",
     "/api/provider-settings/{providerId}/diagnose",
     "/api/provider-settings/{providerId}/smoke-test",
+    "/api/provider-settings/{providerId}/advanced-local-paths",
     "/api/provider-settings/{providerId}/setup/start",
     "/api/provider-settings/setup-jobs/{jobId}",
     "/api/provider-settings/setup-jobs/{jobId}/cancel",
@@ -465,6 +466,8 @@ const MotionJSONUI = (() => {
     selectedModelSetupProviderId: "sam2-local",
     modelSetupAlternativesOpen: false,
     providerSetupJobs: {},
+    advancedLocalPaths: {},
+    copiedAdvancedPathProviderId: "",
     selectedProviderSetupJobId: "",
     modelSetupMessage: "",
     modelSetupTone: "neutral",
@@ -2873,7 +2876,7 @@ const MotionJSONUI = (() => {
   function setupJobProgressCard(job, summary = setupJobStatusSummary(job)) {
     if (!job) return "";
     const action = String(job.action || "");
-    if (!["install", "check_access", "cache_model", "smoke", "test", "diagnose"].includes(action)) return "";
+    if (!["install", "check_access", "cache_model", "prepare_model", "smoke", "test", "diagnose"].includes(action)) return "";
     const progress = summary.progress || setupJobProgressSummary(job);
     if (!progress && !["queued", "running"].includes(String(job.status || ""))) return "";
     const normalizedProgress = progress || { known: false, percent: 0, label: summary.message || "Setup in progress" };
@@ -2998,51 +3001,57 @@ const MotionJSONUI = (() => {
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
     const setupRunning = setupJob && !setupJob.terminal;
     const localCacheProvider = providerId === "sam3-local" || providerId === "sam2-hf-auto-masks";
+    const runtimeVerification = provider?.runtimeVerification || setupJob?.result?.diagnosis?.runtimeVerification || {};
+    const setupEvents = asArray(setupJob?.events);
+    const hasSetupEvent = (...names) => setupEvents.some((event) => names.includes(String(event.eventType || event.type || "")));
+    const verificationReady = runtimeVerification.verified === true || (!localCacheProvider && setupState.status === "ready") || setupJob?.result?.ready === true;
+    const loadedOnCuda = runtimeVerification.loadedOnCuda === true || setupJob?.result?.smokeTest?.loadedOnCuda === true;
+    const deviceActual = runtimeVerification.deviceActual || setupJob?.result?.smokeTest?.deviceActual || provider?.settings?.sam3Device || "cuda";
+    const loadRunning = setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) && hasSetupEvent("loading_transformers_pipeline", "model_loaded", "model_device_verified");
+    const warmupRunning = setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) && hasSetupEvent("warmup_started", "warmup_succeeded");
     const steps = [
       {
         id: "environment",
-        label: "Detect environment",
-        status: state.capabilities?.environment?.profile ? "done" : "pending",
-        detail: environmentRecommendationSummary().summary,
-      },
-      {
-        id: "runtime",
-        label: "Install runtime",
-        status: runtimeReady ? "done" : setupRunning && ["install", "prepare_model"].includes(setupJob.action) ? "running" : "pending",
-        detail: runtimeReady ? readiness.message || "Runtime diagnostics are ready." : readiness.message || connection.nextAction || "Install the optional runtime for this provider.",
+        label: "Environment",
+        status: runtimeReady ? "done" : setupRunning && ["install", "prepare_model", "diagnose"].includes(setupJob.action) ? "running" : "pending",
+        detail: runtimeReady ? readiness.message || "Runtime diagnostics are ready." : readiness.message || environmentRecommendationSummary().summary,
       },
     ];
-    if (providerId === "sam3-local") {
-      steps.push({
-        id: "access",
-        label: "Check model access",
-        status: cache.cached || hfCredential?.configured ? "done" : status === "needs_access" ? "active" : "pending",
-        detail: cache.cached ? "Model is already cached locally." : hfCredential?.configured ? "Hugging Face token is configured for access checks." : "Paste a Hugging Face token if facebook/sam3 is gated.",
-      });
-    }
     if (localCacheProvider) {
       steps.push({
-        id: "cache",
-        label: "Cache model",
+        id: "download",
+        label: "Download",
         status: cache.cached ? "done" : setupRunning && ["cache_model", "prepare_model"].includes(setupJob.action) ? "running" : status === "needs_download_confirmation" ? "active" : "pending",
-        detail: cache.message,
-      });
-      steps.push({
-        id: "record",
-        label: "Record model path",
-        status: cache.recorded ? "done" : cache.pathKnown ? "done" : "pending",
-        detail: cache.recorded
-          ? "The resolved local model path is saved server-side and redacted in browser responses."
-          : cache.pathKnown
-            ? "A local model path was found and is redacted in browser responses."
-            : "The path will be recorded automatically after Cache model succeeds.",
+        detail: cache.cached
+          ? cache.recorded
+            ? "Model is cached and the runtime directory is recorded server-side."
+            : cache.message
+          : providerId === "sam3-local" && !hfCredential?.configured
+            ? "Paste a Hugging Face token if facebook/sam3 is gated, then prepare the model."
+            : cache.message,
       });
     }
     steps.push({
-      id: "verify",
-      label: "Verify setup",
-      status: setupState.status === "ready" ? "done" : setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) ? "running" : "pending",
-      detail: setupState.status === "ready" ? setupState.message || "Setup is ready." : "Run a smoke test before a long extraction when dependencies changed.",
+      id: "load_gpu",
+      label: providerId === "sam3-local" ? "Load on GPU" : "Load model",
+      status: loadedOnCuda || (verificationReady && providerId !== "sam3-local") ? "done" : loadRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
+      detail: loadedOnCuda
+        ? `Model loaded on ${deviceActual || "CUDA"}.`
+        : providerId === "sam3-local"
+          ? "Smoke test must prove the SAM3 Tracker model loads on CUDA."
+          : "Smoke test loads the cached model before extraction.",
+    });
+    steps.push({
+      id: "warmup",
+      label: "Warm up",
+      status: verificationReady ? "done" : warmupRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
+      detail: verificationReady ? runtimeVerification.message || "Bounded smoke inference succeeded." : "Run a bounded inference before unlocking extraction.",
+    });
+    steps.push({
+      id: "ready",
+      label: "Ready to run",
+      status: setupState.status === "ready" ? "done" : "pending",
+      detail: setupState.status === "ready" ? setupState.message || "Setup is ready." : "Continue unlocks only after cache, load, and warmup succeed.",
     });
     return steps;
   }
@@ -3158,7 +3167,7 @@ const MotionJSONUI = (() => {
       };
     }
     const providerSetupStatus = String(provider?.setupState?.status || "");
-    if (["needs_access", "needs_download_confirmation", "needs_path", "failed_recoverable"].includes(providerSetupStatus)) {
+    if (["needs_access", "needs_download_confirmation", "needs_path", "needs_smoke", "failed_recoverable"].includes(providerSetupStatus)) {
       return provider.setupState;
     }
     const cacheSummary = modelCacheStatusSummary(provider, latestJob);
@@ -5917,7 +5926,10 @@ const MotionJSONUI = (() => {
                     : fieldName === "sam3_device"
                       ? "sam3Device"
                       : fieldName;
-          const value = settings[camelName] || "";
+          let value = settings[camelName] || "";
+          if (connection.providerId === "sam3-local" && camelName === "sam3Device" && !value && environmentRecommendationSummary().accelerator === "cuda") {
+            value = "cuda";
+          }
           const type = fieldName.endsWith("_device") ? "text" : "text";
           const placeholder = field.placeholder || field.env || "";
           const helper = field.helpText ? `<span class="field-helper">${escapeHtml(field.helpText)}</span>` : "";
@@ -5928,6 +5940,20 @@ const MotionJSONUI = (() => {
           </label>`;
         })
         .join("");
+      const advancedLocalPath = state.advancedLocalPaths?.[connection.providerId] || {};
+      const cachedSceneSweepPath = connection.providerId === "sam3-local"
+        ? String(advancedLocalPath.cachedSceneSweepModelDir || advancedLocalPath.localModelDirDisplayRaw || "")
+        : "";
+      const cachedSceneSweepPathField = connection.providerId === "sam3-local"
+        ? `<label class="model-setup-readonly-path">
+            <span>Cached SAM3 Scene Sweep model directory</span>
+            <div class="readonly-path-control">
+              <input type="text" readonly value="${escapeAttribute(cachedSceneSweepPath || (settingsProvider?.modelCache?.localPathKnown ? "[LOCAL_PATH_REDACTED]" : ""))}" placeholder="Cache facebook/sam3 to record the local runtime directory" aria-label="Cached SAM3 Scene Sweep model directory" />
+              <button type="button" data-copy-advanced-model-path="${escapeAttribute(connection.providerId)}" ${cachedSceneSweepPath ? "" : "disabled"}>${state.copiedAdvancedPathProviderId === connection.providerId ? "Copied" : "Copy path"}</button>
+            </div>
+            <span class="field-helper">${cachedSceneSweepPath ? "Used automatically for Scene Sweep. Do not paste this into the checkpoint path." : "This appears after Cache model records the server-side Scene Sweep directory."}</span>
+          </label>`
+        : "";
       const credentialSummary = credentials.length
         ? credentials
             .map((credential) => {
@@ -6104,6 +6130,7 @@ const MotionJSONUI = (() => {
                   </label>`
                 : ""
             }
+            ${cachedSceneSweepPathField}
             ${localFields}
             ${endpointField}
             ${credentialField}
@@ -6711,7 +6738,10 @@ const MotionJSONUI = (() => {
         }),
       });
       const job = response.setupJob;
-      if (response.providerSettings) state.providerSettings = response.providerSettings;
+      if (response.providerSettings) {
+        state.providerSettings = response.providerSettings;
+        await refreshAdvancedLocalPaths();
+      }
       if (job?.id) {
         state.providerSetupJobs[job.id] = job;
         state.selectedProviderSetupJobId = job.id;
@@ -6736,7 +6766,10 @@ const MotionJSONUI = (() => {
         const payload = await api(`/api/provider-settings/setup-jobs/${encodeURIComponent(jobId)}`);
         const job = payload.setupJob;
         if (!job?.id) return null;
-        if (payload.providerSettings) state.providerSettings = payload.providerSettings;
+        if (payload.providerSettings) {
+          state.providerSettings = payload.providerSettings;
+          await refreshAdvancedLocalPaths();
+        }
         state.providerSetupJobs[job.id] = job;
         const summary = setupJobStatusSummary(job);
         setModelSetupMessage(summary.message, summary.tone);
@@ -9198,6 +9231,28 @@ const MotionJSONUI = (() => {
         if (key === "libraryPacks") state.libraryPacks = payload?.packs || [];
       }
       state.errors.library = [state.errors.libraryAssets, state.errors.libraryCollections, state.errors.libraryPacks].filter(Boolean).join(" ");
+      await refreshAdvancedLocalPaths();
+    }
+
+    async function refreshAdvancedLocalPaths() {
+      const providers = asArray(state.providerSettings?.providers).filter(
+        (provider) => provider?.id === "sam3-local" && provider?.modelCache?.localPathKnown,
+      );
+      const next = {};
+      await Promise.all(
+        providers.map(async (provider) => {
+          try {
+            next[provider.id] = await api(`/api/provider-settings/${encodeURIComponent(provider.id)}/advanced-local-paths`);
+          } catch (error) {
+            next[provider.id] = {
+              providerId: provider.id,
+              available: false,
+              message: error.message,
+            };
+          }
+        }),
+      );
+      state.advancedLocalPaths = next;
     }
 
     function mergeProgressJobs(jobs, progress) {
@@ -11822,6 +11877,22 @@ const MotionJSONUI = (() => {
         renderModelSetup();
         renderModelPlanPanel();
         renderWorkflowStepper();
+        return;
+      }
+
+      const copyPathButton = event.target.closest("[data-copy-advanced-model-path]");
+      if (copyPathButton) {
+        const providerId = copyPathButton.dataset.copyAdvancedModelPath || "";
+        const payload = state.advancedLocalPaths?.[providerId] || {};
+        const path = String(payload.cachedSceneSweepModelDir || payload.localModelDirDisplayRaw || "");
+        if (!path) {
+          setModelSetupMessage("No cached SAM3 Scene Sweep path is recorded yet.", "warn");
+          return;
+        }
+        const copied = await copyTextToClipboard(path);
+        state.copiedAdvancedPathProviderId = copied ? providerId : "";
+        setModelSetupMessage(copied ? "Cached Scene Sweep path copied." : "Could not copy the cached path.", copied ? "ready" : "bad");
+        renderModelSetup();
         return;
       }
 

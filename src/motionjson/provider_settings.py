@@ -14,7 +14,12 @@ from urllib.parse import urlparse
 
 from motionjson.backend.usage import utc_now
 from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
-from motionjson.providers.sam3 import SAM3_HF_REPO_ID, describe_sam3_model_path, describe_sam3_tracker_model
+from motionjson.providers.sam3 import (
+    SAM3_HF_REPO_ID,
+    describe_sam3_model_path,
+    describe_sam3_tracker_model,
+    sam3_scene_sweep_warmup,
+)
 
 
 PROVIDER_SETTINGS_FORMAT = "motionjson.local_provider_settings.v0.1"
@@ -23,6 +28,15 @@ PROVIDER_CATALOG_FORMAT = "motionjson.provider_registry.v0.1"
 CUSTOM_MODEL_ID = "__custom__"
 LOCAL_MODEL_CACHE_PROVIDER_IDS = {"sam2-hf-auto-masks", "sam3-local"}
 LOCAL_MODEL_CACHE_KEYS = {"cached_model_id", "resolved_model_dir", "model_cache_updated_at"}
+LOCAL_MODEL_RUNTIME_KEYS = {
+    "runtime_verified_at",
+    "runtime_verified_model_id",
+    "runtime_device_requested",
+    "runtime_device_actual",
+    "runtime_kind",
+    "runtime_loaded_on_cuda",
+    "runtime_warmup_status",
+}
 
 SAM2_HOSTED_PROFILES: list[dict[str, Any]] = [
     {
@@ -382,7 +396,14 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
                 "placeholder": "/root/.cache/huggingface/hub/models--facebook--sam3/snapshots/<hash>/sam3.pt",
                 "helpText": "Only for advanced official-package concept/exemplar workflows. Do not enter /content/sam3 or facebook/sam3.",
             },
-            {"name": "sam3_device", "label": "Device", "env": "SAM3_LOCAL_DEVICE", "required": False},
+            {
+                "name": "sam3_device",
+                "label": "Device",
+                "env": "SAM3_LOCAL_DEVICE",
+                "required": False,
+                "placeholder": "cuda",
+                "helpText": "Normal Colab setup should use cuda. Use cpu or mps only when you intentionally choose a non-CUDA fallback.",
+            },
         ],
         "modelOptions": [
             {"id": SAM3_HF_REPO_ID, "label": "facebook/sam3 (SAM3 Scene Sweep)"},
@@ -817,6 +838,7 @@ def provider_runtime_settings(
     readiness = _readiness(definition, settings, secrets, environ)
     runtime_model_info = _runtime_model_info(definition, settings, secrets, environ)
     model_cache = runtime_model_info["modelCache"]
+    runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
     return {
         "providerId": provider_id,
         "hosted_profile_id": _selected_hosted_profile_id(definition, settings),
@@ -840,6 +862,7 @@ def provider_runtime_settings(
         "runtime_model_source": runtime_model_info["runtimeModelSource"],
         "resolved_model_dir": runtime_model_info["resolvedModelDir"],
         "model_cache": model_cache,
+        "runtime_verification": runtime_verification,
         "allow_hosted": bool(settings.get("allow_hosted", False)),
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
         "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
@@ -889,6 +912,8 @@ def record_provider_model_cache(
     settings["cached_model_id"] = str(model_id or "").strip()
     settings["resolved_model_dir"] = str(local_model_dir or "").strip()
     settings["model_cache_updated_at"] = utc_now()
+    for key in LOCAL_MODEL_RUNTIME_KEYS:
+        settings.pop(key, None)
     try:
         model_path = Path(str(model_id or "")).expanduser()
         if model_path.exists() and model_path.is_dir():
@@ -898,6 +923,66 @@ def record_provider_model_cache(
         pass
     _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
     return provider_settings_response(conn, user_id=user_id, environ=environ)
+
+
+def record_provider_runtime_verification(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    verification: Mapping[str, Any],
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Persist a backend-only proof that a cached local model loaded and warmed up."""
+
+    definition = _definition(provider_id)
+    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return provider_settings_response(conn, user_id=user_id, environ=environ)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    runtime_info = _runtime_model_info(definition, settings, secrets, environ or os.environ)
+    settings["runtime_verified_at"] = utc_now()
+    settings["runtime_verified_model_id"] = str(runtime_info.get("selectedModel") or runtime_info.get("modelCache", {}).get("model") or "")
+    settings["runtime_device_requested"] = str(verification.get("deviceRequested") or "")
+    settings["runtime_device_actual"] = str(verification.get("deviceActual") or "")
+    settings["runtime_kind"] = str(verification.get("runtimeKind") or "")
+    settings["runtime_loaded_on_cuda"] = bool(verification.get("loadedOnCuda"))
+    settings["runtime_warmup_status"] = str(verification.get("warmupStatus") or verification.get("status") or "")
+    _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
+    return provider_settings_response(conn, user_id=user_id, environ=environ)
+
+
+def provider_advanced_local_paths(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return intentionally raw local paths for Local UI Advanced display only."""
+
+    if provider_id != "sam3-local":
+        return {
+            "format": "motionjson.provider_advanced_local_paths.v0.1",
+            "providerId": provider_id,
+            "available": False,
+            "message": "Advanced local path display is only available for SAM3 Scene Sweep.",
+        }
+    runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+    model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), Mapping) else {}
+    raw_dir = str(runtime.get("resolved_model_dir") or "").strip() if model_cache.get("cached") else ""
+    return {
+        "format": "motionjson.provider_advanced_local_paths.v0.1",
+        "providerId": provider_id,
+        "available": bool(raw_dir),
+        "model": str(model_cache.get("model") or runtime.get("selected_model") or SAM3_HF_REPO_ID),
+        "serverPathRecorded": bool(model_cache.get("serverPathRecorded") and raw_dir),
+        "cachedSceneSweepModelDir": raw_dir,
+        "localModelDirDisplayRaw": raw_dir,
+        "localPathDisplay": "[LOCAL_PATH_REDACTED]" if raw_dir else "",
+        "recordedAt": model_cache.get("recordedAt") or None,
+        "message": "Cached SAM3 Scene Sweep directory is available for Advanced display." if raw_dir else "No cached SAM3 Scene Sweep directory is recorded yet.",
+    }
 
 
 def _module_available(name: str) -> bool:
@@ -1105,7 +1190,73 @@ def _runtime_model_info(
         "runtimeModelSource": source,
         "resolvedModelDir": resolved_model_dir,
         "modelCache": model_cache,
+        "runtimeVerification": _runtime_verification_state(definition, settings, model_cache, environ),
     }
+
+
+def _runtime_verification_state(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    model_cache: Mapping[str, Any],
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    environ = environ or os.environ
+    provider_id = str(definition.get("id") or "")
+    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return {"required": False, "verified": True, "status": "not_required"}
+    cached = bool(model_cache.get("cached"))
+    warmup_status = str(settings.get("runtime_warmup_status") or "").strip()
+    verified_at = settings.get("runtime_verified_at") or None
+    current_model = str(model_cache.get("model") or _runtime_effective_model(definition, settings, environ) or "").strip()
+    verified_model = str(settings.get("runtime_verified_model_id") or "").strip()
+    requested_device = _runtime_requested_device(provider_id, settings, environ)
+    verified_device = str(settings.get("runtime_device_requested") or "").strip()
+    recorded_at = str(model_cache.get("recordedAt") or "")
+    model_matches = bool(not verified_model or not current_model or verified_model == current_model)
+    device_matches = bool(not verified_device or verified_device == requested_device)
+    cache_is_current = bool(not recorded_at or not verified_at or str(verified_at) >= recorded_at)
+    cuda_requested = requested_device.lower().startswith("cuda")
+    loaded_on_cuda = bool(settings.get("runtime_loaded_on_cuda"))
+    actual_device = str(settings.get("runtime_device_actual") or "")
+    device_verified = bool(not cuda_requested or (loaded_on_cuda and actual_device.lower().startswith("cuda")))
+    verified = bool(cached and verified_at and warmup_status == "succeeded" and model_matches and device_matches and cache_is_current and device_verified)
+    stale_reasons = []
+    if cached and verified_at:
+        if not model_matches:
+            stale_reasons.append("model changed")
+        if not device_matches:
+            stale_reasons.append("device changed")
+        if not cache_is_current:
+            stale_reasons.append("cache changed")
+        if not device_verified:
+            stale_reasons.append("CUDA placement not verified")
+    stale_detail = f" Previous smoke verification is stale because {', '.join(stale_reasons)}." if stale_reasons else ""
+    return {
+        "required": True,
+        "verified": verified,
+        "status": "verified" if verified else "not_verified",
+        "runtimeKind": settings.get("runtime_kind") or "",
+        "deviceRequested": verified_device or requested_device,
+        "deviceActual": actual_device,
+        "loadedOnCuda": loaded_on_cuda,
+        "warmupStatus": warmup_status or "not_run",
+        "lastVerifiedAt": verified_at,
+        "message": (
+            "Cached model loaded and warmed up successfully."
+            if verified
+            else f"Run a smoke test to load the cached model on the selected device and warm it up.{stale_detail}"
+            if cached
+            else "Cache the model before running runtime warmup."
+        ),
+    }
+
+
+def _runtime_requested_device(provider_id: str, settings: Mapping[str, Any], environ: Mapping[str, str]) -> str:
+    if provider_id == "sam3-local":
+        return str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda")
+    if provider_id == "sam2-hf-auto-masks":
+        return str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or "cpu")
+    return ""
 
 
 def _apply_settings_payload(
@@ -1116,16 +1267,28 @@ def _apply_settings_payload(
     *,
     validate_profile: bool = True,
 ) -> None:
+    runtime_sensitive_changed = False
+    provider_id = str(definition.get("id") or "")
+
+    def assign_runtime_sensitive(key: str, value: Any, *, default: Any = "") -> None:
+        nonlocal runtime_sensitive_changed
+        current = settings.get(key)
+        comparable_current = current if current not in (None, "") else default
+        comparable_next = value if value not in (None, "") else default
+        if comparable_current != comparable_next:
+            runtime_sensitive_changed = True
+        settings[key] = value
+
     if "enabled" in payload:
         settings["enabled"] = bool(payload.get("enabled"))
     if "selectedModel" in payload or "selected_model" in payload:
         selected_model = _optional_text(payload.get("selectedModel", payload.get("selected_model")))
         if not _is_redacted_public_placeholder(selected_model):
-            settings["selected_model"] = selected_model
+            assign_runtime_sensitive("selected_model", selected_model, default=definition.get("defaultModel") or "")
     if "customModelId" in payload or "custom_model_id" in payload:
         custom_model_id = _optional_text(payload.get("customModelId", payload.get("custom_model_id")))
         if not _is_redacted_public_placeholder(custom_model_id) and custom_model_id:
-            settings["custom_model_id"] = custom_model_id
+            assign_runtime_sensitive("custom_model_id", custom_model_id)
     if "endpoint" in payload:
         settings["endpoint"] = _optional_url(payload.get("endpoint"), "endpoint")
     if "baseUrl" in payload or "base_url" in payload:
@@ -1148,13 +1311,17 @@ def _apply_settings_payload(
     if "sam2Device" in payload or "sam2_device" in payload:
         settings["sam2_device"] = _optional_text(payload.get("sam2Device", payload.get("sam2_device")))
     if "sam2HfDevice" in payload or "sam2_hf_device" in payload:
-        settings["sam2_hf_device"] = _optional_text(payload.get("sam2HfDevice", payload.get("sam2_hf_device")))
+        assign_runtime_sensitive("sam2_hf_device", _optional_text(payload.get("sam2HfDevice", payload.get("sam2_hf_device"))), default="cpu")
     if "sam3ModelPath" in payload or "sam3_model_path" in payload:
         value = _optional_text(payload.get("sam3ModelPath", payload.get("sam3_model_path")))
         if not _is_redacted_public_placeholder(value):
             settings["sam3_model_path"] = value
     if "sam3Device" in payload or "sam3_device" in payload:
-        settings["sam3_device"] = _optional_text(payload.get("sam3Device", payload.get("sam3_device")))
+        assign_runtime_sensitive("sam3_device", _optional_text(payload.get("sam3Device", payload.get("sam3_device"))), default="cuda")
+
+    if runtime_sensitive_changed and provider_id in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        for key in LOCAL_MODEL_RUNTIME_KEYS:
+            settings.pop(key, None)
 
     profiled_definition = _profiled_definition(definition, settings)
     for field in profiled_definition.get("credentialFields", []):
@@ -1436,6 +1603,7 @@ def diagnose_provider_settings(
     credentials = _credential_states(definition, settings, secrets, environ)
     model_cache = _model_cache_state(definition, settings, secrets, environ)
     model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, model_cache)
+    runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
     checklist: list[dict[str, Any]] = []
     commands: list[str] = []
     docs = definition.get("docs")
@@ -1471,6 +1639,13 @@ def diagnose_provider_settings(
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
         item("model_id", "HF model id or directory", True, model_detail, "Use Cache model if the model is not already available locally.")
         item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local cache access.")
+        item(
+            "runtime_warmup",
+            "Load and warm up model",
+            bool(runtime_verification.get("verified")),
+            str(runtime_verification.get("message") or "Run a smoke test after caching the model."),
+            "Run smoke test or Prepare local model.",
+        )
         item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
         item("official_sam2", "Official SAM2 checkpoint/config", True, "Not required for SAM2 HF automatic masks.", "", required=False)
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
@@ -1492,7 +1667,7 @@ def diagnose_provider_settings(
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         transformers_ok = find_spec("transformers") is not None
         torch_ok = find_spec("torch") is not None
-        device = str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "auto/cpu")
+        device = str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda")
         device_problem = _device_problem(device, torch_ok=torch_ok)
         tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
         tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
@@ -1503,6 +1678,13 @@ def diagnose_provider_settings(
         item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local Hugging Face cache access.")
         item("torch_package", "PyTorch", torch_ok, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
         item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
+        item(
+            "runtime_warmup",
+            "Load on GPU and warm up",
+            bool(runtime_verification.get("verified")),
+            str(runtime_verification.get("message") or "Run a smoke test after caching the model."),
+            "Run smoke test or Prepare local model.",
+        )
         item("python", "Python >= 3.12 for concept/exemplar", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for official-package SAM3 concept/exemplar workflows.", required=False)
         item("sam3_package", "Official SAM3 package for concept/exemplar", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3 for concept/exemplar workflows.", required=False)
         item(
@@ -1533,7 +1715,7 @@ def diagnose_provider_settings(
         item("provider", "Provider registered", True, definition["name"], "No additional setup checklist is defined.")
 
     ok = all(entry["ok"] for entry in checklist if entry.get("required", True))
-    setup_state = _setup_state_for_provider(definition, readiness, model_cache, credentials)
+    setup_state = _setup_state_for_provider(definition, readiness, model_cache, credentials, runtime_verification)
     runnable = bool(ok and readiness.get("configured") and setup_state.get("runnable", setup_state.get("status") == "ready"))
     return {
         "format": "motionjson.provider_settings_diagnose.v0.1",
@@ -1545,6 +1727,7 @@ def diagnose_provider_settings(
         "heavyLocalAttempted": False,
         "message": setup_state.get("message") or readiness.get("message") or ("Ready" if ok else "Setup is incomplete."),
         "modelCache": model_cache,
+        "runtimeVerification": runtime_verification,
         "checklist": checklist,
         "commands": commands,
         "docs": docs,
@@ -1559,6 +1742,7 @@ def local_sam_smoke_test(
     provider_id: str,
     payload: Mapping[str, Any],
     environ: Mapping[str, str] | None = None,
+    progress: Any | None = None,
 ) -> dict[str, Any]:
     """Run a bounded local SAM setup smoke check without network access."""
 
@@ -1571,32 +1755,84 @@ def local_sam_smoke_test(
     runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
     runtime_model_source = str(runtime.get("runtime_model_source") or "default")
     model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), Mapping) else {}
+    readiness = runtime.get("readiness") if isinstance(runtime.get("readiness"), Mapping) else {}
     sam3_scene_sweep_smoke = provider_id == "sam3-local" and (
         _truthy(payload.get("sceneSweep", payload.get("scene_sweep")))
         or bool(model_cache.get("cached"))
         or not str(runtime.get("sam3_model_path") or "").strip()
     )
     if sam3_scene_sweep_smoke:
-        smoke = {
-            "providerName": "sam3-local",
-            "sceneSweep": True,
-            "sam2Required": False,
-            "runtimeModelSource": runtime_model_source,
-            "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
-            "checks": ["transformers", "torch", "sam3_tracker_auto_masks", "sam3_tracker_video"],
-        } if diagnosis["ready"] else None
+        can_attempt_scene_sweep = bool(readiness.get("configured") and model_cache.get("cached"))
+        if not can_attempt_scene_sweep:
+            missing_text = ", ".join(str(item) for item in readiness.get("missing") or [])
+            cuda_failed = "cuda" in missing_text.lower()
+            return {
+                "format": "motionjson.provider_local_sam_smoke_test.v0.1",
+                "providerId": provider_id,
+                "status": "failed" if cuda_failed else "blocked",
+                "ready": False,
+                "networkAttempted": False,
+                "heavyLocalAttempted": True,
+                "message": redact_secret_text(missing_text or "SAM3 Scene Sweep setup is incomplete; cache the model and install the runtime before smoke testing."),
+                "diagnosis": diagnosis,
+                "smokeTest": None,
+            }
+        try:
+            smoke = sam3_scene_sweep_warmup(
+                str(runtime.get("runtime_model") or runtime.get("selected_model") or SAM3_HF_REPO_ID),
+                device=str(runtime.get("sam3_device") or "cuda"),
+                progress=progress,
+            )
+            smoke = {
+                **smoke,
+                "sam2Required": False,
+                "runtimeModelSource": runtime_model_source,
+                "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
+                "checks": [
+                    "transformers",
+                    "torch",
+                    "sam3_tracker_auto_masks",
+                    "cuda" if str(runtime.get("sam3_device") or "cuda").lower().startswith("cuda") else "device",
+                    "warmup_inference",
+                ],
+            }
+            record_provider_runtime_verification(
+                conn,
+                user_id=user_id,
+                provider_id=provider_id,
+                verification=smoke,
+                environ=environ,
+            )
+            diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
+        except Exception as exc:
+            return {
+                "format": "motionjson.provider_local_sam_smoke_test.v0.1",
+                "providerId": provider_id,
+                "status": "failed",
+                "ready": False,
+                "networkAttempted": False,
+                "heavyLocalAttempted": True,
+                "message": redact_secret_text(str(exc) or type(exc).__name__),
+                "diagnosis": diagnosis,
+                "smokeTest": None,
+            }
         return {
             "format": "motionjson.provider_local_sam_smoke_test.v0.1",
             "providerId": provider_id,
-            "status": "ready" if diagnosis["ready"] else "blocked",
-            "ready": bool(diagnosis["ready"]),
+            "status": "ready",
+            "ready": True,
             "networkAttempted": False,
             "heavyLocalAttempted": True,
-            "message": "SAM3 Scene Sweep bounded setup smoke completed." if diagnosis["ready"] else "SAM3 Scene Sweep setup is incomplete; no model run was attempted.",
+            "message": "SAM3 Scene Sweep loaded on the selected device and completed bounded warmup inference.",
             "diagnosis": diagnosis,
             "smokeTest": redact_secret_payload(smoke),
         }
-    if diagnosis["ready"]:
+    can_attempt_local_smoke = bool(diagnosis["ready"]) or (
+        provider_id in LOCAL_MODEL_CACHE_PROVIDER_IDS
+        and bool(readiness.get("configured"))
+        and bool(model_cache.get("cached"))
+    )
+    if can_attempt_local_smoke:
         from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
 
         try:
@@ -1633,7 +1869,19 @@ def local_sam_smoke_test(
                     "officialSam2Required": False,
                     "runtimeModelSource": runtime_model_source,
                     "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
+                    "runtimeKind": "transformers_mask_generation",
+                    "deviceRequested": runtime.get("sam2_hf_device") or "cpu",
+                    "deviceActual": runtime.get("sam2_hf_device") or "cpu",
+                    "warmupStatus": "succeeded",
                 }
+                record_provider_runtime_verification(
+                    conn,
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    verification=smoke,
+                    environ=environ,
+                )
+                diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
             else:
                 from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 
@@ -1789,7 +2037,14 @@ def _public_provider_state(
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
     provider["modelCache"] = _model_cache_state(definition, settings, secrets, environ)
     provider["modelCache"]["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, provider["modelCache"])
-    provider["setupState"] = _setup_state_for_provider(definition, provider["readiness"], provider["modelCache"], provider["credentials"])
+    provider["runtimeVerification"] = _runtime_verification_state(definition, settings, provider["modelCache"], environ)
+    provider["setupState"] = _setup_state_for_provider(
+        definition,
+        provider["readiness"],
+        provider["modelCache"],
+        provider["credentials"],
+        provider["runtimeVerification"],
+    )
     provider["effectiveModel"] = _runtime_effective_model(definition, settings, environ)
     provider["effectiveProfile"] = _public_profile(profile)
     return provider
@@ -1942,7 +2197,7 @@ def _readiness(
             missing.append("SAM3 Tracker automatic-mask Transformers classes")
         if not tracker_video_ok:
             missing.append("SAM3 Tracker Video Transformers classes")
-        device_problem = _device_problem(str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""), torch_ok=torch_ok)
+        device_problem = _device_problem(str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda"), torch_ok=torch_ok)
         if device_problem:
             missing.append(device_problem)
         if missing:
@@ -2093,29 +2348,41 @@ def _setup_state_for_provider(
     readiness: Mapping[str, Any],
     model_cache: Mapping[str, Any],
     credentials: list[dict[str, Any]],
+    runtime_verification: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     provider_id = str(definition.get("id") or "")
     base = _setup_state_from_readiness(readiness)
     if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
         return base
+    runtime_verification = runtime_verification or {}
+    runtime_verified = bool(runtime_verification.get("verified"))
     preflight = {
         "runtimeAvailable": bool(readiness.get("configured")),
         "accessConfigured": any(item.get("name") == "hf_token" and item.get("configured") for item in credentials) if provider_id == "sam3-local" else True,
         "accessVerified": bool(model_cache.get("cached")) or provider_id != "sam3-local",
         "modelCached": bool(model_cache.get("cached")),
-        "smokeTested": False,
-        "runnable": bool(readiness.get("configured") and model_cache.get("cached")),
+        "smokeTested": runtime_verified,
+        "runnable": bool(readiness.get("configured") and model_cache.get("cached") and runtime_verified),
     }
     if not readiness.get("configured"):
         return {**base, "preflight": preflight, "runnable": False, "nextAction": "install"}
-    if model_cache.get("cached"):
+    if model_cache.get("cached") and runtime_verified:
         return {
             "status": "ready",
             "label": "Ready",
-            "message": model_cache.get("message") or "Model setup is ready for this workflow.",
+            "message": runtime_verification.get("message") or model_cache.get("message") or "Model setup is ready for this workflow.",
             "preflight": preflight,
             "runnable": True,
             "nextAction": "continue",
+        }
+    if model_cache.get("cached"):
+        return {
+            "status": "needs_smoke",
+            "label": "Ready to verify",
+            "message": str(runtime_verification.get("message") or "The model cache is recorded. Run a smoke test to load it on the selected device and warm it up."),
+            "preflight": preflight,
+            "runnable": False,
+            "nextAction": "smoke",
         }
     if provider_id == "sam3-local" and not preflight["accessConfigured"] and model_cache.get("status") in {"not_cached", "cache_unknown"}:
         return {

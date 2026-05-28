@@ -296,6 +296,244 @@ def normalize_sam3_output(output: Any) -> list[dict[str, Any]]:
     raise ProviderExecutionError("SAM3 adapter returned an unsupported response shape.")
 
 
+def sam3_scene_sweep_warmup(
+    model_id: str | Path,
+    *,
+    device: str = "cuda",
+    points_per_batch: int = 16,
+    progress: Any | None = None,
+) -> dict[str, Any]:
+    """Load the SAM3 Tracker mask-generation pipeline and run a bounded inference."""
+
+    requested_device = str(device or "cuda").strip() or "cuda"
+    model_value = str(model_id or "").strip()
+    if not model_value:
+        raise ProviderConfigError("SAM3 Scene Sweep smoke test could not resolve a model directory or Hugging Face model id.")
+
+    if progress:
+        progress("runtime_detected", "Checking local PyTorch and Transformers runtime", 8, True)
+    try:
+        import torch  # type: ignore
+    except ImportError as exc:
+        raise ProviderConfigError(
+            "PyTorch is not installed. Install a CUDA-capable torch build before preparing SAM3 Scene Sweep."
+        ) from exc
+    try:
+        from transformers import pipeline  # type: ignore
+    except ImportError as exc:
+        raise ProviderConfigError(
+            "Transformers is not installed or is too old for SAM3 Tracker mask-generation. Install the sam3-transformers extra."
+        ) from exc
+
+    local_dir_verified = _verify_from_pretrained_dir_if_local(model_value)
+    if progress:
+        progress("cache_resolved", "Resolved SAM3 Scene Sweep model cache server-side", 18, True)
+        if local_dir_verified:
+            progress("model_files_verified", "Verified cached SAM3 model files", 26, True)
+
+    cuda_requested = requested_device.lower().startswith("cuda")
+    cuda_index = _cuda_device_index(requested_device)
+    gpu_before = _cuda_memory_snapshot(torch, cuda_index) if cuda_requested else {}
+    if cuda_requested:
+        cuda_available = bool(getattr(getattr(torch, "cuda", None), "is_available", lambda: False)())
+        if not cuda_available:
+            raise ProviderConfigError(
+                "CUDA was requested for SAM3 Scene Sweep, but PyTorch cannot see CUDA. "
+                "In Colab, switch to a GPU runtime and install a CUDA-enabled torch build before preparing the model."
+            )
+        if progress:
+            progress("cuda_detected", "PyTorch can see CUDA for SAM3 Scene Sweep", 34, True)
+
+    if progress:
+        progress("loading_transformers_pipeline", "Loading SAM3 Tracker mask-generation pipeline", 46, True)
+    device_arg = _transformers_device(requested_device)
+    try:
+        generator = pipeline("mask-generation", model=model_value, device=device_arg)
+    except Exception as exc:
+        raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
+    if generator is None:
+        raise ProviderExecutionError("Transformers returned an empty SAM3 mask-generation pipeline.")
+    if progress:
+        progress("model_loaded", "SAM3 Tracker pipeline loaded", 60, True)
+
+    inspected_device = _pipeline_model_device(generator)
+    device_actual = inspected_device.get("device") or _device_actual_from_request(requested_device)
+    if cuda_requested and inspected_device.get("deviceType") and inspected_device.get("deviceType") != "cuda":
+        raise ProviderExecutionError(
+            f"SAM3 Tracker pipeline loaded on {device_actual}, but CUDA was requested. "
+            "Choose a CUDA device or fix the CUDA torch/Transformers installation."
+        )
+    loaded_on_cuda = bool(cuda_requested and (inspected_device.get("deviceType") in {"cuda", ""} or str(device_actual).startswith("cuda")))
+    if progress:
+        progress("model_device_verified", f"SAM3 Tracker device verified as {device_actual}", 70, True)
+
+    image = _sam3_warmup_image()
+    if progress:
+        progress("warmup_started", "Running bounded SAM3 Scene Sweep warmup inference", 82, True)
+    try:
+        output = _call_scene_sweep_generator(generator, image, points_per_batch=points_per_batch)
+        records = normalize_sam3_output(output)
+    except ProviderExecutionError:
+        raise
+    except Exception as exc:
+        raise ProviderExecutionError(f"SAM3 Scene Sweep warmup inference failed: {exc}") from exc
+    if not records:
+        raise ProviderExecutionError(
+            "SAM3 Scene Sweep warmup completed but returned no masks. The model loaded, but runtime inference is not producing usable candidates."
+        )
+    gpu_after = _cuda_memory_snapshot(torch, cuda_index) if cuda_requested else {}
+    if progress:
+        progress("warmup_succeeded", "SAM3 Scene Sweep warmup inference returned masks", 94, True)
+        progress("ready_for_extraction", "SAM3 Scene Sweep is ready for extraction", 100, True)
+    return {
+        "status": "ok",
+        "providerName": "sam3-local",
+        "sceneSweep": True,
+        "runtimeKind": "transformers_mask_generation",
+        "modelObjectLoaded": True,
+        "deviceRequested": requested_device,
+        "deviceActual": device_actual,
+        "deviceInspection": inspected_device,
+        "loadedOnCuda": loaded_on_cuda,
+        "warmupStatus": "succeeded",
+        "recordCount": len(records),
+        "frameShape": [image.height, image.width, 3],
+        "gpu": _cuda_device_summary(torch, cuda_index) if cuda_requested else {},
+        "gpuMemoryBefore": gpu_before,
+        "gpuMemoryAfter": gpu_after,
+    }
+
+
+def _verify_from_pretrained_dir_if_local(model_value: str) -> bool:
+    if not (model_value.startswith(("/", ".", "~")) or model_value.lower().startswith("file://") or "\\" in model_value):
+        return False
+    path = Path(model_value.replace("file://", "", 1)).expanduser()
+    try:
+        if not path.exists():
+            raise ProviderConfigError("Resolved SAM3 model directory does not exist.")
+        if not path.is_dir():
+            raise ProviderConfigError("Resolved SAM3 model path is not a from_pretrained directory.")
+        if not os.access(path, os.R_OK):
+            raise ProviderConfigError("Resolved SAM3 model directory is not readable by this process.")
+        if any(path.rglob("*.incomplete")):
+            raise ProviderConfigError("Resolved SAM3 model directory contains incomplete download files. Retry Cache model.")
+        if not (path / "config.json").exists():
+            raise ProviderConfigError("Resolved SAM3 model directory is missing config.json.")
+    except ProviderConfigError:
+        raise
+    except OSError as exc:
+        raise ProviderConfigError(f"Resolved SAM3 model directory could not be inspected: {type(exc).__name__}: {exc}") from exc
+    return True
+
+
+def _cuda_device_index(device: str) -> int:
+    match = re.match(r"^cuda(?::(\d+))?$", str(device or "").strip().lower())
+    if not match:
+        return 0
+    return int(match.group(1) or 0)
+
+
+def _cuda_device_summary(torch: Any, index: int) -> dict[str, Any]:
+    cuda = getattr(torch, "cuda", None)
+    if cuda is None:
+        return {}
+    summary: dict[str, Any] = {"index": index}
+    try:
+        summary["name"] = str(cuda.get_device_name(index))
+    except Exception:
+        pass
+    try:
+        summary["deviceCount"] = int(cuda.device_count())
+    except Exception:
+        pass
+    return summary
+
+
+def _cuda_memory_snapshot(torch: Any, index: int) -> dict[str, Any]:
+    cuda = getattr(torch, "cuda", None)
+    if cuda is None:
+        return {}
+    try:
+        free_bytes, total_bytes = cuda.mem_get_info(index)
+    except Exception:
+        return {}
+    used_bytes = max(0, int(total_bytes) - int(free_bytes))
+    return {
+        "freeBytes": int(free_bytes),
+        "totalBytes": int(total_bytes),
+        "usedBytes": used_bytes,
+        "freeMiB": round(int(free_bytes) / 1024 / 1024, 1),
+        "usedMiB": round(used_bytes / 1024 / 1024, 1),
+    }
+
+
+def _pipeline_model_device(generator: Any) -> dict[str, Any]:
+    model = getattr(generator, "model", None)
+    if model is None:
+        return {"device": "", "deviceType": "", "inspectable": False}
+    for value in _iter_model_device_candidates(model):
+        device_text = str(value)
+        device_type = str(getattr(value, "type", "") or device_text.split(":", 1)[0]).lower()
+        return {"device": device_text, "deviceType": device_type, "inspectable": True}
+    value = getattr(model, "device", None)
+    if value is not None:
+        device_text = str(value)
+        device_type = str(getattr(value, "type", "") or device_text.split(":", 1)[0]).lower()
+        return {"device": device_text, "deviceType": device_type, "inspectable": True}
+    return {"device": "", "deviceType": "", "inspectable": False}
+
+
+def _iter_model_device_candidates(model: Any) -> Sequence[Any]:
+    values: list[Any] = []
+    for method_name in ("parameters", "buffers"):
+        method = getattr(model, method_name, None)
+        if not callable(method):
+            continue
+        try:
+            iterator = iter(method())
+            item = next(iterator, None)
+        except Exception:
+            continue
+        device = getattr(item, "device", None)
+        if device is not None:
+            values.append(device)
+    return values
+
+
+def _device_actual_from_request(device: str) -> str:
+    normalized = str(device or "").strip().lower()
+    if normalized.startswith("cuda"):
+        return normalized if ":" in normalized else "cuda:0"
+    if normalized == "mps":
+        return "mps"
+    return "cpu"
+
+
+def _sam3_warmup_image() -> Image.Image:
+    array = np.zeros((128, 128, 3), dtype=np.uint8)
+    array[:, :] = np.array([20, 28, 42], dtype=np.uint8)
+    array[22:86, 18:82] = np.array([240, 80, 72], dtype=np.uint8)
+    yy, xx = np.ogrid[:128, :128]
+    circle = (xx - 88) ** 2 + (yy - 78) ** 2 <= 24 ** 2
+    array[circle] = np.array([78, 210, 160], dtype=np.uint8)
+    array[96:108, 18:112] = np.array([246, 222, 110], dtype=np.uint8)
+    return Image.fromarray(array)
+
+
+def _call_scene_sweep_generator(generator: Any, image: Image.Image, *, points_per_batch: int) -> Any:
+    if hasattr(generator, "generate"):
+        return generator.generate(np.asarray(image), points_per_batch=points_per_batch)
+    if callable(generator):
+        try:
+            return generator(image, points_per_batch=points_per_batch)
+        except TypeError:
+            try:
+                return generator(np.asarray(image), points_per_batch=points_per_batch)
+            except TypeError:
+                return generator(image)
+    raise ProviderExecutionError("SAM3 scene sweep mask generator must expose generate() or be callable.")
+
+
 @dataclass
 class LocalSAM3DiscoveryBackend:
     """Optional SAM3 local discovery backend with lazy imports.
@@ -371,13 +609,18 @@ class LocalSAM3DiscoveryBackend:
     def discover_auto_masks(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
         if not getattr(video, "frames", None):
             return []
+        runtime_public = config.get("runtimeContractPublic") if isinstance(config.get("runtimeContractPublic"), Mapping) else {}
         if ctx is not None and hasattr(ctx, "emit"):
             ctx.emit(
                 "candidate_discovery",
                 "running",
                 "loading SAM3 Tracker scene-sweep model",
                 progress={"overallRatio": 0.31},
-                metadata={"provider": self.provider_name, "discoveryMode": "sam3_auto_masks"},
+                metadata={
+                    "provider": self.provider_name,
+                    "discoveryMode": "sam3_auto_masks",
+                    "runtimeContract": dict(runtime_public),
+                },
             )
         generator = self._ensure_tracker_mask_generator(config)
         keyframes = _scene_sweep_keyframes(video, config)
@@ -394,7 +637,13 @@ class LocalSAM3DiscoveryBackend:
                     "running",
                     f"generating SAM3 scene masks for keyframe {keyframe_ordinal}/{total_keyframes}",
                     progress={"overallRatio": 0.31 + ((keyframe_ordinal - 1) / total_keyframes) * 0.008},
-                    metadata={"provider": self.provider_name, "keyframe": keyframe_index, "keyframeOrdinal": keyframe_ordinal, "keyframeCount": total_keyframes},
+                    metadata={
+                        "provider": self.provider_name,
+                        "keyframe": keyframe_index,
+                        "keyframeOrdinal": keyframe_ordinal,
+                        "keyframeCount": total_keyframes,
+                        "runtimeContract": dict(runtime_public),
+                    },
                 )
             frame = video.frames[keyframe_index]
             frame_records = self._generate_scene_masks(
@@ -410,7 +659,12 @@ class LocalSAM3DiscoveryBackend:
                     "running",
                     f"SAM3 scene masks generated for keyframe {keyframe_ordinal}/{total_keyframes}",
                     progress={"overallRatio": 0.31 + (keyframe_ordinal / total_keyframes) * 0.008},
-                    metadata={"provider": self.provider_name, "keyframe": keyframe_index, "proposalCount": len(frame_records)},
+                    metadata={
+                        "provider": self.provider_name,
+                        "keyframe": keyframe_index,
+                        "proposalCount": len(frame_records),
+                        "runtimeContract": dict(runtime_public),
+                    },
                 )
             for proposal_index, record in enumerate(frame_records[:max_per_keyframe]):
                 enriched = dict(record)

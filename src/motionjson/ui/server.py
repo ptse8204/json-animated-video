@@ -79,6 +79,7 @@ from motionjson.provider_settings import (
     diagnose_provider_settings,
     hosted_sam3_smoke_test,
     local_sam_smoke_test,
+    provider_advanced_local_paths,
     provider_runtime_settings,
     provider_settings_for_capabilities,
     provider_settings_response,
@@ -99,7 +100,9 @@ STORAGE_KEY_ASSIGNMENT_RE = re.compile(r"(?i)\bstorage[_-]?key=([^\s&]+)")
 STORAGE_KEY_PATH_RE = re.compile(r"\bprojects/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+")
 LOCAL_FILE_URI_RE = re.compile(r"(?i)\bfile://[^\r\n]+")
 LOCAL_UI_ASSET_URI_RE = re.compile(r"^(?:local-ui|motionjson)://assets/([^/?#]+)$")
-LOCAL_ABSOLUTE_PATH_RE = re.compile(r"(?<![\w:])/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+")
+LOCAL_ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![\w:])(?:/(?:root|content)(?:/[^\s,;:)\]}\"']*)*|/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+)"
+)
 WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
 LOCAL_PATH_FIELD_NAMES = {"sourceuri", "sourcepath", "localpath"}
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
@@ -572,6 +575,7 @@ class LocalUIApp:
                     "/api/provider-settings/{providerId}/test",
                     "/api/provider-settings/{providerId}/diagnose",
                     "/api/provider-settings/{providerId}/smoke-test",
+                    "/api/provider-settings/{providerId}/advanced-local-paths",
                     "/api/provider-settings/{providerId}/setup/start",
                     "/api/provider-settings/setup-jobs/{jobId}",
                     "/api/provider-settings/setup-jobs/{jobId}/cancel",
@@ -644,6 +648,8 @@ class LocalUIApp:
                 return self._diagnose_provider_settings(parts[2], payload)
             if len(parts) == 4 and parts[3] == "smoke-test" and method == "POST":
                 return self._smoke_test_provider_settings(parts[2], payload)
+            if len(parts) == 4 and parts[3] == "advanced-local-paths" and method == "GET":
+                return self._advanced_local_paths(parts[2])
         if path == "/api/model-providers" and method == "GET":
             return self._model_providers_response()
         if path.startswith("/api/model-providers/"):
@@ -1778,7 +1784,15 @@ class LocalUIApp:
                     user_id=user["id"],
                     payload={**payload, "providerId": provider_id},
                 )
-            )
+                )
+        finally:
+            conn.close()
+
+    def _advanced_local_paths(self, provider_id: str) -> dict[str, Any]:
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            return provider_advanced_local_paths(conn, user_id=user["id"], provider_id=provider_id)
         finally:
             conn.close()
 

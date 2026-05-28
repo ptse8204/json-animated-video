@@ -340,12 +340,19 @@ def _cached_local_runtime_discovery_provider(
     user_id: str,
     discovery_mode: str | None,
     discovery_config: dict[str, Any],
-) -> tuple[tuple[Any, str, bool] | None, dict[str, Any]]:
+) -> tuple[tuple[Any, str, bool, dict[str, Any]] | None, dict[str, Any]]:
     config = dict(discovery_config)
+    if config.get("mock"):
+        return None, config
     provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "").strip()
     if discovery_mode == "sam2_hf_auto_masks" or provider_preference == "sam2-hf-auto-masks":
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam2-hf-auto-masks")
         model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+        verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
+        if not _runtime_verified_for_extraction(verification):
+            raise ProviderConfigError(
+                "SAM2 HF automatic masks are cached but not verified for extraction. Run Prepare local model or Run smoke test before starting extraction."
+            )
         runtime_model = str(runtime.get("runtime_model") or "").strip()
         if runtime_model and model_cache.get("cached") is True:
             safe_config = _without_runtime_model_keys(
@@ -356,14 +363,26 @@ def _cached_local_runtime_discovery_provider(
                 model=runtime_model,
                 device=str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu"),
             )
+            public_contract = _resolved_runtime_contract_public(
+                "sam2-hf-auto-masks",
+                runtime,
+                device_requested=str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu"),
+            )
+            safe_config["runtimeContractPublic"] = public_contract
             return (
                 SAM2HFAutomaticMasksDiscoveryProvider(backend=backend),
                 "SAM2 HF automatic masks configured from server-side cached model",
                 False,
+                {"runtimeContract": public_contract},
             ), safe_config
     if discovery_mode == "sam3_auto_masks" and provider_preference != "sam3-hosted" and not config.get("hosted") and not config.get("useHosted"):
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam3-local")
         model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+        verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
+        if not _runtime_verified_for_extraction(verification):
+            raise ProviderConfigError(
+                "SAM3 Scene Sweep is cached but not verified for extraction. Run Prepare local model or Run smoke test so the model loads on the selected device and completes warmup."
+            )
         runtime_model = str(runtime.get("runtime_model") or "").strip()
         if runtime_model and model_cache.get("cached") is True:
             safe_config = _without_runtime_model_keys(
@@ -374,12 +393,48 @@ def _cached_local_runtime_discovery_provider(
                 model_path=runtime_model,
                 device=str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda"),
             )
+            public_contract = _resolved_runtime_contract_public(
+                "sam3-local",
+                runtime,
+                device_requested=str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda"),
+            )
+            safe_config["runtimeContractPublic"] = public_contract
             return (
                 SAM3AutoMasksDiscoveryProvider(backend=backend),
                 "SAM3 Scene Sweep configured from server-side cached model",
                 False,
+                {"runtimeContract": public_contract},
             ), safe_config
     return None, config
+
+
+def _runtime_verified_for_extraction(verification: dict[str, Any]) -> bool:
+    return bool(verification.get("verified") is True and str(verification.get("warmupStatus") or "") == "succeeded")
+
+
+def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any], *, device_requested: str) -> dict[str, Any]:
+    verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
+    model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+    return {
+        "providerId": provider_id,
+        "modelId": _safe_public_runtime_model_id(str(model_cache.get("model") or runtime.get("selected_model") or "")),
+        "modelPathStatus": "recorded_server_side" if model_cache.get("serverPathRecorded") else "resolved_server_side",
+        "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
+        "deviceRequested": str(verification.get("deviceRequested") or device_requested or ""),
+        "deviceActual": str(verification.get("deviceActual") or device_requested or ""),
+        "runtimeKind": str(verification.get("runtimeKind") or "transformers_mask_generation"),
+        "loadedOnCuda": bool(verification.get("loadedOnCuda")),
+        "warmupStatus": str(verification.get("warmupStatus") or "not_verified"),
+        "lastVerifiedAt": verification.get("lastVerifiedAt") or "",
+        "runtimeModelSource": str(runtime.get("runtime_model_source") or "saved_cache"),
+    }
+
+
+def _safe_public_runtime_model_id(value: str) -> str:
+    text = str(value or "").strip()
+    if text.startswith(("/", "~", "./", "../")) or "\\" in text or text.lower().startswith("file://"):
+        return "[LOCAL_PATH_REDACTED]"
+    return text
 
 
 def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> tuple[Any, str, bool] | None:
@@ -516,7 +571,8 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             else:
                 discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
             if discovery_provider is not None:
-                provider, message, requires_mock = discovery_provider
+                provider, message, requires_mock = discovery_provider[:3]
+                provider_metadata = dict(discovery_provider[3]) if len(discovery_provider) > 3 and isinstance(discovery_provider[3], dict) else {}
                 if requires_mock and not discovery_config.get("mock"):
                     raise RuntimeError(
                         f"local UI {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
@@ -526,7 +582,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     "succeeded",
                     message,
                     progress={"overallRatio": 0.06},
-                    metadata={"provider": provider_name, "discoveryMode": discovery_mode},
+                    metadata={"provider": provider_name, "discoveryMode": discovery_mode, **provider_metadata},
                 )
                 scene = run_multi_object_pipeline(
                     video_path=video_path,

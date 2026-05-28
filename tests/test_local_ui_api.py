@@ -103,6 +103,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/videos/{videoId}/content" in health["routes"]
     assert "/api/run-config/validate" in health["routes"]
     assert "/api/provider-settings/{providerId}/diagnose" in health["routes"]
+    assert "/api/provider-settings/{providerId}/advanced-local-paths" in health["routes"]
     assert "/api/provider-settings/{providerId}/setup/start" in health["routes"]
     assert "/api/provider-settings/setup-jobs/{jobId}" in health["routes"]
     assert "/api/provider-settings/setup-jobs/{jobId}/cancel" in health["routes"]

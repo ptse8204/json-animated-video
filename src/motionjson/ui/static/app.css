@@ -2812,6 +2812,22 @@ button,
   gap: 4px;
 }
 
+.model-setup-readonly-path {
+  grid-column: span 2;
+}
+
+.readonly-path-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.readonly-path-control input[readonly] {
+  color: #20303c;
+  background: #f5f8fa;
+}
+
 .field-helper {
   color: #5f6470;
   font-size: 12px;
@@ -3607,6 +3623,7 @@ button,
   }
 
   .model-hosted-toggle,
+  .model-setup-readonly-path,
   .model-setup-actions {
     grid-column: 1 / -1;
   }
