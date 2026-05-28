@@ -23,6 +23,7 @@ from motionjson.providers.hosted_sam import FalSAM3ImageBackend, RoboflowSAM3Con
 from motionjson.providers.sam3 import (
     HostedSAM3DiscoveryBackend,
     LocalSAM3DiscoveryBackend,
+    SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB,
     describe_sam3_model_path,
     describe_sam3_tracker_model,
     find_sam3_checkpoint_candidates,
@@ -644,12 +645,20 @@ def test_sam3_loader_heartbeat_reports_long_blocking_steps():
         message="Loading SAM3 Tracker model weights",
         percent=55,
         interval_seconds=0.01,
+        monitor=lambda: {
+            "gpuMemory": {
+                "usedMiB": 210.0,
+                "totalMiB": 8192.0,
+                "usedDeltaMiB": SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB - 1,
+            }
+        },
     )
 
     assert result == "loaded"
     assert events
     assert events[0]["type"] == "loading_sam3_tracker_model_weights"
-    assert "still working" in events[0]["message"]
+    assert "elapsed" in events[0]["message"]
+    assert "no model-sized CUDA allocation yet" in events[0]["message"]
 
 
 def test_local_sam3_backend_validates_missing_model_path():

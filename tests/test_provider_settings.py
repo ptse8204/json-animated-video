@@ -123,10 +123,11 @@ def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | No
         device = FakeDevice()
 
         @classmethod
-        def from_pretrained(cls, model):
+        def from_pretrained(cls, model, **kwargs):
             if seen is not None:
                 seen["modelFromPretrained"] = {
                     "model": model,
+                    "kwargs": dict(kwargs),
                     "hfHubOffline": os.environ.get("HF_HUB_OFFLINE"),
                     "transformersOffline": os.environ.get("TRANSFORMERS_OFFLINE"),
                 }
@@ -156,10 +157,11 @@ def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | No
 
     class FakeProcessor:
         @classmethod
-        def from_pretrained(cls, model):
+        def from_pretrained(cls, model, **kwargs):
             if seen is not None:
                 seen["processorFromPretrained"] = {
                     "model": model,
+                    "kwargs": dict(kwargs),
                     "hfHubOffline": os.environ.get("HF_HUB_OFFLINE"),
                     "transformersOffline": os.environ.get("TRANSFORMERS_OFFLINE"),
                 }
@@ -935,12 +937,15 @@ def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(t
     assert seen["modelFromPretrained"]["model"] == str(model_dir)  # type: ignore[index]
     assert seen["processorFromPretrained"]["hfHubOffline"] == "1"  # type: ignore[index]
     assert seen["modelFromPretrained"]["transformersOffline"] == "1"  # type: ignore[index]
-    assert seen["modelTo"] == "cuda:0"
+    assert seen["modelFromPretrained"]["kwargs"]["device_map"] == 0  # type: ignore[index]
+    assert seen["modelFromPretrained"]["kwargs"]["low_cpu_mem_usage"] is True  # type: ignore[index]
+    assert "modelTo" not in seen
     event_types = {event["type"] for event in smoke["events"]}
     assert {
         "loading_sam3_tracker_processor",
         "loading_sam3_tracker_model_weights",
-        "moving_model_to_device",
+        "sam3_tracker_model_load_attempt",
+        "model_loaded_on_device",
         "model_device_verified",
         "warmup_succeeded",
         "ready_for_extraction",

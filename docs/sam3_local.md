@@ -115,6 +115,14 @@ Do not put a single `.pt` file in `sam3TrackerModel`; Transformers
 `Sam3TrackerVideoModel.from_pretrained(...)` require a repo id or
 `from_pretrained` directory.
 
+For CUDA setup, MotionJSON now loads the SAM3 Tracker model with the direct
+`Sam3TrackerModel.from_pretrained(...)` path and asks Transformers to place the
+model on CUDA during weight load with `device_map=0`. Setup logs include GPU
+memory used/free snapshots while weights load. If the UI says there is no
+model-sized CUDA allocation yet, treat that as a real blocker instead of
+progress: restart the Colab runtime, reinstall `.[sam3-transformers]`, verify
+`accelerate` is installed, and rerun Prepare local model.
+
 ## Colab Checkpoint Path Flow
 
 For Colab, the expected local setup order is:
@@ -157,6 +165,7 @@ Hugging Face cache, support a Google Drive
 | `SAM3_LOCAL_MODEL=/content/sam3` | This is the cloned source/package directory, not the checkpoint. | Install from `/content/sam3`, but set `SAM3_LOCAL_MODEL` to the downloaded `sam3.pt` file. |
 | `sam3TrackerModel=/path/to/sam3.pt` | Scene sweep received a single checkpoint file. Transformers expects a repo id or local model directory. | Use `sam3TrackerModel=facebook/sam3`, a local Hugging Face `from_pretrained` directory, or the UI Cache model action. Keep `sam3.pt` for `sam3ModelPath`. |
 | Missing Hugging Face access | The gated Hugging Face file cannot be resolved. | In the Local UI, paste a Hugging Face token in Model setup and use `Check Hugging Face access`; headless users can set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` without printing it. |
+| `Loading SAM3 Tracker model weights` repeats with `no model-sized CUDA allocation yet` | Transformers has not placed the SAM3 model weights on GPU. This is not successful progress. | Confirm Colab is on a CUDA runtime, reinstall `.[sam3-transformers]` so `accelerate` is present, restart the runtime to clear stale GPU memory, then rerun Prepare local model. |
 | User does not want Hugging Face token setup | Official-package SAM3 concept/exemplar still needs an approved checkpoint, but scene sweep can use a SAM3 Tracker-compatible Transformers model path/id. | Use `SAM3_TRACKER_MODEL` for scene sweep, mount Google Drive or paste an approved `sam3.pt` for concept/exemplar, or use hosted concept/image workflows. |
 | Access not approved | Hugging Face rejects the checkpoint download. | Open the model page while signed in, accept the access terms, then rerun the resolver. |
 | Path does not exist | MotionJSON cannot find the local checkpoint file. | Rerun the resolver or paste the exact `sam3.pt` path printed by Hugging Face Hub. |

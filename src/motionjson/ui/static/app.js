@@ -3036,7 +3036,17 @@ const MotionJSONUI = (() => {
     const loadRunning =
       setupRunning &&
       ["smoke", "prepare_model"].includes(setupJob.action) &&
-      hasSetupEvent("loading_transformers_pipeline", "loading_sam3_tracker_processor", "loading_sam3_tracker_model_weights", "moving_model_to_device", "model_loaded", "model_device_verified");
+      hasSetupEvent(
+        "loading_transformers_pipeline",
+        "loading_sam3_tracker_processor",
+        "loading_sam3_tracker_model_weights",
+        "sam3_tracker_model_load_attempt",
+        "sam3_tracker_model_load_retry",
+        "moving_model_to_device",
+        "model_loaded_on_device",
+        "model_loaded",
+        "model_device_verified"
+      );
     const warmupRunning = setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) && hasSetupEvent("warmup_started", "warmup_succeeded");
     const steps = [
       {

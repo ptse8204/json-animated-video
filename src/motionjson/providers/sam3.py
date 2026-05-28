@@ -30,6 +30,8 @@ SAM3_FROM_PRETRAINED_WEIGHT_GLOBS = (
     "flax_model*.msgpack",
     "*.ckpt",
 )
+SAM3_TRACKER_HEARTBEAT_SECONDS = 15.0
+SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB = 256.0
 
 
 def is_probably_hf_repo_id(value: str) -> bool:
@@ -494,6 +496,10 @@ def _load_sam3_tracker_grid_generator(
 ) -> SAM3TrackerPointGridMaskGenerator:
     offline_env = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"} if local_dir_verified else {}
     device_actual = _device_actual_from_request(requested_device)
+    cuda_requested = device_actual.startswith("cuda")
+    cuda_index = _cuda_device_index(device_actual)
+    load_gpu_before = _cuda_memory_snapshot(torch, cuda_index) if cuda_requested else {}
+    monitor = _cuda_load_monitor(torch, cuda_index, load_gpu_before) if cuda_requested else None
     with _temporary_environ(offline_env):
         if progress:
             progress("loading_sam3_tracker_processor", "Loading SAM3 Tracker processor", 48, True)
@@ -503,36 +509,57 @@ def _load_sam3_tracker_grid_generator(
             event_type="loading_sam3_tracker_processor",
             message="Loading SAM3 Tracker processor",
             percent=48,
+            interval_seconds=SAM3_TRACKER_HEARTBEAT_SECONDS,
         )
         if progress:
-            progress("loading_sam3_tracker_model_weights", "Loading SAM3 Tracker model weights", 55, True)
+            progress(
+                "loading_sam3_tracker_model_weights",
+                _sam3_model_load_start_message(device_actual, monitor),
+                55,
+                False,
+            )
+            progress("sam3_tracker_model_load_attempt", _sam3_model_load_attempt_message(torch, device_actual), 55, False)
         model = _run_with_progress_heartbeat(
-            lambda: model_cls.from_pretrained(model_value),
+            lambda: _load_sam3_tracker_model(model_cls, model_value, torch=torch, device_actual=device_actual),
             progress=progress,
             event_type="loading_sam3_tracker_model_weights",
             message="Loading SAM3 Tracker model weights",
             percent=55,
+            interval_seconds=SAM3_TRACKER_HEARTBEAT_SECONDS,
+            monitor=monitor,
         )
     if model is None or processor is None:
         raise ProviderExecutionError("SAM3 Tracker direct loader returned an empty model or processor.")
-    if progress:
-        progress("moving_model_to_device", f"Moving SAM3 Tracker model to {device_actual}", 62, True)
+    inspected_after_load = _model_device_inspection(model)
+    if cuda_requested and inspected_after_load.get("deviceType") == "cuda":
+        if progress:
+            progress(
+                "model_loaded_on_device",
+                _sam3_loaded_on_device_message(device_actual, monitor),
+                62,
+                True,
+            )
+    else:
+        if progress:
+            progress("moving_model_to_device", f"Moving SAM3 Tracker model to {device_actual}", 62, True)
 
-    def move_model_to_device() -> Any:
-        if not hasattr(model, "to"):
-            return model
-        try:
-            return model.to(device_actual)
-        except TypeError:
-            return model.to(requested_device)
+        def move_model_to_device() -> Any:
+            if not hasattr(model, "to"):
+                return model
+            try:
+                return model.to(device_actual)
+            except TypeError:
+                return model.to(requested_device)
 
-    model = _run_with_progress_heartbeat(
-        move_model_to_device,
-        progress=progress,
-        event_type="moving_model_to_device",
-        message=f"Moving SAM3 Tracker model to {device_actual}",
-        percent=62,
-    )
+        model = _run_with_progress_heartbeat(
+            move_model_to_device,
+            progress=progress,
+            event_type="moving_model_to_device",
+            message=f"Moving SAM3 Tracker model to {device_actual}",
+            percent=62,
+            interval_seconds=SAM3_TRACKER_HEARTBEAT_SECONDS,
+            monitor=monitor,
+        )
     if hasattr(model, "eval"):
         model.eval()
     generator = SAM3TrackerPointGridMaskGenerator(model=model, processor=processor, torch=torch, device=device_actual)
@@ -592,6 +619,101 @@ def _temporary_environ(values: Mapping[str, str]):
                 os.environ[key] = str(value)
 
 
+def _load_sam3_tracker_model(
+    model_cls: Any,
+    model_value: str,
+    *,
+    torch: Any,
+    device_actual: str,
+) -> Any:
+    strategies = _sam3_model_load_strategies(torch, device_actual)
+    for index, strategy in enumerate(strategies, start=1):
+        kwargs = dict(strategy["kwargs"])
+        try:
+            return model_cls.from_pretrained(model_value, **kwargs)
+        except TypeError:
+            if index >= len(strategies):
+                raise
+            continue
+        except Exception:
+            if index >= len(strategies):
+                raise
+            continue
+    return model_cls.from_pretrained(model_value)
+
+
+def _sam3_model_load_strategies(torch: Any, device_actual: str) -> list[dict[str, Any]]:
+    if not str(device_actual).startswith("cuda"):
+        return [{"label": "plain from_pretrained", "kwargs": {}}]
+    cuda_index = _cuda_device_index(device_actual)
+    strategies: list[dict[str, Any]] = [
+        {
+            "label": f"CUDA device_map={cuda_index}",
+            "kwargs": {"device_map": cuda_index, "low_cpu_mem_usage": True, "torch_dtype": "auto"},
+        },
+        {
+            "label": f"CUDA dtype=device_map={cuda_index}",
+            "kwargs": {"device_map": cuda_index, "low_cpu_mem_usage": True, "dtype": "auto"},
+        },
+        {
+            "label": "automatic device_map",
+            "kwargs": {"device_map": "auto", "low_cpu_mem_usage": True, "torch_dtype": "auto"},
+        },
+        {"label": "plain from_pretrained then explicit CUDA move", "kwargs": {}},
+    ]
+    return strategies
+
+
+def _sam3_model_load_attempt_message(torch: Any, device_actual: str) -> str:
+    strategy = _sam3_model_load_strategies(torch, device_actual)[0]
+    return f"Loading SAM3 Tracker weights with {strategy['label']}"
+
+
+def _sam3_model_load_start_message(device_actual: str, monitor: Any | None) -> str:
+    if monitor is None:
+        return "Loading SAM3 Tracker model weights"
+    summary = monitor()
+    gpu = summary.get("gpuMemory") if isinstance(summary, Mapping) else {}
+    used = gpu.get("usedMiB") if isinstance(gpu, Mapping) else None
+    total = gpu.get("totalMiB") if isinstance(gpu, Mapping) else None
+    if used is not None and total is not None:
+        return f"Loading SAM3 Tracker model weights directly onto {device_actual}. GPU memory: {used} MiB used of {total} MiB."
+    return f"Loading SAM3 Tracker model weights directly onto {device_actual}"
+
+
+def _sam3_loaded_on_device_message(device_actual: str, monitor: Any | None) -> str:
+    if monitor is None:
+        return f"SAM3 Tracker model weights loaded on {device_actual}"
+    summary = monitor()
+    gpu = summary.get("gpuMemory") if isinstance(summary, Mapping) else {}
+    used = gpu.get("usedMiB") if isinstance(gpu, Mapping) else None
+    delta = gpu.get("usedDeltaMiB") if isinstance(gpu, Mapping) else None
+    if used is not None and delta is not None:
+        return f"SAM3 Tracker model weights loaded on {device_actual}. GPU memory: {used} MiB used, +{delta} MiB during load."
+    return f"SAM3 Tracker model weights loaded on {device_actual}"
+
+
+def _cuda_load_monitor(torch: Any, index: int, before: Mapping[str, Any]) -> Any:
+    before_used = _float_or_none(before.get("usedMiB"))
+
+    def monitor() -> dict[str, Any]:
+        snapshot = _cuda_memory_snapshot(torch, index)
+        if snapshot:
+            after_used = _float_or_none(snapshot.get("usedMiB"))
+            if before_used is not None and after_used is not None:
+                snapshot = {**snapshot, "usedDeltaMiB": round(after_used - before_used, 1)}
+        return {"gpuMemory": snapshot}
+
+    return monitor
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _run_with_progress_heartbeat(
     action: Any,
     *,
@@ -600,6 +722,7 @@ def _run_with_progress_heartbeat(
     message: str,
     percent: int,
     interval_seconds: float = 20.0,
+    monitor: Any | None = None,
 ) -> Any:
     if progress is None:
         return action()
@@ -611,12 +734,33 @@ def _run_with_progress_heartbeat(
                 return future.result(timeout=interval_seconds)
             except FutureTimeoutError:
                 elapsed_seconds = max(1, int(time.monotonic() - started))
-                elapsed_minutes = elapsed_seconds // 60
-                if elapsed_minutes:
-                    elapsed_label = f"{elapsed_minutes}m {elapsed_seconds % 60}s"
-                else:
-                    elapsed_label = f"{elapsed_seconds}s"
-                progress(event_type, f"{message} ({elapsed_label} elapsed; still working)", percent, True)
+                progress(event_type, _heartbeat_message(message, elapsed_seconds, monitor), percent, False)
+
+
+def _heartbeat_message(message: str, elapsed_seconds: int, monitor: Any | None) -> str:
+    elapsed_minutes = elapsed_seconds // 60
+    if elapsed_minutes:
+        elapsed_label = f"{elapsed_minutes}m {elapsed_seconds % 60}s"
+    else:
+        elapsed_label = f"{elapsed_seconds}s"
+    detail = ""
+    if monitor is not None:
+        summary = monitor()
+        gpu = summary.get("gpuMemory") if isinstance(summary, Mapping) else {}
+        if isinstance(gpu, Mapping) and gpu:
+            used = gpu.get("usedMiB")
+            total = gpu.get("totalMiB")
+            delta = gpu.get("usedDeltaMiB")
+            if used is not None and total is not None and delta is not None:
+                progress_note = "CUDA allocation is increasing" if float(delta) >= SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB else "no model-sized CUDA allocation yet"
+                detail = f"; GPU {used}/{total} MiB used, {delta:+.1f} MiB since this step began, {progress_note}"
+            elif used is not None and total is not None:
+                detail = f"; GPU {used}/{total} MiB used"
+    return f"{message} ({elapsed_label} elapsed{detail})"
+
+
+def _model_device_inspection(model: Any) -> dict[str, Any]:
+    return _pipeline_model_device(type("_GeneratorDeviceProbe", (), {"model": model})())
 
 
 def _first_output_value(output: Any, keys: Sequence[str]) -> Any:
@@ -669,6 +813,7 @@ def _cuda_memory_snapshot(torch: Any, index: int) -> dict[str, Any]:
         "totalBytes": int(total_bytes),
         "usedBytes": used_bytes,
         "freeMiB": round(int(free_bytes) / 1024 / 1024, 1),
+        "totalMiB": round(int(total_bytes) / 1024 / 1024, 1),
         "usedMiB": round(used_bytes / 1024 / 1024, 1),
     }
 
@@ -738,6 +883,32 @@ def _call_scene_sweep_generator(generator: Any, image: Image.Image, *, points_pe
             except TypeError:
                 return generator(image)
     raise ProviderExecutionError("SAM3 scene sweep mask generator must expose generate() or be callable.")
+
+
+def _scene_sweep_load_progress(ctx: Any | None, runtime_public: Mapping[str, Any]) -> Any | None:
+    if ctx is None or not hasattr(ctx, "emit"):
+        return None
+
+    def progress(event_type: str, label: str, percent: int | float | None = None, known: bool = False) -> None:
+        try:
+            stage_ratio = max(0.0, min(float(percent if percent is not None else 0) / 100.0, 1.0))
+        except (TypeError, ValueError):
+            stage_ratio = 0.0
+        ctx.emit(
+            "candidate_discovery",
+            "running",
+            label,
+            progress={"overallRatio": 0.30 + stage_ratio * 0.01, "stageRatio": stage_ratio},
+            metadata={
+                "provider": "sam3-local",
+                "discoveryMode": "sam3_auto_masks",
+                "eventType": event_type,
+                "knownProgress": bool(known),
+                "runtimeContract": dict(runtime_public),
+            },
+        )
+
+    return progress
 
 
 def _sam3_grid_points(width: int, height: int, *, max_points: int) -> list[tuple[float, float]]:
@@ -865,7 +1036,7 @@ class LocalSAM3DiscoveryBackend:
                     "runtimeContract": dict(runtime_public),
                 },
             )
-        generator = self._ensure_tracker_mask_generator(config)
+        generator = self._ensure_tracker_mask_generator(config, progress=_scene_sweep_load_progress(ctx, runtime_public))
         keyframes = _scene_sweep_keyframes(video, config)
         records: list[dict[str, Any]] = []
         max_per_keyframe = _int_config(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), 64)
@@ -1084,7 +1255,7 @@ class LocalSAM3DiscoveryBackend:
         self._video_predictor = self._call_builder(build_sam3_video_predictor)
         return self._video_predictor
 
-    def _ensure_tracker_mask_generator(self, config: Mapping[str, Any]) -> Any:
+    def _ensure_tracker_mask_generator(self, config: Mapping[str, Any], progress: Any | None = None) -> Any:
         if self.tracker_mask_generator is not None:
             self._prefer_tracker_video = True
             return self.tracker_mask_generator
@@ -1112,7 +1283,7 @@ class LocalSAM3DiscoveryBackend:
                 model_cls=Sam3TrackerModel,
                 processor_cls=Sam3TrackerProcessor,
                 local_dir_verified=local_dir_verified,
-                progress=None,
+                progress=progress,
             )
         except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
             raise ProviderConfigError(f"SAM3 Tracker direct runtime could not be initialized: {exc}") from exc
