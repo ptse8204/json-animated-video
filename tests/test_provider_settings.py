@@ -62,6 +62,13 @@ class FakeHostedSAM3Transport:
 def install_fake_torch(monkeypatch, *, cuda: bool = False):
     fake_torch = types.ModuleType("torch")
     fake_torch.__spec__ = ModuleSpec("torch", loader=None)
+    class FakeNoGrad:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, _exc_type, _exc, _traceback):
+            return False
+
     fake_torch.cuda = types.SimpleNamespace(
         is_available=lambda: cuda,
         get_device_name=lambda index=0: f"Fake CUDA {index}",
@@ -69,6 +76,7 @@ def install_fake_torch(monkeypatch, *, cuda: bool = False):
         mem_get_info=lambda index=0: (6 * 1024 * 1024 * 1024, 8 * 1024 * 1024 * 1024),
     )
     fake_torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
+    fake_torch.no_grad = lambda: FakeNoGrad()
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
     return fake_torch
 
@@ -101,10 +109,6 @@ def write_fake_from_pretrained_dir(path, *, model_type: str = "sam3", with_weigh
 def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | None = None, *, device_type: str = "cuda"):
     fake_transformers = types.ModuleType("transformers")
     fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
-    fake_transformers.Sam3TrackerModel = object
-    fake_transformers.Sam3TrackerProcessor = object
-    fake_transformers.Sam3TrackerVideoModel = object
-    fake_transformers.Sam3TrackerVideoProcessor = object
 
     class FakeDevice:
         type = device_type
@@ -116,8 +120,60 @@ def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | No
         device = FakeDevice()
 
     class FakeModel:
+        device = FakeDevice()
+
+        @classmethod
+        def from_pretrained(cls, model):
+            if seen is not None:
+                seen["modelFromPretrained"] = {
+                    "model": model,
+                    "hfHubOffline": os.environ.get("HF_HUB_OFFLINE"),
+                    "transformersOffline": os.environ.get("TRANSFORMERS_OFFLINE"),
+                }
+            return cls()
+
+        def to(self, device):
+            if seen is not None:
+                seen["modelTo"] = str(device)
+            return self
+
+        def eval(self):
+            if seen is not None:
+                seen["modelEval"] = True
+            return self
+
         def parameters(self):
             return iter([FakeParam()])
+
+        def __call__(self, **_inputs):
+            return types.SimpleNamespace(pred_masks=[[[0, 1], [1, 0]]], iou_scores=[1.0])
+
+    class FakeInputs(dict):
+        def to(self, device):
+            if seen is not None:
+                seen["inputsTo"] = str(device)
+            return self
+
+    class FakeProcessor:
+        @classmethod
+        def from_pretrained(cls, model):
+            if seen is not None:
+                seen["processorFromPretrained"] = {
+                    "model": model,
+                    "hfHubOffline": os.environ.get("HF_HUB_OFFLINE"),
+                    "transformersOffline": os.environ.get("TRANSFORMERS_OFFLINE"),
+                }
+            return cls()
+
+        def __call__(self, *args, **kwargs):
+            if seen is not None:
+                seen["processorCall"] = {"args": len(args), "kwargs": sorted(kwargs)}
+            return FakeInputs(original_sizes=[[2, 2]])
+
+        def post_process_masks(self, masks, original_sizes=None):
+            if seen is not None:
+                seen["postProcess"] = {"originalSizes": original_sizes}
+            return [[masks]]
 
     class FakePipeline:
         model = FakeModel()
@@ -138,6 +194,10 @@ def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | No
         return FakePipeline()
 
     fake_transformers.pipeline = pipeline
+    fake_transformers.Sam3TrackerModel = FakeModel
+    fake_transformers.Sam3TrackerProcessor = FakeProcessor
+    fake_transformers.Sam3TrackerVideoModel = object
+    fake_transformers.Sam3TrackerVideoProcessor = object
     monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
     monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_auto_masks_importable", lambda: True)
     monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_video_importable", lambda: True)
@@ -871,14 +931,20 @@ def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(t
     assert smoke["result"]["smokeTest"]["runtimeModelSource"] == "saved_cache"
     assert smoke["result"]["smokeTest"]["loadedOnCuda"] is True
     assert smoke["result"]["smokeTest"]["warmupStatus"] == "succeeded"
-    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
-    assert seen["pipeline"]["device"] == 0  # type: ignore[index]
-    assert "local_files_only" not in seen["pipeline"]["kwargs"]  # type: ignore[index]
-    assert "model_kwargs" not in seen["pipeline"]["kwargs"]  # type: ignore[index]
-    assert seen["pipeline"]["hfHubOffline"] == "1"  # type: ignore[index]
-    assert seen["pipeline"]["transformersOffline"] == "1"  # type: ignore[index]
+    assert seen["processorFromPretrained"]["model"] == str(model_dir)  # type: ignore[index]
+    assert seen["modelFromPretrained"]["model"] == str(model_dir)  # type: ignore[index]
+    assert seen["processorFromPretrained"]["hfHubOffline"] == "1"  # type: ignore[index]
+    assert seen["modelFromPretrained"]["transformersOffline"] == "1"  # type: ignore[index]
+    assert seen["modelTo"] == "cuda:0"
     event_types = {event["type"] for event in smoke["events"]}
-    assert {"loading_transformers_pipeline", "model_device_verified", "warmup_succeeded", "ready_for_extraction"}.issubset(event_types)
+    assert {
+        "loading_sam3_tracker_processor",
+        "loading_sam3_tracker_model_weights",
+        "moving_model_to_device",
+        "model_device_verified",
+        "warmup_succeeded",
+        "ready_for_extraction",
+    }.issubset(event_types)
     assert "SAM3_LOCAL_MODEL" not in smoke["result"]["message"]
     assert str(model_dir) not in body.decode("utf-8")
 

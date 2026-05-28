@@ -415,6 +415,7 @@ def _runtime_verified_for_extraction(verification: dict[str, Any]) -> bool:
 def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any], *, device_requested: str) -> dict[str, Any]:
     verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
     model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+    default_runtime_kind = "transformers_sam3_tracker_direct" if provider_id == "sam3-local" else "transformers_mask_generation"
     return {
         "providerId": provider_id,
         "modelId": _safe_public_runtime_model_id(str(model_cache.get("model") or runtime.get("selected_model") or "")),
@@ -422,7 +423,7 @@ def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any],
         "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
         "deviceRequested": str(verification.get("deviceRequested") or device_requested or ""),
         "deviceActual": str(verification.get("deviceActual") or device_requested or ""),
-        "runtimeKind": str(verification.get("runtimeKind") or "transformers_mask_generation"),
+        "runtimeKind": str(verification.get("runtimeKind") or default_runtime_kind),
         "loadedOnCuda": bool(verification.get("loadedOnCuda")),
         "warmupStatus": str(verification.get("warmupStatus") or "not_verified"),
         "lastVerifiedAt": verification.get("lastVerifiedAt") or "",

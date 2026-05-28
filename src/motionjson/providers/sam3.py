@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 import io
 import json
@@ -311,7 +312,7 @@ def sam3_scene_sweep_warmup(
     points_per_batch: int = 16,
     progress: Any | None = None,
 ) -> dict[str, Any]:
-    """Load the SAM3 Tracker mask-generation pipeline and run a bounded inference."""
+    """Load SAM3 Tracker directly and run a bounded inference."""
 
     requested_device = str(device or "cuda").strip() or "cuda"
     model_value = str(model_id or "").strip()
@@ -327,10 +328,10 @@ def sam3_scene_sweep_warmup(
             "PyTorch is not installed. Install a CUDA-capable torch build before preparing SAM3 Scene Sweep."
         ) from exc
     try:
-        from transformers import pipeline  # type: ignore
+        from transformers import Sam3TrackerModel, Sam3TrackerProcessor  # type: ignore
     except ImportError as exc:
         raise ProviderConfigError(
-            "Transformers is not installed or is too old for SAM3 Tracker mask-generation. Install the sam3-transformers extra."
+            "Transformers is not installed or is too old for SAM3 Tracker direct loading. Install the sam3-transformers extra."
         ) from exc
 
     local_dir_verified = _verify_from_pretrained_dir_if_local(model_value)
@@ -354,28 +355,31 @@ def sam3_scene_sweep_warmup(
 
     if progress:
         progress(
-            "loading_transformers_pipeline",
-            "Loading SAM3 Tracker mask-generation pipeline from the recorded local cache. This can take several minutes on first CUDA load.",
+            "loading_sam3_tracker_processor",
+            "Loading SAM3 Tracker processor from the recorded local cache",
             46,
             True,
         )
-    device_arg = _transformers_device(requested_device)
     try:
-        offline_env = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"} if local_dir_verified else {}
-        with _temporary_environ(offline_env):
-            generator = pipeline("mask-generation", model=model_value, device=device_arg)
+        generator = _load_sam3_tracker_grid_generator(
+            model_value,
+            requested_device=requested_device,
+            torch=torch,
+            model_cls=Sam3TrackerModel,
+            processor_cls=Sam3TrackerProcessor,
+            local_dir_verified=local_dir_verified,
+            progress=progress,
+        )
     except Exception as exc:
-        raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
+        raise ProviderConfigError(f"SAM3 Tracker direct runtime could not be initialized: {exc}") from exc
     if generator is None:
-        raise ProviderExecutionError("Transformers returned an empty SAM3 mask-generation pipeline.")
-    if progress:
-        progress("model_loaded", "SAM3 Tracker pipeline loaded", 60, True)
+        raise ProviderExecutionError("Transformers returned an empty SAM3 Tracker runtime.")
 
     inspected_device = _pipeline_model_device(generator)
     device_actual = inspected_device.get("device") or _device_actual_from_request(requested_device)
     if cuda_requested and inspected_device.get("deviceType") and inspected_device.get("deviceType") != "cuda":
         raise ProviderExecutionError(
-            f"SAM3 Tracker pipeline loaded on {device_actual}, but CUDA was requested. "
+            f"SAM3 Tracker runtime loaded on {device_actual}, but CUDA was requested. "
             "Choose a CUDA device or fix the CUDA torch/Transformers installation."
         )
     loaded_on_cuda = bool(cuda_requested and (inspected_device.get("deviceType") in {"cuda", ""} or str(device_actual).startswith("cuda")))
@@ -386,7 +390,7 @@ def sam3_scene_sweep_warmup(
     if progress:
         progress("warmup_started", "Running bounded SAM3 Scene Sweep warmup inference", 82, True)
     try:
-        output = _call_scene_sweep_generator(generator, image, points_per_batch=points_per_batch)
+        output = _call_scene_sweep_generator(generator, image, points_per_batch=min(max(points_per_batch, 1), 4))
         records = normalize_sam3_output(output)
     except ProviderExecutionError:
         raise
@@ -404,7 +408,7 @@ def sam3_scene_sweep_warmup(
         "status": "ok",
         "providerName": "sam3-local",
         "sceneSweep": True,
-        "runtimeKind": "transformers_mask_generation",
+        "runtimeKind": "transformers_sam3_tracker_direct",
         "modelObjectLoaded": True,
         "deviceRequested": requested_device,
         "deviceActual": device_actual,
@@ -417,6 +421,124 @@ def sam3_scene_sweep_warmup(
         "gpuMemoryBefore": gpu_before,
         "gpuMemoryAfter": gpu_after,
     }
+
+
+class SAM3TrackerPointGridMaskGenerator:
+    """Small direct SAM3 Tracker adapter that avoids the opaque pipeline constructor."""
+
+    def __init__(self, *, model: Any, processor: Any, torch: Any, device: str):
+        self.model = model
+        self.processor = processor
+        self.torch = torch
+        self.device = device
+
+    def generate(self, image: Any, *, points_per_batch: int = 16, **_kwargs: Any) -> dict[str, Any]:
+        pil_image = image if isinstance(image, Image.Image) else Image.fromarray(np.asarray(image, dtype=np.uint8)).convert("RGB")
+        points = _sam3_grid_points(pil_image.width, pil_image.height, max_points=max(1, min(int(points_per_batch or 1), 64)))
+        input_points = [[[[float(x), float(y)]] for x, y in points]]
+        input_labels = [[[1] for _ in points]]
+        try:
+            inputs = self.processor(
+                images=pil_image,
+                input_points=input_points,
+                input_labels=input_labels,
+                return_tensors="pt",
+            )
+        except TypeError:
+            inputs = self.processor(
+                pil_image,
+                input_points=input_points,
+                input_labels=input_labels,
+                return_tensors="pt",
+            )
+        inputs = _inputs_to_device(inputs, self.device)
+        try:
+            with self.torch.no_grad():
+                outputs = self.model(**inputs, multimask_output=False)
+        except TypeError:
+            with self.torch.no_grad():
+                outputs = self.model(**inputs)
+        raw_masks = getattr(outputs, "pred_masks", None)
+        if raw_masks is None and isinstance(outputs, Mapping):
+            raw_masks = outputs.get("pred_masks")
+            if raw_masks is None:
+                raw_masks = outputs.get("masks")
+        if raw_masks is None:
+            return normalize_sam3_output(outputs)
+        original_sizes = _input_value(inputs, "original_sizes")
+        masks_input = raw_masks.cpu() if hasattr(raw_masks, "cpu") else raw_masks
+        try:
+            processed_masks = self.processor.post_process_masks(masks_input, original_sizes)[0]
+        except TypeError:
+            processed_masks = self.processor.post_process_masks(masks_input, original_sizes=original_sizes)[0]
+        scores = _first_output_value(outputs, ("iou_scores", "pred_iou_scores", "scores"))
+        return {
+            "masks": processed_masks,
+            "scores": scores,
+            "labels": [f"point grid {index + 1}" for index in range(len(points))],
+            "object_ids": [f"sam3_grid_{index + 1:03d}" for index in range(len(points))],
+        }
+
+    __call__ = generate
+
+
+def _load_sam3_tracker_grid_generator(
+    model_value: str,
+    *,
+    requested_device: str,
+    torch: Any,
+    model_cls: Any,
+    processor_cls: Any,
+    local_dir_verified: bool,
+    progress: Any | None = None,
+) -> SAM3TrackerPointGridMaskGenerator:
+    offline_env = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"} if local_dir_verified else {}
+    device_actual = _device_actual_from_request(requested_device)
+    with _temporary_environ(offline_env):
+        if progress:
+            progress("loading_sam3_tracker_processor", "Loading SAM3 Tracker processor", 48, True)
+        processor = _run_with_progress_heartbeat(
+            lambda: processor_cls.from_pretrained(model_value),
+            progress=progress,
+            event_type="loading_sam3_tracker_processor",
+            message="Loading SAM3 Tracker processor",
+            percent=48,
+        )
+        if progress:
+            progress("loading_sam3_tracker_model_weights", "Loading SAM3 Tracker model weights", 55, True)
+        model = _run_with_progress_heartbeat(
+            lambda: model_cls.from_pretrained(model_value),
+            progress=progress,
+            event_type="loading_sam3_tracker_model_weights",
+            message="Loading SAM3 Tracker model weights",
+            percent=55,
+        )
+    if model is None or processor is None:
+        raise ProviderExecutionError("SAM3 Tracker direct loader returned an empty model or processor.")
+    if progress:
+        progress("moving_model_to_device", f"Moving SAM3 Tracker model to {device_actual}", 62, True)
+
+    def move_model_to_device() -> Any:
+        if not hasattr(model, "to"):
+            return model
+        try:
+            return model.to(device_actual)
+        except TypeError:
+            return model.to(requested_device)
+
+    model = _run_with_progress_heartbeat(
+        move_model_to_device,
+        progress=progress,
+        event_type="moving_model_to_device",
+        message=f"Moving SAM3 Tracker model to {device_actual}",
+        percent=62,
+    )
+    if hasattr(model, "eval"):
+        model.eval()
+    generator = SAM3TrackerPointGridMaskGenerator(model=model, processor=processor, torch=torch, device=device_actual)
+    if progress:
+        progress("model_loaded", "SAM3 Tracker model and processor loaded", 66, True)
+    return generator
 
 
 def _verify_from_pretrained_dir_if_local(model_value: str) -> bool:
@@ -468,6 +590,46 @@ def _temporary_environ(values: Mapping[str, str]):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = str(value)
+
+
+def _run_with_progress_heartbeat(
+    action: Any,
+    *,
+    progress: Any | None,
+    event_type: str,
+    message: str,
+    percent: int,
+    interval_seconds: float = 20.0,
+) -> Any:
+    if progress is None:
+        return action()
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(action)
+        while True:
+            try:
+                return future.result(timeout=interval_seconds)
+            except FutureTimeoutError:
+                elapsed_seconds = max(1, int(time.monotonic() - started))
+                elapsed_minutes = elapsed_seconds // 60
+                if elapsed_minutes:
+                    elapsed_label = f"{elapsed_minutes}m {elapsed_seconds % 60}s"
+                else:
+                    elapsed_label = f"{elapsed_seconds}s"
+                progress(event_type, f"{message} ({elapsed_label} elapsed; still working)", percent, True)
+
+
+def _first_output_value(output: Any, keys: Sequence[str]) -> Any:
+    for key in keys:
+        value = getattr(output, key, None)
+        if value is not None:
+            return value
+    if isinstance(output, Mapping):
+        for key in keys:
+            value = output.get(key)
+            if value is not None:
+                return value
+    return None
 
 
 def _cuda_device_index(device: str) -> int:
@@ -576,6 +738,43 @@ def _call_scene_sweep_generator(generator: Any, image: Image.Image, *, points_pe
             except TypeError:
                 return generator(image)
     raise ProviderExecutionError("SAM3 scene sweep mask generator must expose generate() or be callable.")
+
+
+def _sam3_grid_points(width: int, height: int, *, max_points: int) -> list[tuple[float, float]]:
+    count = max(1, int(max_points or 1))
+    side = int(np.ceil(np.sqrt(count)))
+    x_values = np.linspace(width * 0.18, width * 0.82, side)
+    y_values = np.linspace(height * 0.18, height * 0.82, side)
+    points: list[tuple[float, float]] = []
+    for y in y_values:
+        for x in x_values:
+            points.append((float(x), float(y)))
+            if len(points) >= count:
+                return points
+    return points
+
+
+def _inputs_to_device(inputs: Any, device: str) -> Any:
+    if hasattr(inputs, "to"):
+        try:
+            return inputs.to(device)
+        except TypeError:
+            return inputs.to(str(device))
+    if isinstance(inputs, Mapping):
+        return {
+            key: value.to(device) if hasattr(value, "to") else value
+            for key, value in inputs.items()
+        }
+    return inputs
+
+
+def _input_value(inputs: Any, key: str) -> Any:
+    if isinstance(inputs, Mapping):
+        return inputs.get(key)
+    try:
+        return inputs[key]
+    except Exception:
+        return getattr(inputs, key, None)
 
 
 @dataclass
@@ -898,19 +1097,41 @@ class LocalSAM3DiscoveryBackend:
             return self._tracker_mask_generator
         model_id = _tracker_model_id(config, fallback=self.model_path)
         try:
+            import torch  # type: ignore
+            from transformers import Sam3TrackerModel, Sam3TrackerProcessor  # type: ignore
+        except ImportError as exc:
+            self._tracker_mask_generator = self._ensure_tracker_mask_generation_pipeline(model_id)
+            self._prefer_tracker_video = True
+            return self._tracker_mask_generator
+        local_dir_verified = _verify_from_pretrained_dir_if_local(str(model_id))
+        try:
+            self._tracker_mask_generator = _load_sam3_tracker_grid_generator(
+                str(model_id),
+                requested_device=self.device,
+                torch=torch,
+                model_cls=Sam3TrackerModel,
+                processor_cls=Sam3TrackerProcessor,
+                local_dir_verified=local_dir_verified,
+                progress=None,
+            )
+        except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
+            raise ProviderConfigError(f"SAM3 Tracker direct runtime could not be initialized: {exc}") from exc
+        self._prefer_tracker_video = True
+        return self._tracker_mask_generator
+
+    def _ensure_tracker_mask_generation_pipeline(self, model_id: str) -> Any:
+        try:
             from transformers import pipeline  # type: ignore
         except ImportError as exc:
             raise ProviderConfigError(
-                "sam3_auto_masks scene sweep requires Hugging Face Transformers SAM3 Tracker mask-generation support. "
+                "sam3_auto_masks scene sweep requires Hugging Face Transformers SAM3 Tracker support. "
                 "Install the independent sam3-transformers extra or use discovery.config.mock=true; SAM2 is not required."
             ) from exc
         device = _transformers_device(self.device)
         try:
-            self._tracker_mask_generator = pipeline("mask-generation", model=model_id, device=device)
+            return pipeline("mask-generation", model=model_id, device=device)
         except Exception as exc:  # pragma: no cover - depends on optional runtime/model access.
             raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
-        self._prefer_tracker_video = True
-        return self._tracker_mask_generator
 
     def _ensure_tracker_video(self, config: Mapping[str, Any]) -> tuple[Any, Any]:
         if self.tracker_video_model is not None and self.tracker_video_processor is not None:

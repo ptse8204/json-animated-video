@@ -4,6 +4,7 @@ import builtins
 import io
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from motionjson.providers.sam3 import (
     describe_sam3_tracker_model,
     find_sam3_checkpoint_candidates,
     normalize_sam3_output,
+    _run_with_progress_heartbeat,
 )
 from motionjson.tracks import RunContext, VideoSource
 from motionjson.video import Frame, VideoInfo
@@ -627,6 +629,27 @@ def test_sam3_scene_sweep_accepts_local_hf_model_directory(tmp_path, monkeypatch
 
     assert captured["model"] == str(model_dir)
     assert describe_sam3_tracker_model(model_dir)["valueKind"] == "hf_model_directory"
+
+
+def test_sam3_loader_heartbeat_reports_long_blocking_steps():
+    events = []
+
+    def progress(event_type, message, percent, _debug):
+        events.append({"type": event_type, "message": message, "percent": percent})
+
+    result = _run_with_progress_heartbeat(
+        lambda: (time.sleep(0.03), "loaded")[1],
+        progress=progress,
+        event_type="loading_sam3_tracker_model_weights",
+        message="Loading SAM3 Tracker model weights",
+        percent=55,
+        interval_seconds=0.01,
+    )
+
+    assert result == "loaded"
+    assert events
+    assert events[0]["type"] == "loading_sam3_tracker_model_weights"
+    assert "still working" in events[0]["message"]
 
 
 def test_local_sam3_backend_validates_missing_model_path():

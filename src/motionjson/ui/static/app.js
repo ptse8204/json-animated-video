@@ -3033,7 +3033,10 @@ const MotionJSONUI = (() => {
     const verificationReady = runtimeVerification.verified === true || (!localCacheProvider && setupState.status === "ready") || setupJob?.result?.ready === true;
     const loadedOnCuda = runtimeVerification.loadedOnCuda === true || setupJob?.result?.smokeTest?.loadedOnCuda === true;
     const deviceActual = runtimeVerification.deviceActual || setupJob?.result?.smokeTest?.deviceActual || provider?.settings?.sam3Device || "cuda";
-    const loadRunning = setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) && hasSetupEvent("loading_transformers_pipeline", "model_loaded", "model_device_verified");
+    const loadRunning =
+      setupRunning &&
+      ["smoke", "prepare_model"].includes(setupJob.action) &&
+      hasSetupEvent("loading_transformers_pipeline", "loading_sam3_tracker_processor", "loading_sam3_tracker_model_weights", "moving_model_to_device", "model_loaded", "model_device_verified");
     const warmupRunning = setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) && hasSetupEvent("warmup_started", "warmup_succeeded");
     const steps = [
       {
