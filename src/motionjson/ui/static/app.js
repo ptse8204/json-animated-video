@@ -2873,6 +2873,21 @@ const MotionJSONUI = (() => {
     return normalize(job?.progress) || normalize(job?.result?.progress) || eventProgress;
   }
 
+  function setupJobStaleNotice(job = {}) {
+    const action = String(job.action || "");
+    if (!["prepare_model", "smoke", "cache_model", "install"].includes(action)) {
+      return { stale: false, detail: "" };
+    }
+    return jobStaleNotice(job, {
+      status: job.status,
+      rawStatus: job.status,
+      terminal: job.terminal === true,
+      active: ["queued", "running"].includes(String(job.status || "")),
+      thresholdMs: action === "prepare_model" || action === "smoke" ? 60 * 1000 : 3 * 60 * 1000,
+      events: job.events || [],
+    });
+  }
+
   function setupJobProgressCard(job, summary = setupJobStatusSummary(job)) {
     if (!job) return "";
     const action = String(job.action || "");
@@ -2881,12 +2896,18 @@ const MotionJSONUI = (() => {
     if (!progress && !["queued", "running"].includes(String(job.status || ""))) return "";
     const normalizedProgress = progress || { known: false, percent: 0, label: summary.message || "Setup in progress" };
     const status = String(job.status || "queued");
-    const tone = summary.tone || (status === "succeeded" ? "ready" : status === "failed" || status === "blocked" || status === "canceled" ? "bad" : "neutral");
     const active = status === "queued" || status === "running";
+    const staleNotice = setupJobStaleNotice(job);
+    const tone = staleNotice.stale
+      ? "warn"
+      : summary.tone || (status === "succeeded" ? "ready" : status === "failed" || status === "blocked" || status === "canceled" ? "bad" : "neutral");
     const percent = Math.min(Math.max(Number(normalizedProgress.percent) || 0, 0), 100);
     const displayPercent = normalizedProgress.known || active ? percent : 100;
     const barClass = normalizedProgress.known ? "" : active ? "is-indeterminate" : "is-static";
     const meterText = normalizedProgress.known ? `${Math.round(percent)}%` : active ? "In progress" : "Needs attention";
+    const label = staleNotice.stale
+      ? `${normalizedProgress.label || summary.message || "Setup in progress"} - ${staleNotice.label}`
+      : normalizedProgress.label || summary.message || "Setup in progress";
     const progressAttrs = normalizedProgress.known
       ? `aria-valuenow="${escapeAttribute(String(Math.round(percent)))}"`
       : "";
@@ -2894,7 +2915,12 @@ const MotionJSONUI = (() => {
       <div class="model-setup-progress-card is-${escapeAttribute(tone)}" role="status" aria-live="polite">
         <div class="model-setup-progress-copy">
           <strong>${escapeHtml(summary.label || humanizeReviewCode(status))}</strong>
-          <span class="row-meta">${escapeHtml(normalizedProgress.label || summary.message || "Setup in progress")}</span>
+          <span class="row-meta">${escapeHtml(label)}</span>
+          ${
+            staleNotice.stale
+              ? `<span class="row-meta model-setup-stall-notice">${escapeHtml(staleNotice.detail || "No backend progress update has arrived. Open logs or cancel setup before retrying.")}</span>`
+              : ""
+          }
         </div>
         <div class="model-setup-progress-meter">
           <div

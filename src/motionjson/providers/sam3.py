@@ -21,6 +21,13 @@ from .mask_cache import normalize_binary_mask
 SAM3_HF_REPO_ID = "facebook/sam3"
 SAM3_CHECKPOINT_FILENAME = "sam3.pt"
 SAM3_COLAB_SOURCE_DIR = "/content/sam3"
+SAM3_FROM_PRETRAINED_WEIGHT_GLOBS = (
+    "*.safetensors",
+    "pytorch_model*.bin",
+    "tf_model*.h5",
+    "flax_model*.msgpack",
+    "*.ckpt",
+)
 
 
 def is_probably_hf_repo_id(value: str) -> bool:
@@ -345,10 +352,16 @@ def sam3_scene_sweep_warmup(
             progress("cuda_detected", "PyTorch can see CUDA for SAM3 Scene Sweep", 34, True)
 
     if progress:
-        progress("loading_transformers_pipeline", "Loading SAM3 Tracker mask-generation pipeline", 46, True)
+        progress(
+            "loading_transformers_pipeline",
+            "Loading SAM3 Tracker mask-generation pipeline from the recorded local cache. This can take several minutes on first CUDA load.",
+            46,
+            True,
+        )
     device_arg = _transformers_device(requested_device)
+    pipeline_kwargs = {"model_kwargs": {"local_files_only": True}} if local_dir_verified else {}
     try:
-        generator = pipeline("mask-generation", model=model_value, device=device_arg)
+        generator = pipeline("mask-generation", model=model_value, device=device_arg, **pipeline_kwargs)
     except Exception as exc:
         raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
     if generator is None:
@@ -419,11 +432,23 @@ def _verify_from_pretrained_dir_if_local(model_value: str) -> bool:
             raise ProviderConfigError("Resolved SAM3 model directory contains incomplete download files. Retry Cache model.")
         if not (path / "config.json").exists():
             raise ProviderConfigError("Resolved SAM3 model directory is missing config.json.")
+        if not _from_pretrained_weight_files(path):
+            raise ProviderConfigError(
+                "Resolved SAM3 model directory is missing model weight files. "
+                "The Hugging Face snapshot is incomplete; delete the partial cache and run Cache model again."
+            )
     except ProviderConfigError:
         raise
     except OSError as exc:
         raise ProviderConfigError(f"Resolved SAM3 model directory could not be inspected: {type(exc).__name__}: {exc}") from exc
     return True
+
+
+def _from_pretrained_weight_files(path: Path) -> list[Path]:
+    files: list[Path] = []
+    for pattern in SAM3_FROM_PRETRAINED_WEIGHT_GLOBS:
+        files.extend(candidate for candidate in path.rglob(pattern) if candidate.is_file())
+    return files
 
 
 def _cuda_device_index(device: str) -> int:

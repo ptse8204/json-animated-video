@@ -530,6 +530,8 @@ assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction"));
 assert.ok(confirmationHandler.includes("state.confirmedModelSetupAction = null;"));
 assert.ok(appJs.includes("function modelSetupPayloadForAction"));
 assert.ok(appJs.includes("model-setup-progress-card"));
+assert.ok(appJs.includes("model-setup-stall-notice"));
+assert.ok(appJs.includes("No backend progress update has arrived"));
 assert.ok(appJs.includes("Cached SAM3 Scene Sweep model directory"));
 assert.ok(appJs.includes("data-copy-advanced-model-path"));
 assert.equal(appJs.includes('data-model-setup-field="cachedSceneSweepModelDir"'), false);

@@ -2926,6 +2926,15 @@ button,
   background: var(--bad-soft);
 }
 
+.model-setup-progress-card.is-warn {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.model-setup-stall-notice {
+  color: #7a4c04;
+}
+
 .environment-recommendation-card,
 .model-cache-status {
   display: grid;
@@ -3044,6 +3053,10 @@ button,
 
 .model-setup-progress-card.is-bad .model-setup-progress-bar {
   background: var(--bad);
+}
+
+.model-setup-progress-card.is-warn .model-setup-progress-bar {
+  background: #d99016;
 }
 
 .model-setup-progress-bar.is-indeterminate {

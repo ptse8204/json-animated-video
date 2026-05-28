@@ -1148,6 +1148,9 @@ def _finish_setup_job(
     result: Mapping[str, Any],
     error: Any,
 ) -> None:
+    current = conn.execute("SELECT status FROM provider_setup_jobs WHERE id = ?", (job_id,)).fetchone()
+    if current is not None and str(current["status"]) in TERMINAL_SETUP_JOB_STATUSES:
+        return
     now = utc_now()
     conn.execute(
         """
