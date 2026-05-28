@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import types
@@ -126,7 +127,14 @@ def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | No
 
     def pipeline(task, model=None, device=None, **kwargs):
         if seen is not None:
-            seen["pipeline"] = {"task": task, "model": model, "device": device, "kwargs": kwargs}
+            seen["pipeline"] = {
+                "task": task,
+                "model": model,
+                "device": device,
+                "kwargs": kwargs,
+                "hfHubOffline": os.environ.get("HF_HUB_OFFLINE"),
+                "transformersOffline": os.environ.get("TRANSFORMERS_OFFLINE"),
+            }
         return FakePipeline()
 
     fake_transformers.pipeline = pipeline
@@ -865,7 +873,10 @@ def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(t
     assert smoke["result"]["smokeTest"]["warmupStatus"] == "succeeded"
     assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
     assert seen["pipeline"]["device"] == 0  # type: ignore[index]
-    assert seen["pipeline"]["kwargs"]["model_kwargs"]["local_files_only"] is True  # type: ignore[index]
+    assert "local_files_only" not in seen["pipeline"]["kwargs"]  # type: ignore[index]
+    assert "model_kwargs" not in seen["pipeline"]["kwargs"]  # type: ignore[index]
+    assert seen["pipeline"]["hfHubOffline"] == "1"  # type: ignore[index]
+    assert seen["pipeline"]["transformersOffline"] == "1"  # type: ignore[index]
     event_types = {event["type"] for event in smoke["events"]}
     assert {"loading_transformers_pipeline", "model_device_verified", "warmup_succeeded", "ready_for_extraction"}.issubset(event_types)
     assert "SAM3_LOCAL_MODEL" not in smoke["result"]["message"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 import io
 import json
 import os
@@ -359,9 +360,10 @@ def sam3_scene_sweep_warmup(
             True,
         )
     device_arg = _transformers_device(requested_device)
-    pipeline_kwargs = {"model_kwargs": {"local_files_only": True}} if local_dir_verified else {}
     try:
-        generator = pipeline("mask-generation", model=model_value, device=device_arg, **pipeline_kwargs)
+        offline_env = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"} if local_dir_verified else {}
+        with _temporary_environ(offline_env):
+            generator = pipeline("mask-generation", model=model_value, device=device_arg)
     except Exception as exc:
         raise ProviderConfigError(f"SAM3 Tracker mask-generation pipeline could not be initialized: {exc}") from exc
     if generator is None:
@@ -449,6 +451,23 @@ def _from_pretrained_weight_files(path: Path) -> list[Path]:
     for pattern in SAM3_FROM_PRETRAINED_WEIGHT_GLOBS:
         files.extend(candidate for candidate in path.rglob(pattern) if candidate.is_file())
     return files
+
+
+@contextmanager
+def _temporary_environ(values: Mapping[str, str]):
+    sentinel = object()
+    previous: dict[str, str | object] = {}
+    for key, value in values.items():
+        previous[key] = os.environ.get(key, sentinel)
+        os.environ[key] = value
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is sentinel:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = str(value)
 
 
 def _cuda_device_index(device: str) -> int:
