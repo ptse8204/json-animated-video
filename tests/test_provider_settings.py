@@ -16,8 +16,15 @@ from motionjson.backend.provider_setup_jobs import (
     cancel_provider_setup_job,
     create_provider_setup_job,
     provider_setup_actions,
+    public_provider_setup_job,
 )
-from motionjson.provider_settings import provider_catalog, hosted_sam3_smoke_test, redact_secret_payload, redact_secret_text
+from motionjson.provider_settings import (
+    provider_catalog,
+    hosted_sam3_smoke_test,
+    provider_runtime_settings,
+    redact_secret_payload,
+    redact_secret_text,
+)
 from motionjson.ui.server import LocalUIApp
 
 
@@ -462,14 +469,20 @@ def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_pat
     assert seen["snapshot_download"] == ("facebook/sam3", secret)
     assert secret not in cached_text
     assert str(cached_dir) not in cached_text
+    assert cached["result"]["localPathRecorded"] is True
+    assert cached["result"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
+    assert cached["result"]["localModelDir"] == "[LOCAL_PATH_REDACTED]"
+    assert cached["result"]["modelCache"]["serverPathRecorded"] is True
+    assert cached["result"]["modelCache"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
     progress_events = [event for event in cached["events"] if event["metadata"].get("progress")]
     progress_types = {event["type"] for event in progress_events}
     progress_text = json.dumps(progress_events)
 
-    assert {"queued", "resolving_model", "downloading_cache", "verifying_cache", "cached", "succeeded"} <= progress_types
+    assert {"queued", "resolving_model", "downloading_cache", "verifying_cache", "cached", "model_cache_recorded", "succeeded"} <= progress_types
     assert "Downloading or resolving Hugging Face snapshot" in progress_text
     assert "Verifying cached model" in progress_text
     assert "Model cached" in progress_text
+    assert "Model cache path recorded server-side" in progress_text
     assert secret not in progress_text
     assert str(cached_dir) not in progress_text
 
@@ -533,6 +546,8 @@ def test_local_model_cache_persists_and_survives_ui_reload_with_redaction(tmp_pa
     assert status == 200
     assert setup_job["status"] == "succeeded"
     assert setup_job["result"]["networkAttempted"] is False
+    assert setup_job["result"]["localModelDir"] == "[LOCAL_PATH_REDACTED]"
+    assert setup_job["result"]["model"] == "[LOCAL_PATH_REDACTED]"
     assert str(model_dir) not in text
 
     reloaded = LocalUIApp(db_path=db_path, storage_root=storage_root, mock_mode=False)
@@ -543,8 +558,28 @@ def test_local_model_cache_persists_and_survives_ui_reload_with_redaction(tmp_pa
     assert status == 200
     assert provider["modelCache"]["cached"] is True
     assert provider["modelCache"]["status"] == "cached"
+    assert provider["modelCache"]["serverPathRecorded"] is True
     assert provider["modelCache"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
+    assert "server-side" in provider["modelCache"]["pathSummary"]
     assert str(model_dir) not in text
+
+    conn = reloaded.connection()
+    try:
+        user = reloaded._local_user(conn)
+        public_job = public_provider_setup_job(conn, user_id=user["id"], job_id=setup_job["id"], include_events=True)
+        stored_job = conn.execute("SELECT result_json FROM provider_setup_jobs WHERE id = ?", (setup_job["id"],)).fetchone()
+        runtime = provider_runtime_settings(conn, user_id=user["id"], provider_id="sam2-hf-auto-masks")
+    finally:
+        conn.close()
+
+    public_job_text = json.dumps(public_job)
+    assert str(model_dir) not in public_job_text
+    assert public_job["result"]["localModelDir"] == "[LOCAL_PATH_REDACTED]"
+    assert public_job["result"]["model"] == "[LOCAL_PATH_REDACTED]"
+    assert stored_job is not None
+    assert str(model_dir) not in stored_job["result_json"]
+    assert runtime["resolved_model_dir"] == str(model_dir)
+    assert runtime["runtime_model"] == str(model_dir)
 
 
 def test_hugging_face_cache_probe_uses_local_files_only_and_reports_cached(tmp_path, monkeypatch):

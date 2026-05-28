@@ -155,6 +155,19 @@ directory is already resolved locally. Cache state is derived from saved setup,
 local model directories, previous setup jobs, and Hugging Face cache inspection
 without exposing raw local paths in browser responses.
 
+The capability report now includes a local environment profile and GPU-model
+recommendation. CUDA environments are guided toward SAM3 Scene Sweep with
+`facebook/sam3`; Apple MPS environments are told that SAM3 Scene Sweep remains a
+CUDA-first workflow; CPU-only environments are guided to CPU-safe or explicitly
+hosted paths. The recommendation is advisory only. Provider readiness, cached
+model state, hosted opt-in, and smoke tests still decide whether a run can
+start.
+
+When Cache model completes, the backend records the resolved local
+`from_pretrained` directory in provider settings for runtime use. Browser
+responses show only that the path is known/recorded server-side and redact the
+absolute path as `[LOCAL_PATH_REDACTED]`.
+
 For SAM3 Scene Sweep, `needs_access` is a normal UI step. The Model setup panel
 asks for a Hugging Face token in the main flow, saves it locally as a redacted
 secret, and uses it only for allowlisted `check_access` and `cache_model` jobs.
@@ -182,6 +195,22 @@ connection ID, provider ID, engine, display label, hosted profile, locality,
 capability flags, readiness, and hosted-call opt-in remain separate. Display
 labels such as `Roboflow SAM3` are user-facing only; policy and validation use
 provider IDs and connection IDs.
+
+## Run Logs And Setup Logs
+
+The Run monitor shows a process overview before the raw event list: current
+phase, provider, progress, stale-progress warning, and the next recovery action
+when one is known. Each event keeps the backend message visible, then expands
+with stage/provider/model/reason chips, progress bars, suggested fixes, and
+debug metadata. Failures, raster fallback, whole-frame masks, CUDA/model/cache
+problems, and provider errors are visually promoted instead of being hidden in
+raw JSON.
+
+Model setup jobs use the same event renderer. Install, access-check, cache, and
+smoke-test logs remain visible with progress, cancellation, blocked state, and
+redacted debug metadata, so users can see whether setup is installing runtime
+packages, checking Hugging Face access, downloading/resolving weights, verifying
+the cache, or recording the resolved model path.
 
 ## Model Planning Connector Contract
 

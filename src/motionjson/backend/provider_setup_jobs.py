@@ -28,6 +28,28 @@ from motionjson.providers.sam3 import SAM3_HF_REPO_ID
 
 PROVIDER_SETUP_JOB_FORMAT = "motionjson.provider_setup_job.v0.1"
 TERMINAL_SETUP_JOB_STATUSES = {"succeeded", "failed", "canceled", "blocked"}
+LOCAL_SETUP_PATH_REDACTION = "[LOCAL_PATH_REDACTED]"
+LOCAL_SETUP_PATH_KEYS = {
+    "checkpointpath",
+    "configpath",
+    "custommodelpath",
+    "localmodeldir",
+    "localmodelpath",
+    "localpath",
+    "modeldir",
+    "modeldirectory",
+    "modelpath",
+    "outputdir",
+    "outputpath",
+    "resolvedmodeldir",
+    "resolvedmodelpath",
+    "runtimeconfigpath",
+    "runtimemodel",
+    "sam2checkpointpath",
+    "sam2configpath",
+    "sam3modelpath",
+    "videopath",
+}
 SetupProgressCallback = Callable[[str, str, int | float | None, bool], None]
 
 
@@ -322,8 +344,8 @@ def public_provider_setup_job(
         "providerId": row["provider_id"],
         "action": row["action"],
         "status": row["status"],
-        "payload": redact_secret_payload(payload),
-        "result": redact_secret_payload(result),
+        "payload": _public_setup_payload(payload),
+        "result": _public_setup_payload(result),
         "error": redact_secret_text(row["error"]) if row["error"] else "",
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
@@ -420,7 +442,7 @@ def _execute_setup_action(
             cache_payload["model"] = runtime.get("selected_model") or runtime.get("runtime_model")
         result = _cache_model_action(provider_id, cache_payload, token=str(runtime.get("hf_token") or ""), progress=progress)
         if result.get("ready") is True and result.get("localModelDir"):
-            record_provider_model_cache(
+            provider_settings = record_provider_model_cache(
                 conn,
                 user_id=user_id,
                 provider_id=provider_id,
@@ -428,6 +450,16 @@ def _execute_setup_action(
                 local_model_dir=str(result.get("localModelDir") or ""),
                 environ=environ,
             )
+            model_cache = _provider_model_cache_from_settings(provider_settings, provider_id)
+            result = {
+                **result,
+                "localPathRecorded": True,
+                "localPathDisplay": "[LOCAL_PATH_REDACTED]",
+                "modelCache": model_cache,
+                "message": f"{result.get('message') or 'Model cached.'} Resolved model path recorded server-side and redacted in the Local UI.",
+            }
+            if progress:
+                progress("model_cache_recorded", "Model cache path recorded server-side", 100, True)
         return result
     if action == "check_access":
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
@@ -879,7 +911,7 @@ def _finish_setup_job(
         """,
         (
             status,
-            json.dumps(redact_secret_payload(dict(result)), sort_keys=True),
+            json.dumps(_public_setup_payload(dict(result)), sort_keys=True),
             redact_secret_text(error) if error else None,
             now,
             now,
@@ -901,6 +933,65 @@ def _json_dict(value: Any) -> dict[str, Any]:
     except (TypeError, json.JSONDecodeError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _public_setup_payload(value: Any) -> Any:
+    return _redact_local_setup_paths(redact_secret_payload(value))
+
+
+def _redact_local_setup_paths(value: Any, known_local_paths: set[str] | None = None) -> Any:
+    known_local_paths = set(known_local_paths or set())
+    if isinstance(value, Mapping):
+        local_values = {
+            str(item)
+            for key, item in value.items()
+            if _is_local_setup_path_key(str(key)) and isinstance(item, str) and item
+        }
+        nested_known = known_local_paths | local_values
+        redacted: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if _is_local_setup_path_key(key_text):
+                redacted[key] = LOCAL_SETUP_PATH_REDACTION if item else item
+            elif _is_model_value_referencing_local_path(key_text, item, nested_known):
+                redacted[key] = LOCAL_SETUP_PATH_REDACTION
+            else:
+                redacted[key] = _redact_local_setup_paths(item, nested_known)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_local_setup_paths(item, known_local_paths) for item in value]
+    return value
+
+
+def _is_local_setup_path_key(key: str) -> bool:
+    normalized = key.replace("_", "").replace("-", "").lower()
+    return normalized in LOCAL_SETUP_PATH_KEYS or normalized.endswith("path") or normalized.endswith("dir") or normalized.endswith("directory")
+
+
+def _is_model_value_referencing_local_path(key: str, value: Any, known_local_paths: set[str]) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    normalized = key.replace("_", "").replace("-", "").lower()
+    if normalized not in {"custommodelid", "model", "runtimemodel", "selectedmodel"}:
+        return False
+    if value in known_local_paths:
+        return True
+    if value.startswith(("/", "~", "./", "../")) or "\\" in value:
+        return True
+    if len(value) > 2 and value[1:3] == ":\\":
+        return True
+    try:
+        return Path(value).expanduser().exists()
+    except (OSError, RuntimeError):
+        return False
+
+
+def _provider_model_cache_from_settings(settings_response: Mapping[str, Any], provider_id: str) -> dict[str, Any]:
+    for provider in settings_response.get("providers", []):
+        if isinstance(provider, Mapping) and provider.get("id") == provider_id:
+            cache = provider.get("modelCache")
+            return dict(cache) if isinstance(cache, Mapping) else {}
+    return {}
 
 
 def _truthy(value: Any) -> bool:

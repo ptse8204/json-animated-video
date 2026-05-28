@@ -15,6 +15,8 @@ from motionjson.providers.sam3 import SAM3_HF_REPO_ID, describe_sam3_model_path,
 
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
+ENVIRONMENT_PROFILE_FORMAT = "motionjson.local_environment_profile.v0.1"
+GPU_MODEL_RECOMMENDATION_FORMAT = "motionjson.gpu_model_recommendation.v0.1"
 
 
 @dataclass(frozen=True)
@@ -238,6 +240,158 @@ def cuda_status() -> dict[str, Any]:
         "device": "cuda" if cuda_available else "cpu",
         "reasons": reasons,
         "devices": devices,
+    }
+
+
+def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Classify the local runtime for UI setup guidance without making network calls."""
+
+    cuda_info = dict(cuda or cuda_status())
+    system = platform.system() or "Unknown"
+    machine = platform.machine() or "unknown"
+    cuda_available = bool(cuda_info.get("available"))
+    devices = list(cuda_info.get("devices") or [])
+    mps_available = any(str(device.get("name") or "").lower() == "mps" and bool(device.get("available")) for device in devices if isinstance(device, Mapping))
+    if cuda_available:
+        accelerator = "cuda"
+    elif mps_available:
+        accelerator = "mps"
+    else:
+        accelerator = "cpu"
+
+    host = "local"
+    host_label = f"Local {system}"
+    if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
+        host = "google_colab"
+        host_label = "Google Colab"
+    elif os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):
+        host = "kaggle"
+        host_label = "Kaggle notebook"
+    elif os.environ.get("CODESPACES"):
+        host = "codespaces"
+        host_label = "GitHub Codespaces"
+    elif os.environ.get("CI"):
+        host = "ci"
+        host_label = "CI runner"
+    elif system == "Darwin":
+        host = "local_mac"
+        host_label = "Local macOS"
+    elif system == "Linux":
+        host = "local_linux"
+        host_label = "Local Linux"
+    elif system == "Windows":
+        host = "local_windows"
+        host_label = "Local Windows"
+
+    if accelerator == "cuda":
+        label = f"{host_label} with CUDA GPU"
+        summary = "CUDA is available through PyTorch, so local GPU model setup can target SAM3 Scene Sweep."
+    elif accelerator == "mps":
+        label = f"{host_label} with Apple MPS"
+        summary = "Apple MPS is available through PyTorch, but SAM3 Scene Sweep is still guided as a CUDA-first local GPU workflow."
+    else:
+        label = f"{host_label} CPU"
+        summary = "No CUDA GPU was detected through PyTorch; use CPU-safe workflows or configure a hosted/local GPU environment."
+
+    notes: list[str] = []
+    if not bool(cuda_info.get("torchInstalled")):
+        notes.append("torch is not installed, so GPU availability may be incomplete.")
+    for reason in cuda_info.get("reasons") or []:
+        if reason:
+            notes.append(str(reason))
+
+    return {
+        "format": ENVIRONMENT_PROFILE_FORMAT,
+        "type": f"{host}_{accelerator}",
+        "host": host,
+        "hostLabel": host_label,
+        "system": system,
+        "machine": machine,
+        "accelerator": accelerator,
+        "label": label,
+        "summary": summary,
+        "python": platform.python_version(),
+        "torchInstalled": bool(cuda_info.get("torchInstalled")),
+        "torchVersion": cuda_info.get("torchVersion"),
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
+        "devices": devices,
+        "notes": notes,
+    }
+
+
+def gpu_model_recommendation(
+    provider_records: list[Mapping[str, Any]],
+    environment_profile: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return the UI's best model recommendation for the detected local runtime."""
+
+    providers = {str(provider.get("name") or ""): provider for provider in provider_records}
+    sam3_scene_sweep = providers.get("sam3-auto-masks") or {}
+    sam2_hf = providers.get("sam2-hf-auto-masks") or {}
+    accelerator = str(environment_profile.get("accelerator") or "cpu")
+    if accelerator == "cuda":
+        missing = list(sam3_scene_sweep.get("reasons") or [])
+        status = str(sam3_scene_sweep.get("status") or "not_configured")
+        runnable = bool(sam3_scene_sweep.get("runnable"))
+        return {
+            "format": GPU_MODEL_RECOMMENDATION_FORMAT,
+            "environmentType": environment_profile.get("type"),
+            "accelerator": accelerator,
+            "recommendedProviderId": "sam3-local",
+            "recommendedCapability": "sam3-auto-masks",
+            "connectionId": "sam3-local",
+            "model": SAM3_HF_REPO_ID,
+            "label": "SAM3 Scene Sweep on CUDA",
+            "reason": "A CUDA GPU is visible to PyTorch. Use SAM3 Scene Sweep with facebook/sam3 for scene-wide discovery, then review the proposed object tracks before export.",
+            "status": "ready" if runnable else status,
+            "runnable": runnable,
+            "missing": missing,
+            "nextActions": [
+                "Install the sam3-transformers runtime if the tracker classes are missing.",
+                "Check Hugging Face access when facebook/sam3 is gated.",
+                "Cache facebook/sam3 from Model setup so the resolved local path is recorded server-side.",
+                "Run a bounded smoke test before starting a real scene sweep.",
+            ],
+        }
+    if accelerator == "mps":
+        return {
+            "format": GPU_MODEL_RECOMMENDATION_FORMAT,
+            "environmentType": environment_profile.get("type"),
+            "accelerator": accelerator,
+            "recommendedProviderId": "sam2-hf-auto-masks",
+            "recommendedCapability": "sam2-hf-auto-masks",
+            "connectionId": "sam2-hf-auto-masks",
+            "model": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+            "label": "SAM2 HF fallback while on Apple MPS",
+            "reason": "Apple MPS is available, but MotionJSON treats SAM3 Scene Sweep as CUDA-first. Use the SAM2 HF automatic-mask fallback locally, or move to a CUDA runtime for SAM3 Scene Sweep.",
+            "status": str(sam2_hf.get("status") or "not_configured"),
+            "runnable": bool(sam2_hf.get("runnable")),
+            "missing": list(sam2_hf.get("reasons") or []),
+            "nextActions": [
+                "Install the sam2-transformers runtime if needed.",
+                "Cache facebook/sam2.1-hiera-large from Model setup.",
+                "Use CUDA Colab or a CUDA workstation for the SAM3 Scene Sweep recommendation.",
+            ],
+        }
+    return {
+        "format": GPU_MODEL_RECOMMENDATION_FORMAT,
+        "environmentType": environment_profile.get("type"),
+        "accelerator": accelerator,
+        "recommendedProviderId": "motion_foreground",
+        "recommendedCapability": "motion_foreground",
+        "connectionId": "",
+        "model": "",
+        "label": "CPU-safe workflow",
+        "reason": "No CUDA GPU is visible to PyTorch. Start with motion foreground, external masks, or mock/no-model review, then switch to SAM3 Scene Sweep after launching a CUDA runtime.",
+        "status": str((providers.get("motion_foreground") or {}).get("status") or "not_configured"),
+        "runnable": bool((providers.get("motion_foreground") or {}).get("runnable")),
+        "missing": list((providers.get("motion_foreground") or {}).get("reasons") or []),
+        "nextActions": [
+            "Use no-model CPU paths for smoke checks and simple moving-object footage.",
+            "Choose a hosted provider only after explicit cost/privacy opt-in.",
+            "Use a CUDA GPU environment to run the recommended SAM3 Scene Sweep model locally.",
+        ],
     }
 
 
@@ -1361,6 +1515,9 @@ def build_capability_report(
         provider_settings=provider_settings,
     )
     provider_records = [provider.to_dict() for provider in providers]
+    cuda = cuda_status()
+    environment_profile = local_environment_profile(cuda)
+    model_recommendation = gpu_model_recommendation(provider_records, environment_profile)
     ready_no_model = [
         provider["name"]
         for provider in provider_records
@@ -1404,8 +1561,9 @@ def build_capability_report(
             "platform": platform.platform(),
         },
         "environment": {
+            "profile": environment_profile,
             "dependencies": [dep.to_dict() for dep in deps],
-            "cuda": cuda_status(),
+            "cuda": cuda,
             "ffmpeg": ffmpeg_status(),
             "videoIO": video_io_status(video_path),
             "output": output_path_status(output_dir),
@@ -1418,6 +1576,7 @@ def build_capability_report(
             "runnableProviders": runnable_providers,
             "localFreeRunnableProviders": local_free_providers,
             "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
+            "gpuModelRecommendation": model_recommendation,
             "firstRun": {
                 "ready": any(name in runnable_providers for name in ("sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-auto-masks", "sam3-hosted")),
                 "recommendedCommand": "python3 -m motionjson.cli ui --no-open",

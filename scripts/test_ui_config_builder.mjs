@@ -413,6 +413,74 @@ assert.deepEqual(ui.setupJobProgressSummary(activeCacheJob), {
   label: "Downloading or resolving Hugging Face snapshot",
 });
 
+const cudaRecommendation = ui.environmentRecommendationSummary({
+  environment: {
+    profile: {
+      label: "Google Colab with CUDA GPU",
+      type: "google_colab_cuda",
+      accelerator: "cuda",
+      summary: "CUDA is available through PyTorch.",
+    },
+  },
+  summary: {
+    gpuModelRecommendation: {
+      accelerator: "cuda",
+      recommendedProviderId: "sam3-local",
+      connectionId: "sam3-local",
+      model: "facebook/sam3",
+      label: "SAM3 Scene Sweep on CUDA",
+      reason: "Use SAM3 Scene Sweep with facebook/sam3.",
+      status: "ready",
+      runnable: true,
+      nextActions: ["Cache facebook/sam3 from Model setup."],
+    },
+  },
+});
+assert.equal(cudaRecommendation.accelerator, "cuda");
+assert.equal(cudaRecommendation.providerId, "sam3-local");
+assert.equal(cudaRecommendation.model, "facebook/sam3");
+
+const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready", message: "SAM3 Scene Sweep runtime is ready." },
+    credentials: [{ name: "hf_token", configured: true }],
+    modelCache: {
+      required: true,
+      cached: true,
+      serverPathRecorded: true,
+      localPathKnown: true,
+      model: "facebook/sam3",
+      message: "Previously cached local model directory is available.",
+    },
+  },
+  { status: "ready", message: "Model setup is ready." },
+  null,
+);
+assert.equal(cachedPlaybookSteps.find((step) => step.id === "record").status, "done");
+assert.match(cachedPlaybookSteps.find((step) => step.id === "record").detail, /server-side/);
+
+const eventMarkup = ui.eventRowsMarkup([
+  {
+    event_type: "mask_provider_failed",
+    status: "failed",
+    message: "CUDA unavailable while loading SAM3.",
+    metadata: {
+      stage: "tracking",
+      provider: "sam3-local",
+      reasonCode: "cuda_unavailable",
+      suggestedFixes: ["Open Model setup and choose a CUDA runtime."],
+      debugCode: "torch_cuda_false",
+    },
+    created_at: "2026-05-20T10:05:00Z",
+  },
+]);
+assert.match(eventMarkup, /is-bad/);
+assert.match(eventMarkup, /Open Model setup/);
+assert.match(eventMarkup, /Debug metadata/);
+assert.equal(ui.eventSeverity({ event_type: "raster_fallback", message: "Raster fallback retained." }), "warn");
+
 const appJs = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
 assert.equal(appJs.includes("window.confirm"), false);
 const confirmationHandler = appJs.slice(

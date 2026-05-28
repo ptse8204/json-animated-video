@@ -12,6 +12,7 @@ from urllib.parse import quote
 from motionjson.backend.assets import list_assets_for_job, register_generated_asset, register_upload
 from motionjson.backend.rights import list_asset_lineage, list_asset_rights
 from motionjson.backend.jobs import record_job_event
+from motionjson.capabilities import gpu_model_recommendation, local_environment_profile
 from motionjson.ui import server as ui_server
 from motionjson.ui.server import LOCAL_UI_EMAIL
 from motionjson.ui.server import LocalUIApp
@@ -127,6 +128,8 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "mock" in capabilities["summary"]["readyNoModelProviders"]
     assert "mock" in capabilities["summary"]["runnableProviders"]
     assert "mock" in capabilities["summary"]["localFreeRunnableProviders"]
+    assert capabilities["environment"]["profile"]["format"] == "motionjson.local_environment_profile.v0.1"
+    assert capabilities["summary"]["gpuModelRecommendation"]["format"] == "motionjson.gpu_model_recommendation.v0.1"
     assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
 
     status, _headers, body = app.handle(
@@ -139,6 +142,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert probed["environment"]["output"]["checked"] is True
     if probed["environment"]["videoIO"]["opencvAvailable"]:
         assert probed["environment"]["videoIO"]["readable"] is True
+
     assert probed["environment"]["output"]["writable"] is True
     assert str(tmp_path) not in json.dumps(probed)
 
@@ -171,6 +175,98 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert {entry["id"] for entry in exports["exports"]} >= {"motionjson", "mp4", "website-zip", "remotion-plan"}
     assert {entry["id"] for entry in exports["presets"]} >= {"compact", "debug", "vector-heavy", "raster-fallback"}
+
+
+def test_capability_environment_profile_recommends_sam3_for_cuda_gpu():
+    profile = local_environment_profile(
+        {
+            "torchInstalled": True,
+            "torchVersion": "2.test",
+            "available": True,
+            "device": "cuda",
+            "reasons": [],
+            "devices": [{"name": "cuda", "available": True}],
+        }
+    )
+    recommendation = gpu_model_recommendation(
+        [
+            {
+                "name": "sam3-auto-masks",
+                "status": "missing_dependency",
+                "runnable": False,
+                "reasons": ["SAM3 Tracker classes are missing."],
+            },
+            {
+                "name": "motion_foreground",
+                "status": "ready",
+                "runnable": True,
+                "reasons": [],
+            },
+        ],
+        profile,
+    )
+
+    assert profile["accelerator"] == "cuda"
+    assert "CUDA GPU" in profile["label"]
+    assert recommendation["recommendedProviderId"] == "sam3-local"
+    assert recommendation["model"] == "facebook/sam3"
+    assert "Cache facebook/sam3" in " ".join(recommendation["nextActions"])
+
+
+def test_capability_environment_profile_guides_cpu_and_mps_fallbacks():
+    cpu_profile = local_environment_profile(
+        {
+            "torchInstalled": True,
+            "torchVersion": "2.test",
+            "available": False,
+            "device": "cpu",
+            "reasons": ["torch.cuda.is_available() returned false."],
+            "devices": [{"name": "cpu", "available": True}, {"name": "cuda", "available": False}],
+        }
+    )
+    cpu_recommendation = gpu_model_recommendation(
+        [
+            {
+                "name": "motion_foreground",
+                "status": "ready",
+                "runnable": True,
+                "reasons": [],
+            }
+        ],
+        cpu_profile,
+    )
+
+    assert cpu_profile["accelerator"] == "cpu"
+    assert cpu_recommendation["recommendedProviderId"] == "motion_foreground"
+    assert cpu_recommendation["runnable"] is True
+    assert "CPU-safe" in cpu_recommendation["label"]
+
+    mps_profile = local_environment_profile(
+        {
+            "torchInstalled": True,
+            "torchVersion": "2.test",
+            "available": False,
+            "device": "cpu",
+            "reasons": ["torch.cuda.is_available() returned false."],
+            "devices": [{"name": "mps", "available": True}],
+        }
+    )
+    mps_recommendation = gpu_model_recommendation(
+        [
+            {
+                "name": "sam2-hf-auto-masks",
+                "status": "missing_dependency",
+                "runnable": False,
+                "reasons": ["SAM2 HF runtime is missing."],
+            }
+        ],
+        mps_profile,
+    )
+
+    assert mps_profile["accelerator"] == "mps"
+    assert mps_recommendation["recommendedProviderId"] == "sam2-hf-auto-masks"
+    assert mps_recommendation["status"] == "missing_dependency"
+    assert mps_recommendation["missing"] == ["SAM2 HF runtime is missing."]
 
 
 def test_local_ui_capabilities_redacts_windows_probe_paths(tmp_path):

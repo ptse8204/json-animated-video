@@ -958,17 +958,24 @@ def _model_cache_state(
         "source": "unresolved",
         "networkAttempted": False,
         "localPathKnown": False,
+        "serverPathRecorded": False,
+        "recordedAt": settings.get("model_cache_updated_at") or None,
         "message": "Model cache has not been resolved yet.",
     }
 
     def cached_state(local_dir: str, *, source: str, message: str) -> dict[str, Any]:
+        recorded = bool(saved_dir and source == "saved_cache")
         result = {
             **base,
             "cached": True,
             "status": "cached",
             "source": source,
             "localPathKnown": True,
+            "serverPathRecorded": recorded,
             "localPathDisplay": "[LOCAL_PATH_REDACTED]",
+            "pathSummary": "Resolved model directory is recorded server-side and redacted in browser responses."
+            if recorded
+            else "Resolved model directory was found locally and is redacted in browser responses.",
             "message": message,
         }
         if include_runtime_path:

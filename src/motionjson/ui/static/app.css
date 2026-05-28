@@ -937,6 +937,104 @@ input[type="range"] {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.event-log-overview {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: #f8fbff;
+}
+
+.event-log-overview.is-ready {
+  border-left-color: var(--ready);
+  background: var(--ready-soft);
+}
+
+.event-log-overview.is-warn {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.event-log-overview.is-bad {
+  border-left-color: var(--bad);
+  background: var(--bad-soft);
+}
+
+.event-log-overview p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.event-row.is-ready {
+  border-color: #b9dbcc;
+  background: var(--ready-soft);
+}
+
+.event-row.is-warn {
+  border-color: #efd59e;
+  background: #fffaf0;
+}
+
+.event-row.is-bad {
+  border-color: #f2aea6;
+  background: var(--bad-soft);
+}
+
+.event-row-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.event-chips,
+.event-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.event-actions {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink);
+}
+
+.event-progress-track {
+  position: relative;
+  overflow: hidden;
+  height: 7px;
+  border-radius: 999px;
+  background: #dbe6e4;
+}
+
+.event-progress-track span {
+  display: block;
+  width: var(--event-progress, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.event-debug summary {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.event-debug pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #0f1720;
+  color: #eef5f4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .event-row strong,
 .track-row strong,
 .diagnostic-row strong,
@@ -2810,6 +2908,90 @@ button,
 .model-setup-progress-card.is-bad {
   border-left-color: var(--bad);
   background: var(--bad-soft);
+}
+
+.environment-recommendation-card,
+.model-cache-status {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #dbe6e4;
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: #f8fbff;
+}
+
+.environment-recommendation-card.is-ready,
+.model-cache-status.is-ready {
+  border-left-color: var(--ready);
+  background: var(--ready-soft);
+}
+
+.environment-recommendation-card.is-warn,
+.model-cache-status.is-warn {
+  border-left-color: #d99016;
+  background: #fffaf0;
+}
+
+.environment-recommendation-card.is-neutral {
+  border-left-color: #8a96a3;
+  background: #f8faf9;
+}
+
+.environment-recommendation-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.setup-playbook-actions {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink);
+}
+
+.model-setup-playbook {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.setup-playbook-step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.setup-playbook-step.is-done {
+  border-color: #b9dbcc;
+  background: var(--ready-soft);
+}
+
+.setup-playbook-step.is-active,
+.setup-playbook-step.is-running {
+  border-color: #b9d4ec;
+  background: #f0f7ff;
+}
+
+.setup-playbook-step.is-pending {
+  background: var(--surface-muted);
+}
+
+.setup-playbook-index {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .model-setup-progress-copy {

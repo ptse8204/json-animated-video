@@ -2182,6 +2182,78 @@ const MotionJSONUI = (() => {
     return metadata.progress || event?.progress || {};
   }
 
+  function eventLabel(event = {}) {
+    return event.event_type || event.eventType || event.type || event.stage || "event";
+  }
+
+  function eventTimestamp(event = {}) {
+    const metadata = eventMetadata(event);
+    return event.created_at || event.createdAt || event.timestamp || metadata.timestamp || "";
+  }
+
+  function eventMessage(event = {}) {
+    const metadata = eventMetadata(event);
+    return event.message || metadata.message || event.stage || "job event";
+  }
+
+  function eventSeverity(event = {}) {
+    const metadata = eventMetadata(event);
+    const text = `${eventLabel(event)} ${event.status || ""} ${metadata.reasonCode || ""} ${eventMessage(event)}`.toLowerCase();
+    if (/failed|failure|error|exception|traceback|unavailable|denied|invalid|whole_frame|too_large/.test(text)) return "bad";
+    if (/warn|fallback|raster|blocked|cancel|stale|missing|retry|diagnostic/.test(text)) return "warn";
+    if (/succeeded|complete|cached|ready|verified|written/.test(text)) return "ready";
+    return "neutral";
+  }
+
+  function eventProgressText(event = {}) {
+    const progress = eventProgress(event);
+    const ratio = progress.overallRatio ?? progress.ratio;
+    if (typeof ratio === "number") return `${Math.round((ratio <= 1 ? ratio : ratio / 100) * 100)}%`;
+    const percent = progress.percent;
+    if (typeof percent === "number") return `${Math.round(percent)}%`;
+    return "";
+  }
+
+  function eventMetadataChips(event = {}) {
+    const metadata = eventMetadata(event);
+    const progressText = eventProgressText(event);
+    return [
+      metadata.stage || event.stage || "",
+      metadata.provider || event.provider || "",
+      metadata.action || event.action || "",
+      metadata.reasonCode || metadata.reason_code || "",
+      metadata.model || event.model || "",
+      progressText,
+    ].filter(Boolean);
+  }
+
+  function eventSuggestedActions(event = {}) {
+    const metadata = eventMetadata(event);
+    const explicit = asArray(metadata.suggestedFixes || metadata.suggested_fixes || metadata.nextActions || metadata.next_actions);
+    if (explicit.length) return explicit.slice(0, 4).map(String);
+    const text = `${eventLabel(event)} ${eventMessage(event)}`.toLowerCase();
+    if (/cuda|gpu|torch|sam3|model|checkpoint|cache|hugging face|transformers/.test(text)) {
+      return ["Open Model setup, verify runtime/access/cache status, then retry the run."];
+    }
+    if (/fallback|raster|vector|whole_frame|too_large/.test(text)) {
+      return ["Open fallback diagnostics before export and adjust provider/prompt/filter settings."];
+    }
+    if (/failed|error|exception/.test(text)) {
+      return ["Open debug metadata, fix the failing step, then start a new run."];
+    }
+    return [];
+  }
+
+  function eventDebugMetadata(event = {}) {
+    const metadata = { ...eventMetadata(event) };
+    delete metadata.progress;
+    delete metadata.stage;
+    delete metadata.provider;
+    delete metadata.action;
+    delete metadata.message;
+    return metadata;
+  }
+
   function latestProgressEvent(job) {
     const events = asArray(job?.events);
     for (let index = events.length - 1; index >= 0; index -= 1) {
@@ -2556,6 +2628,10 @@ const MotionJSONUI = (() => {
     return payload;
   }
 
+  function providerSmokeTestEndpoint(providerId) {
+    return `/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test`;
+  }
+
   function selectedVideo() {
     return state.videos.find((video) => video.id === state.selectedVideoId) || null;
   }
@@ -2829,6 +2905,164 @@ const MotionJSONUI = (() => {
     `;
   }
 
+  function environmentRecommendationSummary(capabilities = state.capabilities) {
+    const profile = capabilities?.environment?.profile || {};
+    const recommendation = capabilities?.summary?.gpuModelRecommendation || {};
+    const accelerator = recommendation.accelerator || profile.accelerator || "cpu";
+    const tone = accelerator === "cuda" ? "ready" : accelerator === "mps" ? "warn" : "neutral";
+    return {
+      tone,
+      environmentLabel: profile.label || "Local environment",
+      environmentType: profile.type || "local_unknown",
+      summary: profile.summary || "Environment diagnostics are not loaded yet.",
+      accelerator,
+      modelLabel: recommendation.label || "No GPU model recommendation loaded",
+      model: recommendation.model || "",
+      providerId: recommendation.recommendedProviderId || "",
+      connectionId: recommendation.connectionId || "",
+      reason: recommendation.reason || "",
+      status: recommendation.status || "unknown",
+      runnable: recommendation.runnable === true,
+      missing: asArray(recommendation.missing),
+      nextActions: asArray(recommendation.nextActions),
+    };
+  }
+
+  function environmentRecommendationCard(connection = null) {
+    const summary = environmentRecommendationSummary();
+    const matchesSelection = summary.providerId && connection?.providerId === summary.providerId;
+    const status = summary.runnable ? "ready" : summary.status || "setup";
+    const details = [
+      summary.accelerator ? `${summary.accelerator.toUpperCase()} detected` : "",
+      summary.model || "",
+      matchesSelection ? "selected path" : summary.providerId ? `recommended: ${summary.providerId}` : "",
+    ].filter(Boolean);
+    const actionItems = summary.nextActions.slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    const missing = summary.missing.length
+      ? `<span class="row-meta">${escapeHtml(summary.missing.slice(0, 2).join(" "))}</span>`
+      : "";
+    return `
+      <div class="environment-recommendation-card is-${escapeAttribute(summary.tone)}">
+        <div>
+          <strong>${escapeHtml(summary.environmentLabel)}</strong>
+          <p>${escapeHtml(summary.reason || summary.summary)}</p>
+          <div class="provider-detail">
+            ${details.map((detail) => detailChip(detail)).join("")}
+            ${statusChip(summary.modelLabel, status, summary.runnable)}
+          </div>
+          ${missing}
+        </div>
+        ${actionItems ? `<ol class="setup-playbook-actions">${actionItems}</ol>` : ""}
+      </div>
+    `;
+  }
+
+  function modelCacheStatusSummary(provider = null, setupJob = null) {
+    const cache = setupJob?.result?.modelCache || provider?.modelCache || {};
+    if (!cache.required) {
+      return {
+        required: false,
+        status: "not_required",
+        label: "No model cache required",
+        message: "This connection does not need a local Hugging Face model cache.",
+      };
+    }
+    const cached = cache.cached === true;
+    const recorded = cache.serverPathRecorded === true || setupJob?.result?.localPathRecorded === true;
+    const pathKnown = cache.localPathKnown === true || recorded;
+    return {
+      required: true,
+      cached,
+      recorded,
+      pathKnown,
+      status: cache.status || (cached ? "cached" : "not_cached"),
+      label: cached ? (recorded ? "Cached path recorded" : "Cached locally") : "Cache needed",
+      message: cache.pathSummary || cache.message || (cached ? "Model cache is available." : "Cache the model before running."),
+      model: cache.model || providerEffectiveModel(provider),
+      updatedAt: cache.recordedAt || provider?.settings?.updatedAt || "",
+    };
+  }
+
+  function modelSetupPlaybookSteps(connection = {}, provider = null, setupState = {}, setupJob = null) {
+    const providerId = connection.providerId || provider?.id || "";
+    const readiness = provider?.readiness || {};
+    const credentials = asArray(provider?.credentials);
+    const hfCredential = credentials.find((credential) => credential.name === "hf_token");
+    const cache = modelCacheStatusSummary(provider, setupJob);
+    const status = String(setupState.status || readiness.status || "");
+    const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
+    const setupRunning = setupJob && !setupJob.terminal;
+    const localCacheProvider = providerId === "sam3-local" || providerId === "sam2-hf-auto-masks";
+    const steps = [
+      {
+        id: "environment",
+        label: "Detect environment",
+        status: state.capabilities?.environment?.profile ? "done" : "pending",
+        detail: environmentRecommendationSummary().summary,
+      },
+      {
+        id: "runtime",
+        label: "Install runtime",
+        status: runtimeReady ? "done" : setupRunning && setupJob.action === "install" ? "running" : "pending",
+        detail: runtimeReady ? readiness.message || "Runtime diagnostics are ready." : readiness.message || connection.nextAction || "Install the optional runtime for this provider.",
+      },
+    ];
+    if (providerId === "sam3-local") {
+      steps.push({
+        id: "access",
+        label: "Check model access",
+        status: cache.cached || hfCredential?.configured ? "done" : status === "needs_access" ? "active" : "pending",
+        detail: cache.cached ? "Model is already cached locally." : hfCredential?.configured ? "Hugging Face token is configured for access checks." : "Paste a Hugging Face token if facebook/sam3 is gated.",
+      });
+    }
+    if (localCacheProvider) {
+      steps.push({
+        id: "cache",
+        label: "Cache model",
+        status: cache.cached ? "done" : setupRunning && setupJob.action === "cache_model" ? "running" : status === "needs_download_confirmation" ? "active" : "pending",
+        detail: cache.message,
+      });
+      steps.push({
+        id: "record",
+        label: "Record model path",
+        status: cache.recorded ? "done" : cache.pathKnown ? "done" : "pending",
+        detail: cache.recorded
+          ? "The resolved local model path is saved server-side and redacted in browser responses."
+          : cache.pathKnown
+            ? "A local model path was found and is redacted in browser responses."
+            : "The path will be recorded automatically after Cache model succeeds.",
+      });
+    }
+    steps.push({
+      id: "verify",
+      label: "Verify setup",
+      status: setupState.status === "ready" ? "done" : setupRunning && setupJob.action === "smoke" ? "running" : "pending",
+      detail: setupState.status === "ready" ? setupState.message || "Setup is ready." : "Run a smoke test before a long extraction when dependencies changed.",
+    });
+    return steps;
+  }
+
+  function modelSetupPlaybookMarkup(connection, provider, setupState, setupJob) {
+    const steps = modelSetupPlaybookSteps(connection, provider, setupState, setupJob);
+    return `
+      <div class="model-setup-playbook" aria-label="Model setup playbook">
+        ${steps
+          .map(
+            (step, index) => `
+              <div class="setup-playbook-step is-${escapeAttribute(step.status)}">
+                <span class="setup-playbook-index">${index + 1}</span>
+                <div>
+                  <strong>${escapeHtml(step.label)}</strong>
+                  <span class="row-meta">${escapeHtml(step.detail || "")}</span>
+                </div>
+              </div>
+            `,
+          )
+          .join("")}
+      </div>
+    `;
+  }
+
   function modelSetupDecisionForConnection(connection, provider = null, latestJob = null) {
     const readiness = provider?.readiness || {};
     const backendState = latestJob?.setupState || provider?.setupState || {};
@@ -2996,25 +3230,86 @@ const MotionJSONUI = (() => {
       model,
       flags,
       settingsPayload: options.settingsPayload && typeof options.settingsPayload === "object" ? { ...options.settingsPayload } : {},
+      endpoint: normalized === "smoke" ? providerSmokeTestEndpoint(providerId) : "",
       requiresConfirmation: ["check-access", "test", "install", "cache-model", "smoke"].includes(normalized),
       hosted: Boolean(hosted),
     };
   }
 
+  function eventRowsMarkup(events, options = {}) {
+    return asArray(events)
+      .slice()
+      .reverse()
+      .map((event) => {
+        const progress = eventProgress(event);
+        const progressText = eventProgressText(event);
+        const label = eventLabel(event);
+        const timestamp = eventTimestamp(event);
+        const message = eventMessage(event);
+        const severity = eventSeverity(event);
+        const metadataChips = eventMetadataChips(event);
+        const suggestedActions = eventSuggestedActions(event);
+        const debugMetadata = eventDebugMetadata(event);
+        const debugKeys = Object.keys(debugMetadata);
+        const progressBar =
+          progressText && (typeof progress.overallRatio === "number" || typeof progress.ratio === "number" || typeof progress.percent === "number")
+            ? `<div class="event-progress-track" role="progressbar" aria-label="${escapeAttribute(`${label} progress`)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${escapeAttribute(progressText.replace("%", ""))}">
+                <span style="--event-progress: ${escapeAttribute(progressText)};"></span>
+              </div>`
+            : "";
+        return `
+          <div class="event-row is-${escapeAttribute(severity)} ${options.source === "setup" ? "is-setup-event" : ""}">
+            <div class="event-row-main">
+              <strong>${escapeHtml(label)}</strong>
+              <span class="event-time">${escapeHtml(timestamp)}</span>
+              <span class="row-meta">${escapeHtml(message)}</span>
+            </div>
+            ${metadataChips.length ? `<div class="event-chips">${metadataChips.map((chip) => detailChip(chip)).join("")}</div>` : ""}
+            ${progressBar}
+            ${suggestedActions.length ? `<ul class="event-actions">${suggestedActions.map((action) => `<li>${escapeHtml(action)}</li>`).join("")}</ul>` : ""}
+            ${
+              debugKeys.length
+                ? `<details class="event-debug">
+                    <summary>Debug metadata</summary>
+                    <pre>${escapeHtml(JSON.stringify(debugMetadata, null, 2))}</pre>
+                  </details>`
+                : ""
+            }
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function eventLogOverviewMarkup(job, events, errorMessage = "") {
+    if (errorMessage) return "";
+    const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+    const latest = asArray(events).slice(-1)[0] || null;
+    const severity = latest ? eventSeverity(latest) : lifecycle?.failure ? "bad" : "neutral";
+    const progress = lifecycle?.progress || { known: false, percent: 0, label: "No progress reported" };
+    const stale = lifecycle?.stale?.stale;
+    const action = lifecycle?.failure?.suggestedAction || (stale ? lifecycle.stale.detail : latest ? eventSuggestedActions(latest)[0] : "");
+    const provider = lifecycle?.provider?.displayLabel || "";
+    return `
+      <div class="event-log-overview is-${escapeAttribute(severity)}">
+        <div>
+          <strong>${escapeHtml(lifecycle ? lifecycle.phase || lifecycle.status : "No run selected")}</strong>
+          <span class="row-meta">${escapeHtml(latest ? eventMessage(latest) : "Select or start a run to inspect backend events.")}</span>
+        </div>
+        <div class="provider-detail">
+          ${provider ? detailChip(provider) : ""}
+          ${detailChip(progress.known ? `${progress.percent}% complete` : `${progress.percent}% estimated`)}
+          ${stale ? detailChip("stale progress") : ""}
+        </div>
+        ${action ? `<p>${escapeHtml(action)}</p>` : ""}
+      </div>
+    `;
+  }
+
   function setupJobEventsMarkup(job) {
     const events = asArray(job?.events);
     if (!events.length) return `<div class="empty-state">Setup logs appear here after you run an install, access check, or smoke test.</div>`;
-    return events
-      .slice()
-      .reverse()
-      .map((event) => `
-        <div class="event-row">
-          <strong>${escapeHtml(event.type || "event")}</strong>
-          <span class="event-time">${escapeHtml(event.createdAt || "")}</span>
-          <span class="row-meta">${escapeHtml(event.message || "")}</span>
-        </div>
-      `)
-      .join("");
+    return eventRowsMarkup(events, { source: "setup" });
   }
 
   function recommendedConnectionIdForPreset(presetId = state.selectedPreset) {
@@ -5634,6 +5929,22 @@ const MotionJSONUI = (() => {
           </div>`
         : "";
       const setupProgressCard = setupJobProgressCard(setupJob, setupJobSummary);
+      const environmentCard = environmentRecommendationCard(connection);
+      const setupPlaybook = modelSetupPlaybookMarkup(connection, settingsProvider, setupState, setupJob);
+      const cacheSummary = modelCacheStatusSummary(settingsProvider, setupJob);
+      const cacheStatusCard = cacheSummary.required
+        ? `<div class="model-cache-status is-${escapeAttribute(cacheSummary.cached ? "ready" : "warn")}">
+            <div>
+              <strong>${escapeHtml(cacheSummary.label)}</strong>
+              <span class="row-meta">${escapeHtml(cacheSummary.message)}</span>
+            </div>
+            <div class="provider-detail">
+              ${cacheSummary.model ? detailChip(cacheSummary.model) : ""}
+              ${cacheSummary.pathKnown ? detailChip(cacheSummary.recorded ? "path recorded server-side" : "path known locally") : detailChip("path not recorded yet")}
+              ${cacheSummary.updatedAt ? detailChip(`updated ${cacheSummary.updatedAt}`) : ""}
+            </div>
+          </div>`
+        : "";
       const pendingConfirmation = state.pendingModelSetupConfirmation?.providerId === connection.providerId
         ? state.pendingModelSetupConfirmation
         : null;
@@ -5681,8 +5992,11 @@ const MotionJSONUI = (() => {
           </div>
         </div>
         ${confirmationCard}
+        ${environmentCard}
+        ${setupPlaybook}
         ${normalAccessCard}
         ${setupProgressCard}
+        ${cacheStatusCard}
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
@@ -6653,29 +6967,6 @@ const MotionJSONUI = (() => {
       if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
     }
 
-    function eventRowsMarkup(events) {
-      return events
-        .slice()
-        .reverse()
-        .map((event) => {
-          const metadata = eventMetadata(event);
-          const progress = eventProgress(event);
-          const ratio = progress.overallRatio ?? progress.ratio;
-          const progressText = typeof ratio === "number" ? ` - ${Math.round((ratio <= 1 ? ratio : ratio / 100) * 100)}%` : "";
-          const label = event.event_type || event.type || event.stage || "event";
-          const timestamp = event.created_at || event.createdAt || event.timestamp || metadata.timestamp || "";
-          const message = event.message || metadata.message || event.stage || "job event";
-          return `
-                <div class="event-row">
-                  <strong>${escapeHtml(label)}</strong>
-                  <span class="event-time">${escapeHtml(timestamp)}</span>
-                  <span class="row-meta">${escapeHtml(message + progressText)}</span>
-                </div>
-              `;
-        })
-        .join("");
-    }
-
     function emptyEventLogMarkup(job, errorMessage = "") {
       const lifecycle = job ? normalizeJobLifecycle({ ...job, events: state.jobEvents }) : null;
       const detail = job
@@ -6692,7 +6983,7 @@ const MotionJSONUI = (() => {
       const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
       const errorMessage = state.errors.selectedJob || "";
       const countLabel = `${events.length} event${events.length === 1 ? "" : "s"}`;
-      const markup = events.length ? eventRowsMarkup(events) : emptyEventLogMarkup(job, errorMessage);
+      const markup = `${eventLogOverviewMarkup(job, events, errorMessage)}${events.length ? eventRowsMarkup(events) : emptyEventLogMarkup(job, errorMessage)}`;
       $("#eventCount").textContent = countLabel;
       $("#jobEventLog").innerHTML = markup;
       if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
@@ -11744,6 +12035,9 @@ const MotionJSONUI = (() => {
     correctionGuidanceForTrack,
     correctionResponseMessage,
     diagnosticNeedsImmediateAttention,
+    environmentRecommendationSummary,
+    eventRowsMarkup,
+    eventSeverity,
     exportActionState,
     exportGateSummary,
     exportHandoffCards,
@@ -11762,6 +12056,7 @@ const MotionJSONUI = (() => {
     setupJobProgressSummary,
     setupJobStatusSummary,
     modelSetupDecisionForConnection,
+    modelSetupPlaybookSteps,
     modelSetupStateForConnection,
     modelSetupPrimaryActionForState,
     capabilityWarningNamesForConfig,
