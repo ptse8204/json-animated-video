@@ -3038,6 +3038,7 @@ const MotionJSONUI = (() => {
       ["smoke", "prepare_model"].includes(setupJob.action) &&
       hasSetupEvent(
         "loading_transformers_pipeline",
+        "sam3_smoke_subprocess_started",
         "loading_sam3_tracker_processor",
         "loading_sam3_tracker_model_weights",
         "sam3_tracker_model_load_attempt",
@@ -12064,6 +12065,7 @@ const MotionJSONUI = (() => {
             allowNetwork: true,
             allowDisk: true,
             allowHeavyLocal: true,
+            useSubprocessSmoke: providerId === "sam3-local",
             dryRun: Boolean(state.health?.mockMode),
             model: selectedCacheModel,
             sceneSweep: providerId === "sam3-local",
@@ -12131,7 +12133,7 @@ const MotionJSONUI = (() => {
           }
           const body = hosted
             ? { allowNetwork: true, allowHosted: true, acknowledgeCostPrivacy: true, prompt: $("#textPrompt")?.value || "object" }
-            : { allowHeavyLocal: true, dryRun: Boolean(state.health?.mockMode), sceneSweep: providerId === "sam3-local" && state.selectedPreset === "trace_all_objects", videoPath: selectedVideoPath() };
+            : { allowHeavyLocal: true, useSubprocessSmoke: providerId === "sam3-local", dryRun: Boolean(state.health?.mockMode), sceneSweep: providerId === "sam3-local" && state.selectedPreset === "trace_all_objects", videoPath: selectedVideoPath() };
           await startProviderSetupJob(providerId, "smoke", {
             ...body,
             settings: formPayload,

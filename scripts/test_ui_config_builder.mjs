@@ -9,6 +9,7 @@ await import("../src/motionjson/ui/static/app.js");
 const ui = globalThis.MotionJSONUI;
 assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const appSource = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
@@ -499,6 +500,7 @@ const localPrepareState = ui.modelSetupPrimaryActionForState(
 );
 assert.equal(localPrepareState.id, "prepare-model");
 assert.equal(localPrepareState.label, "Prepare local model");
+assert.match(appSource, /useSubprocessSmoke:\s*providerId === "sam3-local"/);
 
 const eventMarkup = ui.eventRowsMarkup([
   {

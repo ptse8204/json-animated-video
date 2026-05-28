@@ -954,6 +954,82 @@ def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(t
     assert str(model_dir) not in body.decode("utf-8")
 
 
+def test_sam3_smoke_can_run_in_isolated_subprocess_from_cached_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch, seen)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    write_fake_from_pretrained_dir(model_dir)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    subprocess_calls: list[dict[str, object]] = []
+
+    def fake_subprocess_warmup(model_id, *, device, progress=None, timeout_seconds=0, environ=None):
+        subprocess_calls.append({"model": model_id, "device": device, "timeout": timeout_seconds})
+        if progress:
+            progress("loading_sam3_tracker_model_weights", "Loading isolated SAM3 runtime", 55, False)
+            progress("model_loaded_on_device", "SAM3 Tracker model weights loaded on cuda:0", 62, True)
+            progress("warmup_succeeded", "SAM3 Scene Sweep warmup inference returned masks", 94, True)
+            progress("ready_for_extraction", "SAM3 Scene Sweep is ready for extraction", 100, True)
+        return {
+            "status": "ok",
+            "providerName": "sam3-local",
+            "sceneSweep": True,
+            "runtimeKind": "transformers_sam3_tracker_direct",
+            "modelObjectLoaded": True,
+            "deviceRequested": "cuda",
+            "deviceActual": "cuda:0",
+            "deviceInspection": {"device": "cuda:0", "deviceType": "cuda", "inspectable": True},
+            "loadedOnCuda": True,
+            "warmupStatus": "succeeded",
+            "recordCount": 1,
+        }
+
+    monkeypatch.setattr(
+        "motionjson.backend.sam3_smoke_subprocess.run_sam3_scene_sweep_warmup_subprocess",
+        fake_subprocess_warmup,
+    )
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "smoke",
+                "runInline": True,
+                "allowHeavyLocal": True,
+                "useSubprocessSmoke": True,
+            }
+        ).encode("utf-8"),
+    )
+    smoke = decode(body)["setupJob"]
+
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert smoke["result"]["smokeTest"]["loadedOnCuda"] is True
+    assert subprocess_calls == [{"model": str(model_dir), "device": "cuda", "timeout": 900.0}]
+    assert "modelFromPretrained" not in seen
+    assert str(model_dir) not in body.decode("utf-8")
+    event_types = {event["type"] for event in smoke["events"]}
+    assert {"loading_sam3_tracker_model_weights", "model_loaded_on_device", "ready_for_extraction"}.issubset(event_types)
+
+
 def test_sam3_smoke_fails_before_pipeline_when_cached_snapshot_has_no_weights(tmp_path, monkeypatch):
     monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
     seen: dict[str, object] = {}

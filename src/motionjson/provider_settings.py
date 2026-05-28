@@ -1778,11 +1778,23 @@ def local_sam_smoke_test(
                 "smokeTest": None,
             }
         try:
-            smoke = sam3_scene_sweep_warmup(
-                str(runtime.get("runtime_model") or runtime.get("selected_model") or SAM3_HF_REPO_ID),
-                device=str(runtime.get("sam3_device") or "cuda"),
-                progress=progress,
-            )
+            smoke_timeout_seconds = _sam3_smoke_timeout_seconds(payload, environ)
+            if _truthy(payload.get("useSubprocessSmoke", payload.get("use_subprocess_smoke"))):
+                from motionjson.backend.sam3_smoke_subprocess import run_sam3_scene_sweep_warmup_subprocess
+
+                smoke = run_sam3_scene_sweep_warmup_subprocess(
+                    str(runtime.get("runtime_model") or runtime.get("selected_model") or SAM3_HF_REPO_ID),
+                    device=str(runtime.get("sam3_device") or "cuda"),
+                    progress=progress,
+                    timeout_seconds=smoke_timeout_seconds,
+                    environ=environ,
+                )
+            else:
+                smoke = sam3_scene_sweep_warmup(
+                    str(runtime.get("runtime_model") or runtime.get("selected_model") or SAM3_HF_REPO_ID),
+                    device=str(runtime.get("sam3_device") or "cuda"),
+                    progress=progress,
+                )
             smoke = {
                 **smoke,
                 "sam2Required": False,
@@ -2505,6 +2517,16 @@ def _float_payload(payload: Mapping[str, Any], key: str, default: float) -> floa
         return float(payload.get(key, payload.get(snake, default)))
     except (TypeError, ValueError):
         return default
+
+
+def _sam3_smoke_timeout_seconds(payload: Mapping[str, Any], environ: Mapping[str, str] | None) -> float:
+    default = 900.0
+    if environ and environ.get("MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS"):
+        try:
+            default = float(environ["MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS"])
+        except (TypeError, ValueError):
+            default = 900.0
+    return min(max(_float_payload(payload, "sam3SmokeTimeoutSeconds", default), 30.0), 7200.0)
 
 
 def _ensure_accepts_credentials(definition: Mapping[str, Any]) -> None:

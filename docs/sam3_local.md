@@ -123,6 +123,13 @@ model-sized CUDA allocation yet, treat that as a real blocker instead of
 progress: restart the Colab runtime, reinstall `.[sam3-transformers]`, verify
 `accelerate` is installed, and rerun Prepare local model.
 
+Local UI SAM3 smoke/warmup runs in an isolated worker process for normal setup
+jobs. Progress events still stream into Model setup, but if Transformers or
+PyTorch blocks inside model load/warmup, MotionJSON terminates the worker and
+records a failed setup instead of leaving the UI in `Setup running` forever.
+The default timeout is 900 seconds and can be adjusted with
+`MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS` for slower local machines.
+
 ## Colab Checkpoint Path Flow
 
 For Colab, the expected local setup order is:
@@ -166,6 +173,7 @@ Hugging Face cache, support a Google Drive
 | `sam3TrackerModel=/path/to/sam3.pt` | Scene sweep received a single checkpoint file. Transformers expects a repo id or local model directory. | Use `sam3TrackerModel=facebook/sam3`, a local Hugging Face `from_pretrained` directory, or the UI Cache model action. Keep `sam3.pt` for `sam3ModelPath`. |
 | Missing Hugging Face access | The gated Hugging Face file cannot be resolved. | In the Local UI, paste a Hugging Face token in Model setup and use `Check Hugging Face access`; headless users can set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` without printing it. |
 | `Loading SAM3 Tracker model weights` repeats with `no model-sized CUDA allocation yet` | Transformers has not placed the SAM3 model weights on GPU. This is not successful progress. | Confirm Colab is on a CUDA runtime, reinstall `.[sam3-transformers]` so `accelerate` is present, restart the runtime to clear stale GPU memory, then rerun Prepare local model. |
+| SAM3 setup fails with `warmup timed out` | The isolated SAM3 warmup worker did not finish model load or bounded inference before the timeout, so MotionJSON terminated it to keep the UI recoverable. | Restart the Colab runtime, confirm CUDA is visible to PyTorch, check `transformers`, `accelerate`, and `safetensors`, then retry. Increase `MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS` only after confirming GPU memory is actively increasing. |
 | User does not want Hugging Face token setup | Official-package SAM3 concept/exemplar still needs an approved checkpoint, but scene sweep can use a SAM3 Tracker-compatible Transformers model path/id. | Use `SAM3_TRACKER_MODEL` for scene sweep, mount Google Drive or paste an approved `sam3.pt` for concept/exemplar, or use hosted concept/image workflows. |
 | Access not approved | Hugging Face rejects the checkpoint download. | Open the model page while signed in, accept the access terms, then rerun the resolver. |
 | Path does not exist | MotionJSON cannot find the local checkpoint file. | Rerun the resolver or paste the exact `sam3.pt` path printed by Hugging Face Hub. |

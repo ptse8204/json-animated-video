@@ -455,7 +455,10 @@ def _execute_setup_action(
         return test_provider_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
     if action == "smoke":
         if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
-            return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ, progress=progress)
+            smoke_payload = dict(payload)
+            if provider_id == "sam3-local" and "useSubprocessSmoke" not in smoke_payload and "use_subprocess_smoke" not in smoke_payload:
+                smoke_payload["useSubprocessSmoke"] = not _truthy(smoke_payload.get("runInline", smoke_payload.get("run_inline")))
+            return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=smoke_payload, environ=environ, progress=progress)
         return hosted_sam3_smoke_test(conn, user_id=user_id, payload={**dict(payload), "providerId": provider_id}, environ=environ)
     if action == "prepare_model":
         return _prepare_model_action(
@@ -635,6 +638,8 @@ def _prepare_model_action(
         "allowHeavyLocal": True,
         "sceneSweep": bool(provider_id == "sam3-local"),
     }
+    if provider_id == "sam3-local" and "useSubprocessSmoke" not in smoke_payload and "use_subprocess_smoke" not in smoke_payload:
+        smoke_payload["useSubprocessSmoke"] = not _truthy(payload.get("runInline", payload.get("run_inline")))
     smoke_result = local_sam_smoke_test(
         conn,
         user_id=user_id,
