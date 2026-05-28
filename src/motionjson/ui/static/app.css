@@ -3903,6 +3903,16 @@ body {
   flex: 1 1 130px;
 }
 
+.run-monitor-log-panel {
+  margin-top: 12px;
+}
+
+.run-monitor-log-panel summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 800;
+}
+
 .browser-preview-card {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) auto;

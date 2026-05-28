@@ -1487,6 +1487,44 @@ assert.equal(lifecycleRunning.progress.percent, 42);
 assert.equal(lifecycleRunning.progress.known, true);
 assert.equal(lifecycleRunning.phase, "tracking");
 
+const lifecycleStale = ui.normalizeJobLifecycle(
+  {
+    id: "job_stale",
+    type: "extract",
+    status: "running",
+    updatedAt: "2026-05-20T10:00:00Z",
+    events: [
+      {
+        created_at: "2026-05-20T10:01:00Z",
+        metadata: { progress: { overallRatio: 0.31 }, stage: "candidate_discovery" },
+        message: "discovering object candidates",
+      },
+    ],
+  },
+  { now: Date.parse("2026-05-20T10:05:30Z") },
+);
+assert.equal(lifecycleStale.stale.stale, true);
+assert.match(lifecycleStale.stale.detail, /No progress update/);
+assert.equal(lifecycleStale.actions.canCancel, true);
+
+const lifecycleFresh = ui.normalizeJobLifecycle(
+  {
+    id: "job_fresh",
+    type: "extract",
+    status: "running",
+    updatedAt: "2026-05-20T10:00:00Z",
+    events: [
+      {
+        created_at: "2026-05-20T10:04:30Z",
+        metadata: { progress: { overallRatio: 0.31 }, stage: "candidate_discovery" },
+        message: "discovering object candidates",
+      },
+    ],
+  },
+  { now: Date.parse("2026-05-20T10:05:30Z") },
+);
+assert.equal(lifecycleFresh.stale.stale, false);
+
 const lifecycleFailed = ui.normalizeJobLifecycle({
   id: "job_failed",
   type: "extract",

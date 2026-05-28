@@ -129,6 +129,26 @@ class FakeSceneMaskGenerator:
         }
 
 
+class RecordingJobContext:
+    def __init__(self) -> None:
+        self.events = []
+        self.cancel_checks = []
+
+    def emit(self, stage, status, message, *, progress=None, metadata=None):
+        self.events.append(
+            {
+                "stage": stage,
+                "status": status,
+                "message": message,
+                "progress": progress or {},
+                "metadata": metadata or {},
+            }
+        )
+
+    def check_cancel(self, stage):
+        self.cancel_checks.append(stage)
+
+
 class FakeTrackerVideoSession:
     video_height = 12
     video_width = 16
@@ -416,6 +436,24 @@ def test_local_sam3_auto_masks_runs_scene_sweep_generator_without_object_prompt(
     assert records[0]["label"] == "scene object"
     assert records[0]["sceneSweep"] is True
     assert generator.calls == [{"size": (16, 12), "pointsPerBatch": 32}, {"size": (16, 12), "pointsPerBatch": 32}]
+
+
+def test_local_sam3_auto_masks_reports_scene_sweep_progress_events():
+    recorder = RecordingJobContext()
+    backend = LocalSAM3DiscoveryBackend(tracker_mask_generator=FakeSceneMaskGenerator())
+
+    backend.discover_auto_masks(
+        video_source(),
+        {"keyframes": [0, 2], "maxCandidatesPerKeyframe": 1, "pointsPerBatch": 32},
+        RunContext(job_context=recorder),
+    )
+
+    messages = [event["message"] for event in recorder.events]
+    assert "loading SAM3 Tracker scene-sweep model" in messages
+    assert any("generating SAM3 scene masks for keyframe 1/2" in message for message in messages)
+    assert any("SAM3 scene masks generated for keyframe 2/2" in message for message in messages)
+    assert all("facebook" not in event["message"].lower() for event in recorder.events)
+    assert recorder.cancel_checks == ["sam3_scene_sweep", "sam3_scene_sweep"]
 
 
 def test_local_sam3_scene_sweep_empty_result_is_actionable():

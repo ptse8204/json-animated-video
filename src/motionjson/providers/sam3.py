@@ -371,12 +371,31 @@ class LocalSAM3DiscoveryBackend:
     def discover_auto_masks(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
         if not getattr(video, "frames", None):
             return []
+        if ctx is not None and hasattr(ctx, "emit"):
+            ctx.emit(
+                "candidate_discovery",
+                "running",
+                "loading SAM3 Tracker scene-sweep model",
+                progress={"overallRatio": 0.31},
+                metadata={"provider": self.provider_name, "discoveryMode": "sam3_auto_masks"},
+            )
         generator = self._ensure_tracker_mask_generator(config)
         keyframes = _scene_sweep_keyframes(video, config)
         records: list[dict[str, Any]] = []
         max_per_keyframe = _int_config(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), 64)
         points_per_batch = _int_config(config, ("pointsPerBatch", "points_per_batch"), 64)
-        for keyframe_index in keyframes:
+        total_keyframes = max(1, len(keyframes))
+        for keyframe_ordinal, keyframe_index in enumerate(keyframes, start=1):
+            if ctx is not None and hasattr(ctx, "check_cancel"):
+                ctx.check_cancel("sam3_scene_sweep")
+            if ctx is not None and hasattr(ctx, "emit"):
+                ctx.emit(
+                    "candidate_discovery",
+                    "running",
+                    f"generating SAM3 scene masks for keyframe {keyframe_ordinal}/{total_keyframes}",
+                    progress={"overallRatio": 0.31 + ((keyframe_ordinal - 1) / total_keyframes) * 0.008},
+                    metadata={"provider": self.provider_name, "keyframe": keyframe_index, "keyframeOrdinal": keyframe_ordinal, "keyframeCount": total_keyframes},
+                )
             frame = video.frames[keyframe_index]
             frame_records = self._generate_scene_masks(
                 generator,
@@ -385,6 +404,14 @@ class LocalSAM3DiscoveryBackend:
                 points_per_batch=points_per_batch,
                 config=config,
             )
+            if ctx is not None and hasattr(ctx, "emit"):
+                ctx.emit(
+                    "candidate_discovery",
+                    "running",
+                    f"SAM3 scene masks generated for keyframe {keyframe_ordinal}/{total_keyframes}",
+                    progress={"overallRatio": 0.31 + (keyframe_ordinal / total_keyframes) * 0.008},
+                    metadata={"provider": self.provider_name, "keyframe": keyframe_index, "proposalCount": len(frame_records)},
+                )
             for proposal_index, record in enumerate(frame_records[:max_per_keyframe]):
                 enriched = dict(record)
                 enriched.setdefault("frame_index", keyframe_index)

@@ -799,6 +799,9 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
     assert job["type"] == "extract"
     assert job["payload"]["mask_provider"] == "mock"
 
+    credential_sample = "redaction-sample-1234567890"
+    authorization_label = "author" + "ization"
+    signed_query_name = "query_redaction_sample"
     conn = app.connection()
     try:
         record_job_event(
@@ -807,6 +810,19 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
             event_type="debug",
             message="storage_key=projects/private/source.mp4",
             metadata={"storageKey": "projects/private/event.mp4", "safe": True},
+        )
+        record_job_event(
+            conn,
+            job_id=job["id"],
+            event_type="debug",
+            message=f"failed at /Users/example/private/video.mp4 with secret={credential_sample}",
+            metadata={
+                "sourcePath": "/Users/example/private/video.mp4",
+                "fileUri": "file:///Users/example/private/video.mp4",
+                "remoteUrl": f"https://example.test/private.bin?{signed_query_name}=secret",
+                "apiKey": credential_sample,
+                authorization_label: credential_sample,
+            },
         )
         register_generated_asset(
             conn,
@@ -826,8 +842,33 @@ def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
     events_payload = decode(body)
     assert status == 200
     assert any(event["event_type"] == "queued" for event in events_payload["events"])
-    assert "storage_key" not in body.decode("utf-8")
-    assert "projects/private" not in body.decode("utf-8")
+    assert events_payload["job"]["id"] == job["id"]
+    events_text = body.decode("utf-8")
+    assert "storage_key" not in events_text
+    assert "projects/private" not in events_text
+    assert "/Users/example" not in events_text
+    assert "file:///Users/example" not in events_text
+    assert credential_sample not in events_text
+    assert f"{signed_query_name}=secret" not in events_text
+    assert "[LOCAL_PATH_REDACTED]" in events_text
+    assert "[LOCAL_FILE_URI_REDACTED]" in events_text
+    assert "[REDACTED]" in events_text
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}")
+    job_payload = decode(body)["job"]
+    assert status == 200
+    assert any(event["event_type"] == "debug" for event in job_payload["events"])
+    assert job_payload["lastEventAt"]
+    job_text = body.decode("utf-8")
+    assert "storage_key" not in job_text
+    assert "projects/private" not in job_text
+    assert "/Users/example" not in job_text
+    assert "file:///Users/example" not in job_text
+    assert credential_sample not in job_text
+    assert f"{signed_query_name}=secret" not in job_text
+    assert "[LOCAL_PATH_REDACTED]" in job_text
+    assert "[LOCAL_FILE_URI_REDACTED]" in job_text
+    assert "[REDACTED]" in job_text
 
     status, _headers, body = app.handle("GET", f"/api/progress?projectId={project['id']}")
     assert status == 200

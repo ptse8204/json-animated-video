@@ -56,6 +56,7 @@ const MotionJSONUI = (() => {
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
   const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
+  const STALE_ACTIVE_JOB_MS = 2 * 60 * 1000;
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-local", "sam3-hosted"]);
   const SHELL_STORAGE_KEYS = {
     sidebarCollapsed: "motionjson.localUi.sidebarCollapsed",
@@ -1185,6 +1186,7 @@ const MotionJSONUI = (() => {
     const diagnosticCount = toInteger(snapshot.diagnosticCount, 0);
     const attentionDiagnosticCount = toInteger(snapshot.attentionDiagnosticCount, 0);
     const hasFailure = Boolean(snapshot.hasFailure || /failed|error|canceled/.test(selectedJobStatus));
+    const hasStaleProgress = Boolean(snapshot.hasStaleProgress);
     const selectedJobComplete = /succeeded|completed|complete/.test(selectedJobStatus);
     const selectedJobRunning = /queued|running|pending|started/.test(selectedJobStatus) || activeJobs > 0;
 
@@ -1198,6 +1200,15 @@ const MotionJSONUI = (() => {
     });
 
     if (hasFailure) return stage("run", "Run monitor", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked");
+    if (hasStaleProgress) {
+      return stage(
+        "run",
+        "Run monitor",
+        `${activeJobs || 1} active`,
+        snapshot.staleProgressDetail || "No progress update has arrived recently. Open logs or cancel the run if it is blocked.",
+        "warning",
+      );
+    }
     if (selectedJobComplete) {
       return stage(
         "run",
@@ -2226,6 +2237,73 @@ const MotionJSONUI = (() => {
     return Number.isFinite(time) ? time : 0;
   }
 
+  function parseTimestampMs(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+    if (!value) return 0;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function latestJobActivityTimestamp(job = {}, events = []) {
+    const eventList = asArray(events);
+    for (let index = eventList.length - 1; index >= 0; index -= 1) {
+      const event = eventList[index] || {};
+      const time = parseTimestampMs(event.created_at || event.createdAt || event.timestamp);
+      if (time) return time;
+    }
+    const lifecycle = job.lifecycle || {};
+    const latestEvent = lifecycle.latestEvent || job.latestEvent || {};
+    for (const value of [
+      job.lastEventAt,
+      job.last_event_at,
+      latestEvent.createdAt,
+      latestEvent.created_at,
+      latestEvent.timestamp,
+      lifecycle.updatedAt,
+      lifecycle.updated_at,
+    ]) {
+      const time = parseTimestampMs(value);
+      if (time) return time;
+    }
+    return jobTimestamp(job);
+  }
+
+  function formatJobAge(ms) {
+    const seconds = Math.max(1, Math.floor(ms / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remaining = minutes % 60;
+    return remaining ? `${hours}h ${remaining}m` : `${hours}h`;
+  }
+
+  function jobStaleNotice(job = {}, options = {}) {
+    const status = String(options.status || job.lifecycle?.status || job.status || "").toLowerCase();
+    const rawStatus = String(options.rawStatus || job.lifecycle?.rawStatus || job.status || status).toLowerCase();
+    const terminal = options.terminal ?? (TERMINAL_JOB_STATUSES.has(status) || TERMINAL_JOB_STATUSES.has(rawStatus));
+    const active =
+      options.active ??
+      (/queued|pending|running|working|started|cancel_requested/.test(status) ||
+        /queued|pending|running|working|started|cancel_requested/.test(rawStatus));
+    const thresholdMs = Math.max(30 * 1000, Number(options.thresholdMs || STALE_ACTIVE_JOB_MS));
+    const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
+    const activityAt = latestJobActivityTimestamp(job, options.events || job.events || []);
+    if (!active || terminal || !activityAt || now <= activityAt || now - activityAt < thresholdMs) {
+      return { stale: false, ageMs: activityAt ? Math.max(0, now - activityAt) : 0, activityAt, label: "", detail: "" };
+    }
+    const ageMs = now - activityAt;
+    const phase = job.lifecycle?.phase || job.phase || latestStageLabel(job);
+    const label = `No progress update for ${formatJobAge(ageMs)}`;
+    return {
+      stale: true,
+      ageMs,
+      activityAt,
+      label,
+      detail: `${label}. Last reported phase: ${phase || status || "running"}. The model may still be loading or blocked; open logs or cancel the run.`,
+    };
+  }
+
   function normalizeJobLifecycle(job = {}, options = {}) {
     const lifecycle = job.lifecycle || {};
     const events = asArray(options.events || job.events);
@@ -2255,6 +2333,19 @@ const MotionJSONUI = (() => {
     const active = /queued|pending|running|working|started|cancel_requested/.test(status) || /queued|pending|running|working|started|cancel_requested/.test(rawStatus);
     const actions = lifecycle.actions || job.actions || {};
     const review = lifecycle.review || job.review || {};
+    const stale = jobStaleNotice(
+      {
+        ...job,
+        lifecycle: {
+          ...lifecycle,
+          status,
+          rawStatus,
+          phase: lifecycle.phase || latestStageLabel({ ...job, events }),
+          latestEvent,
+        },
+      },
+      { events, status, rawStatus, active, terminal, now: options.now, thresholdMs: options.staleMs },
+    );
     return {
       format: "motionjson.local_ui_job_lifecycle_view.v0.1",
       id: lifecycle.jobId || jobIdentifier(job),
@@ -2291,6 +2382,7 @@ const MotionJSONUI = (() => {
       },
       active,
       terminal,
+      stale,
       timestamp: jobTimestamp(job),
       rawJob: job,
     };
@@ -4251,6 +4343,8 @@ const MotionJSONUI = (() => {
     const jobStatus = String(job?.status || "").toLowerCase();
     const jobMessage = job?.error || job?.reason || (jobStatus === "failed" ? job?.message : "");
     push("job", jobMessage, jobStatus === "failed" ? "bad" : "warn");
+    const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+    if (lifecycle?.stale?.stale) push("stale_progress", lifecycle.stale.detail, "warn");
     if (!jobMessage && /fallback|raster|unavailable|diagnostic/.test(String(job?.message || ""))) {
       push("job", job.message, "warn");
     }
@@ -4509,6 +4603,8 @@ const MotionJSONUI = (() => {
         activeJobs: state.jobs.filter(isActiveJob).length,
         hasSelectedJob: Boolean(state.selectedJobId),
         selectedJobStatus: selectedLifecycle?.status || selectedJob()?.status || "",
+        hasStaleProgress: Boolean(selectedLifecycle?.stale?.stale),
+        staleProgressDetail: selectedLifecycle?.stale?.detail || "",
         candidateCount: candidates.length,
         selectedCandidateCount,
         trackCount: state.reviewTracks.length,
@@ -4900,13 +4996,29 @@ const MotionJSONUI = (() => {
       (element?.querySelector?.("button, input, [tabindex]") || element)?.focus?.({ preventScroll: false });
     }
 
-    function openRunLogsAndDiagnostics() {
+    async function openRunLogsAndDiagnostics() {
       setRailCollapsed(false, { persist: false });
       const logs = $("#runLogsDisclosure");
       if (logs) logs.open = true;
+      const mainLogs = $("#mainRunLogsDisclosure");
+      if (mainLogs) mainLogs.open = true;
       const diagnostics = $("#fallbackDiagnosticsDisclosure");
       if (diagnostics) diagnostics.open = true;
-      (logs?.querySelector?.("summary") || diagnostics?.querySelector?.("summary"))?.focus?.({ preventScroll: false });
+      if (state.selectedJobId) {
+        try {
+          await refreshSelectedJobReview();
+        } catch (error) {
+          state.errors.selectedJob = error.message;
+          renderEventLog();
+        }
+      } else {
+        renderEventLog();
+      }
+      if (logs) logs.open = true;
+      if (mainLogs) mainLogs.open = true;
+      if (diagnostics) diagnostics.open = true;
+      mainLogs?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      (mainLogs?.querySelector?.("summary") || logs?.querySelector?.("summary") || diagnostics?.querySelector?.("summary"))?.focus?.({ preventScroll: false });
     }
 
     function clearSelectedTerminalJobForRetry() {
@@ -6434,6 +6546,7 @@ const MotionJSONUI = (() => {
               const status = job.status || "unknown";
               const selected = id && id === state.selectedJobId;
               const diagnostics = [
+                job.stale?.stale ? job.stale.label : "",
                 job.failure?.message,
                 job.latestEvent?.message,
                 job.rawJob?.error,
@@ -6509,6 +6622,7 @@ const MotionJSONUI = (() => {
       const normalizedStatus = String(status).toLowerCase();
       const cancelDisabled = !lifecycle.actions.canCancel || normalizedStatus === "cancel_requested";
       const terminalFailure = isFailedJobStatus(normalizedStatus);
+      const hasSelectedRun = Boolean(lifecycle.id);
       cancelButton.disabled = cancelDisabled;
       cancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       if (mainCancelButton) {
@@ -6516,7 +6630,10 @@ const MotionJSONUI = (() => {
         mainCancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       }
       failedActionGroups.forEach((group) => {
-        group.hidden = !terminalFailure;
+        group.hidden = !hasSelectedRun;
+        group.querySelectorAll("#runAgainButton, #mainRunAgainButton, #changeSetupButton, #mainChangeSetupButton, #chooseModelButton, #mainChooseModelButton").forEach((button) => {
+          button.hidden = !terminalFailure;
+        });
       });
       const payload = job.payload || {};
       const result = job.result || {};
@@ -6528,35 +6645,58 @@ const MotionJSONUI = (() => {
         phase: lifecycle.phase || "not reported",
         artifacts: state.jobArtifacts.length,
         objects: result.scene?.objects ?? result.objects ?? state.reviewTracks.length,
+        "last event": lifecycle.latestEvent.createdAt || job.lastEventAt || job.last_event_at || "not reported",
         updated: job.updated_at || job.updatedAt || "not reported",
       };
+      if (lifecycle.stale?.stale) facts.watchdog = lifecycle.stale.label;
       setFacts($("#selectedJobFacts"), facts);
       if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
     }
 
-    function renderEventLog() {
-      $("#eventCount").textContent = `${state.jobEvents.length} event${state.jobEvents.length === 1 ? "" : "s"}`;
-      $("#jobEventLog").innerHTML = state.jobEvents.length
-        ? state.jobEvents
-            .slice()
-            .reverse()
-            .map((event) => {
-              const metadata = eventMetadata(event);
-              const progress = eventProgress(event);
-              const ratio = progress.overallRatio ?? progress.ratio;
-              const progressText = typeof ratio === "number" ? ` - ${Math.round((ratio <= 1 ? ratio : ratio / 100) * 100)}%` : "";
-              const label = event.event_type || event.type || event.stage || "event";
-              const message = event.message || metadata.message || event.stage || "job event";
-              return `
+    function eventRowsMarkup(events) {
+      return events
+        .slice()
+        .reverse()
+        .map((event) => {
+          const metadata = eventMetadata(event);
+          const progress = eventProgress(event);
+          const ratio = progress.overallRatio ?? progress.ratio;
+          const progressText = typeof ratio === "number" ? ` - ${Math.round((ratio <= 1 ? ratio : ratio / 100) * 100)}%` : "";
+          const label = event.event_type || event.type || event.stage || "event";
+          const timestamp = event.created_at || event.createdAt || event.timestamp || metadata.timestamp || "";
+          const message = event.message || metadata.message || event.stage || "job event";
+          return `
                 <div class="event-row">
                   <strong>${escapeHtml(label)}</strong>
-                  <span class="event-time">${escapeHtml(event.created_at || event.createdAt || event.timestamp || "")}</span>
+                  <span class="event-time">${escapeHtml(timestamp)}</span>
                   <span class="row-meta">${escapeHtml(message + progressText)}</span>
                 </div>
               `;
-            })
-            .join("")
-        : `<div class="empty-state">No job events have been reported yet.</div>`;
+        })
+        .join("");
+    }
+
+    function emptyEventLogMarkup(job, errorMessage = "") {
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events: state.jobEvents }) : null;
+      const detail = job
+        ? `Selected run ${lifecycle?.id || jobIdentifier(job) || ""} is ${lifecycle?.status || job.status || "unknown"}; no job events were returned by the backend yet.`
+        : "Select or start a run to show backend events.";
+      if (errorMessage) {
+        return `<div class="error-state">Could not load job events: ${escapeHtml(errorMessage)}</div>`;
+      }
+      return `<div class="empty-state">${escapeHtml(detail)}</div>`;
+    }
+
+    function renderEventLog() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const errorMessage = state.errors.selectedJob || "";
+      const countLabel = `${events.length} event${events.length === 1 ? "" : "s"}`;
+      const markup = events.length ? eventRowsMarkup(events) : emptyEventLogMarkup(job, errorMessage);
+      $("#eventCount").textContent = countLabel;
+      $("#jobEventLog").innerHTML = markup;
+      if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
+      if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = markup;
     }
 
     function renderArtifactBrowser() {
@@ -8255,7 +8395,7 @@ const MotionJSONUI = (() => {
       ]);
 
       state.selectedJob = jobBody.job || null;
-      state.jobEvents = asArray(eventsBody.events);
+      state.jobEvents = asArray(eventsBody.events).length ? asArray(eventsBody.events) : asArray(jobBody.job?.events);
       state.jobArtifacts = asArray(artifactsBody.artifacts);
       state.jobReview = artifactsBody.review || null;
       state.correctionState = correctionsBody.correctionStateError
@@ -8733,7 +8873,8 @@ const MotionJSONUI = (() => {
       );
 
       state.selectedJob = jobResult[1]?.job || state.jobs.find((job) => jobIdentifier(job) === id) || null;
-      state.jobEvents = eventsResult[1]?.events || [];
+      const eventsFromRoute = asArray(eventsResult[1]?.events);
+      state.jobEvents = eventsFromRoute.length ? eventsFromRoute : asArray(state.selectedJob?.events);
       const artifacts = artifactsResult[1]?.artifacts || artifactsAliasResult[1]?.artifacts || [];
       state.jobArtifacts = artifacts;
       state.jobReview = artifactsResult[1]?.review || artifactsAliasResult[1]?.review || null;
@@ -9694,16 +9835,20 @@ const MotionJSONUI = (() => {
         renderPresetFields();
         renderConfigPreview();
         if (capture !== "prepare-sam3-trace-all-missing-runtime") setRunAlert("", "warning-box");
-      } else if (capture === "workflow-run") {
+      } else if (["workflow-run", "workflow-run-stale", "workflow-run-logs-open"].includes(capture)) {
         if (shell) {
           shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
         if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
-        applyPreset("trace_one_object", { keepProvider: true });
-        state.selectedModelSetupProviderId = "sam2-local";
-        markCaptureProviderReady("sam2-local");
+        const staleRunCapture = capture === "workflow-run-stale" || capture === "workflow-run-logs-open";
+        if (capture === "workflow-run-logs-open" && rightRail) {
+          rightRail.style.display = "";
+        }
+        applyPreset(staleRunCapture ? "trace_all_objects" : "trace_one_object", { keepProvider: true });
+        state.selectedModelSetupProviderId = staleRunCapture ? "sam3-local" : "sam2-local";
+        markCaptureProviderReady(staleRunCapture ? "sam3-local" : "sam2-local");
         state.selectedProjectId = "project_layout";
         state.projects = [{ id: "project_layout", name: "MotionJSON local project" }];
         state.selectedVideoId = "video_layout";
@@ -9742,9 +9887,83 @@ const MotionJSONUI = (() => {
           loadedName: "prepare-demo.mp4",
         };
         elements.stage.classList.add("has-video", "has-studio-demo");
-        state.prompts = [
-          { id: "prompt_run_point", kind: "positive_point", frame_index: 36, object_id: "selected_object", label: "Selected object", data: { x: 820, y: 520 } },
-        ];
+        state.prompts = staleRunCapture
+          ? []
+          : [{ id: "prompt_run_point", kind: "positive_point", frame_index: 36, object_id: "selected_object", label: "Selected object", data: { x: 820, y: 520 } }];
+        if (staleRunCapture) {
+          const runConfig = buildRunConfig({
+            preset: "trace_all_objects",
+            discoveryMode: "sam3_auto_masks",
+            projectId: "project_layout",
+            videoId: "video_layout",
+            sourcePath: "local-ui://assets/video_layout",
+            videoPath: "local-ui://assets/video_layout",
+            outputDirectory: "out/ui-runs/project_layout",
+            objectLabel: "scene object",
+            objectId: "scene_object",
+            currentFrame: 36,
+            keyframes: new Set([0, 36]),
+            prompts: [],
+            strokes: [],
+            maskProvider: "sam3-local",
+            device: "auto",
+            sampleFps: "12",
+            maxFrames: "48",
+            minArea: "100",
+            maxAreaRatio: "0.45",
+            stabilityThreshold: "0.82",
+            overlapThreshold: "0.72",
+            maxObjects: "5",
+            modelName: "facebook/sam3",
+            outputMode: "authoring",
+            qualityPreset: "clean",
+          });
+          const staleEventAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const jobEvent = {
+            event_type: "progress",
+            status: "running",
+            stage: "candidate_discovery",
+            message: "discovering object candidates",
+            created_at: staleEventAt,
+            metadata: {
+              progress: { overallRatio: 0.31 },
+              stage: "candidate_discovery",
+              provider: "sam3-auto-masks",
+            },
+          };
+          const loadingEvent = {
+            event_type: "progress",
+            status: "running",
+            stage: "candidate_discovery",
+            message: "loading SAM3 Tracker scene-sweep model",
+            created_at: staleEventAt,
+            metadata: {
+              progress: { overallRatio: 0.31 },
+              stage: "candidate_discovery",
+              provider: "sam3-local",
+            },
+          };
+          const job = {
+            id: `job_${capture}_layout`,
+            type: "extract",
+            status: "running",
+            progress: 31,
+            percent: 31,
+            payload: { mask_provider: "sam3-local", run_config: runConfig },
+            result: { objects: 1 },
+            updated_at: staleEventAt,
+            lastEventAt: staleEventAt,
+            message: "discovering object candidates",
+            events: [loadingEvent, jobEvent],
+          };
+          state.jobs = [job];
+          state.selectedJobId = job.id;
+          state.selectedJob = job;
+          state.lastRunConfig = runConfig;
+          state.runConfigsByJob[job.id] = runConfig;
+          state.jobEvents = [loadingEvent, jobEvent];
+          state.reviewTracks = buildReviewTracks({ job, config: runConfig, artifacts: [] });
+        }
         state.strokes = [];
         state.keyframes = new Set([36]);
         $("#frameSlider").max = "180";
@@ -9756,6 +9975,15 @@ const MotionJSONUI = (() => {
         renderPresetFields();
         renderPromptList();
         renderConfigPreview();
+        renderJobs();
+        renderJobReview();
+        if (capture === "workflow-run-logs-open" && $("#runLogsDisclosure")) {
+          $("#runLogsDisclosure").open = true;
+          if ($("#mainRunLogsDisclosure")) $("#mainRunLogsDisclosure").open = true;
+          const parentDetails = $("#runLogsDisclosure").closest("details");
+          if (parentDetails) parentDetails.open = true;
+          $("#mainRunLogsDisclosure")?.scrollIntoView?.({ block: "start" });
+        }
         setRunAlert("", "warning-box");
       } else if (capture.startsWith("model-plan")) {
         const showRunMonitor = ["model-plan-queued", "model-plan-running", "model-plan-succeeded"].includes(capture);
@@ -11521,6 +11749,7 @@ const MotionJSONUI = (() => {
     exportHandoffCards,
     exportNextStepText,
     filterReviewCandidates,
+    jobStaleNotice,
     modelConnectorsForSetup,
     modelPlanConfirmPayload,
     modelPlanGoalForPreset,

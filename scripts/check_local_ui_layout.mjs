@@ -25,6 +25,8 @@ const CAPTURE_STATES = [
   "workflow-provider",
   "workflow-prompts",
   "workflow-run",
+  "workflow-run-stale",
+  "workflow-run-logs-open",
   "workflow-review",
   "workflow-review-failure",
   "workflow-correct",
@@ -532,6 +534,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "prepare-sam3-trace-all-runtime-ready": "prompt_preview",
       "prepare-sam3-trace-all-missing-runtime": "prompt_preview",
       "workflow-run": "run_monitor",
+      "workflow-run-stale": "run_monitor",
+      "workflow-run-logs-open": "run_monitor",
       "workflow-review": "review_export",
       "workflow-review-failure": "run_monitor",
       "workflow-correct": "review_export",
@@ -657,10 +661,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
           postRunStageCount: document.querySelectorAll("#postRunGuideList .post-run-stage").length,
           runMonitorSummaryCount: document.querySelectorAll("#runMonitorSummary .status-summary-card").length,
+          runMonitorSummaryText: document.querySelector("#runMonitorSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           reviewStatusSummaryCount: document.querySelectorAll("#reviewStatusSummary .status-summary-card").length,
           correctionStatusSummaryCount: document.querySelectorAll("#correctionStatusSummary .status-summary-card").length,
           exportStatusSummaryCount: document.querySelectorAll("#exportStatusSummary .status-summary-card").length,
-          runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true,
+          runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true || document.querySelector("#mainRunLogsDisclosure")?.open === true,
+          eventLogText: ((document.querySelector("#jobEventLog")?.textContent || "") + " " + (document.querySelector("#mainJobEventLog")?.textContent || "")).trim().replace(/\\s+/g, " "),
           fallbackDiagnosticsOpen: document.querySelector("#fallbackDiagnosticsDisclosure")?.open === true,
           fallbackDiagnosticBadCount: document.querySelectorAll("#fallbackDiagnostics .diagnostic-row.is-bad").length,
           fallbackDiagnosticsVisible: visible(document.querySelector("#fallbackDiagnostics")),
@@ -800,6 +806,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
       failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
+    }
+    if (state === "workflow-run-stale" && (!/No progress update/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.runMonitorSummaryText}`) || stateValue.mainRunStatusText !== "running")) {
+      failures.push(`${viewport.name}/${state}: stale running job should expose a no-progress warning without hiding the run monitor`);
+    }
+    if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
+      failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {

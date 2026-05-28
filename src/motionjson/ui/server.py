@@ -162,6 +162,11 @@ def _is_local_path_field(key: Any) -> bool:
     return normalized in LOCAL_PATH_FIELD_NAMES
 
 
+def _is_secret_field(key: Any) -> bool:
+    normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+    return normalized in {"apikey", "authorization", "password", "secret", "token", "hftoken"} or normalized.endswith("token")
+
+
 def _redact_public_text(value: str) -> str:
     return redact_secret_text(
         WINDOWS_ABSOLUTE_PATH_RE.sub(
@@ -181,6 +186,8 @@ def _redact_public_text(value: str) -> str:
 
 
 def _public_value(value: Any, *, key: Any | None = None) -> Any:
+    if _is_secret_field(key) and value not in (None, "", False):
+        return "[REDACTED]"
     if _is_local_path_field(key) and isinstance(value, str) and (
         value.startswith("/") or value.lower().startswith("file://") or WINDOWS_ABSOLUTE_PATH_RE.match(value)
     ):
@@ -252,6 +259,8 @@ def _public_event(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _public_review_value(value: Any, *, key: Any | None = None) -> Any:
+    if _is_secret_field(key) and value not in (None, "", False):
+        return "[REDACTED]"
     if isinstance(value, dict):
         return {
             str(key): _public_review_value(item, key=key)
@@ -333,6 +342,7 @@ def _public_job_snapshot(
     if public_events:
         data["message"] = public_events[-1].get("message")
         data["latestEventType"] = public_events[-1].get("event_type")
+        data["lastEventAt"] = public_events[-1].get("created_at") or public_events[-1].get("createdAt")
     if include_events:
         data["events"] = public_events
     data["lifecycle"] = job_lifecycle_summary(data, events=public_events, review=review or {})
@@ -998,10 +1008,13 @@ class LocalUIApp:
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 3:
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
-                    return {"job": self._public_job_snapshot_for_job(conn, job)}
+                    return {"job": self._public_job_snapshot_for_job(conn, job, include_events=True)}
                 if len(parts) == 4 and parts[3] == "events":
-                    get_job(conn, user_id=user_id, job_id=parts[2])
-                    return {"events": [_public_event(event) for event in list_job_events(conn, job_id=parts[2])]}
+                    job = get_job(conn, user_id=user_id, job_id=parts[2])
+                    return {
+                        "job": self._public_job_snapshot_for_job(conn, job),
+                        "events": [_public_event(event) for event in list_job_events(conn, job_id=parts[2])],
+                    }
                 if len(parts) == 4 and parts[3] == "artifacts":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
