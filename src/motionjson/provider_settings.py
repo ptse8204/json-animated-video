@@ -815,8 +815,8 @@ def provider_runtime_settings(
         endpoint_source = "profile_default"
 
     readiness = _readiness(definition, settings, secrets, environ)
-    model_cache = _model_cache_state(definition, settings, secrets, environ, include_runtime_path=True)
-    runtime_model = str(model_cache.get("runtimeModel") or _runtime_effective_model(definition, settings, environ))
+    runtime_model_info = _runtime_model_info(definition, settings, secrets, environ)
+    model_cache = runtime_model_info["modelCache"]
     return {
         "providerId": provider_id,
         "hosted_profile_id": _selected_hosted_profile_id(definition, settings),
@@ -835,9 +835,10 @@ def provider_runtime_settings(
             or credential_values.get("hf_token")
             or ""
         ),
-        "selected_model": _runtime_effective_model(definition, settings, environ),
-        "runtime_model": runtime_model,
-        "resolved_model_dir": str(model_cache.get("localModelDir") or ""),
+        "selected_model": runtime_model_info["selectedModel"],
+        "runtime_model": runtime_model_info["runtimeModel"],
+        "runtime_model_source": runtime_model_info["runtimeModelSource"],
+        "resolved_model_dir": runtime_model_info["resolvedModelDir"],
         "model_cache": model_cache,
         "allow_hosted": bool(settings.get("allow_hosted", False)),
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
@@ -850,6 +851,23 @@ def provider_runtime_settings(
         "readiness": readiness,
         "settings_source": "local_settings" if row is not None else "default",
     }
+
+
+def provider_runtime_model_info(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return backend-only runtime model resolution for local cached providers."""
+
+    environ = environ or os.environ
+    definition = _definition(provider_id)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    settings = _settings_with_environment_profile(provider_id, settings, environ)
+    return _runtime_model_info(definition, settings, secrets, environ)
 
 
 def record_provider_model_cache(
@@ -914,6 +932,10 @@ def _looks_like_local_model_path(raw: str) -> bool:
 
 def _looks_like_hf_repo_id(raw: str) -> bool:
     return "/" in raw and not _looks_like_local_model_path(raw) and not raw.endswith(".pt")
+
+
+def _is_redacted_public_placeholder(value: Any) -> bool:
+    return str(value or "").strip() == "[LOCAL_PATH_REDACTED]"
 
 
 def _hf_cache_error_message(exc: Exception, model_id: str) -> str:
@@ -1035,6 +1057,57 @@ def _model_cache_state(
         return base
 
 
+def _runtime_model_source(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    environ: Mapping[str, str],
+    model_cache: Mapping[str, Any],
+) -> str:
+    provider_id = str(definition.get("id") or "")
+    if model_cache.get("serverPathRecorded") is True:
+        return "saved_cache"
+    if settings.get("selected_model"):
+        return "selected_model"
+    env_defaults = {
+        "sam2-hf-auto-masks": "SAM2_HF_AUTO_MASKS_MODEL",
+        "sam3-local": "SAM3_TRACKER_MODEL",
+    }
+    env = env_defaults.get(provider_id)
+    if env and environ.get(env):
+        return "selected_model"
+    return "default"
+
+
+def _runtime_model_info(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    secrets: Mapping[str, str],
+    environ: Mapping[str, str],
+) -> dict[str, Any]:
+    selected_model = _runtime_effective_model(definition, settings, environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ, include_runtime_path=True)
+    runtime_model = selected_model
+    resolved_model_dir = ""
+    if str(definition.get("id") or "") in LOCAL_MODEL_CACHE_PROVIDER_IDS and model_cache.get("cached") is True:
+        local_model_dir = str(model_cache.get("localModelDir") or "").strip()
+        if local_model_dir:
+            runtime_model = local_model_dir
+            resolved_model_dir = local_model_dir
+    source = _runtime_model_source(definition, settings, environ, model_cache)
+    model_cache = {
+        **dict(model_cache),
+        "runtimeModelSource": source,
+    }
+    return {
+        "providerId": str(definition.get("id") or ""),
+        "selectedModel": selected_model,
+        "runtimeModel": runtime_model,
+        "runtimeModelSource": source,
+        "resolvedModelDir": resolved_model_dir,
+        "modelCache": model_cache,
+    }
+
+
 def _apply_settings_payload(
     definition: Mapping[str, Any],
     settings: dict[str, Any],
@@ -1046,9 +1119,13 @@ def _apply_settings_payload(
     if "enabled" in payload:
         settings["enabled"] = bool(payload.get("enabled"))
     if "selectedModel" in payload or "selected_model" in payload:
-        settings["selected_model"] = _optional_text(payload.get("selectedModel", payload.get("selected_model")))
+        selected_model = _optional_text(payload.get("selectedModel", payload.get("selected_model")))
+        if not _is_redacted_public_placeholder(selected_model):
+            settings["selected_model"] = selected_model
     if "customModelId" in payload or "custom_model_id" in payload:
-        settings["custom_model_id"] = _optional_text(payload.get("customModelId", payload.get("custom_model_id")))
+        custom_model_id = _optional_text(payload.get("customModelId", payload.get("custom_model_id")))
+        if not _is_redacted_public_placeholder(custom_model_id) and custom_model_id:
+            settings["custom_model_id"] = custom_model_id
     if "endpoint" in payload:
         settings["endpoint"] = _optional_url(payload.get("endpoint"), "endpoint")
     if "baseUrl" in payload or "base_url" in payload:
@@ -1061,15 +1138,21 @@ def _apply_settings_payload(
             _ensure_valid_hosted_profile(definition, profile_id)
         settings["hosted_profile_id"] = profile_id
     if "sam2CheckpointPath" in payload or "sam2_checkpoint_path" in payload:
-        settings["sam2_checkpoint_path"] = _optional_text(payload.get("sam2CheckpointPath", payload.get("sam2_checkpoint_path")))
+        value = _optional_text(payload.get("sam2CheckpointPath", payload.get("sam2_checkpoint_path")))
+        if not _is_redacted_public_placeholder(value):
+            settings["sam2_checkpoint_path"] = value
     if "sam2ModelConfigPath" in payload or "sam2_model_config_path" in payload:
-        settings["sam2_model_config_path"] = _optional_text(payload.get("sam2ModelConfigPath", payload.get("sam2_model_config_path")))
+        value = _optional_text(payload.get("sam2ModelConfigPath", payload.get("sam2_model_config_path")))
+        if not _is_redacted_public_placeholder(value):
+            settings["sam2_model_config_path"] = value
     if "sam2Device" in payload or "sam2_device" in payload:
         settings["sam2_device"] = _optional_text(payload.get("sam2Device", payload.get("sam2_device")))
     if "sam2HfDevice" in payload or "sam2_hf_device" in payload:
         settings["sam2_hf_device"] = _optional_text(payload.get("sam2HfDevice", payload.get("sam2_hf_device")))
     if "sam3ModelPath" in payload or "sam3_model_path" in payload:
-        settings["sam3_model_path"] = _optional_text(payload.get("sam3ModelPath", payload.get("sam3_model_path")))
+        value = _optional_text(payload.get("sam3ModelPath", payload.get("sam3_model_path")))
+        if not _is_redacted_public_placeholder(value):
+            settings["sam3_model_path"] = value
     if "sam3Device" in payload or "sam3_device" in payload:
         settings["sam3_device"] = _optional_text(payload.get("sam3Device", payload.get("sam3_device")))
 
@@ -1352,6 +1435,7 @@ def diagnose_provider_settings(
     readiness = _readiness(definition, settings, secrets, environ)
     credentials = _credential_states(definition, settings, secrets, environ)
     model_cache = _model_cache_state(definition, settings, secrets, environ)
+    model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, model_cache)
     checklist: list[dict[str, Any]] = []
     commands: list[str] = []
     docs = definition.get("docs")
@@ -1380,11 +1464,12 @@ def diagnose_provider_settings(
         commands = list((definition.get("setupGuide") or {}).get("commands") or [])
     elif provider_id == "sam2-hf-auto-masks":
         model = _runtime_effective_model(definition, settings, environ) or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+        model_detail = "Selected model: server-side cached path recorded and redacted." if model_cache.get("serverPathRecorded") else f"Selected model: {model}"
         device = str(environ.get("SAM2_HF_DEVICE") or settings.get("sam2_hf_device") or "auto/cpu")
         device_problem = _device_problem(device, torch_ok=find_spec("torch") is not None)
         item("transformers_package", "SAM2 Transformers package", find_spec("transformers") is not None, "Python can import transformers." if find_spec("transformers") is not None else "Python cannot import transformers.", "Install the independent sam2-transformers extra. Official SAM2 is not required.")
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
-        item("model_id", "HF model id or directory", True, f"Selected model: {model}", "Use Cache model if the model is not already available locally.")
+        item("model_id", "HF model id or directory", True, model_detail, "Use Cache model if the model is not already available locally.")
         item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local cache access.")
         item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
         item("official_sam2", "Official SAM2 checkpoint/config", True, "Not required for SAM2 HF automatic masks.", "", required=False)
@@ -1398,6 +1483,12 @@ def diagnose_provider_settings(
             tracker_model_value,
             source="environment" if environ.get("SAM3_TRACKER_MODEL") else "local_settings" if settings.get("selected_model") else "default",
         )
+        tracker_model_ok = bool(tracker_model_status["valid"] or model_cache.get("cached"))
+        tracker_model_detail = (
+            "SAM3 Tracker model path is recorded server-side and redacted."
+            if model_cache.get("serverPathRecorded")
+            else str(tracker_model_status.get("resolvedModel") or tracker_model_status.get("reason") or "facebook/sam3")
+        )
         py_ok = (sys.version_info.major, sys.version_info.minor) >= (3, 12)
         transformers_ok = find_spec("transformers") is not None
         torch_ok = find_spec("torch") is not None
@@ -1408,7 +1499,7 @@ def diagnose_provider_settings(
         item("transformers_package", "SAM3 Transformers package", transformers_ok, "Python can import transformers." if transformers_ok else "Python cannot import transformers.", "Install the independent sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_auto_masks", "SAM3 Tracker automatic masks", tracker_auto_masks_ok, "Transformers exposes SAM3 Tracker mask-generation classes." if tracker_auto_masks_ok else "Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_video", "SAM3 Tracker Video API", tracker_video_ok, "Transformers exposes SAM3 Tracker Video classes." if tracker_video_ok else "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
-        item("sam3_tracker_model", "SAM3 Tracker model id or directory", bool(tracker_model_status["valid"]), str(tracker_model_status.get("resolvedModel") or tracker_model_status.get("reason") or "facebook/sam3"), str(tracker_model_status.get("action") or "Use Cache model for facebook/sam3."), required=True)
+        item("sam3_tracker_model", "SAM3 Tracker model id or directory", tracker_model_ok, tracker_model_detail, str(tracker_model_status.get("action") or "Use Cache model for facebook/sam3."), required=True)
         item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local Hugging Face cache access.")
         item("torch_package", "PyTorch", torch_ok, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
         item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
@@ -1477,11 +1568,21 @@ def local_sam_smoke_test(
         raise ValueError("Local SAM smoke test requires allowHeavyLocal=true before importing heavy local model runtimes.")
     diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
     smoke: dict[str, Any] | None = None
-    if provider_id == "sam3-local" and _truthy(payload.get("sceneSweep", payload.get("scene_sweep"))):
+    runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+    runtime_model_source = str(runtime.get("runtime_model_source") or "default")
+    model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), Mapping) else {}
+    sam3_scene_sweep_smoke = provider_id == "sam3-local" and (
+        _truthy(payload.get("sceneSweep", payload.get("scene_sweep")))
+        or bool(model_cache.get("cached"))
+        or not str(runtime.get("sam3_model_path") or "").strip()
+    )
+    if sam3_scene_sweep_smoke:
         smoke = {
             "providerName": "sam3-local",
             "sceneSweep": True,
             "sam2Required": False,
+            "runtimeModelSource": runtime_model_source,
+            "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
             "checks": ["transformers", "torch", "sam3_tracker_auto_masks", "sam3_tracker_video"],
         } if diagnosis["ready"] else None
         return {
@@ -1498,7 +1599,6 @@ def local_sam_smoke_test(
     if diagnosis["ready"]:
         from motionjson.providers.base import ProviderConfigError, ProviderExecutionError
 
-        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
         try:
             if provider_id == "sam2-local":
                 import numpy as np
@@ -1521,12 +1621,19 @@ def local_sam_smoke_test(
 
                 backend = LocalSAM2HFAutomaticMaskProposalBackend.from_config(
                     {
-                        "sam2HfModel": runtime.get("selected_model") or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
+                        "sam2HfModel": runtime.get("runtime_model") or runtime.get("selected_model") or SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
                         "sam2HfDevice": runtime.get("sam2_hf_device") or "cpu",
                     }
                 )
                 records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={"max_candidates": 1})
-                smoke = {"providerName": "sam2-hf-auto-masks", "recordCount": len(list(records)), "frameShape": [8, 8, 3], "officialSam2Required": False}
+                smoke = {
+                    "providerName": "sam2-hf-auto-masks",
+                    "recordCount": len(list(records)),
+                    "frameShape": [8, 8, 3],
+                    "officialSam2Required": False,
+                    "runtimeModelSource": runtime_model_source,
+                    "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
+                }
             else:
                 from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 
@@ -1664,7 +1771,7 @@ def _public_provider_state(
     provider["settings"] = {
         "enabled": bool(settings.get("enabled", definition.get("locality") != "hosted")),
         "selectedModel": settings.get("selected_model") or profiled_definition.get("defaultModel"),
-        "customModelId": settings.get("custom_model_id") or "",
+        "customModelId": _public_custom_model_id(definition, settings),
         "endpoint": settings.get("endpoint") or "",
         "baseUrl": settings.get("base_url") or "",
         "allowHosted": bool(settings.get("allow_hosted", False)),
@@ -1681,10 +1788,24 @@ def _public_provider_state(
     provider["credentials"] = _credential_states(definition, settings, secrets, environ)
     provider["readiness"] = _readiness(definition, settings, secrets, environ)
     provider["modelCache"] = _model_cache_state(definition, settings, secrets, environ)
+    provider["modelCache"]["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, provider["modelCache"])
     provider["setupState"] = _setup_state_for_provider(definition, provider["readiness"], provider["modelCache"], provider["credentials"])
     provider["effectiveModel"] = _runtime_effective_model(definition, settings, environ)
     provider["effectiveProfile"] = _public_profile(profile)
     return provider
+
+
+def _public_custom_model_id(definition: Mapping[str, Any], settings: Mapping[str, Any]) -> str:
+    custom_model_id = str(settings.get("custom_model_id") or "").strip()
+    if not custom_model_id:
+        return ""
+    if str(definition.get("id") or "") not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        return custom_model_id
+    saved_dir = str(settings.get("resolved_model_dir") or "").strip()
+    cached_model_id = str(settings.get("cached_model_id") or "").strip()
+    if _looks_like_local_model_path(custom_model_id) and custom_model_id in {saved_dir, cached_model_id}:
+        return ""
+    return custom_model_id
 
 
 def _capability_override(

@@ -928,7 +928,7 @@ const MotionJSONUI = (() => {
       const ready = setupState.status === "ready";
       return {
         id: activeStep,
-        primaryLabel: ready ? "Continue to prepare" : setupAction.label,
+        primaryLabel: ready ? "Continue to run" : setupAction.label,
         primaryAction: ready ? "continue_to_prepare" : "run_model_setup_action",
         modelSetupAction: setupAction.id,
         enabled: ready || Boolean(hasModelSetupForm || connection),
@@ -2749,6 +2749,11 @@ const MotionJSONUI = (() => {
     return provider.effectiveModel || provider.settings?.customModelId || provider.settings?.selectedModel || provider.defaultModel || "";
   }
 
+  function cleanPublicModelValue(value) {
+    const text = String(value || "").trim();
+    return text === "[LOCAL_PATH_REDACTED]" ? "" : text;
+  }
+
   function connectionCapabilityMeta(connection) {
     const provider = providerSettingsById(connection.providerId);
     if (!provider) return null;
@@ -3003,7 +3008,7 @@ const MotionJSONUI = (() => {
       {
         id: "runtime",
         label: "Install runtime",
-        status: runtimeReady ? "done" : setupRunning && setupJob.action === "install" ? "running" : "pending",
+        status: runtimeReady ? "done" : setupRunning && ["install", "prepare_model"].includes(setupJob.action) ? "running" : "pending",
         detail: runtimeReady ? readiness.message || "Runtime diagnostics are ready." : readiness.message || connection.nextAction || "Install the optional runtime for this provider.",
       },
     ];
@@ -3019,7 +3024,7 @@ const MotionJSONUI = (() => {
       steps.push({
         id: "cache",
         label: "Cache model",
-        status: cache.cached ? "done" : setupRunning && setupJob.action === "cache_model" ? "running" : status === "needs_download_confirmation" ? "active" : "pending",
+        status: cache.cached ? "done" : setupRunning && ["cache_model", "prepare_model"].includes(setupJob.action) ? "running" : status === "needs_download_confirmation" ? "active" : "pending",
         detail: cache.message,
       });
       steps.push({
@@ -3036,7 +3041,7 @@ const MotionJSONUI = (() => {
     steps.push({
       id: "verify",
       label: "Verify setup",
-      status: setupState.status === "ready" ? "done" : setupRunning && setupJob.action === "smoke" ? "running" : "pending",
+      status: setupState.status === "ready" ? "done" : setupRunning && ["smoke", "prepare_model"].includes(setupJob.action) ? "running" : "pending",
       detail: setupState.status === "ready" ? setupState.message || "Setup is ready." : "Run a smoke test before a long extraction when dependencies changed.",
     });
     return steps;
@@ -3071,6 +3076,7 @@ const MotionJSONUI = (() => {
       const statusByAction = {
         cache_model: "caching_model",
         install: "installing_runtime",
+        prepare_model: "preparing_model",
         smoke: "smoke_testing",
         check_access: "checking_environment",
         diagnose: "checking_environment",
@@ -3109,6 +3115,39 @@ const MotionJSONUI = (() => {
           nextAction: "cache_model",
         };
       }
+      if (failedAction === "prepare_model") {
+        const nextAction = String(latestJob.result?.nextAction || "");
+        if (nextAction === "check_access") {
+          return {
+            status: "needs_access",
+            label: "Needs Hugging Face access",
+            message: failedMessage || "Check access before caching the model.",
+            nextAction,
+          };
+        }
+        if (nextAction === "cache_model") {
+          return {
+            status: "needs_download_confirmation",
+            label: "Cache model",
+            message: failedMessage || "Confirm model caching before continuing.",
+            nextAction,
+          };
+        }
+        if (nextAction === "smoke") {
+          return {
+            status: "needs_smoke",
+            label: "Ready to verify",
+            message: failedMessage || "Run a bounded smoke test before extraction.",
+            nextAction,
+          };
+        }
+        return {
+          status: "not_configured",
+          label: "Needs setup",
+          message: failedMessage || "Install the runtime before preparing this model.",
+          nextAction: nextAction || "install",
+        };
+      }
       if (backendState.status && backendState.status !== "ready" && failedAction !== "smoke") {
         return backendState;
       }
@@ -3122,11 +3161,29 @@ const MotionJSONUI = (() => {
     if (["needs_access", "needs_download_confirmation", "needs_path", "failed_recoverable"].includes(providerSetupStatus)) {
       return provider.setupState;
     }
+    const cacheSummary = modelCacheStatusSummary(provider, latestJob);
+    const localCacheProvider = connection?.providerId === "sam3-local" || connection?.providerId === "sam2-hf-auto-masks";
+    const smokeReady =
+      latestJob?.status === "succeeded" &&
+      ["smoke", "prepare_model"].includes(String(latestJob?.action || "")) &&
+      latestJob?.result?.ready === true;
+    if (
+      providerSetupStatus === "ready" &&
+      localCacheProvider &&
+      cacheSummary.cached &&
+      !smokeReady
+    ) {
+      return {
+        status: "needs_smoke",
+        label: "Ready to verify",
+        message: "The model path is recorded server-side. Run a bounded smoke test before extraction.",
+        nextAction: "smoke",
+      };
+    }
     if (providerSetupStatus === "ready" && (readiness.configured === true || readiness.status === "ready" || readiness.status === "configured")) {
       return provider.setupState;
     }
-    const cached = latestJob?.action === "cache_model" && latestJob.status === "succeeded";
-    const smokeReady = latestJob?.action === "smoke" && latestJob.status === "succeeded";
+    const cached = cacheSummary.cached || (latestJob?.action === "cache_model" && latestJob.status === "succeeded");
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
     const hfCredential = asArray(provider?.credentials).find((credential) => credential?.name === "hf_token");
     const hfTokenConfigured = hfCredential?.configured === true;
@@ -3171,8 +3228,25 @@ const MotionJSONUI = (() => {
     const status = String(stateInfo.status || "not_configured");
     const nextAction = String(stateInfo.nextAction || "");
     const providerId = connection?.providerId || "";
-    if (["checking_environment", "caching_model", "installing_runtime", "smoke_testing"].includes(status)) {
+    const localSetupProvider = connection?.locality === "local" || ["sam3-local", "sam2-hf-auto-masks", "sam2-local"].includes(providerId);
+    if (["checking_environment", "caching_model", "installing_runtime", "preparing_model", "smoke_testing"].includes(status)) {
       return { id: "cancel-setup-job", label: "Cancel setup", primary: false };
+    }
+    if (status === "needs_smoke") {
+      return { id: "smoke", label: "Run smoke test", primary: true };
+    }
+    if (localSetupProvider && nextAction === "install") {
+      return {
+        id: "install",
+        label: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
+        primary: true,
+      };
+    }
+    if (localSetupProvider && nextAction === "choose_model") {
+      return { id: "save", label: "Save setup", primary: true };
+    }
+    if (localSetupProvider && ["needs_access", "needs_download_confirmation", "needs_path", "not_configured"].includes(status)) {
+      return { id: "prepare-model", label: "Prepare local model", primary: true };
     }
     if (status === "needs_access") {
       return { id: providerId.includes("hosted") ? "test" : "check-access", label: providerId.includes("hosted") ? "Check access" : "Check Hugging Face access", primary: true };
@@ -3184,7 +3258,7 @@ const MotionJSONUI = (() => {
       return { id: nextAction === "cache_model" ? "cache-model" : "diagnose", label: nextAction === "cache_model" ? "Cache model" : "Diagnose", primary: true };
     }
     if (status === "ready") {
-      return { id: "continue-to-prepare", label: "Continue to prepare", primary: true };
+      return { id: "continue-to-run", label: "Continue to run", primary: true };
     }
     if (status === "failed_recoverable") {
       if (nextAction === "check_access") return { id: "check-access", label: "Check Hugging Face access", primary: true };
@@ -3203,18 +3277,20 @@ const MotionJSONUI = (() => {
     const labels = {
       "check-access": "Check Hugging Face access",
       test: "Check access",
+      "prepare-model": "Prepare local model",
       install: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
       "cache-model": "Cache model",
       smoke: hosted ? "Run hosted smoke test" : "Run local smoke test",
     };
     const flags = [];
-    if (["check-access", "cache-model", "install"].includes(normalized) || hosted) flags.push("network");
-    if (normalized === "cache-model") flags.push("disk");
-    if (normalized === "install" || (normalized === "smoke" && !hosted)) flags.push("heavy local runtime");
+    if (["check-access", "cache-model", "prepare-model", "install"].includes(normalized) || hosted) flags.push("network");
+    if (normalized === "cache-model" || normalized === "prepare-model") flags.push("disk");
+    if (normalized === "install" || normalized === "prepare-model" || (normalized === "smoke" && !hosted)) flags.push("heavy local runtime");
     if (hosted && normalized === "smoke") flags.push("hosted cost/privacy");
     const copy = {
       "check-access": "This checks Hugging Face access for the selected local model after your confirmation.",
       test: "This checks saved hosted setup fields without sending frames.",
+      "prepare-model": "This runs the guided local setup: checks runtime, caches the model when needed, records the path server-side, and runs a bounded smoke test.",
       install: "This runs the allowlisted optional dependency install for the selected local provider.",
       "cache-model": "This resolves or downloads the selected model into the local Hugging Face cache or validates a local model directory.",
       smoke: hosted
@@ -3231,7 +3307,7 @@ const MotionJSONUI = (() => {
       flags,
       settingsPayload: options.settingsPayload && typeof options.settingsPayload === "object" ? { ...options.settingsPayload } : {},
       endpoint: normalized === "smoke" ? providerSmokeTestEndpoint(providerId) : "",
-      requiresConfirmation: ["check-access", "test", "install", "cache-model", "smoke"].includes(normalized),
+      requiresConfirmation: ["check-access", "test", "install", "prepare-model", "cache-model", "smoke"].includes(normalized),
       hosted: Boolean(hosted),
     };
   }
@@ -3449,8 +3525,8 @@ const MotionJSONUI = (() => {
       const payload = {
         providerId,
         hostedProfileId: String(values.hostedProfileId || "").trim(),
-        selectedModel: String(values.selectedModel || "").trim(),
-        customModelId: String(values.customModelId || "").trim(),
+        selectedModel: cleanPublicModelValue(values.selectedModel),
+        customModelId: cleanPublicModelValue(values.customModelId),
         baseUrl: String(values.baseUrl || "").trim(),
         endpoint: String(values.endpoint || "").trim(),
         allowHosted: Boolean(values.allowHosted),
@@ -3465,9 +3541,10 @@ const MotionJSONUI = (() => {
     if (apiKey) payload.apiKey = apiKey;
     const hfToken = String(values.hfToken || "").trim();
     if (hfToken) payload.hfToken = hfToken;
-    for (const optional of ["hostedProfileId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam2HfDevice", "sam3ModelPath", "sam3Device"]) {
+    for (const optional of ["hostedProfileId", "customModelId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam2Device", "sam2HfDevice", "sam3ModelPath", "sam3Device"]) {
       if (!payload[optional] || payload[optional] === "[LOCAL_PATH_REDACTED]") delete payload[optional];
     }
+    if (payload.selectedModel === "[LOCAL_PATH_REDACTED]") delete payload.selectedModel;
     return payload;
   }
 
@@ -5906,7 +5983,7 @@ const MotionJSONUI = (() => {
           ? "ready"
           : setupState.status === "failed_recoverable"
             ? "bad"
-            : ["checking_environment", "caching_model", "installing_runtime", "smoke_testing"].includes(setupState.status)
+            : ["checking_environment", "caching_model", "installing_runtime", "preparing_model", "smoke_testing"].includes(setupState.status)
               ? "neutral"
               : "warn";
       const hasAlternatives = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: true }).length > 1;
@@ -5983,10 +6060,9 @@ const MotionJSONUI = (() => {
           <div class="model-setup-normal-actions">
             <button
               type="button"
+              class="${primarySetupAction.primary ? "primary-action" : ""}"
               data-model-setup-action="${escapeAttribute(primarySetupAction.id)}"
               ${primarySetupAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
-              hidden
-              aria-hidden="true"
             >${escapeHtml(primarySetupAction.label)}</button>
             ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide models" : "Change model"}</button>` : ""}
           </div>
@@ -6557,8 +6633,8 @@ const MotionJSONUI = (() => {
       const payload = {
         providerId: row.dataset.providerSettingsId,
         hostedProfileId: value("[data-provider-field='hostedProfileId']"),
-        selectedModel: value("[data-provider-field='selectedModel']"),
-        customModelId: value("[data-provider-field='customModelId']"),
+        selectedModel: cleanPublicModelValue(value("[data-provider-field='selectedModel']")),
+        customModelId: cleanPublicModelValue(value("[data-provider-field='customModelId']")),
         endpoint: value("[data-provider-field='endpoint']"),
         baseUrl: value("[data-provider-field='baseUrl']"),
         allowHosted: checked("[data-provider-field='allowHosted']"),
@@ -6573,9 +6649,11 @@ const MotionJSONUI = (() => {
       if (key) payload.apiKey = key;
       const hfToken = value("[data-provider-field='hfToken']");
       if (hfToken) payload.hfToken = hfToken;
-      for (const localPathField of ["sam2CheckpointPath", "sam2ModelConfigPath", "sam3ModelPath"]) {
+      for (const localPathField of ["customModelId", "sam2CheckpointPath", "sam2ModelConfigPath", "sam3ModelPath"]) {
         if (payload[localPathField] === "[LOCAL_PATH_REDACTED]") delete payload[localPathField];
       }
+      if (!payload.customModelId) delete payload.customModelId;
+      if (payload.selectedModel === "[LOCAL_PATH_REDACTED]") delete payload.selectedModel;
       return payload;
     }
 
@@ -6633,6 +6711,7 @@ const MotionJSONUI = (() => {
         }),
       });
       const job = response.setupJob;
+      if (response.providerSettings) state.providerSettings = response.providerSettings;
       if (job?.id) {
         state.providerSetupJobs[job.id] = job;
         state.selectedProviderSetupJobId = job.id;
@@ -6646,7 +6725,7 @@ const MotionJSONUI = (() => {
     async function pollProviderSetupJob(jobId) {
       const initialJob = state.providerSetupJobs[jobId] || {};
       const maxWaitMs =
-        initialJob.action === "cache_model"
+        initialJob.action === "prepare_model" || initialJob.action === "cache_model"
           ? 60 * 60 * 1000
           : initialJob.action === "install"
             ? 30 * 60 * 1000
@@ -6657,6 +6736,7 @@ const MotionJSONUI = (() => {
         const payload = await api(`/api/provider-settings/setup-jobs/${encodeURIComponent(jobId)}`);
         const job = payload.setupJob;
         if (!job?.id) return null;
+        if (payload.providerSettings) state.providerSettings = payload.providerSettings;
         state.providerSetupJobs[job.id] = job;
         const summary = setupJobStatusSummary(job);
         setModelSetupMessage(summary.message, summary.tone);
@@ -10014,7 +10094,7 @@ const MotionJSONUI = (() => {
                 ready: status === "succeeded",
                 message:
                   status === "succeeded"
-                    ? "Model cached. Continue to prepare when you are ready."
+                    ? "Model cached. Continue to run when you are ready."
                     : status === "failed"
                       ? "Download was interrupted before verification. Cache model again after the network is stable."
                       : "Downloading or resolving the selected model cache.",
@@ -10028,7 +10108,7 @@ const MotionJSONUI = (() => {
                   status === "running"
                     ? "Downloading or resolving the selected model cache."
                     : status === "succeeded"
-                      ? "Model cached. Continue to prepare when you are ready."
+                      ? "Model cached. Continue to run when you are ready."
                       : "Download was interrupted before verification. Cache model again after the network is stable.",
               },
               events: [
@@ -11797,6 +11877,9 @@ const MotionJSONUI = (() => {
           state.modelSetupAlternativesOpen = !state.modelSetupAlternativesOpen;
           setModelSetupMessage(state.modelSetupAlternativesOpen ? "Choose a different compatible model." : "", "neutral");
           renderModelSetup();
+        } else if (action === "continue-to-run" || action === "continue-to-prepare") {
+          setWorkflowStep("prompt_preview", { focusStep: true });
+          setModelSetupMessage("Model setup is ready. Prepare the run inputs, then start extraction.", "ready");
         } else if (action === "cancel-setup-job") {
           await cancelProviderSetupJob(button.dataset.setupJobId || state.selectedProviderSetupJobId);
         } else if (action === "view-setup-logs") {
@@ -11848,6 +11931,35 @@ const MotionJSONUI = (() => {
                 allowNetwork: Boolean(state.health?.mockMode) || confirmed,
               };
           await startProviderSetupJob(providerId, hosted ? "test" : "check_access", body);
+        } else if (action === "prepare-model") {
+          const provider = providerSettingsById(providerId);
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
+          const selectedCacheModel =
+            cleanPublicModelValue(formPayload.customModelId) ||
+            (formPayload.selectedModel === "__custom__" ? "" : cleanPublicModelValue(formPayload.selectedModel)) ||
+            cleanPublicModelValue(providerEffectiveModel(provider)) ||
+            (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3");
+          if (!confirmed && !state.health?.mockMode) {
+            state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
+              hosted: false,
+              model: selectedCacheModel,
+              settingsPayload: formPayload,
+            });
+            setModelSetupMessage("Confirm guided local setup before continuing.", "warn");
+            renderModelSetup();
+            renderWorkflowStepper();
+            return;
+          }
+          await startProviderSetupJob(providerId, "prepare_model", {
+            allowNetwork: true,
+            allowDisk: true,
+            allowHeavyLocal: true,
+            dryRun: Boolean(state.health?.mockMode),
+            model: selectedCacheModel,
+            sceneSweep: providerId === "sam3-local",
+            settings: formPayload,
+            saveFirst: true,
+          });
         } else if (action === "install") {
           const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           if (!confirmed && !state.health?.mockMode) {
@@ -11869,9 +11981,9 @@ const MotionJSONUI = (() => {
         } else if (action === "cache-model") {
           const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
           const selectedCacheModel =
-            formPayload.customModelId ||
-            (formPayload.selectedModel === "__custom__" ? "" : formPayload.selectedModel) ||
-            providerEffectiveModel(providerSettingsById(providerId)) ||
+            cleanPublicModelValue(formPayload.customModelId) ||
+            (formPayload.selectedModel === "__custom__" ? "" : cleanPublicModelValue(formPayload.selectedModel)) ||
+            cleanPublicModelValue(providerEffectiveModel(providerSettingsById(providerId))) ||
             (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3");
           if (!confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {

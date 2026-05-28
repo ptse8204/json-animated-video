@@ -59,6 +59,14 @@ def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
     if provider_id == "sam3-local":
         return [
             {
+                "id": "prepare_model",
+                "label": "Prepare local model",
+                "description": "Run the guided local setup path: diagnose, cache facebook/sam3 when confirmed, record the server-side path, then run a bounded smoke test.",
+                "requiresConfirmation": True,
+                "networkAttempted": True,
+                "heavyLocalAttempted": True,
+            },
+            {
                 "id": "install",
                 "label": "Install scene sweep",
                 "description": "Install MotionJSON's independent SAM3 Transformers runtime. SAM2 is not required.",
@@ -101,6 +109,14 @@ def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
     if provider_id == "sam2-hf-auto-masks":
         return [
             {
+                "id": "prepare_model",
+                "label": "Prepare local model",
+                "description": "Run the guided local setup path: diagnose, cache facebook/sam2.1-hiera-large when confirmed, record the server-side path, then run a bounded smoke test.",
+                "requiresConfirmation": True,
+                "networkAttempted": True,
+                "heavyLocalAttempted": True,
+            },
+            {
                 "id": "install",
                 "label": "Install SAM2 HF fallback",
                 "description": "Install MotionJSON's independent SAM2 Transformers fallback. Official SAM2 checkpoint/config is not required.",
@@ -134,6 +150,14 @@ def provider_setup_actions(provider_id: str) -> list[dict[str, Any]]:
         ]
     if provider_id == "sam2-local":
         return [
+            {
+                "id": "prepare_model",
+                "label": "Prepare local model",
+                "description": "Run guided local setup diagnostics and a bounded smoke test when confirmed.",
+                "requiresConfirmation": True,
+                "networkAttempted": False,
+                "heavyLocalAttempted": True,
+            },
             {
                 "id": "install",
                 "label": "Install SAM2 fallback",
@@ -421,7 +445,7 @@ def _execute_setup_action(
 ) -> dict[str, Any]:
     environ = environ or os.environ
     settings_payload = payload.get("settings") if isinstance(payload.get("settings"), Mapping) else payload
-    if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access", "cache_model"}:
+    if _truthy(payload.get("saveFirst", payload.get("save_first", True))) and action in {"diagnose", "test", "smoke", "check_access", "cache_model", "prepare_model"}:
         if any(key in settings_payload for key in ("selectedModel", "selected_model", "customModelId", "custom_model_id", "apiKey", "api_key", "hfToken", "hf_token", "sam2CheckpointPath", "sam2_checkpoint_path", "sam2HfDevice", "sam2_hf_device", "sam3ModelPath", "sam3_model_path", "endpoint", "allowHosted", "allow_hosted", "hostedProfileId", "hosted_profile_id")):
             save_provider_settings(conn, user_id=user_id, payload={**dict(settings_payload), "providerId": provider_id}, environ=environ)
 
@@ -433,6 +457,15 @@ def _execute_setup_action(
         if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
             return local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
         return hosted_sam3_smoke_test(conn, user_id=user_id, payload={**dict(payload), "providerId": provider_id}, environ=environ)
+    if action == "prepare_model":
+        return _prepare_model_action(
+            conn,
+            user_id=user_id,
+            provider_id=provider_id,
+            payload=payload,
+            environ=environ,
+            progress=progress,
+        )
     if action == "install":
         return _run_install_action(provider_id, payload)
     if action == "cache_model":
@@ -465,6 +498,199 @@ def _execute_setup_action(
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
         return _check_sam3_hf_access(payload, token=str(runtime.get("hf_token") or ""), environ=environ)
     raise ValueError(f"Setup action is not implemented for {provider_id}: {action}")
+
+
+def _prepare_blocked_result(
+    provider_id: str,
+    *,
+    message: str,
+    next_action: str,
+    diagnosis: Mapping[str, Any] | None = None,
+    progress_label: str = "Waiting for user action",
+) -> dict[str, Any]:
+    return {
+        "format": PROVIDER_SETUP_JOB_FORMAT,
+        "providerId": provider_id,
+        "action": "prepare_model",
+        "status": "blocked",
+        "ready": False,
+        "networkAttempted": False,
+        "heavyLocalAttempted": False,
+        "message": redact_secret_text(message),
+        "nextAction": next_action,
+        "diagnosis": redact_secret_payload(dict(diagnosis or {})),
+        "progress": _progress_payload(known=False, percent=0, label=progress_label),
+    }
+
+
+def _prepare_model_action(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    payload: Mapping[str, Any],
+    environ: Mapping[str, str],
+    progress: SetupProgressCallback | None = None,
+) -> dict[str, Any]:
+    if provider_id not in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
+        raise ValueError("Guided local model preparation is only available for local SAM providers.")
+
+    if progress:
+        progress("prepare_diagnose", "Checking local runtime setup", 10, True)
+    diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
+    setup_state = diagnosis.get("setupState") if isinstance(diagnosis.get("setupState"), Mapping) else {}
+    preflight = setup_state.get("preflight") if isinstance(setup_state.get("preflight"), Mapping) else {}
+    next_action = str(setup_state.get("nextAction") or "")
+    checklist = diagnosis.get("checklist") if isinstance(diagnosis.get("checklist"), list) else []
+    runtime_missing = _runtime_blockers_for_prepare(provider_id, checklist)
+    runtime_ready = bool(diagnosis.get("ready") or preflight.get("runtimeAvailable")) and not runtime_missing
+
+    if not runtime_ready and next_action != "cache_model":
+        blocker_labels = ", ".join(str(item.get("label") or item.get("id")) for item in runtime_missing)
+        return _prepare_blocked_result(
+            provider_id,
+            message=blocker_labels
+            and f"Prepare local model needs runtime setup first: {blocker_labels}."
+            or diagnosis.get("message")
+            or "Install the optional runtime before preparing this local model.",
+            next_action=_prepare_runtime_next_action(runtime_missing) or next_action or "install",
+            diagnosis=diagnosis,
+            progress_label="Runtime setup needed",
+        )
+
+    if provider_id == "sam3-local" and setup_state.get("status") == "needs_access":
+        return _prepare_blocked_result(
+            provider_id,
+            message=setup_state.get("message") or "Hugging Face access is needed before caching facebook/sam3.",
+            next_action="check_access",
+            diagnosis=diagnosis,
+            progress_label="Access check needed",
+        )
+
+    cached_model_cache = diagnosis.get("modelCache") if isinstance(diagnosis.get("modelCache"), Mapping) else {}
+    cache_result: dict[str, Any] | None = None
+    if provider_id in {"sam2-hf-auto-masks", "sam3-local"} and not cached_model_cache.get("cached"):
+        if not _truthy(payload.get("allowNetwork", payload.get("allow_network"))):
+            return _prepare_blocked_result(
+                provider_id,
+                message="Preparing this local model needs explicit network confirmation before caching weights.",
+                next_action="cache_model",
+                diagnosis=diagnosis,
+                progress_label="Waiting for network confirmation",
+            )
+        if not _truthy(payload.get("allowDisk", payload.get("allow_disk", payload.get("allowDownload", payload.get("allow_download"))))):
+            return _prepare_blocked_result(
+                provider_id,
+                message="Preparing this local model needs explicit disk/download confirmation before caching weights.",
+                next_action="cache_model",
+                diagnosis=diagnosis,
+                progress_label="Waiting for disk confirmation",
+            )
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+        cache_payload = dict(payload)
+        if not any(cache_payload.get(key) for key in ("model", "modelId", "model_id")):
+            cache_payload["model"] = runtime.get("selected_model") or runtime.get("runtime_model")
+        cache_progress = _prepare_cache_progress(progress) if progress else None
+        cache_result = _cache_model_action(provider_id, cache_payload, token=str(runtime.get("hf_token") or ""), progress=cache_progress)
+        if cache_result.get("ready") is True and cache_result.get("localModelDir"):
+            provider_settings = record_provider_model_cache(
+                conn,
+                user_id=user_id,
+                provider_id=provider_id,
+                model_id=str(cache_result.get("model") or cache_payload.get("model") or ""),
+                local_model_dir=str(cache_result.get("localModelDir") or ""),
+                environ=environ,
+            )
+            cache_result = {
+                **cache_result,
+                "localPathRecorded": True,
+                "localPathDisplay": LOCAL_SETUP_PATH_REDACTION,
+                "modelCache": _provider_model_cache_from_settings(provider_settings, provider_id),
+                "message": f"{cache_result.get('message') or 'Model cached.'} Resolved model path recorded server-side and redacted in the Local UI.",
+            }
+            if progress:
+                progress("model_cache_recorded", "Model cache path recorded server-side", 82, True)
+        diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
+
+    if not _truthy(payload.get("allowHeavyLocal", payload.get("allow_heavy_local"))):
+        return _prepare_blocked_result(
+            provider_id,
+            message="Preparing this local model needs explicit heavy-runtime confirmation before running the bounded smoke test.",
+            next_action="smoke",
+            diagnosis=diagnosis,
+            progress_label="Waiting for smoke-test confirmation",
+        )
+
+    if progress:
+        progress("prepare_smoke", "Running bounded local smoke test", 88, True)
+    smoke_payload = {
+        **dict(payload),
+        "allowHeavyLocal": True,
+        "sceneSweep": bool(provider_id == "sam3-local"),
+    }
+    smoke_result = local_sam_smoke_test(conn, user_id=user_id, provider_id=provider_id, payload=smoke_payload, environ=environ)
+    ready = bool(smoke_result.get("ready"))
+    return {
+        "format": PROVIDER_SETUP_JOB_FORMAT,
+        "providerId": provider_id,
+        "action": "prepare_model",
+        "status": "succeeded" if ready else "blocked",
+        "ready": ready,
+        "networkAttempted": bool(cache_result and cache_result.get("networkAttempted")),
+        "heavyLocalAttempted": True,
+        "message": smoke_result.get("message") or ("Local model is prepared." if ready else "Local model preparation is incomplete."),
+        "nextAction": "continue" if ready else "smoke",
+        "diagnosis": smoke_result.get("diagnosis") or diagnosis,
+        "cacheResult": cache_result or {},
+        "smokeTest": smoke_result.get("smokeTest"),
+        "progress": _progress_payload(known=True, percent=100, label="Local model prepared" if ready else "Preparation blocked"),
+    }
+
+
+def _runtime_blockers_for_prepare(provider_id: str, checklist: list[Any]) -> list[Mapping[str, Any]]:
+    runtime_ids = {
+        "sam2-local": {"sam2_package", "torch_package", "checkpoint", "model_config", "device"},
+        "sam2-hf-auto-masks": {"transformers_package", "torch_package", "device"},
+        "sam3-local": {
+            "transformers_package",
+            "sam3_tracker_auto_masks",
+            "sam3_tracker_video",
+            "torch_package",
+            "device",
+        },
+    }.get(provider_id, set())
+    blockers: list[Mapping[str, Any]] = []
+    for item in checklist:
+        if not isinstance(item, Mapping):
+            continue
+        if item.get("required") is False or item.get("ok") is True:
+            continue
+        if str(item.get("id") or "") in runtime_ids:
+            blockers.append(item)
+    return blockers
+
+
+def _prepare_runtime_next_action(blockers: list[Mapping[str, Any]]) -> str:
+    ids = {str(item.get("id") or "") for item in blockers}
+    if ids & {"checkpoint", "model_config", "device"}:
+        return "choose_model"
+    if ids:
+        return "install"
+    return ""
+
+
+def _prepare_cache_progress(progress: SetupProgressCallback) -> SetupProgressCallback:
+    def mapped(event_type: str, label: str, percent: int | float | None = None, known: bool = False) -> None:
+        mapped_percent: int | float | None = None
+        if percent is not None:
+            try:
+                bounded = min(max(float(percent), 0.0), 100.0)
+            except (TypeError, ValueError):
+                bounded = 0.0
+            mapped_percent = round(20 + bounded * 0.58, 1)
+        progress(event_type, label, mapped_percent, known)
+
+    return mapped
 
 
 def _run_install_action(provider_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -826,6 +1052,7 @@ def _progress_payload(*, known: bool, percent: Any, label: str) -> dict[str, Any
 
 def _started_progress_label(action: str) -> str:
     return {
+        "prepare_model": "Preparing local model",
         "cache_model": "Resolving selected model",
         "check_access": "Checking Hugging Face access",
         "install": "Installing optional runtime",
@@ -837,6 +1064,7 @@ def _started_progress_label(action: str) -> str:
 
 def _failed_progress_label(action: str) -> str:
     return {
+        "prepare_model": "Local model preparation failed",
         "cache_model": "Model cache failed",
         "check_access": "Access check failed",
         "install": "Install failed",
@@ -849,6 +1077,7 @@ def _failed_progress_label(action: str) -> str:
 def _terminal_progress_for_action(action: str, status: str) -> dict[str, Any]:
     if status == "succeeded":
         label = {
+            "prepare_model": "Local model prepared",
             "cache_model": "Model cached",
             "check_access": "Access check complete",
             "install": "Runtime installed",
@@ -883,6 +1112,8 @@ def _setup_state_for_job(status: str, action: str, result: Mapping[str, Any]) ->
         return {"status": "failed_recoverable", "label": "Needs recovery", "message": result.get("message") or f"Setup {normalized}."}
     if action == "diagnose":
         return {"status": "checking_environment", "label": "Checking environment", "message": "Checking local imports and saved setup."}
+    if action == "prepare_model":
+        return {"status": "preparing_model", "label": "Preparing local model", "message": "Checking runtime, cache, recorded model path, and smoke-test readiness."}
     if action == "cache_model":
         return {"status": "caching_model", "label": "Caching model", "message": "Downloading or resolving the selected model cache."}
     if action == "install":

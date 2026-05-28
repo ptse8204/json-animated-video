@@ -18,9 +18,11 @@ from motionjson.backend.provider_setup_jobs import (
     provider_setup_actions,
     public_provider_setup_job,
 )
+from motionjson.backend.worker import _cached_local_runtime_discovery_provider
 from motionjson.provider_settings import (
     provider_catalog,
     hosted_sam3_smoke_test,
+    provider_runtime_model_info,
     provider_runtime_settings,
     redact_secret_payload,
     redact_secret_text,
@@ -52,6 +54,46 @@ class FakeHostedSAM3Transport:
             "scores": [0.88],
             "labels": ["object"],
         }
+
+
+def install_fake_torch(monkeypatch):
+    fake_torch = types.ModuleType("torch")
+    fake_torch.__spec__ = ModuleSpec("torch", loader=None)
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: False)
+    fake_torch.backends = types.SimpleNamespace(mps=types.SimpleNamespace(is_available=lambda: False))
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    return fake_torch
+
+
+def install_fake_transformers_for_sam2(monkeypatch, seen: dict[str, object]):
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
+
+    def pipeline(task, model=None, device=None):
+        seen["pipeline"] = {"task": task, "model": model, "device": device}
+
+        def generate(_image, **_kwargs):
+            return [{"segmentation": [[0, 1], [1, 0]], "bbox": [0, 0, 1, 1], "score": 1.0}]
+
+        return generate
+
+    fake_transformers.pipeline = pipeline
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    return fake_transformers
+
+
+def install_fake_transformers_for_sam3(monkeypatch):
+    fake_transformers = types.ModuleType("transformers")
+    fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
+    fake_transformers.Sam3TrackerModel = object
+    fake_transformers.Sam3TrackerProcessor = object
+    fake_transformers.Sam3TrackerVideoModel = object
+    fake_transformers.Sam3TrackerVideoProcessor = object
+    fake_transformers.pipeline = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_auto_masks_importable", lambda: True)
+    monkeypatch.setattr("motionjson.provider_settings._sam3_tracker_video_importable", lambda: True)
+    return fake_transformers
 
 
 def test_secret_redaction_helpers_cover_common_provider_shapes():
@@ -580,6 +622,344 @@ def test_local_model_cache_persists_and_survives_ui_reload_with_redaction(tmp_pa
     assert str(model_dir) not in stored_job["result_json"]
     assert runtime["resolved_model_dir"] == str(model_dir)
     assert runtime["runtime_model"] == str(model_dir)
+
+
+def test_sam2_hf_cache_then_smoke_uses_private_recorded_path(tmp_path, monkeypatch):
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam2(monkeypatch, seen)
+    model_dir = tmp_path / "mock-sam2-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    text = body.decode("utf-8")
+    smoke = decode(body)["setupJob"]
+
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert smoke["result"]["smokeTest"]["runtimeModelSource"] == "saved_cache"
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert str(model_dir) not in text
+
+
+def test_sam2_hf_repo_cache_then_smoke_uses_resolved_snapshot_path(tmp_path, monkeypatch):
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam2(monkeypatch, seen)
+    model_dir = tmp_path / "hf-cache" / "snapshot"
+    model_dir.mkdir(parents=True)
+    (model_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
+    fake_hub.snapshot_download = lambda repo_id, token=None: str(model_dir)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr("motionjson.backend.provider_setup_jobs.find_spec", lambda name: object() if name == "huggingface_hub" else None)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": "facebook/sam2.1-hiera-large",
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    smoke = decode(body)["setupJob"]
+
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_prepare_model_records_cache_smokes_and_refreshes_public_settings(tmp_path, monkeypatch):
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam2(monkeypatch, seen)
+    model_dir = tmp_path / "mock-sam2-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps(
+            {
+                "action": "prepare_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "allowHeavyLocal": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    text = body.decode("utf-8")
+    payload = decode(body)
+    job = payload["setupJob"]
+    provider = next(item for item in payload["providerSettings"]["providers"] if item["id"] == "sam2-hf-auto-masks")
+
+    assert status == 200
+    assert job["status"] == "succeeded"
+    assert job["action"] == "prepare_model"
+    assert job["setupState"]["status"] == "ready"
+    assert job["result"]["cacheResult"]["modelCache"]["serverPathRecorded"] is True
+    assert job["result"]["smokeTest"]["runtimeModelSource"] == "saved_cache"
+    assert provider["modelCache"]["serverPathRecorded"] is True
+    assert provider["modelCache"]["runtimeModelSource"] == "saved_cache"
+    assert provider["modelCache"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
+    assert provider["settings"]["customModelId"] == ""
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert str(model_dir) not in text
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam2-hf-auto-masks",
+                "selectedModel": "__custom__",
+                "customModelId": "[LOCAL_PATH_REDACTED]",
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert str(model_dir) not in body.decode("utf-8")
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        runtime = provider_runtime_settings(conn, user_id=user["id"], provider_id="sam2-hf-auto-masks")
+    finally:
+        conn.close()
+    assert runtime["runtime_model"] == str(model_dir)
+    assert runtime["runtime_model_source"] == "saved_cache"
+
+    seen.clear()
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    smoke = decode(body)["setupJob"]
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_cache_then_smoke_defaults_to_scene_sweep_without_checkpoint_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+    assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+    smoke = decode(body)["setupJob"]
+
+    assert status == 200
+    assert smoke["status"] == "succeeded"
+    assert smoke["result"]["smokeTest"]["sceneSweep"] is True
+    assert smoke["result"]["smokeTest"]["runtimeModelSource"] == "saved_cache"
+    assert "SAM3_LOCAL_MODEL" not in smoke["result"]["message"]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_sam3_diagnose_reports_cached_scene_sweep_without_checkpoint_path(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "mock-sam3-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "diagnose", "runInline": True}).encode("utf-8"),
+    )
+    diagnosis = decode(body)["setupJob"]["result"]
+    checklist = {item["id"]: item for item in diagnosis["checklist"]}
+
+    assert status == 200
+    assert diagnosis["ready"] is True
+    assert checklist["sam3_tracker_model"]["ok"] is True
+    assert "server-side" in checklist["sam3_tracker_model"]["detail"]
+    assert checklist["model_path"]["required"] is False
+    assert checklist["model_path"]["ok"] is False
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_legacy_sam2_hf_smoke_route_is_local_and_requires_ack(tmp_path, monkeypatch):
+    seen: dict[str, object] = {}
+    install_fake_torch(monkeypatch)
+    install_fake_transformers_for_sam2(monkeypatch, seen)
+    model_dir = tmp_path / "mock-sam2-from-pretrained"
+    model_dir.mkdir()
+    (model_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+
+    status, _headers, body = app.handle("POST", "/api/provider-settings/sam2-hf-auto-masks/smoke-test", body=b"{}")
+    assert status == 400
+    assert "allowHeavyLocal=true" in body.decode("utf-8")
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam2-hf-auto-masks/smoke-test",
+        body=json.dumps({"allowHeavyLocal": True}).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["providerId"] == "sam2-hf-auto-masks"
+    assert payload["status"] == "ready"
+    assert seen["pipeline"]["model"] == str(model_dir)  # type: ignore[index]
+    assert str(model_dir) not in body.decode("utf-8")
+
+
+def test_worker_cached_runtime_providers_use_raw_paths_without_public_config_leak(tmp_path):
+    sam2_dir = tmp_path / "mock-sam2-from-pretrained"
+    sam3_dir = tmp_path / "mock-sam3-from-pretrained"
+    sam2_dir.mkdir()
+    sam3_dir.mkdir()
+    (sam2_dir / "config.json").write_text('{"model_type":"sam2"}\n', encoding="utf-8")
+    (sam3_dir / "config.json").write_text('{"model_type":"sam3"}\n', encoding="utf-8")
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    for provider_id, model_dir in (("sam2-hf-auto-masks", sam2_dir), ("sam3-local", sam3_dir)):
+        status, _headers, body = app.handle(
+            "POST",
+            f"/api/provider-settings/{provider_id}/setup/start",
+            body=json.dumps(
+                {
+                    "action": "cache_model",
+                    "runInline": True,
+                    "allowNetwork": True,
+                    "allowDisk": True,
+                    "model": str(model_dir),
+                }
+            ).encode("utf-8"),
+        )
+        assert status == 200
+        assert decode(body)["setupJob"]["status"] == "succeeded"
+
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        sam2_provider, sam2_config = _cached_local_runtime_discovery_provider(
+            conn,
+            user_id=user["id"],
+            discovery_mode="sam2_hf_auto_masks",
+            discovery_config={"providerPreference": "sam2-hf-auto-masks", "sam2HfModel": "facebook/sam2.1-hiera-large"},
+        )
+        sam3_provider, sam3_config = _cached_local_runtime_discovery_provider(
+            conn,
+            user_id=user["id"],
+            discovery_mode="sam3_auto_masks",
+            discovery_config={"providerPreference": "sam3-local", "sam3TrackerModel": "facebook/sam3"},
+        )
+        sam2_runtime = provider_runtime_model_info(conn, user_id=user["id"], provider_id="sam2-hf-auto-masks")
+        sam3_runtime = provider_runtime_model_info(conn, user_id=user["id"], provider_id="sam3-local")
+    finally:
+        conn.close()
+
+    assert sam2_provider is not None
+    assert sam3_provider is not None
+    assert getattr(sam2_provider[0], "backend").model == str(sam2_dir)
+    assert str(getattr(sam3_provider[0], "backend").model_path) == str(sam3_dir)
+    assert "sam2HfModel" not in sam2_config
+    assert "sam3TrackerModel" not in sam3_config
+    assert str(sam2_dir) not in json.dumps(sam2_config)
+    assert str(sam3_dir) not in json.dumps(sam3_config)
+    assert sam2_runtime["runtimeModel"] == str(sam2_dir)
+    assert sam2_runtime["runtimeModelSource"] == "saved_cache"
+    assert sam3_runtime["runtimeModel"] == str(sam3_dir)
+    assert sam3_runtime["runtimeModelSource"] == "saved_cache"
 
 
 def test_hugging_face_cache_probe_uses_local_files_only_and_reports_cached(tmp_path, monkeypatch):

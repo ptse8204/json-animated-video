@@ -41,7 +41,8 @@ from motionjson.providers.discovery import (
     object_specs_from_candidates,
 )
 from motionjson.providers.mocks import MockSegmentationProvider
-from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2SegmentationProvider
+from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2HFAutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
+from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset
@@ -326,6 +327,61 @@ def _apply_sam3_provider_runtime(run_config: ExtractionRunConfig, discovery_conf
     return config
 
 
+def _without_runtime_model_keys(config: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    safe = dict(config)
+    for key in keys:
+        safe.pop(key, None)
+    return safe
+
+
+def _cached_local_runtime_discovery_provider(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    discovery_mode: str | None,
+    discovery_config: dict[str, Any],
+) -> tuple[tuple[Any, str, bool] | None, dict[str, Any]]:
+    config = dict(discovery_config)
+    provider_preference = str(config.get("providerPreference") or config.get("provider_preference") or "").strip()
+    if discovery_mode == "sam2_hf_auto_masks" or provider_preference == "sam2-hf-auto-masks":
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam2-hf-auto-masks")
+        model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+        runtime_model = str(runtime.get("runtime_model") or "").strip()
+        if runtime_model and model_cache.get("cached") is True:
+            safe_config = _without_runtime_model_keys(
+                config,
+                ("sam2HfModel", "sam2_hf_model", "sam2AutoMaskModel", "sam2_auto_mask_model"),
+            )
+            backend = LocalSAM2HFAutomaticMaskProposalBackend(
+                model=runtime_model,
+                device=str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu"),
+            )
+            return (
+                SAM2HFAutomaticMasksDiscoveryProvider(backend=backend),
+                "SAM2 HF automatic masks configured from server-side cached model",
+                False,
+            ), safe_config
+    if discovery_mode == "sam3_auto_masks" and provider_preference != "sam3-hosted" and not config.get("hosted") and not config.get("useHosted"):
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam3-local")
+        model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
+        runtime_model = str(runtime.get("runtime_model") or "").strip()
+        if runtime_model and model_cache.get("cached") is True:
+            safe_config = _without_runtime_model_keys(
+                config,
+                ("sam3TrackerModel", "sam3_tracker_model", "sam3HfModel", "sam3_hf_model", "model"),
+            )
+            backend = LocalSAM3DiscoveryBackend(
+                model_path=runtime_model,
+                device=str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda"),
+            )
+            return (
+                SAM3AutoMasksDiscoveryProvider(backend=backend),
+                "SAM3 Scene Sweep configured from server-side cached model",
+                False,
+            ), safe_config
+    return None, config
+
+
 def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> tuple[Any, str, bool] | None:
     discovery_config = dict(config or {})
     if mode == "auto_object_proposals":
@@ -414,6 +470,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             discovery_mode = run_config.discovery.mode if run_config is not None else None
             discovery_config = dict(run_config.discovery.config) if run_config is not None else {}
             hosted_sam3_backend = None
+            cached_runtime_discovery_provider = None
             if run_config is not None:
                 sam2_config = run_config.provider.sam2
                 if sam2_config.checkpoint and not any(key in discovery_config for key in ("sam2Checkpoint", "sam2_checkpoint", "checkpoint")):
@@ -427,6 +484,13 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     discovery_config, hosted_sam3_backend = _hosted_sam3_discovery_runtime(
                         conn,
                         user_id=job["created_by_user_id"],
+                        discovery_config=discovery_config,
+                    )
+                if hosted_sam3_backend is None:
+                    cached_runtime_discovery_provider, discovery_config = _cached_local_runtime_discovery_provider(
+                        conn,
+                        user_id=job["created_by_user_id"],
+                        discovery_mode=discovery_mode,
                         discovery_config=discovery_config,
                     )
             if hosted_sam3_backend is not None and discovery_mode == "sam3_concept":
@@ -447,6 +511,8 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     "SAM3 hosted auto-mask discovery configured",
                     False,
                 )
+            elif cached_runtime_discovery_provider is not None:
+                discovery_provider = cached_runtime_discovery_provider
             else:
                 discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
             if discovery_provider is not None:

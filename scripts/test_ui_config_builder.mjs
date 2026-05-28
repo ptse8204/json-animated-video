@@ -276,7 +276,7 @@ const sam3NeedsAccessState = ui.modelSetupStateForConnection(
 );
 assert.equal(sam3NeedsAccessState.status, "needs_access");
 assert.notEqual(sam3NeedsAccessState.message, "Ready for this workflow.");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Prepare local model");
 
 const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -301,7 +301,7 @@ const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3BlockedAccessJobState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Prepare local model");
 
 const sam3ActiveAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -340,7 +340,7 @@ const sam3CacheAccessBlockedState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3CacheAccessBlockedState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Check Hugging Face access");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Prepare local model");
 
 const sam2CacheState = ui.modelSetupStateForConnection(
   { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
@@ -359,7 +359,7 @@ const sam2CacheState = ui.modelSetupStateForConnection(
   null,
 );
 assert.equal(sam2CacheState.status, "needs_download_confirmation");
-assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Cache model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Prepare local model");
 
 const staleNotConfiguredState = ui.modelSetupStateForConnection(
   { id: "sam2-local", providerId: "sam2-local", locality: "local" },
@@ -371,7 +371,7 @@ const staleNotConfiguredState = ui.modelSetupStateForConnection(
   null,
 );
 assert.equal(staleNotConfiguredState.status, "ready");
-assert.equal(ui.modelSetupPrimaryActionForState(staleNotConfiguredState, { providerId: "sam2-local" }).label, "Continue to prepare");
+assert.equal(ui.modelSetupPrimaryActionForState(staleNotConfiguredState, { providerId: "sam2-local" }).label, "Continue to run");
 
 const cacheConfirmation = ui.modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
   model: "facebook/sam2.1-hiera-large",
@@ -461,6 +461,35 @@ const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "record").status, "done");
 assert.match(cachedPlaybookSteps.find((step) => step.id === "record").detail, /server-side/);
 
+const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
+  { id: "sam3-local", providerId: "sam3-local", locality: "local" },
+  {
+    id: "sam3-local",
+    readiness: { configured: true, status: "ready", message: "SAM3 Scene Sweep runtime is ready." },
+    credentials: [{ name: "hf_token", configured: true }],
+    setupState: { status: "ready", label: "Ready", message: "Previously cached local model directory is available." },
+    modelCache: {
+      required: true,
+      cached: true,
+      serverPathRecorded: true,
+      localPathKnown: true,
+      runtimeModelSource: "saved_cache",
+      model: "facebook/sam3",
+      message: "Previously cached local model directory is available.",
+    },
+  },
+  null,
+);
+assert.equal(cachedNeedsSmokeState.status, "needs_smoke");
+assert.equal(ui.modelSetupPrimaryActionForState(cachedNeedsSmokeState, { providerId: "sam3-local", locality: "local" }).label, "Run smoke test");
+
+const localPrepareState = ui.modelSetupPrimaryActionForState(
+  { status: "needs_download_confirmation", nextAction: "cache_model" },
+  { providerId: "sam2-hf-auto-masks", locality: "local" },
+);
+assert.equal(localPrepareState.id, "prepare-model");
+assert.equal(localPrepareState.label, "Prepare local model");
+
 const eventMarkup = ui.eventRowsMarkup([
   {
     event_type: "mask_provider_failed",
@@ -503,7 +532,6 @@ const modelSetupPayload = ui.modelSetupPayloadFromValues("openai", {
 assert.deepEqual(modelSetupPayload, {
   providerId: "openai",
   selectedModel: "gpt-5.4-mini",
-  customModelId: "",
   baseUrl: "https://api.openai.com/v1",
   endpoint: "",
   allowHosted: true,
@@ -511,6 +539,14 @@ assert.deepEqual(modelSetupPayload, {
 });
 const noSecretPayload = ui.modelSetupPayloadFromValues("openai", { selectedModel: "gpt-5.4-mini", apiKey: " " });
 assert.equal(Object.hasOwn(noSecretPayload, "apiKey"), false);
+const redactedModelPayload = ui.modelSetupPayloadFromValues("sam3-local", {
+  selectedModel: "__custom__",
+  customModelId: "[LOCAL_PATH_REDACTED]",
+  sam3ModelPath: "[LOCAL_PATH_REDACTED]",
+});
+assert.equal(redactedModelPayload.selectedModel, "__custom__");
+assert.equal(Object.hasOwn(redactedModelPayload, "customModelId"), false);
+assert.equal(Object.hasOwn(redactedModelPayload, "sam3ModelPath"), false);
 
 const hostedSam2Config = ui.buildRunConfig({
   preset: "trace_one_object",

@@ -1763,7 +1763,7 @@ class LocalUIApp:
         conn = self.connection()
         try:
             user = self._local_user(conn)
-            if provider_id in {"sam2-local", "sam3-local"}:
+            if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
                 return _public_value(
                     local_sam_smoke_test(
                         conn,
@@ -1795,6 +1795,7 @@ class LocalUIApp:
                         "format": "motionjson.provider_setup_job.v0.1.start",
                         "setupJob": job,
                         "actions": provider_setup_actions(provider_id),
+                        "providerSettings": provider_settings_response(conn, user_id=user["id"]),
                     }
                 )
             self._start_provider_setup_thread(job_id, payload)
@@ -1803,6 +1804,7 @@ class LocalUIApp:
                     "format": "motionjson.provider_setup_job.v0.1.start",
                     "setupJob": job,
                     "actions": provider_setup_actions(provider_id),
+                    "providerSettings": provider_settings_response(conn, user_id=user["id"]),
                 }
             )
         finally:
@@ -1835,6 +1837,7 @@ class LocalUIApp:
                 {
                     "format": "motionjson.provider_setup_job.v0.1",
                     "setupJob": public_provider_setup_job(conn, user_id=user["id"], job_id=job_id, include_events=True),
+                    "providerSettings": provider_settings_response(conn, user_id=user["id"]),
                 }
             )
         finally:

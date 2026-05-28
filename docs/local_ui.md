@@ -141,12 +141,14 @@ hides alternatives behind `Change model`:
 - Find by description: SAM3 concept/text providers. A prompt is required.
 - Review previous result: no model setup is required.
 
-Normal mode shows the setup state and one primary action. Raw environment
-variables, local paths, custom endpoints, manual commands, logs, diagnostics,
-and JSON stay behind `Advanced`. The setup state machine is:
+Normal mode shows the setup state and one primary action. For local SAM setup,
+the normal path is `Prepare local model`, then `Run smoke test` when a cached
+model still needs verification, then `Continue to run` when setup is complete.
+Raw environment variables, local paths, custom endpoints, manual commands,
+logs, diagnostics, and JSON stay behind `Advanced`. The setup state machine is:
 `not_configured`, `checking_environment`, `needs_access`,
 `needs_download_confirmation`, `caching_model`, `installing_runtime`,
-`smoke_testing`, `ready`, and `failed_recoverable`.
+`preparing_model`, `smoke_testing`, `ready`, and `failed_recoverable`.
 
 Local SAM2 HF and SAM3 Scene Sweep setup also includes a server-side
 `modelCache` state. MotionJSON treats a model as runnable only when the runtime
@@ -166,7 +168,9 @@ start.
 When Cache model completes, the backend records the resolved local
 `from_pretrained` directory in provider settings for runtime use. Browser
 responses show only that the path is known/recorded server-side and redact the
-absolute path as `[LOCAL_PATH_REDACTED]`.
+absolute path as `[LOCAL_PATH_REDACTED]`. Public cache state may include
+`cached`, `serverPathRecorded`, `localPathDisplay`, and `runtimeModelSource`,
+but raw `resolved_model_dir` stays backend-only.
 
 For SAM3 Scene Sweep, `needs_access` is a normal UI step. The Model setup panel
 asks for a Hugging Face token in the main flow, saves it locally as a redacted
@@ -182,13 +186,18 @@ absolute paths. Setup actions run through allowlisted server jobs:
 - `GET /api/provider-settings/setup-jobs/{jobId}`
 - `POST /api/provider-settings/setup-jobs/{jobId}/cancel`
 
-Diagnose stays lightweight and offline. Cache-model actions require explicit
-network/disk confirmation. The Local UI renders setup confirmations in-page
-instead of using native browser confirmation dialogs, so Colab/proxied browser
-sessions can inspect the pending action, provider, model, network, disk,
-heavy-runtime, and cancel state. Hosted smoke tests require `allowNetwork`,
-`allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke tests require
-`allowHeavyLocal` before importing heavy model runtimes.
+Diagnose stays lightweight and offline. `prepare_model` is the guided local
+setup action for SAM providers. It diagnoses runtime setup, blocks with the
+next required user action when packages, access, or local paths are missing,
+caches the selected model only after network/disk confirmation, records the
+server-side path, and then runs a bounded smoke test after heavy-runtime
+confirmation. Cache-model actions still exist for advanced/manual setup and
+require explicit network/disk confirmation. The Local UI renders setup
+confirmations in-page instead of using native browser confirmation dialogs, so
+Colab/proxied browser sessions can inspect the pending action, provider, model,
+network, disk, heavy-runtime, and cancel state. Hosted smoke tests require
+`allowNetwork`, `allowHosted`, and `acknowledgeCostPrivacy`; local SAM smoke
+tests require `allowHeavyLocal` before importing heavy model runtimes.
 
 The guided workflow derives run config from a normalized connection contract:
 connection ID, provider ID, engine, display label, hosted profile, locality,
@@ -510,10 +519,13 @@ The Local UI currently exposes settings for:
   explicit hosted-call opt-in for text concept discovery. Built-in profiles
   cover Roboflow SAM3 concept segmentation and Fal SAM3 image, plus a custom
   SAM3-compatible endpoint.
-- `sam3-local`: local SAM3 `sam3.pt` checkpoint file path, device,
-  Python/CUDA/Hugging Face access diagnostics, and official setup commands.
-  Use the resolved local checkpoint path for `SAM3_LOCAL_MODEL`, not the
-  `/content/sam3` source checkout or the `facebook/sam3` Hugging Face repo id.
+- `sam3-local`: SAM3 Scene Sweep setup through `sam3TrackerModel` /
+  `facebook/sam3`, plus advanced official-package SAM3 `sam3.pt` checkpoint
+  setup through `sam3ModelPath` / `SAM3_LOCAL_MODEL`. The normal Scene Sweep
+  cache path is recorded server-side after `Prepare local model` or `Cache
+  model`; do not paste it into `sam3ModelPath`. Use `sam3ModelPath` only for
+  advanced concept/exemplar workflows that require a real local `sam3.pt`
+  checkpoint.
 - `openai`: OpenAI model selection and API key for hosted plan generation. It
   is not a mask or segmentation provider.
 - `openrouter`: LLM/VLM model selection and API key for reasoning only. It is
@@ -701,8 +713,10 @@ storage, and exposes the imported scene through the normal job review routes.
    SAM2 prompt tracking for point/box tracing, SAM3 Scene Sweep for
    everything-in-scene, SAM2 HF automatic masks as the fallback, and SAM3
    concept for text prompts. If SAM3 needs gated Hugging Face access, paste the
-   token in this step and use `Check Hugging Face access`; provider warnings
-   stay visible before a run.
+   token in this step. The primary `Prepare local model` button then runs the
+   safe setup sequence and records any cached model path server-side, so users
+   do not paste cached paths back into browser fields. Provider warnings stay
+   visible before a run.
 5. Add point, box, brush/erase mask, label, or keyframe prompts on the video
    overlay when the selected goal needs them. Prompt coordinates are native
    video pixels, not CSS canvas pixels.
