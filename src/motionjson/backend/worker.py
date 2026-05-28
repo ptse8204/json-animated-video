@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import sqlite3
 import tempfile
 import uuid
@@ -42,10 +43,10 @@ from motionjson.providers.discovery import (
 )
 from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2HFAutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
-from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset
+from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
 from .queue import claim_next, mark_canceled, mark_failed, mark_running, mark_succeeded
@@ -389,18 +390,20 @@ def _cached_local_runtime_discovery_provider(
                 config,
                 ("sam3TrackerModel", "sam3_tracker_model", "sam3HfModel", "sam3_hf_model", "model"),
             )
-            backend = LocalSAM3DiscoveryBackend(
+            sam3_device = str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda")
+            backend = SubprocessSAM3AutoMasksDiscoveryProvider(
                 model_path=runtime_model,
-                device=str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda"),
+                device=sam3_device,
+                timeout_seconds=_sam3_extraction_timeout_seconds(config),
             )
             public_contract = _resolved_runtime_contract_public(
                 "sam3-local",
                 runtime,
-                device_requested=str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda"),
+                device_requested=sam3_device,
             )
             safe_config["runtimeContractPublic"] = public_contract
             return (
-                SAM3AutoMasksDiscoveryProvider(backend=backend),
+                backend,
                 "SAM3 Scene Sweep configured from server-side cached model",
                 False,
                 {"runtimeContract": public_contract},
@@ -436,6 +439,22 @@ def _safe_public_runtime_model_id(value: str) -> str:
     if text.startswith(("/", "~", "./", "../")) or "\\" in text or text.lower().startswith("file://"):
         return "[LOCAL_PATH_REDACTED]"
     return text
+
+
+def _sam3_extraction_timeout_seconds(config: dict[str, Any]) -> float:
+    default = 1800.0
+    env_value = os.environ.get("MOTIONJSON_SAM3_EXTRACTION_TIMEOUT_SECONDS")
+    if env_value:
+        try:
+            default = float(env_value)
+        except (TypeError, ValueError):
+            default = 1800.0
+    value = config.get("sam3ExtractionTimeoutSeconds", config.get("sam3_extraction_timeout_seconds", default))
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError):
+        timeout = default
+    return min(max(timeout, 30.0), 7200.0)
 
 
 def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> tuple[Any, str, bool] | None:

@@ -130,6 +130,14 @@ records a failed setup instead of leaving the UI in `Setup running` forever.
 The default timeout is 900 seconds and can be adjusted with
 `MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS` for slower local machines.
 
+Extraction uses the same isolation pattern for SAM3 Scene Sweep candidate
+proposal. The run still streams model-load, keyframe, candidate, and filter
+events into Run monitor, but the heavyweight SAM3 process is separate from the
+Local UI worker. If model load or proposal generation blocks, the run fails
+cleanly instead of staying active forever. The default extraction timeout is
+1800 seconds and can be adjusted with
+`MOTIONJSON_SAM3_EXTRACTION_TIMEOUT_SECONDS`.
+
 ## Colab Checkpoint Path Flow
 
 For Colab, the expected local setup order is:
@@ -174,6 +182,7 @@ Hugging Face cache, support a Google Drive
 | Missing Hugging Face access | The gated Hugging Face file cannot be resolved. | In the Local UI, paste a Hugging Face token in Model setup and use `Check Hugging Face access`; headless users can set `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` without printing it. |
 | `Loading SAM3 Tracker model weights` repeats with `no model-sized CUDA allocation yet` | Transformers has not placed the SAM3 model weights on GPU. This is not successful progress. | Confirm Colab is on a CUDA runtime, reinstall `.[sam3-transformers]` so `accelerate` is present, restart the runtime to clear stale GPU memory, then rerun Prepare local model. |
 | SAM3 setup fails with `warmup timed out` | The isolated SAM3 warmup worker did not finish model load or bounded inference before the timeout, so MotionJSON terminated it to keep the UI recoverable. | Restart the Colab runtime, confirm CUDA is visible to PyTorch, check `transformers`, `accelerate`, and `safetensors`, then retry. Increase `MOTIONJSON_SAM3_SMOKE_TIMEOUT_SECONDS` only after confirming GPU memory is actively increasing. |
+| SAM3 extraction fails with `scene sweep extraction timed out` | The isolated extraction worker did not finish model load or candidate proposal before the timeout. | Treat this as a real runtime failure, not a UI issue. Restart the runtime, verify CUDA and package versions, reduce keyframes/candidates, or increase `MOTIONJSON_SAM3_EXTRACTION_TIMEOUT_SECONDS` only when GPU memory is still increasing. |
 | User does not want Hugging Face token setup | Official-package SAM3 concept/exemplar still needs an approved checkpoint, but scene sweep can use a SAM3 Tracker-compatible Transformers model path/id. | Use `SAM3_TRACKER_MODEL` for scene sweep, mount Google Drive or paste an approved `sam3.pt` for concept/exemplar, or use hosted concept/image workflows. |
 | Access not approved | Hugging Face rejects the checkpoint download. | Open the model page while signed in, accept the access terms, then rerun the resolver. |
 | Path does not exist | MotionJSON cannot find the local checkpoint file. | Rerun the resolver or paste the exact `sam3.pt` path printed by Hugging Face Hub. |
