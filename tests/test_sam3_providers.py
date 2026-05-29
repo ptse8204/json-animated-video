@@ -595,7 +595,8 @@ def test_sam3_auto_masks_does_not_reject_missing_stability_metadata(tmp_path):
 
     assert candidates[0].metadata["rejectionReason"] is None
     assert candidates[0].metadata["stabilityScore"] == 0.91
-    assert backend.tracked == ["sam3_scene_001"]
+    assert backend.tracked == []
+    assert candidates[0].metadata["trackingProvider"] == "template_match_fallback"
     assert [spec.object_id for spec in specs] == ["sam3_scene_001"]
 
 
@@ -608,12 +609,15 @@ def test_sam3_auto_masks_provider_does_not_route_through_concept_prompt(tmp_path
     )
 
     assert backend.configs == [{"minMaskArea": 1, "maxObjects": 1}]
-    assert backend.tracked == ["sam3_scene_001"]
+    assert backend.tracked == []
     assert candidates[0].metadata["promptType"] == "scene_sweep"
     assert candidates[0].metadata["prompt"] is None
+    assert candidates[0].metadata["trackingProvider"] == "template_match_fallback"
+    last_mask = np.asarray(Image.open(tmp_path / candidates[0].metadata["maskDir"] / "mask_000003.png"))
+    assert np.array_equal(last_mask, mask_at(5))
 
 
-def test_sam3_auto_masks_falls_back_when_tracker_video_needs_start_frame(tmp_path):
+def test_sam3_auto_masks_uses_template_tracking_by_default(tmp_path):
     backend = FailingTrackerAutoMaskBackend()
     recorder = RecordingJobContext()
     candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(
@@ -623,14 +627,32 @@ def test_sam3_auto_masks_falls_back_when_tracker_video_needs_start_frame(tmp_pat
     )
     specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
 
-    assert backend.tracked == ["sam3_scene_001"]
+    assert backend.tracked == []
     assert candidates[0].metadata["reviewStatus"] == "pending"
-    assert candidates[0].metadata["trackingProvider"] == "keyframe_seed_sequence"
+    assert candidates[0].metadata["trackingProvider"] == "template_match_fallback"
     assert candidates[0].metadata["frameCoverageEstimate"] == 1.0
-    assert "Cannot determine the starting frame index" in candidates[0].metadata["warnings"][0]
+    assert "video propagation is disabled by default" in candidates[0].metadata["warnings"][0]
     assert [spec.object_id for spec in specs] == ["sam3_scene_001"]
-    assert any("using the keyframe mask sequence" in event["message"] for event in recorder.events)
+    assert not any("Cannot determine the starting frame index" in event["message"] for event in recorder.events)
     assert (tmp_path / candidates[0].metadata["maskDir"] / "mask_000003.png").exists()
+
+
+def test_sam3_auto_masks_falls_back_to_template_when_tracker_video_fails(tmp_path):
+    backend = FailingTrackerAutoMaskBackend()
+    recorder = RecordingJobContext()
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(
+        video_source(),
+        {"minMaskArea": 1, "maxObjects": 1, "useTransformersTracker": True},
+        RunContext(out_dir=tmp_path, job_context=recorder),
+    )
+    last_mask = np.asarray(Image.open(tmp_path / candidates[0].metadata["maskDir"] / "mask_000003.png"))
+
+    assert backend.tracked == ["sam3_scene_001"]
+    assert candidates[0].metadata["trackingProvider"] == "template_match_fallback"
+    assert "Cannot determine the starting frame index" in candidates[0].metadata["warnings"][0]
+    assert np.array_equal(last_mask, mask_at(5))
+    assert any("Cannot determine the starting frame index" in event["message"] for event in recorder.events)
+    assert not any("using the static keyframe mask sequence" in event["message"] for event in recorder.events)
 
 
 def test_sam3_scene_sweep_does_not_import_sam2(monkeypatch):

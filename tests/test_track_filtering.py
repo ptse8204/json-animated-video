@@ -117,6 +117,17 @@ def test_no_masks_confidence_and_background_warnings_are_distinct():
     assert background_like.warnings == ["background_likelihood_high"]
 
 
+def test_static_keyframe_fallback_track_is_rejected_before_export():
+    static = track("static_keyframe", bbox=[5, 5, 8, 8], frames=3)
+    static.metadata["discovery"] = {"trackingProvider": "keyframe_seed_sequence"}
+
+    decision = evaluate_track(static, width=40, height=32)
+
+    assert decision.status == "rejected"
+    assert "static_keyframe_mask_sequence" in decision.reason_codes
+    assert decision.fallback.reason_code == "static_keyframe_mask_sequence"
+
+
 def test_duplicate_tracks_emit_merge_suggestion_and_keep_best_track():
     tracks = [
         track("obj_0001", label="Ball", bbox=[6, 10, 8, 8], confidence=0.9),

@@ -118,6 +118,33 @@ def test_mp4_final_render_reports_cached_no_ai_manifest(tmp_path):
     assert manifest["exportWarnings"][0]["code"] == "commercial_use_review_required"
 
 
+def test_export_inclusion_rejects_static_keyframe_fallback_motion():
+    scene = {
+        "objects": [
+            {
+                "id": "ball",
+                "exportStatus": "reviewed",
+                "quality": {},
+                "discovery": {"trackingProvider": "keyframe_seed_sequence", "exportStatus": "reviewed"},
+                "motion": [
+                    {"frame": 1, "visible": True, "x": 6, "y": 10, "w": 8, "h": 8},
+                    {"frame": 2, "visible": True, "x": 6, "y": 10, "w": 8, "h": 8},
+                    {"frame": 3, "visible": True, "x": 6, "y": 10, "w": 8, "h": 8},
+                ],
+            }
+        ]
+    }
+
+    included, excluded, diagnostics = export_workflows._included_object_ids(scene, {})
+    messages = export_workflows._export_validation_messages(diagnostics, [])
+
+    assert included == []
+    assert excluded == ["ball"]
+    assert diagnostics[0]["reason"] == "static_keyframe_mask_sequence"
+    assert messages[0]["severity"] == "error"
+    assert "would not follow the moving object" in messages[0]["message"]
+
+
 def test_phase11e_delivery_fallback_chooses_smallest_ready_production_asset():
     delivery = export_workflows._candidate_delivery_from_assets(
         {

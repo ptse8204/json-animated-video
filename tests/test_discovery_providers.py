@@ -127,6 +127,22 @@ class FakeSAM2RecordsBackend:
         return [mask.copy() for _frame in video.frames]
 
 
+class FakeSAM3SceneSweepBackend:
+    provider_name = "sam3-local"
+
+    def discover_auto_masks(self, video, config, ctx=None):
+        return [
+            {
+                "object_id": "sam3_scene_001",
+                "label": "scene object",
+                "segmentation": proposal_mask(x=6, y=10, w=8, h=8),
+                "bbox": [6, 10, 8, 8],
+                "score": 0.91,
+                "sceneSweep": True,
+            }
+        ]
+
+
 class FakeSAM2ProposalOnlyBackend:
     provider_name = "sam2-local"
 
@@ -645,6 +661,30 @@ def test_discovery_provider_feeds_run_multi_object_pipeline(tmp_path):
     assert candidates_payload["provider"] == "external_masks"
     assert candidates_payload["candidates"][0]["source"] == "external_masks"
     assert validate_output_dir(out, object_id="ball").ok
+
+
+def test_sam3_scene_sweep_template_fallback_exports_moving_motion(tmp_path):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video, frame_count=3)
+
+    scene = run_multi_object_pipeline(
+        video_path=video,
+        out_dir=out,
+        object_specs=[],
+        candidate_provider=SAM3AutoMasksDiscoveryProvider(backend=FakeSAM3SceneSweepBackend()),
+        candidate_config={"minMaskArea": 1, "maxObjects": 1},
+        candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out),
+        sample_fps=12,
+        max_frames=3,
+        min_area=1,
+    )
+
+    motion = scene["objects"][0]["motion"]
+    assert scene["objects"][0]["discovery"]["trackingProvider"] == "template_match_fallback"
+    assert motion[0]["x"] < motion[-1]["x"]
+    assert scene["objects"][0].get("exportStatus") != "rejected"
+    assert validate_output_dir(out, object_id="sam3_scene_001").ok
 
 
 def test_multi_object_pipeline_reports_missing_discovery_provider_name(tmp_path):

@@ -15,6 +15,7 @@ FALLBACK_REASON_CODES = {
     "vectorization_failed",
     "provider_unavailable",
     "tracking_failed",
+    "static_keyframe_mask_sequence",
     "user_chose_raster_mode",
     "duplicate_track",
     "mask_area_below_minimum",
@@ -29,6 +30,7 @@ FALLBACK_MESSAGES = {
     "vectorization_failed": "The mask could not be converted into useful vector geometry.",
     "provider_unavailable": "The selected provider was unavailable.",
     "tracking_failed": "Object tracking failed before a usable track was produced.",
+    "static_keyframe_mask_sequence": "The exported mask sequence is static keyframe fallback output and does not prove object motion was tracked.",
     "user_chose_raster_mode": "The run was configured to keep raster output.",
     "duplicate_track": "This track overlaps another accepted track and should be merged or ignored.",
     "mask_area_below_minimum": "The accepted mask area is below the configured minimum.",
@@ -43,6 +45,7 @@ FALLBACK_SUGGESTIONS = {
     "vectorization_failed": ["Use raster alpha output for this object.", "Try a cleaner mask or lower min-area for small objects."],
     "provider_unavailable": ["Open provider diagnostics.", "Choose a no-model provider such as mock, motion foreground, or external masks."],
     "tracking_failed": ["Retry with fewer frames.", "Use external masks for deterministic tracking input."],
+    "static_keyframe_mask_sequence": ["Track the selected candidate before export.", "Use template-match, SAM3 Tracker Video, SAM2, or external masks for moving objects."],
     "user_chose_raster_mode": ["Switch output mode only if vector diagnostics are acceptable."],
     "duplicate_track": ["Keep the higher-confidence track.", "Merge labels or delete the duplicate in review."],
     "mask_area_below_minimum": ["Lower the minimum area only for genuinely small objects.", "Use a tighter prompt or external masks."],
@@ -156,6 +159,21 @@ def track_metrics(track: ObjectTrack, *, width: int, height: int) -> dict[str, A
     bbox_ratios = [round(_bbox_area(frame) / frame_area, 4) for frame in visible]
     mean_mask_ratio = round(float(np.mean(mask_ratios)), 4) if mask_ratios else 0.0
     mean_bbox_ratio = round(float(np.mean(bbox_ratios)), 4) if bbox_ratios else 0.0
+    centers = [
+        (float(frame.bbox[0]) + float(frame.bbox[2]) / 2.0, float(frame.bbox[1]) + float(frame.bbox[3]) / 2.0)
+        for frame in visible
+        if frame.bbox
+    ]
+    if centers:
+        first_x, first_y = centers[0]
+        max_center_shift = max(((x - first_x) ** 2 + (y - first_y) ** 2) ** 0.5 for x, y in centers)
+        path_length = sum(
+            ((right[0] - left[0]) ** 2 + (right[1] - left[1]) ** 2) ** 0.5
+            for left, right in zip(centers, centers[1:])
+        )
+    else:
+        max_center_shift = 0.0
+        path_length = 0.0
     return {
         "frameCount": len(track.frames),
         "visibleFrameCount": len(visible),
@@ -165,6 +183,8 @@ def track_metrics(track: ObjectTrack, *, width: int, height: int) -> dict[str, A
         "maxBboxFrameCoverageRatio": max(bbox_ratios) if bbox_ratios else 0.0,
         "meanMaskFrameCoverageRatio": mean_mask_ratio,
         "meanBboxFrameCoverageRatio": mean_bbox_ratio,
+        "maxCenterShiftPx": round(float(max_center_shift), 3),
+        "centerPathLengthPx": round(float(path_length), 3),
         "confidence": track.confidence,
     }
 
@@ -186,6 +206,13 @@ def evaluate_track(track: ObjectTrack, *, width: int, height: int, config: Track
         warnings.append("background_likelihood_high")
     if track.confidence is not None and track.confidence < config.min_confidence:
         reason_codes.append("confidence_below_filter")
+    discovery = track.metadata.get("discovery") if isinstance(track.metadata.get("discovery"), dict) else {}
+    if (
+        str(discovery.get("trackingProvider") or "") == "keyframe_seed_sequence"
+        and metrics["visibleFrameCount"] > 1
+        and metrics["maxCenterShiftPx"] < max(2.0, min(width, height) * 0.01)
+    ):
+        reason_codes.append("static_keyframe_mask_sequence")
     status = "rejected" if reason_codes else "accepted"
     fallback = build_raster_fallback(reason_codes[0], metadata={"objectId": track.object_id, **metrics}) if reason_codes else None
     return TrackDecision(track.object_id, track.label, status, reason_codes, warnings, metrics, fallback)

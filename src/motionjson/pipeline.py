@@ -381,6 +381,52 @@ def _mark_trace_everything_review_pending(
         track.metadata = {**track.metadata, "reviewRequired": True, "exportReviewGate": dict(gate)}
 
 
+def _apply_track_filter_decisions(
+    *,
+    objects: list[dict[str, Any]],
+    layers: list[dict[str, Any]],
+    tracks: Sequence[ObjectTrack],
+    filter_report: Mapping[str, Any],
+) -> None:
+    decisions = filter_report.get("decisions") if isinstance(filter_report.get("decisions"), list) else []
+    decisions_by_id = {str(decision.get("objectId")): decision for decision in decisions if isinstance(decision, Mapping)}
+    tracks_by_id = {track.object_id: track for track in tracks}
+    for obj in objects:
+        object_id = _text_or_none(obj.get("id") or obj.get("objectId"))
+        if not object_id:
+            continue
+        decision = decisions_by_id.get(object_id)
+        track = tracks_by_id.get(object_id)
+        if not decision:
+            continue
+        status = str(decision.get("status") or "accepted")
+        reason_codes = [str(reason) for reason in decision.get("reasonCodes", []) if reason]
+        if status == "accepted":
+            continue
+        quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
+        discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
+        obj["quality"] = {**quality, "trackFilter": dict(decision), "exportValidationStatus": status}
+        obj["exportStatus"] = "rejected"
+        obj["exportIncluded"] = False
+        obj["discovery"] = {
+            **discovery,
+            "exportStatus": "rejected",
+            "exportValidationReasonCodes": reason_codes,
+            "reviewRequired": True,
+        }
+    for layer in layers:
+        object_id = _text_or_none(layer.get("object_id") or layer.get("objectId"))
+        decision = decisions_by_id.get(object_id or "")
+        if decision and str(decision.get("status") or "accepted") != "accepted":
+            controls = layer.get("controls") if isinstance(layer.get("controls"), dict) else {}
+            layer["controls"] = {
+                **controls,
+                "exportStatus": "rejected",
+                "exportIncluded": False,
+                "exportValidationReasonCodes": [str(reason) for reason in decision.get("reasonCodes", []) if reason],
+            }
+
+
 def _job_emit(
     job_context: Any | None,
     stage: str,
@@ -964,6 +1010,12 @@ def run_multi_object_pipeline(
         config=TrackFilterConfig(min_area=min_area),
     )
     track_filter_payload = track_filter_report.to_dict()
+    _apply_track_filter_decisions(
+        objects=objects,
+        layers=layers,
+        tracks=linked_tracks,
+        filter_report=track_filter_payload,
+    )
     trace_export_gate = _trace_everything_export_gate(active_candidate_provider_name, active_candidate_config)
     if trace_export_gate is not None:
         _mark_trace_everything_review_pending(

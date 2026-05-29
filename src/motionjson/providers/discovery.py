@@ -1124,10 +1124,101 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
     return round(visible / len(masks), 4)
 
 
+def _translate_mask(mask: np.ndarray, *, dx: int, dy: int) -> np.ndarray:
+    source = normalize_binary_mask(mask)
+    height, width = source.shape[:2]
+    output = np.zeros((height, width), dtype=np.uint8)
+    src_x0 = max(0, -dx)
+    src_y0 = max(0, -dy)
+    src_x1 = min(width, width - dx) if dx >= 0 else width
+    src_y1 = min(height, height - dy) if dy >= 0 else height
+    dst_x0 = max(0, dx)
+    dst_y0 = max(0, dy)
+    dst_x1 = dst_x0 + max(0, src_x1 - src_x0)
+    dst_y1 = dst_y0 + max(0, src_y1 - src_y0)
+    if src_x1 <= src_x0 or src_y1 <= src_y0 or dst_x1 <= dst_x0 or dst_y1 <= dst_y0:
+        return output
+    output[dst_y0:dst_y1, dst_x0:dst_x1] = source[src_y0:src_y1, src_x0:src_x1]
+    return output
+
+
+def _template_match_mask_sequence(
+    video: VideoSource,
+    *,
+    frame_index: int,
+    mask: np.ndarray,
+    box: Box,
+    config: Mapping[str, Any],
+) -> list[np.ndarray] | None:
+    frames = list(video.frames)
+    if not frames:
+        return None
+    seed_index = min(max(0, int(frame_index)), len(frames) - 1)
+    seed_mask = normalize_binary_mask(mask)
+    if np.count_nonzero(seed_mask) <= 0:
+        return None
+    seed_box = _box_from_mask(seed_mask)
+    if seed_box.w <= 1 or seed_box.h <= 1:
+        seed_box = box
+    height, width = seed_mask.shape[:2]
+    padding = _int_config_any(
+        config,
+        ("templateTrackPadding", "template_track_padding"),
+        max(4, int(max(seed_box.w, seed_box.h) * 0.75)),
+    )
+    x0 = max(0, seed_box.x - padding)
+    y0 = max(0, seed_box.y - padding)
+    x1 = min(width, seed_box.x + seed_box.w + padding)
+    y1 = min(height, seed_box.y + seed_box.h + padding)
+    if x1 - x0 < 3 or y1 - y0 < 3:
+        return None
+    seed_rgb = np.asarray(frames[seed_index].rgb, dtype=np.uint8)
+    template = cv2.cvtColor(seed_rgb[y0:y1, x0:x1], cv2.COLOR_RGB2GRAY)
+    if template.size <= 0 or float(np.std(template)) < 1.0:
+        return None
+    minimum_score = _ratio_config_any(config, ("templateTrackMinScore", "template_track_min_score"), 0.12)
+    masks: list[np.ndarray] = []
+    scores: list[float] = []
+    for index, frame in enumerate(frames):
+        if index == seed_index:
+            masks.append(seed_mask.copy())
+            continue
+        rgb = np.asarray(frame.rgb, dtype=np.uint8)
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        if gray.shape[0] < template.shape[0] or gray.shape[1] < template.shape[1]:
+            return None
+        result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
+        if result.size <= 0:
+            return None
+        _min_value, max_value, _min_location, max_location = cv2.minMaxLoc(result)
+        if not np.isfinite(max_value):
+            return None
+        scores.append(float(max_value))
+        masks.append(_translate_mask(seed_mask, dx=int(max_location[0] - x0), dy=int(max_location[1] - y0)))
+    if scores and float(np.mean(scores)) < minimum_score:
+        return None
+    return masks
+
+
 def _redact_local_paths_from_error(error: Exception) -> str:
     text = str(error) or type(error).__name__
     text = re.sub(r"(?<![\w:])(?:/[^\s'\"<>]+)+", "[LOCAL_PATH_REDACTED]", text)
     return re.sub(r"[A-Za-z]:\\[^\s'\"<>]+", "[LOCAL_PATH_REDACTED]", text)
+
+
+def _sam3_template_fallback_result(
+    video: VideoSource,
+    *,
+    frame_index: int,
+    mask: np.ndarray,
+    box: Box,
+    config: Mapping[str, Any],
+    reason: str,
+) -> tuple[list[np.ndarray], str, str]:
+    tracked = _template_match_mask_sequence(video, frame_index=frame_index, mask=mask, box=box, config=config)
+    if tracked is not None:
+        return tracked, f"{reason}; using local template-match propagation for review.", "template_match_fallback"
+    return [mask.copy() for _frame in video.frames], f"{reason}; using the static keyframe mask sequence for review.", "keyframe_seed_sequence"
 
 
 def _sam3_backend(current: Any | None, factory: Callable[[Mapping[str, Any]], Any] | None, config: Mapping[str, Any]) -> Any:
@@ -1178,6 +1269,7 @@ def _sam3_track_or_seed_sequence(
     backend: Any,
     video: VideoSource,
     *,
+    source: str,
     ctx: RunContext,
     record: Mapping[str, Any],
     frame_index: int,
@@ -1191,16 +1283,26 @@ def _sam3_track_or_seed_sequence(
     record_sequence = _sam3_record_mask_sequence(record, video, width=width, height=height)
     if record_sequence is not None:
         return record_sequence, None, "sam3-local"
-    scene_sweep_record = bool(record.get("sceneSweep") or record.get("scene_sweep") or _bool_config_any(config, ("sceneSweep", "scene_sweep"), False))
+    scene_sweep_record = bool(
+        source == "sam3_auto_masks"
+        or record.get("sceneSweep")
+        or record.get("scene_sweep")
+        or _bool_config_any(config, ("sceneSweep", "scene_sweep"), False)
+    )
     tracker_requested = _bool_config_any(
         config,
         ("useTransformersTracker", "use_transformers_tracker", "requireTransformersTracker", "require_transformers_tracker"),
         False,
     )
     if scene_sweep_record and not tracker_requested:
-        return [mask.copy() for _frame in video.frames], (
-            "SAM3 Scene Sweep video propagation is disabled by default; review uses the keyframe mask sequence."
-        ), "keyframe_seed_sequence"
+        return _sam3_template_fallback_result(
+            video,
+            frame_index=frame_index,
+            mask=mask,
+            box=box,
+            config=config,
+            reason="SAM3 Scene Sweep video propagation is disabled by default",
+        )
     if hasattr(backend, "track_candidate"):
         try:
             masks = list(
@@ -1218,10 +1320,7 @@ def _sam3_track_or_seed_sequence(
             return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None, getattr(backend, "provider_name", "sam3-local")
         except Exception as exc:
             detail = _redact_local_paths_from_error(exc)
-            warning = (
-                "SAM3 video tracking failed; using the keyframe mask sequence for review "
-                f"instead of failing extraction: {detail}"
-            )
+            warning = f"SAM3 video tracking failed: {detail}"
             ctx.emit(
                 "candidate_discovery",
                 "running",
@@ -1235,7 +1334,14 @@ def _sam3_track_or_seed_sequence(
                     "errorType": type(exc).__name__,
                 },
             )
-            return [mask.copy() for _frame in video.frames], warning, "keyframe_seed_sequence"
+            return _sam3_template_fallback_result(
+                video,
+                frame_index=frame_index,
+                mask=mask,
+                box=box,
+                config=config,
+                reason=warning,
+            )
     return [mask.copy() for _frame in video.frames], (
         "SAM3 video tracking backend was not available; review uses the prompt-frame mask sequence."
     ), "keyframe_seed_sequence"
@@ -1315,6 +1421,7 @@ def _sam3_records_to_candidates(
             mask_sequence, tracking_warning, tracking_provider = _sam3_track_or_seed_sequence(
                 backend,
                 video,
+                source=source,
                 ctx=ctx,
                 record=record,
                 frame_index=frame_index,

@@ -153,6 +153,29 @@ def _status_excludes(value: Any) -> bool:
     return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged|review_pending", str(value or "")))
 
 
+def _static_keyframe_fallback(obj: dict[str, Any]) -> bool:
+    discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
+    if str(discovery.get("trackingProvider") or "") != "keyframe_seed_sequence":
+        return False
+    centers: list[tuple[float, float]] = []
+    for entry in obj.get("motion", []):
+        if not isinstance(entry, dict) or not entry.get("visible"):
+            continue
+        try:
+            x = float(entry.get("x") or 0.0)
+            y = float(entry.get("y") or 0.0)
+            w = float(entry.get("w") or 0.0)
+            h = float(entry.get("h") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        centers.append((x + w / 2.0, y + h / 2.0))
+    if len(centers) <= 1:
+        return False
+    first_x, first_y = centers[0]
+    max_shift = max(((x - first_x) ** 2 + (y - first_y) ** 2) ** 0.5 for x, y in centers)
+    return max_shift < 2.0
+
+
 def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]) -> tuple[list[str], list[str], list[dict[str, Any]]]:
     track_edits = correction_state.get("trackEdits") if isinstance(correction_state.get("trackEdits"), dict) else {}
     history = correction_state.get("history") if isinstance(correction_state.get("history"), list) else []
@@ -166,10 +189,13 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
         object_id = _object_id(obj)
         edit = _edit_for_object(track_edits, object_id)
         include = True
+        exclusion_reason: str | None = None
         if edit.get("deleted") or edit.get("mergedInto"):
             include = False
+            exclusion_reason = "correction_state"
         if edit.get("exportIncluded") is False:
             include = False
+            exclusion_reason = "export_excluded"
         quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
         discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
         if (
@@ -180,20 +206,40 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
             or _status_excludes(discovery.get("exportStatus"))
         ):
             include = False
+            if quality.get("reviewRequired") is True or discovery.get("reviewRequired") is True:
+                exclusion_reason = "review_required"
+            elif obj.get("exportIncluded") is False:
+                exclusion_reason = "export_excluded"
+            elif _status_excludes(obj.get("exportStatus")):
+                exclusion_reason = str(obj.get("exportStatus") or "correction_state")
+            elif _status_excludes(discovery.get("exportStatus")):
+                exclusion_reason = str(discovery.get("exportStatus") or "correction_state")
+        if include and _static_keyframe_fallback(obj):
+            include = False
+            exclusion_reason = "static_keyframe_mask_sequence"
+            diagnostics.append(
+                {
+                    "code": "static_keyframe_mask_sequence",
+                    "objectId": object_id,
+                    "reason": "static_keyframe_mask_sequence",
+                    "message": "This object uses a static keyframe mask sequence, so the exported trace would not follow the moving object.",
+                }
+            )
         if include:
             included.append(object_id)
         else:
-            reason = edit.get("exportStatus") or obj.get("exportStatus")
+            reason = exclusion_reason or edit.get("exportStatus") or obj.get("exportStatus")
             if not reason:
                 reason = "review_required" if quality.get("reviewRequired") is True or discovery.get("reviewRequired") is True else "correction_state"
             excluded.append(object_id)
-            diagnostics.append(
-                {
-                    "code": "track_excluded_from_export",
-                    "objectId": object_id,
-                    "reason": reason,
-                }
-            )
+            if reason != "static_keyframe_mask_sequence":
+                diagnostics.append(
+                    {
+                        "code": "track_excluded_from_export",
+                        "objectId": object_id,
+                        "reason": reason,
+                    }
+                )
     for entry in history:
         if not isinstance(entry, dict):
             continue
@@ -282,19 +328,28 @@ def _export_validation_messages(
         reason = str(diagnostic.get("reason") or "")
         object_id = str(diagnostic.get("objectId") or "")
         review_required = reason in {"review_required", "review_pending"}
+        static_keyframe = reason == "static_keyframe_mask_sequence"
         messages.append(
             {
-                "code": "auto_discovered_object_review_required" if review_required else str(diagnostic.get("code") or "export_diagnostic"),
-                "severity": "warn",
+                "code": "auto_discovered_object_review_required"
+                if review_required
+                else "static_keyframe_mask_sequence"
+                if static_keyframe
+                else str(diagnostic.get("code") or "export_diagnostic"),
+                "severity": "error" if static_keyframe else "warn",
                 "objectId": object_id,
                 "message": (
                     f"{object_id} was not included because auto-discovered objects require review before export."
                     if review_required and object_id
+                    else f"{object_id} was not included because its mask sequence is static and would not follow the moving object."
+                    if static_keyframe and object_id
                     else str(diagnostic.get("reason") or diagnostic.get("message") or "object was not included in export")
                 ),
                 "suggestedAction": (
                     "Review and accept the object track, then validate export again."
                     if review_required
+                    else "Track the selected candidate again with moving masks, use template-match/SAM video propagation, or provide external masks before export."
+                    if static_keyframe
                     else "Review track corrections and export inclusion before publishing."
                 ),
                 "source": "export_validation",
