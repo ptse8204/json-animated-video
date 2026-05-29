@@ -30,7 +30,11 @@ class SubprocessSAM3AutoMasksDiscoveryProvider:
     model_path: str
     device: str = "cuda"
     timeout_seconds: float = DEFAULT_SAM3_DISCOVERY_TIMEOUT_SECONDS
+    name: str = "sam3_auto_masks"
     provider_name: str = "sam3-local"
+    environ: Mapping[str, str] | None = None
+    python_executable: str | None = None
+    worker_module: str = SAM3_DISCOVERY_WORKER_MODULE
 
     def propose(self, video: VideoSource, config: Mapping[str, Any], ctx: RunContext) -> Sequence[ObjectCandidate]:
         return run_sam3_auto_masks_proposal_subprocess(
@@ -40,6 +44,9 @@ class SubprocessSAM3AutoMasksDiscoveryProvider:
             model_path=self.model_path,
             device=self.device,
             timeout_seconds=self.timeout_seconds,
+            environ=self.environ,
+            python_executable=self.python_executable,
+            worker_module=self.worker_module,
         )
 
 

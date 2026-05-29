@@ -647,6 +647,29 @@ def test_discovery_provider_feeds_run_multi_object_pipeline(tmp_path):
     assert validate_output_dir(out, object_id="ball").ok
 
 
+def test_multi_object_pipeline_reports_missing_discovery_provider_name(tmp_path):
+    class MissingNameDiscoveryProvider:
+        def propose(self, video, config, ctx):
+            raise AssertionError("provider should fail contract validation before discovery runs")
+
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video, frame_count=1)
+
+    with pytest.raises(ProviderConfigError, match="must define a non-empty name"):
+        run_multi_object_pipeline(
+            video_path=video,
+            out_dir=out,
+            object_specs=[],
+            candidate_provider=MissingNameDiscoveryProvider(),
+            candidate_config={},
+            candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out),
+            sample_fps=12,
+            max_frames=1,
+            min_area=1,
+        )
+
+
 def test_manual_prompt_discovery_cli_feeds_shared_pipeline_with_prompt_factory(tmp_path):
     video = tmp_path / "tiny.mp4"
     out = tmp_path / "out"

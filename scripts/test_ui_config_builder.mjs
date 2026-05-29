@@ -133,6 +133,8 @@ const failedRunContract = ui.workflowStepContractFromSnapshot(
 assert.equal(failedRunContract.primaryLabel, "Change setup");
 assert.equal(failedRunContract.primaryAction, "prepare_new_run");
 assert.equal(failedRunContract.enabled, true);
+assert.equal(ui.jobProgressText({ status: "failed", progress: { known: true, percent: 100, label: "Failed" } }), "Failed");
+assert.equal(ui.jobProgressText({ status: "running", progress: { known: true, percent: 31 } }), "31% complete");
 const completedRunContract = ui.workflowStepContractFromSnapshot(
   {
     selectedPreset: "trace_all_objects",

@@ -2463,6 +2463,16 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function jobProgressText(job = {}) {
+    const status = String(job.status || job.rawStatus || "").toLowerCase();
+    const progress = job.progress || {};
+    const label = String(progress.label || "").trim();
+    if (/failed/.test(status)) return label && !/complete/i.test(label) ? label : "Failed";
+    if (/canceled|cancelled/.test(status)) return label && !/complete/i.test(label) ? label : "Canceled";
+    const percent = Number.isFinite(Number(progress.percent)) ? clamp(Math.round(Number(progress.percent)), 0, 100) : 0;
+    return `${percent}% ${progress.known ? "complete" : "estimated"}`;
+  }
+
   function jobCenterStateFromSnapshot(snapshot = {}) {
     const jobs = asArray(snapshot.jobs).map((job) => normalizeJobLifecycle(job));
     const recentJobs = jobs.slice().sort((a, b) => b.timestamp - a.timestamp || String(b.id).localeCompare(String(a.id)));
@@ -7010,6 +7020,7 @@ const MotionJSONUI = (() => {
             .map((job) => {
               const id = job.id;
               const progress = job.progress.percent;
+              const progressText = jobProgressText(job);
               const status = job.status || "unknown";
               const selected = id && id === state.selectedJobId;
               const diagnostics = [
@@ -7032,7 +7043,7 @@ const MotionJSONUI = (() => {
                     <div class="job-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
                       <div class="job-progress-bar" style="--progress: ${progress}%"></div>
                     </div>
-                    <span class="job-progress-text">${progress}% ${escapeHtml(job.progress.known ? "complete" : "estimated")}${diagnostics.length ? ` - ${escapeHtml(diagnostics.join(" "))}` : ""}</span>
+                    <span class="job-progress-text">${escapeHtml(progressText)}${diagnostics.length ? ` - ${escapeHtml(diagnostics.join(" "))}` : ""}</span>
                   </div>
                 </button>
               `;
@@ -12268,6 +12279,7 @@ const MotionJSONUI = (() => {
     exportNextStepText,
     filterReviewCandidates,
     jobStaleNotice,
+    jobProgressText,
     modelConnectorsForSetup,
     modelPlanConfirmPayload,
     modelPlanGoalForPreset,

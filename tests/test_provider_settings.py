@@ -29,7 +29,7 @@ from motionjson.provider_settings import (
     redact_secret_payload,
     redact_secret_text,
 )
-from motionjson.providers.base import ProviderConfigError
+from motionjson.providers.base import ObjectCandidateProvider, ProviderConfigError
 from motionjson.ui.server import LocalUIApp
 
 
@@ -1432,6 +1432,8 @@ def test_worker_cached_runtime_providers_require_verified_runtime_without_public
 
     assert sam2_provider is not None
     assert sam3_provider is not None
+    assert isinstance(sam3_provider[0], ObjectCandidateProvider)
+    assert getattr(sam3_provider[0], "name") == "sam3_auto_masks"
     assert getattr(sam2_provider[0], "backend").model == str(sam2_dir)
     assert str(getattr(sam3_provider[0], "model_path")) == str(sam3_dir)
     assert "sam2HfModel" not in sam2_config

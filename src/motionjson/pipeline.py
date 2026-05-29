@@ -29,7 +29,7 @@ from .track_filters import TrackFilterConfig, build_raster_fallback, filter_and_
 from .tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
 from .vectorize import build_quality_scores, recommended_output
 from .video import iter_sampled_frames
-from .providers.base import ObjectCandidateProvider, PhaseTiming
+from .providers.base import ObjectCandidateProvider, PhaseTiming, ProviderConfigError
 
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -55,6 +55,15 @@ def _validate_object_specs(object_specs: Sequence[ObjectExtractionSpec]) -> None
         _validate_object_id(object_id)
     if len(set(object_ids)) != len(object_ids):
         raise ValueError("Object extraction specs must use unique object IDs")
+
+
+def _candidate_provider_name(provider: ObjectCandidateProvider) -> str:
+    name = getattr(provider, "name", None)
+    if not isinstance(name, str) or not name.strip():
+        raise ProviderConfigError(
+            f"Discovery provider {type(provider).__name__} must define a non-empty name before it can run in the extraction pipeline."
+        )
+    return name.strip()
 
 
 def _clear_generated_frames(*directories: Path) -> None:
@@ -781,6 +790,7 @@ def run_multi_object_pipeline(
     candidate_start = time.perf_counter()
     _job_check_cancel(job_context, "candidate_discovery")
     active_candidate_provider = candidate_provider or ObjectSpecCandidateProvider(object_specs)
+    active_candidate_provider_name = _candidate_provider_name(active_candidate_provider)
     active_candidate_config = dict(candidate_config or {"frame_index": 0})
     _job_emit(
         job_context,
@@ -788,13 +798,13 @@ def run_multi_object_pipeline(
         "running",
         "discovering object candidates",
         progress={"overallRatio": 0.31},
-        metadata={"provider": active_candidate_provider.name},
+        metadata={"provider": active_candidate_provider_name},
     )
     candidates = list(active_candidate_provider.propose(video_source, active_candidate_config, run_context))
     if candidate_provider is not None and not candidates:
         fallback = build_raster_fallback(
             "no_candidates",
-            metadata={"provider": active_candidate_provider.name, "config": active_candidate_config},
+            metadata={"provider": active_candidate_provider_name, "config": active_candidate_config},
             severity="error",
         )
         write_json(
@@ -804,11 +814,11 @@ def run_multi_object_pipeline(
                 summary={"fallbackReasonCounts": {"no_candidates": 1}, "acceptedTracks": 0, "rejectedTracks": 0},
             ),
         )
-        raise ValueError(f"Discovery provider {active_candidate_provider.name!r} produced no candidates")
+        raise ValueError(f"Discovery provider {active_candidate_provider_name!r} produced no candidates")
     if candidate_provider is not None and candidate_to_specs is not None:
         object_specs = candidate_to_specs(candidates)
         if not object_specs:
-            raise ValueError(f"Discovery provider {active_candidate_provider.name!r} produced no candidates usable for extraction")
+            raise ValueError(f"Discovery provider {active_candidate_provider_name!r} produced no candidates usable for extraction")
         _validate_object_specs(object_specs)
     elif candidate_provider is not None and not object_specs:
         raise ValueError("candidate_to_specs is required when discovery provides candidates without initial object_specs")
@@ -816,7 +826,7 @@ def run_multi_object_pipeline(
         out_dir / "candidates.json",
         {
             "format": "motionjson.candidates.v0.1",
-            "provider": active_candidate_provider.name,
+            "provider": active_candidate_provider_name,
             "config": active_candidate_config,
             "video": video_source.to_summary(),
             "candidates": [candidate.to_dict() for candidate in candidates],
@@ -829,7 +839,7 @@ def run_multi_object_pipeline(
         "succeeded",
         "object candidates discovered",
         progress={"stageRatio": 1.0, "overallRatio": 0.32},
-        metadata={"provider": active_candidate_provider.name, "candidates": len(candidates), "objectSpecs": len(object_specs)},
+        metadata={"provider": active_candidate_provider_name, "candidates": len(candidates), "objectSpecs": len(object_specs)},
     )
 
     initial_masks_start = time.perf_counter()
@@ -894,7 +904,7 @@ def run_multi_object_pipeline(
         config=TrackFilterConfig(min_area=min_area),
     )
     track_filter_payload = track_filter_report.to_dict()
-    trace_export_gate = _trace_everything_export_gate(active_candidate_provider.name, active_candidate_config)
+    trace_export_gate = _trace_everything_export_gate(active_candidate_provider_name, active_candidate_config)
     if trace_export_gate is not None:
         _mark_trace_everything_review_pending(
             objects=objects,
