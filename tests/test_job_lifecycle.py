@@ -199,6 +199,7 @@ def test_job_lifecycle_summarizes_failure_and_recovery_action():
 
     assert lifecycle["status"] == "failed"
     assert lifecycle["phase"] == "failed"
+    assert lifecycle["progress"] == {"known": False, "percent": 0, "label": "Failed"}
     assert lifecycle["failure"]["headline"] == "SAM3 is not ready"
     assert lifecycle["failure"]["reasonCode"] == "provider_unavailable"
     assert lifecycle["nextAction"]["label"] == "Open logs"

@@ -8,7 +8,8 @@ import cv2
 import numpy as np
 import pytest
 
-from motionjson.backend.sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider, run_sam3_auto_masks_proposal_subprocess
+from motionjson.backend.sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider, _write_frame_store, run_sam3_auto_masks_proposal_subprocess
+from motionjson.backend.sam3_discovery_worker import _load_video
 from motionjson.pipeline import run_multi_object_pipeline
 from motionjson.providers.base import ObjectCandidateProvider, ProviderExecutionError
 from motionjson.providers.discovery import object_specs_from_candidates
@@ -32,7 +33,7 @@ class RecordingJobContext:
 
 
 def _video(tmp_path):
-    frame = SimpleNamespace(rgb=np.zeros((8, 8, 3), dtype=np.uint8))
+    frame = SimpleNamespace(index=7, out_index=0, time_sec=1.25, rgb=np.zeros((8, 8, 3), dtype=np.uint8))
     info = SimpleNamespace(width=8, height=8, source_fps=30.0, sample_fps=1.0, total_source_frames=30)
     return VideoSource(path=tmp_path / "video.mp4", info=info, frames=[frame])
 
@@ -60,6 +61,30 @@ def test_sam3_discovery_subprocess_provider_satisfies_candidate_provider_contrac
     assert isinstance(provider, ObjectCandidateProvider)
     assert provider.name == "sam3_auto_masks"
     assert provider.provider_name == "sam3-local"
+
+
+def test_sam3_discovery_worker_restores_sampled_frame_metadata(tmp_path):
+    frames_path = tmp_path / "frames.npz"
+    _write_frame_store(_video(tmp_path), frames_path)
+
+    video = _load_video(
+        {
+            "framesPath": str(frames_path),
+            "video": {
+                "path": str(tmp_path / "video.mp4"),
+                "width": 8,
+                "height": 8,
+                "sourceFps": 30.0,
+                "sampleFps": 1.0,
+                "totalSourceFrames": 30,
+            },
+        }
+    )
+
+    assert video.frames[0].index == 7
+    assert video.frames[0].out_index == 0
+    assert video.frames[0].time_sec == 1.25
+    assert video.info.width == 8
 
 
 def test_sam3_discovery_subprocess_returns_candidates_and_redacts_model_path(tmp_path):

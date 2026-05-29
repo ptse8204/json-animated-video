@@ -305,7 +305,7 @@ class LocalJobRun:
         self.write_metrics(scene=None)
         artifacts = self.write_artifact_manifest()
         self.result = {"artifactCount": len(artifacts), "artifactBytes": sum(int(artifact["byteSize"]) for artifact in artifacts)}
-        self.emit("failed", "failed", message, event_type="job", progress={"overallRatio": 1.0}, metadata=self.failure)
+        self.emit("failed", "failed", message, event_type="job", metadata=self.failure)
         self._write_state()
 
     def cancel(self, message: str = "job canceled") -> None:

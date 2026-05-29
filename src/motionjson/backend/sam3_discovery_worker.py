@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Mapping
 
 import numpy as np
@@ -11,6 +10,7 @@ import numpy as np
 from motionjson.providers.discovery import SAM3AutoMasksDiscoveryProvider
 from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 from motionjson.tracks import RunContext, VideoSource
+from motionjson.video import Frame, VideoInfo
 
 
 LOCAL_PATH_REDACTION = "[LOCAL_PATH_REDACTED]"
@@ -74,9 +74,21 @@ def _load_video(request: Mapping[str, Any]) -> VideoSource:
     frames_path = Path(str(request.get("framesPath") or "")).expanduser()
     with np.load(frames_path) as loaded:
         frames_array = np.asarray(loaded["frames"], dtype=np.uint8)
-    frames = [SimpleNamespace(rgb=frames_array[index]) for index in range(frames_array.shape[0])]
+        frame_indexes = np.asarray(loaded["frame_indexes"], dtype=np.int64) if "frame_indexes" in loaded else np.arange(frames_array.shape[0])
+        frame_out_indexes = np.asarray(loaded["frame_out_indexes"], dtype=np.int64) if "frame_out_indexes" in loaded else np.arange(frames_array.shape[0])
+        frame_times = np.asarray(loaded["frame_times"], dtype=np.float64) if "frame_times" in loaded else np.zeros(frames_array.shape[0], dtype=np.float64)
+    frame_count = int(frames_array.shape[0])
+    frames = [
+        Frame(
+            index=int(frame_indexes[index]) if index < len(frame_indexes) else index,
+            out_index=int(frame_out_indexes[index]) if index < len(frame_out_indexes) else index,
+            time_sec=float(frame_times[index]) if index < len(frame_times) else 0.0,
+            rgb=frames_array[index],
+        )
+        for index in range(frame_count)
+    ]
     video_payload = request.get("video") if isinstance(request.get("video"), Mapping) else {}
-    info = SimpleNamespace(
+    info = VideoInfo(
         width=int(video_payload.get("width") or (frames_array.shape[2] if frames_array.ndim >= 4 else 0)),
         height=int(video_payload.get("height") or (frames_array.shape[1] if frames_array.ndim >= 4 else 0)),
         source_fps=float(video_payload.get("sourceFps") or 0.0),

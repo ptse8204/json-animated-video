@@ -210,7 +210,16 @@ def _write_frame_store(video: VideoSource, path: Path) -> None:
     frames = [np.asarray(getattr(frame, "rgb"), dtype=np.uint8) for frame in video.frames]
     if not frames:
         raise ProviderExecutionError("SAM3 scene sweep needs sampled video frames before extraction.")
-    np.savez_compressed(path, frames=np.stack(frames, axis=0))
+    frame_indexes = [int(getattr(frame, "index", index) or 0) for index, frame in enumerate(video.frames)]
+    frame_out_indexes = [int(getattr(frame, "out_index", index) or 0) for index, frame in enumerate(video.frames)]
+    frame_times = [float(getattr(frame, "time_sec", 0.0) or 0.0) for frame in video.frames]
+    np.savez_compressed(
+        path,
+        frames=np.stack(frames, axis=0),
+        frame_indexes=np.asarray(frame_indexes, dtype=np.int64),
+        frame_out_indexes=np.asarray(frame_out_indexes, dtype=np.int64),
+        frame_times=np.asarray(frame_times, dtype=np.float64),
+    )
 
 
 def _video_payload(video: VideoSource) -> dict[str, Any]:

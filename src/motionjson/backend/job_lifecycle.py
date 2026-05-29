@@ -105,7 +105,9 @@ def _progress(events: Sequence[Mapping[str, Any]], raw_status: str, status: str,
             label = _stage_label(stage)
     if ratio is not None:
         return {"known": True, "percent": int(round(ratio * 100)), "label": label}
-    if raw_status in TERMINAL_JOB_STATUSES or status == "waiting_review":
+    if raw_status == "failed":
+        percent = 0
+    elif raw_status in TERMINAL_JOB_STATUSES or status == "waiting_review":
         percent = 100
     else:
         percent = 0

@@ -314,6 +314,26 @@ def test_job_progress_overall_ratio_is_monotonic(tmp_path):
     assert ratios[-1] == 1.0
 
 
+def test_job_failure_event_does_not_report_artificial_100_percent(tmp_path):
+    run = LocalJobRun(
+        run_dir=tmp_path / "failed-progress",
+        run_config={
+            "schema": "motionjson.extraction_run_config.v0.1",
+            "input": {"path": str(demo_video())},
+            "output": {"directory": str(tmp_path / "failed-progress")},
+        },
+    )
+    run.initialize(video_path=demo_video(), output_dir=tmp_path / "failed-progress")
+    run.start()
+    run.emit("candidate_discovery", "running", "discovering", progress={"overallRatio": 0.31})
+    run.fail(RuntimeError("provider failed"))
+
+    events = read_events(tmp_path / "failed-progress" / "events.jsonl")
+    failed_event = next(event for event in events if event["stage"] == "failed")
+
+    assert "overallRatio" not in failed_event["progress"]
+
+
 def test_job_stage_ratio_is_monotonic_per_stage_and_object(tmp_path):
     run = LocalJobRun(
         run_dir=tmp_path / "stage-ratios",
