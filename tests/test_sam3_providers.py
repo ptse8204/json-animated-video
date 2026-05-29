@@ -530,6 +530,21 @@ def test_sam3_auto_masks_provider_filters_and_records_rejected_candidates(tmp_pa
     assert candidates[1].metadata["reviewStatus"] == "rejected"
 
 
+def test_sam3_auto_masks_does_not_reject_missing_stability_metadata(tmp_path):
+    backend = FakeAutoMaskBackend()
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(
+        video_source(),
+        {"minMaskArea": 1, "maxObjects": 1, "maxMaskAreaRatio": 0.75, "stabilityThreshold": 0.86},
+        RunContext(out_dir=tmp_path),
+    )
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert candidates[0].metadata["rejectionReason"] is None
+    assert candidates[0].metadata["stabilityScore"] == 0.91
+    assert backend.tracked == ["sam3_scene_001"]
+    assert [spec.object_id for spec in specs] == ["sam3_scene_001"]
+
+
 def test_sam3_auto_masks_provider_does_not_route_through_concept_prompt(tmp_path):
     backend = FakeAutoMaskBackend()
     candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(

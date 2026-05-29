@@ -1616,7 +1616,8 @@ const MotionJSONUI = (() => {
   }
 
   function objectDiscoveryConfig(input) {
-    const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean";
+    const defaultQualityPreset = input.preset === "trace_all_objects" ? "balanced" : "clean";
+    const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || defaultQualityPreset;
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
     return {

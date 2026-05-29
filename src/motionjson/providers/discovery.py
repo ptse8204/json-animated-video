@@ -929,14 +929,15 @@ class SAM2AutomaticProposalDiscoveryProvider:
                     box = _box_from_mask(mask)
                 area = int(np.count_nonzero(mask))
                 area_ratio = area / frame_area
-                stability = _proposal_stability(record)
+                explicit_stability = _explicit_proposal_stability(record)
+                stability = explicit_stability if explicit_stability is not None else _proposal_score(record)
                 rejection_reason: str | None = None
                 warnings: list[str] = []
                 if area < min_area:
                     rejection_reason = "too_small"
                 elif area_ratio > max_area_ratio:
                     rejection_reason = "whole_frame" if reject_whole_frame else "too_large"
-                elif stability < stability_threshold:
+                elif explicit_stability is not None and stability < stability_threshold:
                     rejection_reason = "unstable_mask"
                 elif any(_box_iou(box, previous) >= dedupe_iou for previous in accepted_boxes):
                     rejection_reason = "duplicate_mask"
@@ -1087,13 +1088,20 @@ def _proposal_score(record: Mapping[str, Any]) -> float:
     return 0.75
 
 
-def _proposal_stability(record: Mapping[str, Any]) -> float:
+def _explicit_proposal_stability(record: Mapping[str, Any]) -> float | None:
     for key in ("stability_score", "stabilityScore", "stability"):
         if key in record and record[key] is not None:
             try:
                 return max(0.0, min(1.0, float(record[key])))
             except (TypeError, ValueError):
                 continue
+    return None
+
+
+def _proposal_stability(record: Mapping[str, Any]) -> float:
+    explicit = _explicit_proposal_stability(record)
+    if explicit is not None:
+        return explicit
     return _proposal_score(record)
 
 
@@ -1239,13 +1247,15 @@ def _sam3_records_to_candidates(
             box = _box_from_mask(mask)
         area = int(np.count_nonzero(mask))
         area_ratio = area / frame_area
+        explicit_stability = _explicit_proposal_stability(record)
+        stability = explicit_stability if explicit_stability is not None else _proposal_score(record)
         rejection_reason: str | None = None
         warnings: list[str] = []
         if area < min_area:
             rejection_reason = "too_small"
         elif area_ratio > max_area_ratio:
             rejection_reason = "whole_frame"
-        elif _proposal_stability(record) < stability_threshold:
+        elif explicit_stability is not None and stability < stability_threshold:
             rejection_reason = "unstable_mask"
         elif any(_box_iou(box, previous) >= dedupe_iou for previous in accepted_boxes):
             rejection_reason = "duplicate_mask"
@@ -1325,7 +1335,7 @@ def _sam3_records_to_candidates(
                         "writeRejectedCandidates": write_rejected,
                     },
                     "areaRatio": round(area_ratio, 6),
-                    "stabilityScore": _proposal_stability(record),
+                    "stabilityScore": round(stability, 4),
                     "motionScore": None,
                     "confidence": confidence,
                     "frameCoverageEstimate": _mask_sequence_coverage(mask_sequence),

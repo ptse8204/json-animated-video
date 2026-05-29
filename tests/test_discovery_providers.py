@@ -670,6 +670,51 @@ def test_multi_object_pipeline_reports_missing_discovery_provider_name(tmp_path)
         )
 
 
+def test_multi_object_pipeline_writes_rejected_candidates_before_no_usable_error(tmp_path):
+    class RejectedCandidateProvider:
+        name = "sam3_auto_masks"
+
+        def propose(self, video, config, ctx):
+            return [
+                ObjectCandidate(
+                    id="sam3_rejected_001",
+                    label="Rejected scene object",
+                    source=self.name,
+                    frame_index=0,
+                    box=None,
+                    score=0.75,
+                    metadata={
+                        "rejectionReason": "unstable_mask",
+                        "reviewStatus": "rejected",
+                        "maskDir": "discovery/sam3_auto_masks/sam3_rejected_001",
+                    },
+                )
+            ]
+
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video, frame_count=1)
+
+    with pytest.raises(ValueError, match="unstable_mask=1"):
+        run_multi_object_pipeline(
+            video_path=video,
+            out_dir=out,
+            object_specs=[],
+            candidate_provider=RejectedCandidateProvider(),
+            candidate_config={},
+            candidate_to_specs=lambda candidates: object_specs_from_candidates(candidates, base_dir=out),
+            sample_fps=12,
+            max_frames=1,
+            min_area=1,
+        )
+
+    candidates_payload = json.loads((out / "candidates.json").read_text(encoding="utf-8"))
+    fallback_payload = json.loads((out / "fallback_diagnostics.json").read_text(encoding="utf-8"))
+    assert candidates_payload["provider"] == "sam3_auto_masks"
+    assert candidates_payload["candidates"][0]["metadata"]["rejectionReason"] == "unstable_mask"
+    assert fallback_payload["summary"]["candidateRejectionReasonCounts"] == {"unstable_mask": 1}
+
+
 def test_manual_prompt_discovery_cli_feeds_shared_pipeline_with_prompt_factory(tmp_path):
     video = tmp_path / "tiny.mp4"
     out = tmp_path / "out"

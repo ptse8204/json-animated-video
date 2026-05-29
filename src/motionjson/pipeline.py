@@ -66,6 +66,41 @@ def _candidate_provider_name(provider: ObjectCandidateProvider) -> str:
     return name.strip()
 
 
+def _candidate_payload(
+    *,
+    provider_name: str,
+    config: dict[str, Any],
+    video_source: VideoSource,
+    candidates: Sequence[ObjectCandidate],
+) -> dict[str, Any]:
+    return {
+        "format": "motionjson.candidates.v0.1",
+        "provider": provider_name,
+        "config": config,
+        "video": video_source.to_summary(),
+        "candidates": [candidate.to_dict() for candidate in candidates],
+    }
+
+
+def _candidate_rejection_counts(candidates: Sequence[ObjectCandidate]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for candidate in candidates:
+        reason = str(candidate.metadata.get("rejectionReason") or "").strip()
+        review_status = str(candidate.metadata.get("reviewStatus") or "").strip().lower()
+        if not reason and review_status in {"rejected", "ignored", "excluded"}:
+            reason = review_status
+        if reason:
+            counts[reason] = counts.get(reason, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _candidate_rejection_summary(counts: Mapping[str, int]) -> str:
+    if not counts:
+        return ""
+    details = ", ".join(f"{reason}={count}" for reason, count in counts.items())
+    return f" Rejection reasons: {details}."
+
+
 def _clear_generated_frames(*directories: Path) -> None:
     for directory in directories:
         if not directory.exists():
@@ -801,6 +836,15 @@ def run_multi_object_pipeline(
         metadata={"provider": active_candidate_provider_name},
     )
     candidates = list(active_candidate_provider.propose(video_source, active_candidate_config, run_context))
+    write_json(
+        out_dir / "candidates.json",
+        _candidate_payload(
+            provider_name=active_candidate_provider_name,
+            config=active_candidate_config,
+            video_source=video_source,
+            candidates=candidates,
+        ),
+    )
     if candidate_provider is not None and not candidates:
         fallback = build_raster_fallback(
             "no_candidates",
@@ -818,20 +862,36 @@ def run_multi_object_pipeline(
     if candidate_provider is not None and candidate_to_specs is not None:
         object_specs = candidate_to_specs(candidates)
         if not object_specs:
-            raise ValueError(f"Discovery provider {active_candidate_provider_name!r} produced no candidates usable for extraction")
+            rejection_counts = _candidate_rejection_counts(candidates)
+            fallback = build_raster_fallback(
+                "no_candidates",
+                metadata={
+                    "provider": active_candidate_provider_name,
+                    "config": active_candidate_config,
+                    "candidateCount": len(candidates),
+                    "rejectionReasonCounts": rejection_counts,
+                },
+                severity="error",
+            )
+            write_json(
+                out_dir / "fallback_diagnostics.json",
+                _fallback_payload(
+                    diagnostics=[fallback.to_dict()],
+                    summary={
+                        "fallbackReasonCounts": {"no_candidates": 1},
+                        "acceptedTracks": 0,
+                        "rejectedTracks": len(candidates),
+                        "candidateRejectionReasonCounts": rejection_counts,
+                    },
+                ),
+            )
+            raise ValueError(
+                f"Discovery provider {active_candidate_provider_name!r} produced no candidates usable for extraction."
+                f"{_candidate_rejection_summary(rejection_counts)}"
+            )
         _validate_object_specs(object_specs)
     elif candidate_provider is not None and not object_specs:
         raise ValueError("candidate_to_specs is required when discovery provides candidates without initial object_specs")
-    write_json(
-        out_dir / "candidates.json",
-        {
-            "format": "motionjson.candidates.v0.1",
-            "provider": active_candidate_provider_name,
-            "config": active_candidate_config,
-            "video": video_source.to_summary(),
-            "candidates": [candidate.to_dict() for candidate in candidates],
-        },
-    )
     phase_timings.append(PhaseTiming(phase="candidate_discovery", elapsed_ms=_elapsed_ms(candidate_start), count=len(candidates)).to_dict())
     _job_emit(
         job_context,

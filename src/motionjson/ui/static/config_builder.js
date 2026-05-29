@@ -198,7 +198,8 @@ function guidedEnginePlan(input, preset) {
 }
 
 export function objectDiscoveryConfig(input, advanced) {
-  const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || "clean";
+  const defaultQualityPreset = input.presetId === "trace_all_objects" || input.preset === "trace_all_objects" ? "balanced" : "clean";
+  const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || defaultQualityPreset;
   const keyframes = parseKeyframes(advanced.keyframe ?? advanced.keyframes ?? input.keyframes ?? 0);
   const presets = {
     clean: {
