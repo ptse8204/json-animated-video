@@ -650,7 +650,7 @@ const sam3TraceAllConfig = ui.buildRunConfig({
 assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
 assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
 assert.equal(sam3TraceAllConfig.discovery.config.sceneSweep, true);
-assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, true);
+assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, false);
 assert.equal(sam3TraceAllConfig.discovery.config.sam3TrackerModel, "facebook/sam3");
 assert.equal("sam3ModelPath" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("model" in sam3TraceAllConfig.discovery.config, false);

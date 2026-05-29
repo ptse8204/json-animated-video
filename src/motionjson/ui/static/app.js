@@ -1748,7 +1748,7 @@ const MotionJSONUI = (() => {
       const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
       const config = {
         sceneSweep: true,
-        useTransformersTracker: !hosted,
+        useTransformersTracker: !hosted && Boolean(input.useTransformersTracker),
         pointsPerBatch: toInteger(input.pointsPerBatch, 64),
         qualityPreset: input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean",
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",

@@ -374,7 +374,7 @@ export function buildRunConfig(input) {
   if (discoveryMode === "sam3_auto_masks") {
     const hosted = providerName === "sam3-hosted";
     discoveryConfig.sceneSweep = true;
-    discoveryConfig.useTransformersTracker = !hosted;
+    discoveryConfig.useTransformersTracker = !hosted && Boolean(input.useTransformersTracker || advanced.useTransformersTracker);
     discoveryConfig.pointsPerBatch = Number(advanced.pointsPerBatch || input.pointsPerBatch || 64);
     discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
     discoveryConfig.hosted = hosted;

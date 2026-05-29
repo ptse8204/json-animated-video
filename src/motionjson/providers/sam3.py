@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
+import importlib
+import inspect
 import io
 import json
 import os
@@ -32,6 +34,43 @@ SAM3_FROM_PRETRAINED_WEIGHT_GLOBS = (
 )
 SAM3_TRACKER_HEARTBEAT_SECONDS = 15.0
 SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB = 256.0
+SAM3_TRACKER_VIDEO_FPN_BUG_MESSAGE = (
+    "Installed Transformers SAM3 Tracker Video contains the known upstream "
+    "`fpn_position_embeddings` bug. Upgrade Transformers with Model setup -> "
+    "Install scene sweep, then restart the Colab runtime before enabling SAM3 "
+    "video propagation."
+)
+
+
+def sam3_tracker_video_runtime_status() -> dict[str, Any]:
+    status: dict[str, Any] = {
+        "importable": False,
+        "knownBroken": False,
+        "version": None,
+        "message": "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.",
+    }
+    try:
+        import transformers  # type: ignore
+        from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore
+    except Exception:
+        return status
+    status.update(
+        {
+            "importable": Sam3TrackerVideoModel is not None and Sam3TrackerVideoProcessor is not None,
+            "version": str(getattr(transformers, "__version__", "")),
+            "message": "Transformers exposes SAM3 Tracker Video classes.",
+        }
+    )
+    if not status["importable"]:
+        return status
+    try:
+        module = importlib.import_module("transformers.models.sam3_tracker_video.modeling_sam3_tracker_video")
+        source = inspect.getsource(module)
+    except Exception:
+        return status
+    if "fpn_position_embeddings" in source:
+        status.update({"knownBroken": True, "message": SAM3_TRACKER_VIDEO_FPN_BUG_MESSAGE})
+    return status
 
 
 def is_probably_hf_repo_id(value: str) -> bool:
@@ -1116,7 +1155,7 @@ class LocalSAM3DiscoveryBackend:
                     config=config,
                 )
             except ProviderConfigError:
-                if _bool_config(config, "requireTransformersTracker", False):
+                if _bool_config(config, "requireTransformersTracker", False) or _bool_config(config, "useTransformersTracker", False):
                     raise
         records = self._video_prompt_records(video, frame_index=frame_index, box=box, mask=mask, config=config)
         masks = _first_mask_sequence(records)
@@ -1313,6 +1352,9 @@ class LocalSAM3DiscoveryBackend:
             self._tracker_video_model = self.tracker_video_model_factory()
             self._tracker_video_processor = self.tracker_video_processor_factory()
             return self._tracker_video_model, self._tracker_video_processor
+        runtime_status = sam3_tracker_video_runtime_status()
+        if runtime_status.get("knownBroken"):
+            raise ProviderConfigError(str(runtime_status.get("message") or SAM3_TRACKER_VIDEO_FPN_BUG_MESSAGE))
         model_id = _tracker_model_id(config, fallback=self.model_path)
         try:
             from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore

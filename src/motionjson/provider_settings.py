@@ -19,6 +19,7 @@ from motionjson.providers.sam3 import (
     describe_sam3_model_path,
     describe_sam3_tracker_model,
     sam3_scene_sweep_warmup,
+    sam3_tracker_video_runtime_status,
 )
 
 
@@ -1670,10 +1671,20 @@ def diagnose_provider_settings(
         device = str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda")
         device_problem = _device_problem(device, torch_ok=torch_ok)
         tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
+        tracker_video_status = sam3_tracker_video_runtime_status() if transformers_ok else {}
         tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
         item("transformers_package", "SAM3 Transformers package", transformers_ok, "Python can import transformers." if transformers_ok else "Python cannot import transformers.", "Install the independent sam3-transformers extra. SAM2 is not required.")
         item("sam3_tracker_auto_masks", "SAM3 Tracker automatic masks", tracker_auto_masks_ok, "Transformers exposes SAM3 Tracker mask-generation classes." if tracker_auto_masks_ok else "Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
-        item("sam3_tracker_video", "SAM3 Tracker Video API", tracker_video_ok, "Transformers exposes SAM3 Tracker Video classes." if tracker_video_ok else "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor.", "Upgrade/install the sam3-transformers extra. SAM2 is not required.")
+        item(
+            "sam3_tracker_video",
+            "SAM3 Tracker Video API",
+            tracker_video_ok,
+            "Transformers exposes SAM3 Tracker Video classes."
+            if tracker_video_ok
+            else str(tracker_video_status.get("message") or "Transformers does not expose Sam3TrackerVideoModel/Sam3TrackerVideoProcessor."),
+            "Upgrade/install the sam3-transformers extra, then restart the runtime before enabling true video propagation.",
+            required=False,
+        )
         item("sam3_tracker_model", "SAM3 Tracker model id or directory", tracker_model_ok, tracker_model_detail, str(tracker_model_status.get("action") or "Use Cache model for facebook/sam3."), required=True)
         item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local Hugging Face cache access.")
         item("torch_package", "PyTorch", torch_ok, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
@@ -2199,7 +2210,6 @@ def _readiness(
         transformers_ok = find_spec("transformers") is not None
         torch_ok = find_spec("torch") is not None
         tracker_auto_masks_ok = _sam3_tracker_auto_masks_importable() if transformers_ok else False
-        tracker_video_ok = _sam3_tracker_video_importable() if transformers_ok else False
         missing = []
         if not transformers_ok:
             missing.append("sam3-transformers extra")
@@ -2207,8 +2217,6 @@ def _readiness(
             missing.append("torch")
         if not tracker_auto_masks_ok:
             missing.append("SAM3 Tracker automatic-mask Transformers classes")
-        if not tracker_video_ok:
-            missing.append("SAM3 Tracker Video Transformers classes")
         device_problem = _device_problem(str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda"), torch_ok=torch_ok)
         if device_problem:
             missing.append(device_problem)
@@ -2504,11 +2512,8 @@ def _truthy(value: Any) -> bool:
 
 
 def _sam3_tracker_video_importable() -> bool:
-    try:
-        from transformers import Sam3TrackerVideoModel, Sam3TrackerVideoProcessor  # type: ignore
-    except Exception:
-        return False
-    return Sam3TrackerVideoModel is not None and Sam3TrackerVideoProcessor is not None
+    status = sam3_tracker_video_runtime_status()
+    return bool(status.get("importable") and not status.get("knownBroken"))
 
 
 def _float_payload(payload: Mapping[str, Any], key: str, default: float) -> float:

@@ -29,6 +29,7 @@ from motionjson.providers.sam3 import (
     find_sam3_checkpoint_candidates,
     normalize_sam3_output,
     _run_with_progress_heartbeat,
+    sam3_tracker_video_runtime_status,
 )
 from motionjson.tracks import RunContext, VideoSource
 from motionjson.video import Frame, VideoInfo
@@ -500,6 +501,45 @@ def test_local_sam3_tracker_video_tracks_scene_sweep_candidate():
     assert model.propagate_calls == [{"start_frame_idx": 0, "max_frame_num_to_track": 3, "show_progress_bar": False}]
     assert processor.added_inputs[0]["obj_ids"] == [3001]
     assert processor.added_inputs[0]["input_labels"] == [[[1]]]
+
+
+def test_sam3_tracker_video_status_flags_known_fpn_bug(monkeypatch):
+    fake_transformers = types.SimpleNamespace(
+        __version__="5.0.0.dev0",
+        Sam3TrackerVideoModel=object,
+        Sam3TrackerVideoProcessor=object,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+    monkeypatch.setattr("motionjson.providers.sam3.importlib.import_module", lambda _name: object())
+    monkeypatch.setattr("motionjson.providers.sam3.inspect.getsource", lambda _module: "image_outputs.fpn_position_embeddings")
+
+    status = sam3_tracker_video_runtime_status()
+
+    assert status["importable"] is True
+    assert status["knownBroken"] is True
+    assert "fpn_position_embeddings" in status["message"]
+
+
+def test_local_sam3_tracker_video_rejects_known_broken_transformers(monkeypatch):
+    monkeypatch.setattr(
+        "motionjson.providers.sam3.sam3_tracker_video_runtime_status",
+        lambda: {
+            "importable": True,
+            "knownBroken": True,
+            "message": "Installed Transformers SAM3 Tracker Video contains the known upstream `fpn_position_embeddings` bug.",
+        },
+    )
+    backend = LocalSAM3DiscoveryBackend()
+
+    with pytest.raises(ProviderConfigError, match="fpn_position_embeddings"):
+        backend.track_candidate(
+            video_source(),
+            frame_index=0,
+            object_id="sam3_scene_001",
+            box=(3, 2, 5, 5),
+            mask=mask_at(3),
+            config={"useTransformersTracker": True},
+        )
 
 
 def test_sam3_concept_provider_writes_api_candidates_and_tracks(tmp_path):

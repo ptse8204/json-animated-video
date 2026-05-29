@@ -674,7 +674,6 @@ def _runtime_blockers_for_prepare(provider_id: str, checklist: list[Any]) -> lis
         "sam3-local": {
             "transformers_package",
             "sam3_tracker_auto_masks",
-            "sam3_tracker_video",
             "torch_package",
             "device",
         },
@@ -768,8 +767,8 @@ def _install_command(provider_id: str) -> list[str]:
         raise ValueError(f"{provider_id} does not have a local install action.")
     root = _repo_root()
     if (root / "pyproject.toml").exists():
-        return [sys.executable, "-m", "pip", "install", "-e", f".[{extra}]"]
-    return [sys.executable, "-m", "pip", "install", f"motionjson[{extra}]"]
+        return [sys.executable, "-m", "pip", "install", "--upgrade", "-e", f".[{extra}]"]
+    return [sys.executable, "-m", "pip", "install", "--upgrade", f"motionjson[{extra}]"]
 
 
 def _cache_model_action(

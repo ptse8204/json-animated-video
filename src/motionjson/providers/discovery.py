@@ -1191,6 +1191,16 @@ def _sam3_track_or_seed_sequence(
     record_sequence = _sam3_record_mask_sequence(record, video, width=width, height=height)
     if record_sequence is not None:
         return record_sequence, None, "sam3-local"
+    scene_sweep_record = bool(record.get("sceneSweep") or record.get("scene_sweep") or _bool_config_any(config, ("sceneSweep", "scene_sweep"), False))
+    tracker_requested = _bool_config_any(
+        config,
+        ("useTransformersTracker", "use_transformers_tracker", "requireTransformersTracker", "require_transformers_tracker"),
+        False,
+    )
+    if scene_sweep_record and not tracker_requested:
+        return [mask.copy() for _frame in video.frames], (
+            "SAM3 Scene Sweep video propagation is disabled by default; review uses the keyframe mask sequence."
+        ), "keyframe_seed_sequence"
     if hasattr(backend, "track_candidate"):
         try:
             masks = list(

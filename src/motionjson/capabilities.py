@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
-from motionjson.providers.sam3 import SAM3_HF_REPO_ID, describe_sam3_model_path, describe_sam3_tracker_model
+from motionjson.providers.sam3 import (
+    SAM3_HF_REPO_ID,
+    describe_sam3_model_path,
+    describe_sam3_tracker_model,
+    sam3_tracker_video_runtime_status,
+)
 
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
@@ -590,7 +595,13 @@ def provider_capabilities(
     )
     sam3_tracker_model = describe_sam3_tracker_model(sam3_tracker_model_value, source=sam3_tracker_model_source)
     sam3_tracker_auto_masks_installed = _module_attr_available("transformers", "Sam3TrackerModel") and _module_attr_available("transformers", "Sam3TrackerProcessor")
-    sam3_tracker_video_installed = _module_attr_available("transformers", "Sam3TrackerVideoModel") and _module_attr_available("transformers", "Sam3TrackerVideoProcessor")
+    sam3_tracker_video_status = sam3_tracker_video_runtime_status() if transformers_installed else {}
+    sam3_tracker_video_installed = bool(sam3_tracker_video_status.get("importable") and not sam3_tracker_video_status.get("knownBroken"))
+    sam3_tracker_video_warning = (
+        None
+        if not transformers_installed or sam3_tracker_video_installed
+        else str(sam3_tracker_video_status.get("message") or "SAM3 Tracker Video propagation is unavailable.")
+    )
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -673,7 +684,6 @@ def provider_capabilities(
         for reason in (
             None if transformers_installed else "Python module 'transformers' is not importable. Use Model setup -> Install scene sweep.",
             None if not transformers_installed or sam3_tracker_auto_masks_installed else "Installed Transformers does not expose SAM3 Tracker automatic-mask classes. Upgrade the sam3-transformers extra from Model setup.",
-            None if not transformers_installed or sam3_tracker_video_installed else "Installed Transformers does not expose SAM3 Tracker Video classes. Upgrade the sam3-transformers extra from Model setup.",
             None if sam3_tracker_model.get("valid") else str(sam3_tracker_model.get("reason") or "SAM3 Tracker model is not a Hugging Face repo id or local model directory."),
             None if torch_info["torchInstalled"] else "torch is not installed.",
         )
@@ -682,11 +692,10 @@ def provider_capabilities(
     sam3_scene_sweep_ready = bool(
         transformers_installed
         and sam3_tracker_auto_masks_installed
-        and sam3_tracker_video_installed
         and sam3_tracker_model.get("valid")
         and torch_info["torchInstalled"]
     )
-    if not transformers_installed or not torch_info["torchInstalled"] or not sam3_tracker_auto_masks_installed or not sam3_tracker_video_installed:
+    if not transformers_installed or not torch_info["torchInstalled"] or not sam3_tracker_auto_masks_installed:
         sam3_scene_sweep_status = "missing_dependency"
     elif not sam3_tracker_model.get("valid"):
         sam3_scene_sweep_status = "missing_model"
@@ -1033,6 +1042,11 @@ def provider_capabilities(
                     "optionalExtra": "sam3-transformers",
                     "requiresSam2": False,
                     "trackerModel": sam3_tracker_model,
+                    "trackerVideo": {
+                        **dict(sam3_tracker_video_status),
+                        "required": False,
+                        "warning": sam3_tracker_video_warning,
+                    },
                 },
                 "mockRunnable": cv_ready and pil_ready,
             },
@@ -1165,6 +1179,11 @@ def provider_capabilities(
                 "discoveryMode": "sam3_auto_masks",
                 "requiresSam2": False,
                 "trackerModel": sam3_tracker_model,
+                "trackerVideo": {
+                    **dict(sam3_tracker_video_status),
+                    "required": False,
+                    "warning": sam3_tracker_video_warning,
+                },
                 "mockRunnable": cv_ready and pil_ready,
             },
         ),
