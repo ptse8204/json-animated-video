@@ -294,12 +294,6 @@ def _truthy_payload(payload: dict[str, Any], *keys: str) -> bool:
     return False
 
 
-def _is_export_inclusion_action(payload: dict[str, Any]) -> bool:
-    action = payload.get("action") if isinstance(payload.get("action"), dict) else payload
-    action_type = str(action.get("type") or action.get("operation") or "").strip().lower().replace("-", "_")
-    return action_type in {"set_export_inclusion", "include_in_export", "set_track_export", "exclude_track"}
-
-
 def _asset_id_from_uri(value: Any) -> str | None:
     match = LOCAL_UI_ASSET_URI_RE.match(str(value or ""))
     if not match:
@@ -924,7 +918,7 @@ class LocalUIApp:
                 if len(parts) == 4 and parts[3] in {"corrections", "track-edits"}:
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     action_payload = payload.get("action") or payload.get("correction") or payload
-                    if parts[3] == "track-edits" and not _is_export_inclusion_action(payload):
+                    if parts[3] == "track-edits":
                         edit_result = apply_track_edit(
                             conn,
                             storage=self.storage(),

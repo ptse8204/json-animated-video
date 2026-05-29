@@ -414,6 +414,17 @@ def _set_export_inclusion(scene: dict[str, Any] | None, tracks: dict[str, Any] |
         if obj:
             obj["exportIncluded"] = included
             obj["exportStatus"] = export_status
+            if included:
+                quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
+                obj["quality"] = {**quality, "reviewRequired": False}
+                discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
+                obj["discovery"] = {
+                    **discovery,
+                    "reviewRequired": False,
+                    "reviewStatus": "accepted",
+                    "exportStatus": export_status,
+                    "selectedForTracking": True,
+                }
         layer = _scene_layer(scene, object_id)
         if layer:
             layer["exportIncluded"] = included
@@ -427,6 +438,17 @@ def _set_export_inclusion(scene: dict[str, Any] | None, tracks: dict[str, Any] |
             changed_track["exportStatus"] = export_status
             metadata = _metadata(changed_track)
             metadata["exportIncluded"] = included
+            metadata["exportStatus"] = export_status
+            if included:
+                metadata["reviewRequired"] = False
+                discovery = metadata.get("discovery") if isinstance(metadata.get("discovery"), dict) else {}
+                metadata["discovery"] = {
+                    **discovery,
+                    "reviewRequired": False,
+                    "reviewStatus": "accepted",
+                    "exportStatus": export_status,
+                    "selectedForTracking": True,
+                }
             if included and isinstance(changed_track.get("warnings"), list):
                 changed_track["warnings"] = [item for item in changed_track["warnings"] if item != "excluded_from_export"]
             elif not included:
@@ -1498,6 +1520,8 @@ def _apply_review_track_edit(track: dict[str, Any], edit: dict[str, Any]) -> Non
         track["exportStatus"] = edit.get("exportStatus") or (track.get("exportStatus") if not has_export_edit else None) or "excluded"
         if has_export_edit or re.search(r"deleted|excluded|rejected|failed|fallback_raster", str(track.get("exportStatus") or "")):
             _append_track_warning(track, "excluded_from_export")
+    elif has_export_edit and track.get("exportIncluded") is True:
+        track["exportStatus"] = edit.get("exportStatus") or "accepted"
     if track.get("visible") is False:
         _append_track_warning(track, "hidden_by_user")
 

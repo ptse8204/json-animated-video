@@ -153,6 +153,27 @@ def _status_excludes(value: Any) -> bool:
     return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged|review_pending", str(value or "")))
 
 
+def _explicit_review_include(edit: dict[str, Any]) -> bool:
+    return edit.get("exportIncluded") is True
+
+
+def _mark_reviewed_for_export(item: dict[str, Any]) -> None:
+    item["exportIncluded"] = True
+    item["exportStatus"] = "accepted"
+    quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+    if quality:
+        item["quality"] = {**quality, "reviewRequired": False}
+    discovery = item.get("discovery") if isinstance(item.get("discovery"), dict) else {}
+    if discovery:
+        item["discovery"] = {
+            **discovery,
+            "reviewRequired": False,
+            "reviewStatus": "accepted",
+            "exportStatus": "accepted",
+            "selectedForTracking": True,
+        }
+
+
 def _static_keyframe_fallback(obj: dict[str, Any]) -> bool:
     discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
     if str(discovery.get("trackingProvider") or "") != "keyframe_seed_sequence":
@@ -198,7 +219,8 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
             exclusion_reason = "export_excluded"
         quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
         discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
-        if (
+        explicit_include = _explicit_review_include(edit)
+        if not explicit_include and (
             obj.get("exportIncluded") is False
             or _status_excludes(obj.get("exportStatus"))
             or quality.get("reviewRequired") is True
@@ -283,6 +305,8 @@ def _sanitized_scene(scene: dict[str, Any], correction_state: dict[str, Any]) ->
         clean = {key: copy.deepcopy(value) for key, value in obj.items() if key not in SCENE_CORRECTION_ONLY_KEYS}
         if edit.get("label"):
             clean["label"] = str(edit["label"])
+        if _explicit_review_include(edit):
+            _mark_reviewed_for_export(clean)
         objects.append(clean)
     edited["objects"] = objects
 
@@ -293,7 +317,11 @@ def _sanitized_scene(scene: dict[str, Any], correction_state: dict[str, Any]) ->
         object_id = str(layer.get("object_id") or layer.get("objectId") or "")
         if object_id not in included_set:
             continue
+        edit = _edit_for_object(track_edits, object_id)
         clean = {key: copy.deepcopy(value) for key, value in layer.items() if key not in SCENE_CORRECTION_ONLY_KEYS}
+        if _explicit_review_include(edit):
+            clean["exportIncluded"] = True
+            clean["exportStatus"] = "accepted"
         layers.append(clean)
     edited["layers"] = layers
     return _sanitize_value(edited), included_ids, excluded_ids, diagnostics

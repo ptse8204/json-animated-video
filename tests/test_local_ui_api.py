@@ -1277,6 +1277,37 @@ def test_local_ui_track_selected_validates_candidates_and_gates_export(tmp_path)
     assert status == 400
     assert "No exportable object tracks" in decode(body)["error"]
 
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-edits",
+        body=json.dumps({"action": {"type": "set_export_inclusion", "trackId": selected_id, "included": True}}).encode("utf-8"),
+    )
+    accepted = decode(body)
+    assert status == 200
+    assert accepted["review"]["tracks"][0]["objectId"] == selected_id
+    assert accepted["review"]["tracks"][0]["exportIncluded"] is True
+    assert accepted["review"]["tracks"][0]["exportStatus"] == "accepted"
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "compact", "includePreview": False}).encode("utf-8"),
+    )
+    validation = decode(body)
+    assert status == 200
+    assert validation["includedObjectIds"] == [selected_id]
+    assert validation["validation"]["ok"] is True
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "compact", "includePreview": False}).encode("utf-8"),
+    )
+    exported = decode(body)
+    assert status == 200
+    assert exported["export"]["includedObjectIds"] == [selected_id]
+    assert any(asset["kind"] == "validated_motionjson_scene" for asset in exported["artifacts"])
+
 
 def test_local_ui_export_validation_messages_explain_unreviewed_auto_discovery(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)

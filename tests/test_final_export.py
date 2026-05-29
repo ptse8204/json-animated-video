@@ -178,6 +178,37 @@ def test_review_required_quality_blocks_export_selection():
     ]
 
 
+def test_explicit_review_inclusion_overrides_pending_review_gate():
+    scene = {
+        "objects": [
+            {
+                "id": "trace_object",
+                "exportStatus": "review_pending",
+                "quality": {"reviewRequired": True},
+                "discovery": {"reviewRequired": True, "exportStatus": "review_pending"},
+                "motion": [
+                    {"frame": 1, "visible": True, "x": 6, "y": 10, "w": 8, "h": 8},
+                    {"frame": 2, "visible": True, "x": 8, "y": 10, "w": 8, "h": 8},
+                ],
+            }
+        ],
+        "layers": [{"object_id": "trace_object", "exportStatus": "review_pending"}],
+    }
+    correction_state = {"trackEdits": {"trace_object": {"exportIncluded": True}}, "history": []}
+
+    included, excluded, diagnostics = export_workflows._included_object_ids(scene, correction_state)
+    exported, exported_included, _exported_excluded, _exported_diagnostics = export_workflows._sanitized_scene(scene, correction_state)
+
+    assert included == ["trace_object"]
+    assert excluded == []
+    assert diagnostics == []
+    assert exported_included == ["trace_object"]
+    assert exported["objects"][0]["exportStatus"] == "accepted"
+    assert exported["objects"][0]["quality"]["reviewRequired"] is False
+    assert exported["objects"][0]["discovery"]["reviewRequired"] is False
+    assert exported["layers"][0]["exportStatus"] == "accepted"
+
+
 def test_phase11e_mp4_preview_dry_run_and_error_cleanup(tmp_path, monkeypatch):
     scene = {"source": {"width": 4, "height": 4, "sampleFps": 12, "sampledFrameCount": 1}, "objects": []}
     export_dir = tmp_path / "export"
