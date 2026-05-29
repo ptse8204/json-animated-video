@@ -1124,6 +1124,12 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
     return round(visible / len(masks), 4)
 
 
+def _redact_local_paths_from_error(error: Exception) -> str:
+    text = str(error) or type(error).__name__
+    text = re.sub(r"(?<![\w:])(?:/[^\s'\"<>]+)+", "[LOCAL_PATH_REDACTED]", text)
+    return re.sub(r"[A-Za-z]:\\[^\s'\"<>]+", "[LOCAL_PATH_REDACTED]", text)
+
+
 def _sam3_backend(current: Any | None, factory: Callable[[Mapping[str, Any]], Any] | None, config: Mapping[str, Any]) -> Any:
     if current is not None:
         return current
@@ -1172,6 +1178,7 @@ def _sam3_track_or_seed_sequence(
     backend: Any,
     video: VideoSource,
     *,
+    ctx: RunContext,
     record: Mapping[str, Any],
     frame_index: int,
     object_id: str,
@@ -1185,19 +1192,40 @@ def _sam3_track_or_seed_sequence(
     if record_sequence is not None:
         return record_sequence, None, "sam3-local"
     if hasattr(backend, "track_candidate"):
-        masks = list(
-            backend.track_candidate(
-                video,
-                frame_index=frame_index,
-                object_id=object_id,
-                box=(box.x, box.y, box.w, box.h),
-                mask=mask,
-                config=config,
+        try:
+            masks = list(
+                backend.track_candidate(
+                    video,
+                    frame_index=frame_index,
+                    object_id=object_id,
+                    box=(box.x, box.y, box.w, box.h),
+                    mask=mask,
+                    config=config,
+                )
             )
-        )
-        if len(masks) != len(video.frames):
-            raise ProviderConfigError("SAM3 video tracking returned the wrong number of masks.")
-        return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None, getattr(backend, "provider_name", "sam3-local")
+            if len(masks) != len(video.frames):
+                raise ProviderConfigError("SAM3 video tracking returned the wrong number of masks.")
+            return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None, getattr(backend, "provider_name", "sam3-local")
+        except Exception as exc:
+            detail = _redact_local_paths_from_error(exc)
+            warning = (
+                "SAM3 video tracking failed; using the keyframe mask sequence for review "
+                f"instead of failing extraction: {detail}"
+            )
+            ctx.emit(
+                "candidate_discovery",
+                "running",
+                warning,
+                metadata={
+                    "objectId": object_id,
+                    "keyframeIndex": frame_index,
+                    "provider": getattr(backend, "provider_name", "sam3-local"),
+                    "trackingProvider": "keyframe_seed_sequence",
+                    "fallbackReason": "sam3_tracking_failed",
+                    "errorType": type(exc).__name__,
+                },
+            )
+            return [mask.copy() for _frame in video.frames], warning, "keyframe_seed_sequence"
     return [mask.copy() for _frame in video.frames], (
         "SAM3 video tracking backend was not available; review uses the prompt-frame mask sequence."
     ), "keyframe_seed_sequence"
@@ -1277,6 +1305,7 @@ def _sam3_records_to_candidates(
             mask_sequence, tracking_warning, tracking_provider = _sam3_track_or_seed_sequence(
                 backend,
                 video,
+                ctx=ctx,
                 record=record,
                 frame_index=frame_index,
                 object_id=object_id,

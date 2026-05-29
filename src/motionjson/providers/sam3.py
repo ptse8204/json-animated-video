@@ -1352,7 +1352,12 @@ class LocalSAM3DiscoveryBackend:
             input_labels=[[[1]]],
         )
         masks_by_frame: dict[int, np.ndarray] = {}
-        iterator = model.propagate_in_video_iterator(session)
+        iterator = model.propagate_in_video_iterator(
+            session,
+            start_frame_idx=frame_index,
+            max_frame_num_to_track=len(frames),
+            show_progress_bar=False,
+        )
         for output in iterator:
             current_frame = int(getattr(output, "frame_idx", len(masks_by_frame)))
             raw_masks = getattr(output, "pred_masks", None)

@@ -169,7 +169,11 @@ class FakeTrackerVideoOutput:
 class FakeTrackerVideoModel:
     device = "cpu"
 
-    def propagate_in_video_iterator(self, session):
+    def __init__(self) -> None:
+        self.propagate_calls = []
+
+    def propagate_in_video_iterator(self, session, **kwargs):
+        self.propagate_calls.append(kwargs)
         for index in range(session.frame_count):
             yield FakeTrackerVideoOutput(index, mask_at(3 + index))
 
@@ -205,6 +209,14 @@ class FakeAutoMaskBackend:
     def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
         self.tracked.append(object_id)
         return [mask_at(3 + index) for index, _frame in enumerate(video.frames)]
+
+
+class FailingTrackerAutoMaskBackend(FakeAutoMaskBackend):
+    def track_candidate(self, video, *, frame_index, object_id, box, mask, config):
+        self.tracked.append(object_id)
+        raise ProviderExecutionError(
+            "Cannot determine the starting frame index; please specify it manually, or run inference on a frame with inputs first."
+        )
 
 
 class FakeHostedSAM3Transport:
@@ -468,8 +480,9 @@ def test_local_sam3_scene_sweep_empty_result_is_actionable():
 
 def test_local_sam3_tracker_video_tracks_scene_sweep_candidate():
     processor = FakeTrackerVideoProcessor()
+    model = FakeTrackerVideoModel()
     backend = LocalSAM3DiscoveryBackend(
-        tracker_video_model=FakeTrackerVideoModel(),
+        tracker_video_model=model,
         tracker_video_processor=processor,
     )
 
@@ -484,6 +497,7 @@ def test_local_sam3_tracker_video_tracks_scene_sweep_candidate():
 
     assert len(masks) == 3
     assert np.array_equal(masks[1], mask_at(4))
+    assert model.propagate_calls == [{"start_frame_idx": 0, "max_frame_num_to_track": 3, "show_progress_bar": False}]
     assert processor.added_inputs[0]["obj_ids"] == [3001]
     assert processor.added_inputs[0]["input_labels"] == [[[1]]]
 
@@ -557,6 +571,26 @@ def test_sam3_auto_masks_provider_does_not_route_through_concept_prompt(tmp_path
     assert backend.tracked == ["sam3_scene_001"]
     assert candidates[0].metadata["promptType"] == "scene_sweep"
     assert candidates[0].metadata["prompt"] is None
+
+
+def test_sam3_auto_masks_falls_back_when_tracker_video_needs_start_frame(tmp_path):
+    backend = FailingTrackerAutoMaskBackend()
+    recorder = RecordingJobContext()
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=backend).propose(
+        video_source(),
+        {"minMaskArea": 1, "maxObjects": 1},
+        RunContext(out_dir=tmp_path, job_context=recorder),
+    )
+    specs = object_specs_from_candidates(candidates, base_dir=tmp_path)
+
+    assert backend.tracked == ["sam3_scene_001"]
+    assert candidates[0].metadata["reviewStatus"] == "pending"
+    assert candidates[0].metadata["trackingProvider"] == "keyframe_seed_sequence"
+    assert candidates[0].metadata["frameCoverageEstimate"] == 1.0
+    assert "Cannot determine the starting frame index" in candidates[0].metadata["warnings"][0]
+    assert [spec.object_id for spec in specs] == ["sam3_scene_001"]
+    assert any("using the keyframe mask sequence" in event["message"] for event in recorder.events)
+    assert (tmp_path / candidates[0].metadata["maskDir"] / "mask_000003.png").exists()
 
 
 def test_sam3_scene_sweep_does_not_import_sam2(monkeypatch):
