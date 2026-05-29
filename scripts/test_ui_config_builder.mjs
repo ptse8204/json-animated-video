@@ -1491,7 +1491,58 @@ assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" 
   label: "Export MotionJSON",
   reason: "Mark at least one reviewed track for export.",
 });
+assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, staticFallbackCount: 1 }), {
+  disabled: true,
+  label: "Repair tracking first",
+  reason: "Static keyframe fallback tracks cannot be exported as MotionJSON motion.",
+});
 assert.equal(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, status: { ok: true } }).disabled, false);
+const movingReviewedTrack = {
+  id: "red_ball",
+  objectId: "red_ball",
+  exportStatus: "accepted",
+  exportIncluded: true,
+  frames: [
+    { frame: 0, bbox: { x: 10, y: 10, w: 20, h: 20 }, visible: true },
+    { frame: 12, bbox: { x: 55, y: 15, w: 20, h: 20 }, visible: true },
+  ],
+};
+const staticFallbackTrack = {
+  id: "static_ball",
+  objectId: "static_ball",
+  exportStatus: "accepted",
+  exportIncluded: true,
+  discovery: { trackingProvider: "keyframe_seed_sequence" },
+  frames: [
+    { frame: 0, bbox: { x: 10, y: 10, w: 20, h: 20 }, visible: true },
+    { frame: 12, bbox: { x: 10, y: 10, w: 20, h: 20 }, visible: true },
+  ],
+};
+assert.equal(ui.trackMotionMetrics(movingReviewedTrack).moving, true);
+assert.equal(ui.trackMotionMetrics(staticFallbackTrack).moving, false);
+assert.equal(ui.trackUsesStaticKeyframeFallback(staticFallbackTrack), true);
+assert.deepEqual(
+  ui.exportReadinessSummary({
+    job: { id: "job_1", status: "succeeded" },
+    includedIds: ["red_ball"],
+    reviewTracks: [movingReviewedTrack],
+    status: { ok: true, issueCount: 0, checked: 1 },
+  }).map((row) => [row.key, row.status]),
+  [
+    ["moving_track_verified", "ready"],
+    ["reviewed_for_export", "ready"],
+    ["motionjson_validation", "ready"],
+    ["static_keyframe_fallback", "ready"],
+  ],
+);
+assert.equal(
+  ui.exportReadinessSummary({
+    job: { id: "job_1", status: "succeeded" },
+    includedIds: ["static_ball"],
+    reviewTracks: [staticFallbackTrack],
+  })[0].status,
+  "blocked",
+);
 const handoffCards = ui.exportHandoffCards({
   job: { id: "job_1", status: "succeeded" },
   includedIds: ["object_0"],

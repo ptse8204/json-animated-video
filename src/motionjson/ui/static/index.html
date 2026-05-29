@@ -361,6 +361,20 @@
               <button id="studioMergeDuplicatesButton" type="button">Merge duplicates</button>
               <button id="studioExportSelectedButton" type="button">Export selected</button>
             </div>
+            <div class="studio-export-card" aria-label="Export checklist">
+              <div class="studio-export-heading">
+                <div>
+                  <strong>Export checklist</strong>
+                  <p id="studioExportChecklistNote" class="row-meta">Validate moving tracks before writing MotionJSON.</p>
+                </div>
+                <span id="studioExportStatus" class="status-chip is-muted">Not validated</span>
+              </div>
+              <div id="studioExportChecklist" class="studio-export-checklist" aria-live="polite"></div>
+              <div class="studio-export-actions">
+                <button id="studioValidateExportButton" type="button">Validate again</button>
+                <button id="studioExportMotionJsonButton" class="primary-action" type="button">Export MotionJSON</button>
+              </div>
+            </div>
             <div id="studioObjectList" class="studio-object-list" aria-live="polite"></div>
             <div class="studio-segment-gate">
               <div>
@@ -657,8 +671,8 @@
           <button id="studioCreatePackageButton" class="studio-package-button" type="button">
             <span class="studio-package-icon" aria-hidden="true"></span>
             <span>
-              <strong>Create website package</strong>
-              <small>Bundle video, masks, and viewer for web sharing</small>
+              <strong>Export MotionJSON</strong>
+              <small>Write the reviewed moving tracks and generated artifacts</small>
             </span>
           </button>
         </section>
@@ -860,6 +874,10 @@
             <div id="exportStatusSummary" class="status-summary-grid" aria-live="polite"></div>
             <div id="exportHandoffCards" class="export-handoff-grid"></div>
             <div id="exportNextSteps" class="export-next-steps"></div>
+            <div class="export-primary-actions" aria-label="MotionJSON export actions">
+              <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate export</button>
+              <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
+            </div>
             <details class="advanced-export-disclosure">
               <summary>Advanced export settings</summary>
               <div class="export-panel">
@@ -884,10 +902,6 @@
                   <input id="exportIncludePreview" type="checkbox" checked />
                   <span>preview</span>
                 </label>
-              </div>
-              <div class="export-actions">
-                <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate</button>
-                <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
               </div>
             </details>
             <div id="exportSummary" class="export-summary"></div>

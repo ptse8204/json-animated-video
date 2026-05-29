@@ -1404,6 +1404,34 @@ input[type="range"] {
   margin-top: 8px;
 }
 
+.export-primary-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 9px;
+  margin: 12px 0 10px;
+}
+
+.export-primary-actions button {
+  min-height: 42px;
+  border-radius: 8px;
+  font-weight: 820;
+}
+
+.export-primary-actions .primary-action {
+  border-color: #0877d9;
+  color: #ffffff;
+  background: #0877d9;
+  box-shadow: 0 10px 24px rgba(8, 119, 217, 0.16);
+}
+
+.export-primary-actions .primary-action:hover:not(:disabled) {
+  background: #075fb0;
+}
+
+.export-readiness-card strong {
+  color: var(--ink);
+}
+
 .export-summary {
   margin-top: 8px;
 }
@@ -1635,7 +1663,8 @@ input[type="range"] {
 
   .export-panel,
   .export-handoff-grid,
-  .export-actions {
+  .export-actions,
+  .export-primary-actions {
     grid-template-columns: 1fr;
   }
 
@@ -3355,7 +3384,8 @@ button,
 }
 
 .export-handoff-grid,
-.export-actions {
+.export-actions,
+.export-primary-actions {
   grid-template-columns: 1fr;
 }
 
@@ -3675,8 +3705,18 @@ button,
     .model-plan-facts,
     .config-actions,
     .export-handoff-grid,
-    .export-actions {
+    .export-actions,
+    .export-primary-actions,
+    .studio-export-actions {
     grid-template-columns: 1fr;
+  }
+
+  .studio-export-check-row {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .studio-export-check-row small {
+    grid-column: 2;
   }
 
   .guided-start-header,
@@ -4585,6 +4625,137 @@ body {
   accent-color: #0794a5;
 }
 
+.studio-export-card {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid #dce3e8;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.studio-export-heading {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.studio-export-heading strong {
+  color: #202a36;
+  font-size: 15px;
+  font-weight: 820;
+}
+
+.studio-export-heading .row-meta {
+  margin-top: 3px;
+}
+
+.studio-export-checklist {
+  display: grid;
+  gap: 7px;
+}
+
+.studio-export-check-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #dce3e8;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.studio-export-check-row > span {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: #8593a3;
+}
+
+.studio-export-check-row > span::before {
+  content: "";
+  width: 7px;
+  height: 4px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+}
+
+.studio-export-check-row.is-ready {
+  border-color: #cfe7cb;
+  background: #f4fbf2;
+}
+
+.studio-export-check-row.is-ready > span {
+  background: #238443;
+}
+
+.studio-export-check-row.is-warn {
+  border-color: #f0dca6;
+  background: #fffaf0;
+}
+
+.studio-export-check-row.is-warn > span {
+  background: #d99016;
+}
+
+.studio-export-check-row.is-bad {
+  border-color: #f0c9c4;
+  background: #fff0ee;
+}
+
+.studio-export-check-row.is-bad > span {
+  background: #c84738;
+}
+
+.studio-export-check-row strong,
+.studio-export-check-row small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.studio-export-check-row strong {
+  color: #273240;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.studio-export-check-row small {
+  color: #64707d;
+  font-size: 11px;
+  font-weight: 580;
+  line-height: 1.35;
+}
+
+.studio-export-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 8px;
+}
+
+.studio-export-actions button {
+  min-height: 40px;
+  border-radius: 8px;
+  font-weight: 820;
+}
+
+.studio-export-actions .primary-action {
+  border-color: #0877d9;
+  color: #ffffff;
+  background: #0877d9;
+  box-shadow: 0 10px 24px rgba(8, 119, 217, 0.16);
+}
+
+.studio-export-actions .primary-action:hover:not(:disabled) {
+  background: #075fb0;
+}
+
 .studio-segment-gate {
   display: flex;
   gap: 14px;
@@ -4863,6 +5034,18 @@ body {
 
   .studio-bulk-actions {
     grid-template-columns: 1fr;
+  }
+
+  .studio-export-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .studio-export-check-row {
+    grid-template-columns: 18px minmax(0, 1fr);
+  }
+
+  .studio-export-check-row small {
+    grid-column: 2;
   }
 
   .studio-object-row {

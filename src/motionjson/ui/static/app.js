@@ -826,6 +826,7 @@ const MotionJSONUI = (() => {
     const jobFailed = isFailedJobStatus(selectedJobStatus);
     const exportIncludedIds = state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean);
     const exportStatus = state.exportValidation?.validation || state.exportResult?.validation || null;
+    const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
     const exportAction = exportActionState({
       job: selectedJob(),
       includedIds: exportIncludedIds,
@@ -837,6 +838,7 @@ const MotionJSONUI = (() => {
         reviewTracks: state.reviewTracks,
         reviewObjects: state.jobReview?.objects,
       }).pendingIds,
+      staticFallbackCount,
     });
     const reviewFlow = reviewFlowStateFromSnapshot({
       ...snapshot,
@@ -3791,6 +3793,9 @@ const MotionJSONUI = (() => {
       exportable: track.exportable !== false,
       demoMode: track.demoMode === true || track.demo_mode === true,
       providerName: track.providerName || track.provider_name || null,
+      trackingProvider: track.trackingProvider || track.tracking_provider || track.discovery?.trackingProvider || track.discovery?.tracking_provider || track.metadata?.trackingProvider || null,
+      discovery: track.discovery && typeof track.discovery === "object" ? { ...track.discovery } : {},
+      metadata: track.metadata && typeof track.metadata === "object" ? { ...track.metadata } : {},
       rightsSummary: track.rightsSummary || track.rights_summary || null,
       color: track.color || track.colorHex || track.color_hex || TRACK_COLORS[index % TRACK_COLORS.length],
       frames: frames.map((frame) => {
@@ -4360,6 +4365,67 @@ const MotionJSONUI = (() => {
     return String(track?.objectId || track?.id || "").trim();
   }
 
+  function trackSourceText(track) {
+    const values = [
+      track?.source,
+      track?.providerName,
+      track?.trackingProvider,
+      track?.reviewSource,
+      track?.exportStatus,
+      ...asArray(track?.warnings),
+      ...asArray(track?.metadata?.warnings),
+      track?.discovery?.trackingProvider,
+      track?.discovery?.tracking_provider,
+      track?.discovery?.reason,
+      track?.discovery?.exportStatus,
+    ];
+    return values.filter(Boolean).join(" ").toLowerCase();
+  }
+
+  function trackUsesStaticKeyframeFallback(track) {
+    return /keyframe_seed_sequence|static_keyframe|keyframe proposal mask sequence/.test(trackSourceText(track));
+  }
+
+  function trackMotionMetrics(track, dimensions = {}) {
+    const width = toNumber(dimensions.width, state.video.width || 1920);
+    const height = toNumber(dimensions.height, state.video.height || 1080);
+    const centers = asArray(track?.frames)
+      .filter((frame) => frame?.visible !== false)
+      .map((frame) => {
+        const polygon = normalizePolygonPoints(frame?.polygon);
+        const box = frame?.bbox || (polygon ? polygonBounds(polygon, width, height) : null);
+        if (!box) return null;
+        return {
+          frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
+          x: toNumber(box.x, 0) + toNumber(box.w, 0) / 2,
+          y: toNumber(box.y, 0) + toNumber(box.h, 0) / 2,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.frame - b.frame);
+    let maxCenterShiftPx = 0;
+    let pathLengthPx = 0;
+    for (let index = 1; index < centers.length; index += 1) {
+      const previous = centers[index - 1];
+      const current = centers[index];
+      const step = Math.hypot(current.x - previous.x, current.y - previous.y);
+      pathLengthPx += step;
+      const fromStart = Math.hypot(current.x - centers[0].x, current.y - centers[0].y);
+      maxCenterShiftPx = Math.max(maxCenterShiftPx, fromStart);
+    }
+    const thresholdPx = Math.max(2, Math.min(width, height) * 0.004);
+    const frameSpan = centers.length ? centers[centers.length - 1].frame - centers[0].frame : 0;
+    const moving = centers.length >= 2 && maxCenterShiftPx >= thresholdPx && pathLengthPx >= thresholdPx;
+    return {
+      moving,
+      visibleFrameCount: centers.length,
+      maxCenterShiftPx,
+      pathLengthPx,
+      frameSpan,
+      thresholdPx,
+    };
+  }
+
   function uniqueIds(ids) {
     const seen = new Set();
     const result = [];
@@ -4626,7 +4692,83 @@ const MotionJSONUI = (() => {
     return rows;
   }
 
-  function exportActionState({ job = null, includedIds = [], pendingIds = [], trackCount = 0, status = null } = {}) {
+  function exportReadinessSummary({ job = null, includedIds = [], pendingIds = [], reviewTracks = [], status = null } = {}) {
+    const lifecycle = job ? normalizeJobLifecycle(job) : null;
+    const includedSet = new Set(asArray(includedIds).map(String));
+    const reviewedTracks = asArray(reviewTracks).filter((track) => isTrackExportIncluded(track));
+    const materializedReviewedTracks = reviewedTracks.filter((track) => {
+      const objectId = trackObjectId(track);
+      return !includedSet.size || includedSet.has(objectId);
+    });
+    const staticFallbackTracks = reviewedTracks.filter(trackUsesStaticKeyframeFallback);
+    const movingTracks = materializedReviewedTracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && trackMotionMetrics(track).moving);
+    const includedCount = asArray(includedIds).length;
+    const pendingCount = asArray(pendingIds).length;
+    const rows = [];
+
+    if (!lifecycle) {
+      rows.push({
+        key: "selected_run",
+        status: "needs-action",
+        title: "Select a completed run",
+        detail: "Review and export unlock after extraction produces object tracks.",
+      });
+      return rows;
+    }
+
+    rows.push({
+      key: "moving_track_verified",
+      status: staticFallbackTracks.length ? "blocked" : movingTracks.length ? "ready" : "needs-action",
+      title: movingTracks.length ? "Moving track verified" : staticFallbackTracks.length ? "Static fallback blocked" : "Moving track not verified",
+      detail: movingTracks.length
+        ? `${movingTracks.length} reviewed track${movingTracks.length === 1 ? "" : "s"} use per-frame motion shown in preview.`
+        : staticFallbackTracks.length
+          ? "Static keyframe mask sequences stay blocked until tracking is repaired or rerun."
+          : "Use Review to confirm the selected object follows frame-by-frame motion.",
+    });
+    rows.push({
+      key: "reviewed_for_export",
+      status: includedCount && !pendingCount ? "ready" : includedCount ? "needs-action" : "needs-action",
+      title: includedCount ? "Reviewed for export" : "No reviewed export yet",
+      detail: includedCount
+        ? `${includedCount} materialized track${includedCount === 1 ? "" : "s"} selected for MotionJSON.`
+        : "Mark at least one reviewed moving track for export.",
+    });
+    rows.push({
+      key: "motionjson_validation",
+      status: status ? (status.ok === true ? "ready" : "blocked") : "needs-action",
+      title: status ? (status.ok === true ? "MotionJSON validation passed" : "MotionJSON validation blocked") : "MotionJSON validation needed",
+      detail: status
+        ? `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} checked document${status.checked === 1 ? "" : "s"}.`
+        : "Validate again before writing the MotionJSON package.",
+    });
+    rows.push({
+      key: "static_keyframe_fallback",
+      status: staticFallbackTracks.length ? "blocked" : "ready",
+      title: staticFallbackTracks.length ? "Static keyframe fallback not exportable" : "Static keyframe fallback not used",
+      detail: staticFallbackTracks.length
+        ? "The selected export contains a static keyframe sequence; repair tracking before export."
+        : "Export will use moving object tracks, not a frozen keyframe mask.",
+    });
+    return rows;
+  }
+
+  function exportReadinessSummaryCards(options = {}) {
+    return exportReadinessSummary(options)
+      .map((row) =>
+        statusCardMarkup(
+          {
+            status: row.status,
+            value: row.title,
+            detail: row.detail,
+          },
+          { className: "status-summary-card export-readiness-card" },
+        ),
+      )
+      .join("");
+  }
+
+  function exportActionState({ job = null, includedIds = [], pendingIds = [], trackCount = 0, status = null, staticFallbackCount = 0 } = {}) {
     const lifecycle = job ? normalizeJobLifecycle(job) : null;
     const includedCount = asArray(includedIds).length;
     const pendingCount = asArray(pendingIds).length;
@@ -4636,6 +4778,7 @@ const MotionJSONUI = (() => {
     if (toInteger(trackCount, 0) === 0) return { disabled: true, label: "Export MotionJSON", reason: "Track selected candidates before exporting." };
     if (pendingCount) return { disabled: true, label: "Export MotionJSON", reason: `${pendingCount} reviewed track${pendingCount === 1 ? "" : "s"} need materialized assets before export.` };
     if (!includedCount) return { disabled: true, label: "Export MotionJSON", reason: "Mark at least one reviewed track for export." };
+    if (toInteger(staticFallbackCount, 0) > 0) return { disabled: true, label: "Repair tracking first", reason: "Static keyframe fallback tracks cannot be exported as MotionJSON motion." };
     if (status && status.ok !== true) {
       return { disabled: true, label: "Resolve validation first", reason: "Resolve export validation issues before writing MotionJSON." };
     }
@@ -5095,7 +5238,26 @@ const MotionJSONUI = (() => {
         $("#reviewFlowStatus").className = `status-chip ${trackStage.tone}`;
       }
       if ($("#correctionStatusSummary")) $("#correctionStatusSummary").innerHTML = summaryCards([correctionStage].filter(Boolean));
-      if ($("#exportStatusSummary")) $("#exportStatusSummary").innerHTML = summaryCards([exportStage].filter(Boolean));
+      if ($("#exportStatusSummary")) {
+        const job = selectedJob();
+        const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
+        const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
+        const exportState = exported || validation || {};
+        const status = exported?.validation || validation?.validation || null;
+        const { includedIds, pendingIds } = buildExportPanelSummary({
+          exportState,
+          reviewExport: state.jobReview?.export,
+          reviewTracks: state.reviewTracks,
+          reviewObjects: state.jobReview?.objects,
+        });
+        $("#exportStatusSummary").innerHTML = exportReadinessSummaryCards({
+          job,
+          includedIds,
+          pendingIds,
+          reviewTracks: state.reviewTracks,
+          status,
+        }) || summaryCards([exportStage].filter(Boolean));
+      }
       if (snapshot.hasFailure && $("#runLogsDisclosure")) $("#runLogsDisclosure").open = true;
       if (snapshot.hasAttentionDiagnostics && $("#fallbackDiagnosticsDisclosure")) $("#fallbackDiagnosticsDisclosure").open = true;
     }
@@ -7562,7 +7724,11 @@ const MotionJSONUI = (() => {
       if (track?.deleted || /deleted|rejected|failed|fallback_raster/.test(status)) {
         return { label: /background|ground|floor|lawn|fence|plant/.test(`${track?.label || ""} ${track?.warnings || ""}`.toLowerCase()) ? "Rejected background" : "Rejected", tone: "bad" };
       }
-      if (isTrackExportIncluded(track)) return { label: "Reviewed for export", tone: "ready" };
+      if (trackUsesStaticKeyframeFallback(track)) return { label: "Static fallback blocked", tone: "bad" };
+      if (isTrackExportIncluded(track)) {
+        const motion = trackMotionMetrics(track);
+        return motion.moving ? { label: "Reviewed moving track", tone: "ready" } : { label: "Reviewed for export", tone: "ready" };
+      }
       return { label: "Needs review", tone: "warn" };
     }
 
@@ -7585,6 +7751,8 @@ const MotionJSONUI = (() => {
           label: track.label || objectId || `Object ${index + 1}`,
           confidence: track.confidence,
           frameCount: toInteger(track.frameCount, toInteger(track.visibleFrameCount, 0)),
+          motion: trackMotionMetrics(track),
+          staticFallback: trackUsesStaticKeyframeFallback(track),
           color: track.color || TRACK_COLORS[index % TRACK_COLORS.length],
           visible: isTrackVisibleInReview(track),
           exportIncluded: isTrackExportIncluded(track),
@@ -7621,18 +7789,86 @@ const MotionJSONUI = (() => {
       if (!list || !summary) return;
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
+      const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
       summary.textContent = rows.length
-        ? `${reviewedCount} reviewed object${reviewedCount === 1 ? "" : "s"} ready`
+        ? movingReviewedCount
+          ? `${movingReviewedCount} moving track${movingReviewedCount === 1 ? "" : "s"} ready for MotionJSON export`
+          : `${reviewedCount} reviewed object${reviewedCount === 1 ? "" : "s"} ready`
         : "Object masks appear here after a run completes.";
-      const canExport = Boolean(state.selectedJobId && reviewedCount);
+      const job = selectedJob();
+      const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
+      const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
+      const exportState = exported || validation || {};
+      const status = exported?.validation || validation?.validation || null;
+      const { includedIds, pendingIds } = buildExportPanelSummary({
+        exportState,
+        reviewExport: state.jobReview?.export,
+        reviewTracks: state.reviewTracks,
+        reviewObjects: state.jobReview?.objects,
+      });
+      const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
+      const exportAction = exportActionState({
+        job,
+        includedIds,
+        pendingIds,
+        trackCount: state.reviewTracks.length,
+        status,
+        staticFallbackCount,
+      });
+      const canValidate = Boolean(state.selectedJobId && reviewedCount);
+      const canExport = !exportAction.disabled;
       $("#studioExportAllButton").disabled = !canExport;
-      $("#studioExportSelectedButton").disabled = !canExport;
+      $("#studioExportAllButton").textContent = exportAction.label || "Export MotionJSON";
+      $("#studioExportSelectedButton").disabled = !canValidate;
       $("#studioCreatePackageButton").disabled = !canExport;
+      if ($("#studioValidateExportButton")) {
+        $("#studioValidateExportButton").disabled = !canValidate;
+        $("#studioValidateExportButton").textContent = status ? "Validate again" : "Validate export";
+      }
+      if ($("#studioExportMotionJsonButton")) {
+        $("#studioExportMotionJsonButton").disabled = !canExport;
+        $("#studioExportMotionJsonButton").textContent = exportAction.label || "Export MotionJSON";
+        $("#studioExportMotionJsonButton").dataset.tooltip = exportAction.reason || "Write validated MotionJSON artifacts";
+      }
+      if ($("#studioExportStatus")) {
+        $("#studioExportStatus").textContent = !job ? "No run" : status?.ok === true ? "Valid" : status ? "Needs review" : "Not validated";
+        $("#studioExportStatus").className = `status-chip ${!job ? "is-muted" : status?.ok === true ? "is-ready" : status ? "is-warn" : "is-muted"}`;
+      }
+      if ($("#studioExportChecklistNote")) {
+        $("#studioExportChecklistNote").textContent = exportAction.reason || (status?.ok === true ? "Moving tracks are validated for MotionJSON export." : "Validate moving tracks before writing MotionJSON.");
+      }
+      if ($("#studioExportChecklist")) {
+        $("#studioExportChecklist").innerHTML = exportReadinessSummary({
+          job,
+          includedIds,
+          pendingIds,
+          reviewTracks: state.reviewTracks,
+          status,
+        })
+          .map((row) => {
+            const className = row.status === "ready" ? "is-ready" : row.status === "blocked" ? "is-bad" : "is-warn";
+            return `
+              <div class="studio-export-check-row ${className}">
+                <span aria-hidden="true"></span>
+                <strong>${escapeHtml(row.title)}</strong>
+                <small>${escapeHtml(row.detail)}</small>
+              </div>
+            `;
+          })
+          .join("");
+      }
       list.innerHTML = rows.length
         ? rows
             .map((row, index) => {
               const selected = row.kind === "track" && (state.selectedCorrectionTrackId === row.id || state.selectedCorrectionTrackId === row.objectId);
               const frames = row.frameCount ? `${row.frameCount} frames` : row.kind === "track" ? trackCoverageLabel(row) : "frames unavailable";
+              const motionLabel = row.kind === "track"
+                ? row.staticFallback
+                  ? "static fallback blocked"
+                  : row.motion?.moving
+                    ? `${Math.round(row.motion.maxCenterShiftPx)} px motion`
+                    : "motion not verified"
+                : "candidate only";
               const statusTone = row.status.tone === "bad" ? "is-bad" : row.status.tone === "warn" ? "is-warn" : "";
               return `
                 <div class="studio-object-row ${row.visible ? "" : "is-muted"} ${selected ? "is-selected" : ""}" data-studio-track-row="${row.kind === "track" ? escapeAttribute(row.id) : ""}" style="--studio-track-color: ${escapeAttribute(row.color)}">
@@ -7640,7 +7876,7 @@ const MotionJSONUI = (() => {
                   <span class="studio-object-number">${index + 1}</span>
                   <span class="studio-object-copy">
                     <strong class="studio-object-title">${escapeHtml(row.label)}</strong>
-                    <span class="studio-object-meta">Confidence ${escapeHtml(studioConfidenceLabel(row.confidence))} &nbsp; - &nbsp; ${escapeHtml(frames)}</span>
+                    <span class="studio-object-meta">Confidence ${escapeHtml(studioConfidenceLabel(row.confidence))} &nbsp; - &nbsp; ${escapeHtml(frames)} &nbsp; - &nbsp; ${escapeHtml(motionLabel)}</span>
                   </span>
                   <span class="studio-status-chip ${statusTone}">${escapeHtml(row.status.label)}</span>
                   <button
@@ -7698,6 +7934,12 @@ const MotionJSONUI = (() => {
       }
       const frames = asArray(track.frames);
       const polygonFrames = frames.filter((frame) => asArray(frame.polygon).length >= 3).length;
+      const motion = trackMotionMetrics(track);
+      const motionSummary = trackUsesStaticKeyframeFallback(track)
+        ? "static keyframe fallback blocked"
+        : motion.moving
+          ? `${Math.round(motion.maxCenterShiftPx)} px center shift across ${motion.visibleFrameCount} sampled frames`
+          : "not verified from sampled frames";
       const warningChips = asArray(track.warnings).map((warning) => detailChip(warning)).join("");
       const relatedArtifacts = relatedArtifactsForTrack(track);
       const rights = track.rightsSummary || {};
@@ -7719,6 +7961,7 @@ const MotionJSONUI = (() => {
           <dt>Source</dt><dd>${escapeHtml(track.source || track.providerName || "not reported")}</dd>
           <dt>Coverage</dt><dd>${escapeHtml(trackCoverageLabel(track))}</dd>
           <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} polygon frame${polygonFrames === 1 ? "" : "s"}` : "box overlay")}</dd>
+          <dt>Motion</dt><dd>${escapeHtml(motionSummary)}</dd>
           <dt>Preview</dt><dd>${escapeHtml(isTrackVisibleInReview(track) ? "visible" : "hidden")}</dd>
           <dt>Export</dt><dd>${escapeHtml(isTrackExportIncluded(track) ? "included" : "excluded")}</dd>
           <dt>Rights</dt><dd>${escapeHtml(rightsStatus)}</dd>
@@ -8006,13 +8249,22 @@ const MotionJSONUI = (() => {
       });
       const status = exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation;
       const ok = status?.ok === true;
-      const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount: state.reviewTracks.length, status });
+      const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
+      const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount: state.reviewTracks.length, status, staticFallbackCount });
       $("#exportStatus").textContent = !job ? "No run" : ok ? "Valid" : status ? "Needs review" : "Not validated";
       $("#exportStatus").className = `status-chip ${!job ? "is-muted" : ok ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       $("#validateExportButton").disabled = !job;
+      $("#validateExportButton").textContent = status ? "Validate again" : "Validate export";
       $("#exportMotionJsonButton").disabled = exportAction.disabled;
       $("#exportMotionJsonButton").textContent = exportAction.label;
       $("#exportMotionJsonButton").dataset.tooltip = exportAction.reason || "Write validated MotionJSON artifacts";
+      $("#exportStatusSummary").innerHTML = exportReadinessSummaryCards({
+        job,
+        includedIds,
+        pendingIds,
+        reviewTracks: state.reviewTracks,
+        status,
+      });
 
       const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : storedExportArtifacts;
       const objectLayerPack = exportState.objectLayerPack || exported?.objectLayerPack || validation?.objectLayerPack || null;
@@ -8418,6 +8670,43 @@ const MotionJSONUI = (() => {
       ctx.lineWidth = resultMode ? 4 : 3;
       ctx.strokeStyle = track.color || "#10a37f";
       ctx.fillStyle = `${track.color || "#10a37f"}${resultMode ? "45" : "26"}`;
+      if (resultMode && trackMotionMetrics(track).moving) {
+        const trail = asArray(track.frames)
+          .filter((item) => item?.visible !== false)
+          .map((item) => {
+            const itemPolygon = normalizePolygonPoints(item?.polygon);
+            const itemBounds = item?.bbox || (itemPolygon ? polygonBounds(itemPolygon, state.video.width || 1920, state.video.height || 1080) : null);
+            if (!itemBounds) return null;
+            return {
+              frame: toInteger(item.frame ?? item.frameIndex ?? item.out_index, 0),
+              point: videoPointToCanvas({ x: itemBounds.x + itemBounds.w / 2, y: itemBounds.y + itemBounds.h / 2 }, view),
+            };
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.frame - b.frame);
+        if (trail.length >= 2) {
+          ctx.save();
+          ctx.globalAlpha = 0.72;
+          ctx.strokeStyle = track.color || "#10a37f";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 7]);
+          ctx.beginPath();
+          trail.forEach(({ point }, itemIndex) => {
+            if (itemIndex === 0) ctx.moveTo(point.x, point.y);
+            else ctx.lineTo(point.x, point.y);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 0.9;
+          for (const { point } of [trail[0], trail[trail.length - 1]]) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+            ctx.fillStyle = track.color || "#10a37f";
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      }
       if (polygon) {
         polygon.forEach((point, index) => {
           const canvasPoint = videoPointToCanvas(point, view);
@@ -9729,7 +10018,12 @@ const MotionJSONUI = (() => {
             attributionRequired: true,
             sourceAttribution: { displayText: "User uploaded source video" },
           },
-          frames: [{ frame: 152, bbox: { x: 250, y: 650, w: 230, h: 230 }, visible: true }],
+          frames: [
+            { frame: 0, bbox: { x: 150, y: 690, w: 220, h: 220 }, visible: true },
+            { frame: 152, bbox: { x: 250, y: 650, w: 230, h: 230 }, visible: true },
+            { frame: 300, bbox: { x: 370, y: 612, w: 230, h: 230 }, visible: true },
+            { frame: 451, bbox: { x: 520, y: 565, w: 225, h: 225 }, visible: true },
+          ],
         },
         {
           id: "hand_person",
@@ -9780,7 +10074,11 @@ const MotionJSONUI = (() => {
           exportIncluded: true,
           reviewSource: "reviewed",
           color: "#f9bd0a",
-          frames: [{ frame: 152, bbox: { x: 1395, y: 390, w: 125, h: 220 }, visible: true }],
+          frames: [
+            { frame: 24, bbox: { x: 1310, y: 430, w: 125, h: 220 }, visible: true },
+            { frame: 152, bbox: { x: 1395, y: 390, w: 125, h: 220 }, visible: true },
+            { frame: 311, bbox: { x: 1515, y: 350, w: 125, h: 220 }, visible: true },
+          ],
         },
       ];
       state.selectedProjectId = "project_layout";
@@ -11606,6 +11904,8 @@ const MotionJSONUI = (() => {
     $("#studioExportSelectedButton").addEventListener("click", validateSelectedExport);
     $("#studioExportAllButton").addEventListener("click", exportSelectedMotionJson);
     $("#studioCreatePackageButton").addEventListener("click", exportSelectedMotionJson);
+    $("#studioValidateExportButton").addEventListener("click", validateSelectedExport);
+    $("#studioExportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
 
     $("#correctionTrackSelect").addEventListener("change", (event) => {
       state.selectedCorrectionTrackId = event.target.value;
@@ -12278,6 +12578,7 @@ const MotionJSONUI = (() => {
     exportGateSummary,
     exportHandoffCards,
     exportNextStepText,
+    exportReadinessSummary,
     filterReviewCandidates,
     jobStaleNotice,
     jobProgressText,
@@ -12318,7 +12619,9 @@ const MotionJSONUI = (() => {
     slugObjectId,
     timelineMarkersForDisplay,
     trackFrameForDisplay,
+    trackMotionMetrics,
     trackSelectedPayload,
+    trackUsesStaticKeyframeFallback,
     workflowNextStepId,
     workflowStepContractFromSnapshot,
     workflowReadinessFromSnapshot,
