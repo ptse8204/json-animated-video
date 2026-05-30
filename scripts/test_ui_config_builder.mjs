@@ -178,6 +178,19 @@ const failedPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   diagnosticCount: 2,
 });
 assert.equal(failedPostRunSummary.find((stage) => stage.id === "candidates").status, "blocked");
+const validationBlockedPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
+  selectedJobStatus: "succeeded",
+  hasSelectedJob: true,
+  candidateCount: 3,
+  selectedCandidateCount: 2,
+  trackCount: 2,
+  exportIncludedCount: 1,
+  exportValidated: true,
+  exportOk: false,
+  exportIssueText: "No exportable object tracks are included; enable at least one accepted track before export",
+});
+assert.equal(validationBlockedPostRunSummary.find((stage) => stage.id === "export").status, "blocked");
+assert.match(validationBlockedPostRunSummary.find((stage) => stage.id === "export").detail, /No exportable object tracks/);
 const failedRunSummary = ui.runMonitorStageFromSnapshot({
   selectedJobStatus: "failed",
   hasFailure: true,
@@ -1484,8 +1497,16 @@ assert.deepEqual(ui.exportActionState({ job: null, includedIds: ["object_0"] }),
 assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, status: { ok: false } }), {
   disabled: true,
   label: "Resolve validation first",
-  reason: "Resolve export validation issues before writing MotionJSON.",
+  reason: "Export validation did not pass. Review the export summary before writing MotionJSON.",
 });
+assert.equal(
+  ui.exportValidationIssueText({
+    ok: false,
+    issueCount: 1,
+    issues: [{ path: "export", message: "No exportable object tracks are included; enable at least one accepted track before export" }],
+  }),
+  "No exportable object tracks are included; enable at least one accepted track before export",
+);
 assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: [], trackCount: 1 }), {
   disabled: true,
   label: "Export MotionJSON",
@@ -1542,6 +1563,30 @@ assert.equal(
     reviewTracks: [staticFallbackTrack],
   })[0].status,
   "blocked",
+);
+const blockedDecision = ui.exportDecisionState({
+  job: { id: "job_1", status: "succeeded" },
+  includedIds: ["red_ball"],
+  trackCount: 1,
+  reviewTracks: [movingReviewedTrack],
+  status: {
+    ok: false,
+    issueCount: 1,
+    issues: [{ path: "export", message: "No exportable object tracks are included; enable at least one accepted track before export" }],
+  },
+});
+assert.equal(blockedDecision.tone, "bad");
+assert.equal(blockedDecision.badge, "Blocked");
+assert.match(blockedDecision.detail, /No exportable object tracks/);
+assert.equal(
+  ui.exportDecisionState({
+    job: { id: "job_1", status: "succeeded" },
+    includedIds: ["red_ball"],
+    trackCount: 1,
+    reviewTracks: [movingReviewedTrack],
+    status: { ok: true, issueCount: 0, checked: 1 },
+  }).nextAction,
+  "Export MotionJSON",
 );
 const handoffCards = ui.exportHandoffCards({
   job: { id: "job_1", status: "succeeded" },

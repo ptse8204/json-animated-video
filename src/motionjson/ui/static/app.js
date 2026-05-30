@@ -849,11 +849,20 @@ const MotionJSONUI = (() => {
       exportOk: exportStatus?.ok === true,
     });
     const reviewGate = reviewFlow.gate;
-    const reviewPrimaryAction = reviewGate.primaryAction;
-    const reviewPrimaryLabel = reviewPrimaryAction === "export_reviewed" && !exportAction.disabled ? "Export reviewed objects" : reviewPrimaryAction === "export_reviewed" ? exportAction.label : reviewGate.primaryLabel;
-    const reviewPrimaryBlockedReason = reviewPrimaryAction === "export_reviewed" ? exportAction.reason : reviewGate.reason;
+    const validationBlocked = reviewGate.primaryAction === "export_reviewed" && exportStatus && exportStatus.ok !== true && exportIncludedIds.length > 0 && staticFallbackCount === 0;
+    const reviewPrimaryAction = validationBlocked ? "validate_export" : reviewGate.primaryAction;
+    const reviewPrimaryLabel = validationBlocked
+      ? "Validate again"
+      : reviewPrimaryAction === "export_reviewed" && !exportAction.disabled
+        ? "Export reviewed objects"
+        : reviewPrimaryAction === "export_reviewed"
+          ? exportAction.label
+          : reviewGate.primaryLabel;
+    const reviewPrimaryBlockedReason = validationBlocked ? exportValidationIssueText(exportStatus) : reviewPrimaryAction === "export_reviewed" ? exportAction.reason : reviewGate.reason;
     const reviewPrimaryEnabled =
-      reviewPrimaryAction === "export_reviewed"
+      reviewPrimaryAction === "validate_export"
+        ? true
+        : reviewPrimaryAction === "export_reviewed"
         ? !exportAction.disabled
         : reviewPrimaryAction === "track_selected"
           ? state.candidateTrackingStatus !== "tracking" && reviewFlow.selectedCandidateCount > 0
@@ -2593,7 +2602,7 @@ const MotionJSONUI = (() => {
       : counts.exportOk
         ? stage("export", "Export", "Validated", "Reviewed object export passed validation.", "done")
         : counts.exportValidated
-          ? stage("export", "Export", "Needs fixes", "Resolve validation issues before writing MotionJSON.", "blocked")
+          ? stage("export", "Export", "Needs fixes", snapshot.exportIssueText || "Resolve validation issues before writing MotionJSON.", "blocked")
           : counts.exportIncludedCount
             ? stage("export", "Export", `${counts.exportIncludedCount} included`, "Validate export settings before writing artifacts.", "needs-action")
             : counts.trackCount
@@ -4653,6 +4662,27 @@ const MotionJSONUI = (() => {
     return { includedIds, excludedIds, pendingIds, materializedIds };
   }
 
+  function exportValidationIssueText(status = null, validationMessages = []) {
+    const issues = asArray(status?.issues);
+    const firstIssue = issues.find((issue) => issue && (issue.message || issue.reason || issue.path));
+    if (firstIssue) {
+      const path = String(firstIssue.path || "").trim();
+      const message = String(firstIssue.message || firstIssue.reason || "validation issue").trim();
+      return path && path !== "export" ? `${path}: ${message}` : message;
+    }
+    const firstMessage = asArray(validationMessages).find((message) => message && (message.message || message.suggestedAction || message.code));
+    if (firstMessage) {
+      return String(firstMessage.message || firstMessage.suggestedAction || firstMessage.code).trim();
+    }
+    if (status && status.ok !== true) {
+      const issueCount = toInteger(status.issueCount, 0);
+      return issueCount
+        ? `${issueCount} validation issue${issueCount === 1 ? "" : "s"} need review before export.`
+        : "Export validation did not pass. Review the export summary before writing MotionJSON.";
+    }
+    return "";
+  }
+
   function exportGateSummary({ includedIds = [], excludedIds = [], pendingIds = [], status = null } = {}) {
     const includedCount = asArray(includedIds).length;
     const excludedCount = asArray(excludedIds).length;
@@ -4682,11 +4712,14 @@ const MotionJSONUI = (() => {
       });
     }
     if (status) {
+      const validationIssue = exportValidationIssueText(status);
       rows.push({
         key: "validation",
         tone: status.ok === true ? "ready" : "bad",
         title: "Validation",
-        detail: `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}.`,
+        detail: status.ok === true
+          ? `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}.`
+          : validationIssue || `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} document${status.checked === 1 ? "" : "s"}.`,
       });
     }
     return rows;
@@ -4739,7 +4772,9 @@ const MotionJSONUI = (() => {
       status: status ? (status.ok === true ? "ready" : "blocked") : "needs-action",
       title: status ? (status.ok === true ? "MotionJSON validation passed" : "MotionJSON validation blocked") : "MotionJSON validation needed",
       detail: status
-        ? `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} checked document${status.checked === 1 ? "" : "s"}.`
+        ? status.ok === true
+          ? `${status.issueCount || 0} issue${status.issueCount === 1 ? "" : "s"} across ${status.checked || 0} checked document${status.checked === 1 ? "" : "s"}.`
+          : exportValidationIssueText(status)
         : "Validate again before writing the MotionJSON package.",
     });
     rows.push({
@@ -4768,6 +4803,130 @@ const MotionJSONUI = (() => {
       .join("");
   }
 
+  function exportDecisionState({
+    job = null,
+    includedIds = [],
+    pendingIds = [],
+    reviewTracks = [],
+    trackCount = 0,
+    status = null,
+    staticFallbackCount = 0,
+    validationMessages = [],
+  } = {}) {
+    const lifecycle = job ? normalizeJobLifecycle(job) : null;
+    const includedCount = asArray(includedIds).length;
+    const pendingCount = asArray(pendingIds).length;
+    const selectedTrackCount = toInteger(trackCount, asArray(reviewTracks).length);
+    const reviewedTracks = asArray(reviewTracks).filter(isTrackExportIncluded);
+    const movingCount = reviewedTracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && trackMotionMetrics(track).moving).length;
+
+    if (!lifecycle) {
+      return {
+        tone: "warn",
+        badge: "No run",
+        title: "Select a completed run",
+        detail: "Run extraction or choose a previous result before validating MotionJSON export.",
+        nextAction: "Start or select a run",
+      };
+    }
+    if (lifecycle.active) {
+      return {
+        tone: "neutral",
+        badge: "Running",
+        title: "Wait for tracking to finish",
+        detail: "The selected run is still producing candidates, masks, or tracks.",
+        nextAction: "Watch job progress",
+      };
+    }
+    if (lifecycle.status === "failed" || lifecycle.status === "canceled") {
+      return {
+        tone: "bad",
+        badge: lifecycle.status === "canceled" ? "Canceled" : "Failed",
+        title: "Export is blocked by the run result",
+        detail: lifecycle.failure?.message || "Open logs, change setup, then run extraction again.",
+        nextAction: "Open logs",
+      };
+    }
+    if (!selectedTrackCount) {
+      return {
+        tone: "warn",
+        badge: "No tracks",
+        title: "Track selected candidates first",
+        detail: "MotionJSON export needs materialized object tracks, not candidate masks alone.",
+        nextAction: "Track selected",
+      };
+    }
+    if (pendingCount) {
+      return {
+        tone: "warn",
+        badge: "Pending",
+        title: "Finish materializing reviewed tracks",
+        detail: `${pendingCount} reviewed track${pendingCount === 1 ? "" : "s"} still need object assets before export.`,
+        nextAction: "Review track assets",
+      };
+    }
+    if (!includedCount) {
+      return {
+        tone: "warn",
+        badge: "Needs selection",
+        title: "Choose at least one reviewed object",
+        detail: "Tick export on a reviewed moving track so the package does not include background or rejected candidates.",
+        nextAction: "Mark reviewed",
+      };
+    }
+    if (toInteger(staticFallbackCount, 0) > 0) {
+      return {
+        tone: "bad",
+        badge: "Repair",
+        title: "Repair tracking before export",
+        detail: "Static keyframe fallback tracks do not prove object motion and stay blocked from MotionJSON export.",
+        nextAction: "Repair or rerun tracking",
+      };
+    }
+    if (status?.ok === true) {
+      return {
+        tone: "ready",
+        badge: "Ready",
+        title: `Ready to export ${includedCount} reviewed object${includedCount === 1 ? "" : "s"}`,
+        detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} passed validation and will be written to the handoff artifacts.`,
+        nextAction: "Export MotionJSON",
+      };
+    }
+    if (status && status.ok !== true) {
+      return {
+        tone: "bad",
+        badge: "Blocked",
+        title: "Validation blocked export",
+        detail: exportValidationIssueText(status, validationMessages),
+        nextAction: "Validate again after review changes",
+      };
+    }
+    return {
+      tone: "warn",
+      badge: "Validate next",
+      title: `Validate ${includedCount} reviewed object${includedCount === 1 ? "" : "s"}`,
+      detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} are selected. Validate once to confirm the final MotionJSON package.`,
+      nextAction: "Validate export",
+    };
+  }
+
+  function exportDecisionMarkup(decision = {}) {
+    const tone = decision.tone || "warn";
+    return `
+      <div class="export-decision is-${escapeAttribute(tone)}" role="status">
+        <div>
+          <span class="section-kicker">Export readiness</span>
+          <strong>${escapeHtml(decision.title || "Review export status")}</strong>
+          <p>${escapeHtml(decision.detail || "Review selected tracks before exporting.")}</p>
+        </div>
+        <div class="export-decision-side">
+          <span class="status-chip is-${escapeAttribute(tone === "bad" ? "bad" : tone === "ready" ? "ready" : tone === "neutral" ? "neutral" : "warn")}">${escapeHtml(decision.badge || "Needs review")}</span>
+          <span class="row-meta">Next: ${escapeHtml(decision.nextAction || "Review export")}</span>
+        </div>
+      </div>
+    `;
+  }
+
   function exportActionState({ job = null, includedIds = [], pendingIds = [], trackCount = 0, status = null, staticFallbackCount = 0 } = {}) {
     const lifecycle = job ? normalizeJobLifecycle(job) : null;
     const includedCount = asArray(includedIds).length;
@@ -4780,7 +4939,7 @@ const MotionJSONUI = (() => {
     if (!includedCount) return { disabled: true, label: "Export MotionJSON", reason: "Mark at least one reviewed track for export." };
     if (toInteger(staticFallbackCount, 0) > 0) return { disabled: true, label: "Repair tracking first", reason: "Static keyframe fallback tracks cannot be exported as MotionJSON motion." };
     if (status && status.ok !== true) {
-      return { disabled: true, label: "Resolve validation first", reason: "Resolve export validation issues before writing MotionJSON." };
+      return { disabled: true, label: "Resolve validation first", reason: exportValidationIssueText(status) || "Resolve export validation issues before writing MotionJSON." };
     }
     return { disabled: false, label: "Export MotionJSON", reason: "" };
   }
@@ -5075,6 +5234,7 @@ const MotionJSONUI = (() => {
         correctionCount: asArray(state.correctionState?.history).length,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
+        exportIssueText: exportValidationIssueText(exportValidation),
         promptCount: state.prompts.length,
         strokeCount: state.strokes.length,
         hasBoxPrompt: state.prompts.some((prompt) => prompt.kind === "box"),
@@ -5187,6 +5347,7 @@ const MotionJSONUI = (() => {
         correctionCount: asArray(state.correctionState?.history).length,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
+        exportIssueText: exportValidationIssueText(exportValidation),
         diagnosticCount: diagnostics.length,
         attentionDiagnosticCount: attentionDiagnostics.length,
         hasAttentionDiagnostics: Boolean(attentionDiagnostics.length),
@@ -5689,6 +5850,8 @@ const MotionJSONUI = (() => {
           await markReviewedTracksForExport();
         } else if (contract.primaryAction === "inspect_diagnostics") {
           focusReviewDetail("diagnostics");
+        } else if (contract.primaryAction === "validate_export") {
+          await validateSelectedExport();
         } else if (contract.primaryAction === "export_reviewed") {
           await exportReviewedObjectsFromGuidedFlow();
         }
@@ -7815,6 +7978,16 @@ const MotionJSONUI = (() => {
         status,
         staticFallbackCount,
       });
+      const decision = exportDecisionState({
+        job,
+        includedIds,
+        pendingIds,
+        reviewTracks: state.reviewTracks,
+        trackCount: state.reviewTracks.length,
+        status,
+        staticFallbackCount,
+        validationMessages: exportState.exportValidationMessages,
+      });
       const canValidate = Boolean(state.selectedJobId && reviewedCount);
       const canExport = !exportAction.disabled;
       $("#studioExportAllButton").disabled = !canExport;
@@ -7835,7 +8008,12 @@ const MotionJSONUI = (() => {
         $("#studioExportStatus").className = `status-chip ${!job ? "is-muted" : status?.ok === true ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       }
       if ($("#studioExportChecklistNote")) {
-        $("#studioExportChecklistNote").textContent = exportAction.reason || (status?.ok === true ? "Moving tracks are validated for MotionJSON export." : "Validate moving tracks before writing MotionJSON.");
+        $("#studioExportChecklistNote").textContent = status?.ok === true
+          ? "Moving tracks are validated for MotionJSON export."
+          : decision.detail || exportAction.reason || "Validate moving tracks before writing MotionJSON.";
+      }
+      if ($("#studioExportDecision")) {
+        $("#studioExportDecision").innerHTML = exportDecisionMarkup(decision);
       }
       if ($("#studioExportChecklist")) {
         $("#studioExportChecklist").innerHTML = exportReadinessSummary({
@@ -8251,6 +8429,16 @@ const MotionJSONUI = (() => {
       const ok = status?.ok === true;
       const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
       const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount: state.reviewTracks.length, status, staticFallbackCount });
+      const decision = exportDecisionState({
+        job,
+        includedIds,
+        pendingIds,
+        reviewTracks: state.reviewTracks,
+        trackCount: state.reviewTracks.length,
+        status,
+        staticFallbackCount,
+        validationMessages: exportState.exportValidationMessages,
+      });
       $("#exportStatus").textContent = !job ? "No run" : ok ? "Valid" : status ? "Needs review" : "Not validated";
       $("#exportStatus").className = `status-chip ${!job ? "is-muted" : ok ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       $("#validateExportButton").disabled = !job;
@@ -8258,6 +8446,7 @@ const MotionJSONUI = (() => {
       $("#exportMotionJsonButton").disabled = exportAction.disabled;
       $("#exportMotionJsonButton").textContent = exportAction.label;
       $("#exportMotionJsonButton").dataset.tooltip = exportAction.reason || "Write validated MotionJSON artifacts";
+      $("#exportDecision").innerHTML = exportDecisionMarkup(decision);
       $("#exportStatusSummary").innerHTML = exportReadinessSummaryCards({
         job,
         includedIds,
@@ -12575,10 +12764,12 @@ const MotionJSONUI = (() => {
     eventRowsMarkup,
     eventSeverity,
     exportActionState,
+    exportDecisionState,
     exportGateSummary,
     exportHandoffCards,
     exportNextStepText,
     exportReadinessSummary,
+    exportValidationIssueText,
     filterReviewCandidates,
     jobStaleNotice,
     jobProgressText,

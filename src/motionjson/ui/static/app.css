@@ -4656,6 +4656,72 @@ body {
   gap: 7px;
 }
 
+.export-decision-slot {
+  min-width: 0;
+}
+
+.export-decision {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #d8e2ea;
+  border-left: 5px solid #d99016;
+  border-radius: 7px;
+  background: #fffaf0;
+}
+
+.export-decision.is-ready {
+  border-color: #cfe7cb;
+  border-left-color: #238443;
+  background: #f4fbf2;
+}
+
+.export-decision.is-bad {
+  border-color: #f0c9c4;
+  border-left-color: #c84738;
+  background: #fff0ee;
+}
+
+.export-decision.is-neutral {
+  border-color: #c8d9e6;
+  border-left-color: #4084a7;
+  background: #f2f8fb;
+}
+
+.export-decision strong,
+.export-decision p,
+.export-decision .row-meta {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.export-decision strong {
+  display: block;
+  margin-top: 2px;
+  color: #202a36;
+  font-size: 14px;
+  font-weight: 850;
+  line-height: 1.22;
+}
+
+.export-decision p {
+  margin: 4px 0 0;
+  color: #4b5966;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.export-decision-side {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+  min-width: 112px;
+}
+
 .studio-export-check-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 0.82fr) minmax(0, 1.18fr);
@@ -5040,6 +5106,15 @@ body {
     grid-template-columns: 1fr;
   }
 
+  .export-decision {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .export-decision-side {
+    justify-items: start;
+    min-width: 0;
+  }
+
   .studio-export-check-row {
     grid-template-columns: 18px minmax(0, 1fr);
   }
@@ -5417,6 +5492,13 @@ body {
 
 #workflowPrimaryButton {
   background: #0b63ce;
+}
+
+#workflowPrimaryButton:disabled {
+  border-color: #b8c6d3;
+  color: #31404f;
+  background: #e7edf3;
+  box-shadow: none;
 }
 
 .guided-start {
