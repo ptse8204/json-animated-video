@@ -1309,6 +1309,96 @@ def test_local_ui_track_selected_validates_candidates_and_gates_export(tmp_path)
     assert any(asset["kind"] == "validated_motionjson_scene" for asset in exported["artifacts"])
 
 
+def test_local_ui_exports_accepted_track_summary_with_masks_when_scene_review_gate_is_stale(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Accepted Track Export"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": f"local-ui://assets/{video['id']}"},
+        "output": {"directory": str(tmp_path / "private-output")},
+        "objects": [{"object_id": "object_0", "label": "Discovered objects"}],
+        "sampling": {"sample_fps": 12.0, "max_frames": 2},
+        "provider": {"name": "mock"},
+        "discovery": {
+            "mode": "auto_object_proposals",
+            "config": {
+                "mock": True,
+                "qualityPreset": "clean",
+                "maxCandidatesPerKeyframe": 4,
+                "maxObjects": 2,
+                "writeRejectedCandidates": True,
+            },
+        },
+        "prompts": [],
+        "filters": {"min_area": 1, "simplify_ratio": 0.006},
+        "export": {"output_mode": "authoring", "feather": 0, "layer_padding": 4, "sprite_format": "webp", "production_avif": False},
+    }
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    job = wait_for_job(app, decode(body)["job"]["id"])
+    review = decode(app.handle("GET", f"/api/jobs/{job['id']}/review")[2])["review"]
+    selected_id = review["candidates"][0]["candidateId"]
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/track-selected",
+        body=json.dumps({"candidateIds": [selected_id], "trackMode": "selected_only", "exportReviewRequired": True}).encode("utf-8"),
+    )
+    assert status == 200
+
+    conn = app.connection()
+    try:
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+    finally:
+        conn.close()
+    track_asset = next(asset for asset in assets if asset["kind"] == "track_summary")
+    scene_asset = next(asset for asset in assets if asset["kind"] == "scene_graph")
+    storage = app.storage()
+    track_summary = json.loads(storage.load_bytes(track_asset["storage_key"]).decode("utf-8"))
+    track_summary["tracks"][0]["exportStatus"] = "accepted"
+    track_summary["tracks"][0]["exportIncluded"] = True
+    storage.save_bytes(
+        track_asset["storage_key"],
+        (json.dumps(track_summary, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        content_type=track_asset.get("content_type"),
+    )
+    stale_scene = json.loads(storage.load_bytes(scene_asset["storage_key"]).decode("utf-8"))
+    assert stale_scene["objects"][0]["quality"]["reviewRequired"] is True
+    assert stale_scene["objects"][0]["discovery"]["exportStatus"] == "review_pending"
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/validate",
+        body=json.dumps({"preset": "debug", "includeMasks": True, "includePreview": False}).encode("utf-8"),
+    )
+    validation = decode(body)
+    assert status == 200
+    assert validation["includedObjectIds"] == [selected_id]
+    assert validation["validation"]["ok"] is True
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/jobs/{job['id']}/exports",
+        body=json.dumps({"preset": "debug", "includeMasks": True, "includePreview": False}).encode("utf-8"),
+    )
+    exported = decode(body)
+    assert status == 200
+    assert exported["export"]["includedObjectIds"] == [selected_id]
+    assert exported["export"]["validation"]["ok"] is True
+    assert any(asset["kind"] == "export_mask" for asset in exported["artifacts"])
+
+
 def test_local_ui_export_validation_messages_explain_unreviewed_auto_discovery(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     _project, _video, job = create_completed_mock_job(app, "Unreviewed Discovery Export")

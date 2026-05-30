@@ -153,8 +153,48 @@ def _status_excludes(value: Any) -> bool:
     return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged|review_pending", str(value or "")))
 
 
+def _status_hard_excludes(value: Any) -> bool:
+    return bool(re.search(r"deleted|excluded|rejected|failed|fallback_raster|merged", str(value or "")))
+
+
+def _status_requires_review(value: Any) -> bool:
+    return bool(re.search(r"pending|review_pending|needs_review|awaiting_review", str(value or "")))
+
+
 def _explicit_review_include(edit: dict[str, Any]) -> bool:
     return edit.get("exportIncluded") is True
+
+
+def _track_id(item: dict[str, Any]) -> str:
+    return str(item.get("objectId") or item.get("object_id") or item.get("id") or "")
+
+
+def _track_export_ready(item: dict[str, Any]) -> bool:
+    if item.get("deleted") or item.get("exportIncluded") is False:
+        return False
+    return not _status_excludes(item.get("exportStatus") or item.get("export_status") or "accepted")
+
+
+def _export_ready_track_ids(track_summary: dict[str, Any] | None) -> set[str]:
+    if not isinstance(track_summary, dict):
+        return set()
+    tracks = track_summary.get("tracks") if isinstance(track_summary.get("tracks"), list) else []
+    return {
+        track_id
+        for track in tracks
+        if isinstance(track, dict) and (track_id := _track_id(track)) and _track_export_ready(track)
+    }
+
+
+def _object_requires_review(item: dict[str, Any]) -> bool:
+    quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+    discovery = item.get("discovery") if isinstance(item.get("discovery"), dict) else {}
+    return (
+        quality.get("reviewRequired") is True
+        or discovery.get("reviewRequired") is True
+        or _status_requires_review(item.get("exportStatus"))
+        or _status_requires_review(discovery.get("exportStatus"))
+    )
 
 
 def _mark_reviewed_for_export(item: dict[str, Any]) -> None:
@@ -197,10 +237,16 @@ def _static_keyframe_fallback(obj: dict[str, Any]) -> bool:
     return max_shift < 2.0
 
 
-def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]) -> tuple[list[str], list[str], list[dict[str, Any]]]:
+def _included_object_ids(
+    scene: dict[str, Any],
+    correction_state: dict[str, Any],
+    *,
+    export_ready_track_ids: set[str] | None = None,
+) -> tuple[list[str], list[str], list[dict[str, Any]]]:
     track_edits = correction_state.get("trackEdits") if isinstance(correction_state.get("trackEdits"), dict) else {}
     history = correction_state.get("history") if isinstance(correction_state.get("history"), list) else []
     scene_ids = {_object_id(obj) for obj in scene.get("objects", []) if isinstance(obj, dict)}
+    export_ready_track_ids = export_ready_track_ids or set()
     included: list[str] = []
     excluded: list[str] = []
     diagnostics: list[dict[str, Any]] = []
@@ -220,7 +266,25 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
         quality = obj.get("quality") if isinstance(obj.get("quality"), dict) else {}
         discovery = obj.get("discovery") if isinstance(obj.get("discovery"), dict) else {}
         explicit_include = _explicit_review_include(edit)
-        if not explicit_include and (
+        track_review_include = object_id in export_ready_track_ids
+        hard_excluded = (
+            obj.get("exportIncluded") is False
+            or _status_hard_excludes(obj.get("exportStatus"))
+            or _status_hard_excludes(discovery.get("exportStatus"))
+        )
+        review_required = _object_requires_review(obj)
+        if not explicit_include and hard_excluded:
+            include = False
+            if obj.get("exportIncluded") is False:
+                exclusion_reason = "export_excluded"
+            elif _status_hard_excludes(obj.get("exportStatus")):
+                exclusion_reason = str(obj.get("exportStatus") or "correction_state")
+            elif _status_hard_excludes(discovery.get("exportStatus")):
+                exclusion_reason = str(discovery.get("exportStatus") or "correction_state")
+        elif not explicit_include and review_required and not track_review_include:
+            include = False
+            exclusion_reason = "review_required"
+        elif not explicit_include and not track_review_include and (
             obj.get("exportIncluded") is False
             or _status_excludes(obj.get("exportStatus"))
             or quality.get("reviewRequired") is True
@@ -252,7 +316,7 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
         else:
             reason = exclusion_reason or edit.get("exportStatus") or obj.get("exportStatus")
             if not reason:
-                reason = "review_required" if quality.get("reviewRequired") is True or discovery.get("reviewRequired") is True else "correction_state"
+                reason = "review_required" if review_required else "correction_state"
             excluded.append(object_id)
             if reason != "static_keyframe_mask_sequence":
                 diagnostics.append(
@@ -288,10 +352,25 @@ def _included_object_ids(scene: dict[str, Any], correction_state: dict[str, Any]
     return included, excluded, diagnostics
 
 
-def _sanitized_scene(scene: dict[str, Any], correction_state: dict[str, Any]) -> tuple[dict[str, Any], list[str], list[str], list[dict[str, Any]]]:
+def _sanitized_scene(
+    scene: dict[str, Any],
+    correction_state: dict[str, Any],
+    *,
+    export_ready_track_ids: set[str] | None = None,
+) -> tuple[dict[str, Any], list[str], list[str], list[dict[str, Any]]]:
     edited = copy.deepcopy(scene)
     track_edits = correction_state.get("trackEdits") if isinstance(correction_state.get("trackEdits"), dict) else {}
-    included_ids, excluded_ids, diagnostics = _included_object_ids(edited, correction_state)
+    export_ready_track_ids = export_ready_track_ids or set()
+    track_reviewed_gate_ids = {
+        _object_id(obj)
+        for obj in edited.get("objects", [])
+        if isinstance(obj, dict) and _object_id(obj) in export_ready_track_ids and _object_requires_review(obj)
+    }
+    included_ids, excluded_ids, diagnostics = _included_object_ids(
+        edited,
+        correction_state,
+        export_ready_track_ids=export_ready_track_ids,
+    )
     included_set = set(included_ids)
 
     objects: list[dict[str, Any]] = []
@@ -305,7 +384,7 @@ def _sanitized_scene(scene: dict[str, Any], correction_state: dict[str, Any]) ->
         clean = {key: copy.deepcopy(value) for key, value in obj.items() if key not in SCENE_CORRECTION_ONLY_KEYS}
         if edit.get("label"):
             clean["label"] = str(edit["label"])
-        if _explicit_review_include(edit):
+        if _explicit_review_include(edit) or object_id in track_reviewed_gate_ids:
             _mark_reviewed_for_export(clean)
         objects.append(clean)
     edited["objects"] = objects
@@ -319,7 +398,7 @@ def _sanitized_scene(scene: dict[str, Any], correction_state: dict[str, Any]) ->
             continue
         edit = _edit_for_object(track_edits, object_id)
         clean = {key: copy.deepcopy(value) for key, value in layer.items() if key not in SCENE_CORRECTION_ONLY_KEYS}
-        if _explicit_review_include(edit):
+        if _explicit_review_include(edit) or object_id in track_reviewed_gate_ids:
             clean["exportIncluded"] = True
             clean["exportStatus"] = "accepted"
         layers.append(clean)
@@ -518,6 +597,17 @@ def _object_quality_route(obj: dict[str, Any], *, include_contours: bool) -> dic
             "source": "cached_contours_and_boxes",
         },
     }
+
+
+def _load_track_summary_from_assets(source_dir: Path, assets: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for asset in reversed(assets):
+        if asset.get("kind") != "track_summary":
+            continue
+        rel_path = _safe_rel_path(_artifact_rel_path(asset))
+        path = source_dir / rel_path
+        if path.exists():
+            return _load_json(path)
+    return None
 
 
 def _build_quality_routing(
@@ -850,14 +940,20 @@ def _build_export_tree(
     job = get_job(conn, user_id=user_id, job_id=job_id)
     source_dir = export_dir.parent / "source"
     source_dir.mkdir(parents=True, exist_ok=True)
-    materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=job_id, out_dir=source_dir)
+    materialized_assets = materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=job_id, out_dir=source_dir)
     scene_path = source_dir / "scene_graph.json"
     if not scene_path.exists():
         raise ValueError("selected job has no scene_graph.json artifact to export")
     scene = _load_json(scene_path)
+    track_summary = _load_track_summary_from_assets(source_dir, materialized_assets)
+    export_ready_track_ids = _export_ready_track_ids(track_summary)
     corrections = list_track_corrections(conn, user_id=user_id, job_id=job_id)
     correction_state = build_track_correction_state(corrections, job_id=job_id)
-    exported_scene, included_ids, excluded_ids, diagnostics = _sanitized_scene(scene, correction_state)
+    exported_scene, included_ids, excluded_ids, diagnostics = _sanitized_scene(
+        scene,
+        correction_state,
+        export_ready_track_ids=export_ready_track_ids,
+    )
     if not exported_scene.get("objects"):
         raise ValueError("No exportable object tracks are included; enable at least one accepted track before export")
 

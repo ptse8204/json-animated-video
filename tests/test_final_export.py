@@ -209,6 +209,70 @@ def test_explicit_review_inclusion_overrides_pending_review_gate():
     assert exported["layers"][0]["exportStatus"] == "accepted"
 
 
+def test_export_ready_track_summary_overrides_stale_scene_review_gate():
+    scene = {
+        "objects": [
+            {
+                "id": "trace_object",
+                "exportStatus": "review_pending",
+                "quality": {"reviewRequired": True},
+                "discovery": {"reviewRequired": True, "exportStatus": "review_pending"},
+                "motion": [
+                    {"frame": 1, "visible": True, "x": 6, "y": 10, "w": 8, "h": 8},
+                    {"frame": 2, "visible": True, "x": 14, "y": 10, "w": 8, "h": 8},
+                ],
+            }
+        ],
+        "layers": [{"object_id": "trace_object", "exportStatus": "review_pending"}],
+    }
+    track_summary = {"tracks": [{"objectId": "trace_object", "exportStatus": "accepted", "exportIncluded": True}]}
+    ready_ids = export_workflows._export_ready_track_ids(track_summary)
+
+    included, excluded, diagnostics = export_workflows._included_object_ids(
+        scene,
+        {},
+        export_ready_track_ids=ready_ids,
+    )
+    exported, exported_included, _exported_excluded, _exported_diagnostics = export_workflows._sanitized_scene(
+        scene,
+        {},
+        export_ready_track_ids=ready_ids,
+    )
+
+    assert included == ["trace_object"]
+    assert excluded == []
+    assert diagnostics == []
+    assert exported_included == ["trace_object"]
+    assert exported["objects"][0]["exportStatus"] == "accepted"
+    assert exported["objects"][0]["quality"]["reviewRequired"] is False
+    assert exported["objects"][0]["discovery"]["reviewRequired"] is False
+    assert exported["layers"][0]["exportStatus"] == "accepted"
+
+
+def test_export_ready_track_summary_does_not_override_hard_rejection():
+    scene = {
+        "objects": [
+            {
+                "id": "trace_object",
+                "exportStatus": "rejected",
+                "quality": {"reviewRequired": False},
+                "discovery": {"reviewRequired": False, "exportStatus": "rejected"},
+            }
+        ]
+    }
+    track_summary = {"tracks": [{"objectId": "trace_object", "exportStatus": "accepted", "exportIncluded": True}]}
+
+    included, excluded, diagnostics = export_workflows._included_object_ids(
+        scene,
+        {},
+        export_ready_track_ids=export_workflows._export_ready_track_ids(track_summary),
+    )
+
+    assert included == []
+    assert excluded == ["trace_object"]
+    assert diagnostics[0]["reason"] == "rejected"
+
+
 def test_phase11e_mp4_preview_dry_run_and_error_cleanup(tmp_path, monkeypatch):
     scene = {"source": {"width": 4, "height": 4, "sampleFps": 12, "sampledFrameCount": 1}, "objects": []}
     export_dir = tmp_path / "export"
