@@ -25,6 +25,26 @@ EXCLUDE_PATTERNS = (
     "objects/*/layers/*",
     "**/.DS_Store",
 )
+PREVIEW_TOOLS = (
+    {
+        "id": "canvas-player",
+        "label": "Canvas player",
+        "path": "preview/canvas_player.html",
+        "description": "Playback and inspect object layer assets.",
+    },
+    {
+        "id": "object-selection-workflow",
+        "label": "Object selection workflow",
+        "path": "preview/object_selection_workflow.html",
+        "description": "Review prompts, selected candidates, and correction state.",
+    },
+    {
+        "id": "timeline-editor",
+        "label": "Timeline editor",
+        "path": "preview/timeline_editor.html",
+        "description": "Inspect layer timing and JSON transform edits.",
+    },
+)
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -88,25 +108,25 @@ def _filter_scene(scene: dict[str, Any], object_ids: Sequence[str] | None) -> di
     return filtered
 
 
-def _write_index(path: Path) -> None:
+def _write_index(path: Path, *, scene_path: str = "./scene_graph.json", runtime_path: str = "./runtime/index.js") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        """<!doctype html>
+        f"""<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>MotionJSON Website Package</title>
     <style>
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #fbfaf6; font-family: system-ui, sans-serif; }
-      #motion { width: min(640px, 92vw); aspect-ratio: 3 / 2; }
+      body {{ margin: 0; min-height: 100vh; display: grid; place-items: center; background: #fbfaf6; font-family: system-ui, sans-serif; }}
+      #motion {{ width: min(640px, 92vw); aspect-ratio: 3 / 2; }}
     </style>
   </head>
   <body>
     <div id="motion"></div>
     <script type="module">
-      import { mountMotionJSON } from "./runtime/index.js";
-      await mountMotionJSON("#motion", "./scene_graph.json", { background: "#fbfaf6" });
+      import {{ mountMotionJSON }} from "{runtime_path}";
+      await mountMotionJSON("#motion", "{scene_path}", {{ background: "#fbfaf6" }});
     </script>
   </body>
 </html>
@@ -251,6 +271,7 @@ def _write_package_manifest(
         "aiUsage": "none",
         "entrypoint": "index.html",
         "sourceSceneGraph": "scene_graph.json",
+        "previewTools": [dict(tool) for tool in PREVIEW_TOOLS if tool["path"] in files],
         "templates": sorted(path for path in files if path.startswith("templates/")),
         "snippets": sorted(path for path in files if path.startswith("snippets/")),
         "rightsManifest": "rights_manifest.json",
@@ -321,7 +342,7 @@ def export_website_package(
         _copy_tree(examples_dir / "website_snippets", package_root, "snippets", files)
         _write_index(package_root / "index.html")
         files["index.html"] = (package_root / "index.html").stat().st_size
-        _write_index(package_root / "preview" / "index.html")
+        _write_index(package_root / "preview" / "index.html", scene_path="../scene_graph.json", runtime_path="./runtime/index.js")
         files["preview/index.html"] = (package_root / "preview" / "index.html").stat().st_size
         _write_package_manifest(
             package_root,

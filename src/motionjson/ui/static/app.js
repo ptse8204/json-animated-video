@@ -33,6 +33,7 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}",
     "/api/jobs/{jobId}/events",
     "/api/jobs/{jobId}/artifacts",
+    "/api/jobs/{jobId}/preview-files/{relPath}",
     "/api/jobs/{jobId}/review",
     "/api/jobs/{jobId}/corrections",
     "/api/jobs/{jobId}/track-edits",
@@ -65,8 +66,28 @@ const MotionJSONUI = (() => {
     workflowStep: "motionjson.localUi.workflowStep",
     workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
-  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$/;
+  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$|^\/api\/jobs\/[A-Za-z0-9._~-]+\/preview-files\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
+  const REVIEW_TOOL_DEFS = [
+    {
+      id: "canvas-player",
+      title: "Canvas player",
+      relPath: "preview/canvas_player.html",
+      description: "Playback, frame stepping, and asset inspection for exported object layers.",
+    },
+    {
+      id: "object-selection-workflow",
+      title: "Object selection workflow",
+      relPath: "preview/object_selection_workflow.html",
+      description: "Prompt, candidate, and correction review against the extracted scene graph.",
+    },
+    {
+      id: "timeline-editor",
+      title: "Timeline editor",
+      relPath: "preview/timeline_editor.html",
+      description: "Layer timing, keyframes, and JSON transform checks before handoff.",
+    },
+  ];
   const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
   const BUNDLED_DEMO_VIDEO_PATH = "examples/demo_red_ball.mp4";
   const MODEL_CONNECTIONS = [
@@ -455,6 +476,7 @@ const MotionJSONUI = (() => {
     exportResult: null,
     exportCopyPayloads: {},
     exportCopiedHandoffId: "",
+    selectedReviewToolId: "canvas-player",
     libraryAssets: [],
     libraryCollections: [],
     libraryPacks: [],
@@ -573,6 +595,23 @@ const MotionJSONUI = (() => {
   function safeLocalContentUrl(value) {
     const url = String(value || "").trim();
     return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? url : "";
+  }
+
+  function artifactRelPath(artifact = {}) {
+    const metadata = artifact.metadata || artifact.metadata_json || {};
+    return String(metadata.rel_path || artifact.relPath || artifact.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  }
+
+  function previewFileUrl(jobId, relPath) {
+    const id = String(jobId || "").trim();
+    const path = String(relPath || "")
+      .replace(/\\/g, "/")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+    if (!id || !path) return "";
+    return safeLocalContentUrl(`/api/jobs/${encodeURIComponent(id)}/preview-files/${path}`);
   }
 
   function slugObjectId(value, fallback = "object_0") {
@@ -2180,12 +2219,25 @@ const MotionJSONUI = (() => {
   }
 
   function isActiveJob(job) {
-    const status = String(job.status || "").toLowerCase();
-    return /queued|pending|running|working|started/.test(status);
+    const lifecycle = normalizeJobLifecycle(job || {});
+    return Boolean(lifecycle.active && !lifecycle.terminal);
   }
 
   function jobIdentifier(job) {
     return String(job?.id || job?.jobId || "");
+  }
+
+  function mergeJobListSnapshot(jobs = [], freshJob = null) {
+    const freshId = jobIdentifier(freshJob);
+    if (!freshId) return asArray(jobs).slice();
+    let found = false;
+    const merged = asArray(jobs).map((job) => {
+      if (jobIdentifier(job) !== freshId) return job;
+      found = true;
+      return { ...job, ...freshJob };
+    });
+    if (!found) merged.unshift(freshJob);
+    return merged;
   }
 
   function eventMetadata(event) {
@@ -2417,7 +2469,10 @@ const MotionJSONUI = (() => {
         : null);
     const provider = lifecycle.provider || job.provider || {};
     const terminal = TERMINAL_JOB_STATUSES.has(status) || TERMINAL_JOB_STATUSES.has(rawStatus);
-    const active = /queued|pending|running|working|started|cancel_requested/.test(status) || /queued|pending|running|working|started|cancel_requested/.test(rawStatus);
+    const active =
+      !terminal &&
+      (/queued|pending|running|working|started|cancel_requested/.test(status) ||
+        /queued|pending|running|working|started|cancel_requested/.test(rawStatus));
     const actions = lifecycle.actions || job.actions || {};
     const review = lifecycle.review || job.review || {};
     const stale = jobStaleNotice(
@@ -8393,6 +8448,76 @@ const MotionJSONUI = (() => {
       renderExportPanel();
     }
 
+    function reviewToolsForSelectedJob() {
+      const availablePaths = new Set(state.jobArtifacts.map(artifactRelPath).filter(Boolean));
+      const jobId = state.selectedJobId || jobIdentifier(selectedJob());
+      return REVIEW_TOOL_DEFS.map((tool) => {
+        const available = Boolean(jobId && availablePaths.has(tool.relPath));
+        return {
+          ...tool,
+          available,
+          url: available ? previewFileUrl(jobId, tool.relPath) : "",
+        };
+      });
+    }
+
+    function reviewToolCardsMarkup(tools, { compact = false } = {}) {
+      if (!selectedJob()) return `<div class="empty-state">Select a completed run to inspect package preview tools.</div>`;
+      return tools
+        .map((tool) => {
+          const selected = state.selectedReviewToolId === tool.id;
+          const status = tool.available ? "Ready" : "Missing";
+          const tone = tool.available ? "ready" : "warn";
+          return `
+            <div class="review-tool-card is-${escapeAttribute(tone)} ${selected ? "is-selected" : ""}">
+              <button type="button" data-review-tool-id="${escapeAttribute(tool.id)}" ${tool.available ? "" : "disabled"}>
+                <strong>${escapeHtml(tool.title)}</strong>
+                ${compact ? "" : `<span class="row-meta">${escapeHtml(tool.description)}</span>`}
+                <span class="status-chip is-${escapeAttribute(tone)}">${escapeHtml(status)}</span>
+              </button>
+              ${
+                tool.url
+                  ? `<a href="${escapeAttribute(tool.url)}" target="_blank" rel="noopener noreferrer">Open full view</a>`
+                  : `<span class="row-meta">Package tool file not found.</span>`
+              }
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function renderReviewTools() {
+      const tools = reviewToolsForSelectedJob();
+      const firstAvailable = tools.find((tool) => tool.available);
+      if (!tools.some((tool) => tool.id === state.selectedReviewToolId && tool.available)) {
+        state.selectedReviewToolId = firstAvailable?.id || REVIEW_TOOL_DEFS[0].id;
+      }
+      const selectedTool = tools.find((tool) => tool.id === state.selectedReviewToolId && tool.available) || firstAvailable || null;
+      const cardMarkup = reviewToolCardsMarkup(tools);
+      const compactMarkup = reviewToolCardsMarkup(tools, { compact: true });
+      const cardSlot = $("#reviewToolCards");
+      const exportSlot = $("#exportReviewTools");
+      if (cardSlot) cardSlot.innerHTML = cardMarkup;
+      if (exportSlot) exportSlot.innerHTML = compactMarkup;
+
+      const shell = $("#reviewToolFrameShell");
+      const frame = $("#reviewToolFrame");
+      const title = $("#reviewToolTitle");
+      const openLink = $("#reviewToolOpenLink");
+      if (!shell || !frame) return;
+      shell.hidden = !selectedTool?.url;
+      if (title) title.textContent = selectedTool?.title || "Review tools";
+      if (openLink) {
+        openLink.hidden = !selectedTool?.url;
+        openLink.href = selectedTool?.url || "#";
+      }
+      if (selectedTool?.url && frame.getAttribute("src") !== selectedTool.url) {
+        frame.src = selectedTool.url;
+        frame.title = selectedTool.title;
+      }
+      if (!selectedTool?.url) frame.removeAttribute("src");
+    }
+
     function renderExportPanel() {
       const job = selectedJob();
       const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
@@ -8576,6 +8701,7 @@ const MotionJSONUI = (() => {
       renderTrackList();
       renderSelectedTrackDetail();
       renderExportPanel();
+      renderReviewTools();
       renderCorrectionHistory();
       renderFallbackDiagnostics();
       renderTimelinePanel();
@@ -9302,8 +9428,19 @@ const MotionJSONUI = (() => {
       if (!id) return;
       state.selectedJobId = id;
       state.selectedJob = job;
+      state.jobs = mergeJobListSnapshot(state.jobs, job);
       state.lastRunConfig = config;
       state.runConfigsByJob[id] = config;
+    }
+
+    function rememberFreshJobSnapshot(job) {
+      const id = jobIdentifier(job);
+      if (!id) return;
+      state.jobs = mergeJobListSnapshot(state.jobs, job);
+      if (!state.selectedJobId || state.selectedJobId === id) {
+        state.selectedJobId = id;
+        state.selectedJob = job;
+      }
     }
 
     async function loadJobReview(jobId) {
@@ -9329,6 +9466,7 @@ const MotionJSONUI = (() => {
       ]);
 
       state.selectedJob = jobBody.job || null;
+      rememberFreshJobSnapshot(state.selectedJob);
       state.jobEvents = asArray(eventsBody.events).length ? asArray(eventsBody.events) : asArray(jobBody.job?.events);
       state.jobArtifacts = asArray(artifactsBody.artifacts);
       state.jobReview = artifactsBody.review || null;
@@ -9829,6 +9967,7 @@ const MotionJSONUI = (() => {
       );
 
       state.selectedJob = jobResult[1]?.job || state.jobs.find((job) => jobIdentifier(job) === id) || null;
+      rememberFreshJobSnapshot(state.selectedJob);
       const eventsFromRoute = asArray(eventsResult[1]?.events);
       state.jobEvents = eventsFromRoute.length ? eventsFromRoute : asArray(state.selectedJob?.events);
       const artifacts = artifactsResult[1]?.artifacts || artifactsAliasResult[1]?.artifacts || [];
@@ -9852,12 +9991,15 @@ const MotionJSONUI = (() => {
       for (const track of state.reviewTracks) {
         if (!(track.id in state.trackVisibility)) state.trackVisibility[track.id] = true;
       }
+      renderJobs();
       renderJobReview();
       maybeAdvanceWorkflowAfterResultLoad();
     }
 
     function shouldPollJobs() {
-      return Boolean(state.selectedProjectId && (state.jobs.some(isActiveJob) || (selectedJob() && !TERMINAL_JOB_STATUSES.has(String(selectedJob().status || "").toLowerCase()))));
+      const job = selectedJob();
+      const lifecycle = job ? normalizeJobLifecycle(job) : null;
+      return Boolean(state.selectedProjectId && (state.jobs.some(isActiveJob) || (lifecycle && !lifecycle.terminal)));
     }
 
     function stopPolling() {
@@ -11897,6 +12039,18 @@ const MotionJSONUI = (() => {
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
     $("#exportHandoffCards").addEventListener("click", handleExportHandoffAction);
     $("#exportNextSteps").addEventListener("click", handleExportHandoffAction);
+    $("#reviewToolCards")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-review-tool-id]");
+      if (!button || button.disabled) return;
+      state.selectedReviewToolId = button.dataset.reviewToolId;
+      renderReviewTools();
+    });
+    $("#exportReviewTools")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-review-tool-id]");
+      if (!button || button.disabled) return;
+      state.selectedReviewToolId = button.dataset.reviewToolId;
+      renderReviewTools();
+    });
     ["exportIncludeMasks", "exportIncludeContours", "exportIncludePreview"].forEach((id) => {
       $(`#${id}`).addEventListener("change", clearExportPreflightState);
     });
@@ -12744,6 +12898,7 @@ const MotionJSONUI = (() => {
     API_ROUTES,
     CORRECTION_STATE_FORMAT,
     PRESETS,
+    REVIEW_TOOL_DEFS,
     RUN_CONFIG_SCHEMA,
     WORKFLOW_STEPS,
     applyCorrectionStateToTracks,
@@ -12790,6 +12945,7 @@ const MotionJSONUI = (() => {
     modelSetupPrimaryActionForState,
     capabilityWarningNamesForConfig,
     jobCenterStateFromSnapshot,
+    mergeJobListSnapshot,
     normalizedModelConnection,
     normalizeJobLifecycle,
     normalizeCorrectionState,

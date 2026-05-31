@@ -376,6 +376,22 @@
                 <button id="studioExportMotionJsonButton" class="primary-action" type="button">Export MotionJSON</button>
               </div>
             </div>
+            <section class="review-tools-panel" aria-label="Review tools">
+              <div class="review-tools-heading">
+                <div>
+                  <strong>Review tools</strong>
+                  <p class="row-meta">Open package previews for playback, prompt correction, and timeline checks.</p>
+                </div>
+                <a id="reviewToolOpenLink" class="mini-action" href="#" target="_blank" rel="noopener noreferrer" hidden>Open full view</a>
+              </div>
+              <div id="reviewToolCards" class="review-tool-grid"></div>
+              <div id="reviewToolFrameShell" class="review-tool-frame-shell" hidden>
+                <div class="review-tool-frame-heading">
+                  <strong id="reviewToolTitle">Canvas player</strong>
+                </div>
+                <iframe id="reviewToolFrame" title="Review tool preview" loading="lazy" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>
+              </div>
+            </section>
             <div id="studioObjectList" class="studio-object-list" aria-live="polite"></div>
             <div class="studio-segment-gate">
               <div>
@@ -875,6 +891,7 @@
             <div id="exportDecision" class="export-decision-slot" aria-live="polite"></div>
             <div id="exportStatusSummary" class="status-summary-grid" aria-live="polite"></div>
             <div id="exportHandoffCards" class="export-handoff-grid"></div>
+            <div id="exportReviewTools" class="review-tool-grid is-compact"></div>
             <div id="exportNextSteps" class="export-next-steps"></div>
             <div class="export-primary-actions" aria-label="MotionJSON export actions">
               <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate export</button>

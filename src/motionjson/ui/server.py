@@ -10,9 +10,9 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from motionjson import __version__
 from motionjson.backend.assets import get_asset, list_assets_for_job, list_project_assets, register_upload
@@ -131,6 +131,31 @@ REVIEW_JSON_ARTIFACT_KINDS = {
     "scene_graph",
     "track_summary",
 }
+PREVIEW_FILE_JSON_PATHS = {
+    "scene_graph.json",
+    "web_asset_manifest.json",
+    "object_motion.json",
+    "object_layer_pack.json",
+    "resource_profile.json",
+    "rights_manifest.json",
+    "package_manifest.json",
+}
+PREVIEW_FILE_EXACT_PATHS = {
+    "index.html",
+    "preview/index.html",
+    "preview/canvas_player.html",
+    "preview/object_selection_workflow.html",
+    "preview/object_selection_workflow.js",
+    "preview/timeline_editor.html",
+    "preview/timeline_editor.js",
+    "preview/pixi_player.html",
+    "preview/plain_js_embed.html",
+    "preview/website_graphics_hero.html",
+}
+PREVIEW_FILE_JS_PREFIXES = ("runtime/", "preview/runtime/")
+PREVIEW_FILE_TEMPLATE_PREFIXES = ("templates/", "snippets/", "preview/website_templates/", "preview/website_snippets/")
+PREVIEW_FILE_OBJECT_JSON_NAMES = {"object_manifest.json", "object_motion.json", "web_asset_manifest.json"}
+PREVIEW_FILE_OBJECT_ASSET_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".avif"}
 
 
 def _json_loads(data: bytes) -> dict[str, Any]:
@@ -461,6 +486,49 @@ def _artifact_ids_by_rel_path(assets: list[dict[str, Any]]) -> dict[str, str]:
     return {key: value for key, value in result.items() if value}
 
 
+def _asset_rel_path(asset: dict[str, Any]) -> str:
+    try:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
+    if not isinstance(metadata, dict):
+        return ""
+    rel_path = metadata.get("rel_path")
+    return rel_path.replace("\\", "/").lstrip("/") if isinstance(rel_path, str) else ""
+
+
+def _normalize_preview_rel_path(value: str) -> str:
+    rel_path = unquote(value).replace("\\", "/")
+    if rel_path.startswith("/"):
+        raise NotFoundError("preview file not found")
+    while rel_path.startswith("./"):
+        rel_path = rel_path[2:]
+    parsed = PurePosixPath(rel_path)
+    if not rel_path or parsed.is_absolute() or any(part in {"", ".", ".."} for part in parsed.parts):
+        raise NotFoundError("preview file not found")
+    return parsed.as_posix()
+
+
+def _is_allowed_preview_rel_path(rel_path: str) -> bool:
+    path = PurePosixPath(rel_path)
+    name = path.name
+    suffix = path.suffix.lower()
+    if rel_path in PREVIEW_FILE_JSON_PATHS or rel_path in PREVIEW_FILE_EXACT_PATHS:
+        return True
+    if any(rel_path.startswith(prefix) for prefix in PREVIEW_FILE_JS_PREFIXES) and suffix == ".js":
+        return True
+    if any(rel_path.startswith(prefix) for prefix in PREVIEW_FILE_TEMPLATE_PREFIXES) and suffix in {".html", ".jsx"}:
+        return True
+    if len(path.parts) >= 3 and path.parts[0] == "objects":
+        if name in PREVIEW_FILE_OBJECT_JSON_NAMES:
+            return True
+        if name == "spritesheet.webp":
+            return True
+        if "cutouts" in path.parts and suffix in PREVIEW_FILE_OBJECT_ASSET_EXTS:
+            return True
+    return False
+
+
 class LocalUIApp:
     """Small local-only UI app over the existing SQLite backend."""
 
@@ -538,6 +606,10 @@ class LocalUIApp:
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 4:
                     return self._artifact_content(parts[2], head=method == "HEAD")
+            if method in {"GET", "HEAD"} and path.startswith("/api/jobs/") and "/preview-files/" in path:
+                parts = [part for part in path.split("/") if part]
+                if len(parts) >= 5 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "preview-files":
+                    return self._preview_file_content(parts[2], "/".join(parts[4:]), head=method == "HEAD")
             payload = _json_loads(body) if method in {"POST", "PATCH", "PUT", "DELETE"} else {}
             return _json_response(self._route(method, path, query, payload))
         except json.JSONDecodeError as exc:
@@ -592,6 +664,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}",
                     "/api/jobs/{jobId}/events",
                     "/api/jobs/{jobId}/artifacts",
+                    "/api/jobs/{jobId}/preview-files/{relPath}",
                     "/api/jobs/{jobId}/review",
                     "/api/jobs/{jobId}/corrections",
                     "/api/jobs/{jobId}/track-edits",
@@ -2230,6 +2303,49 @@ class LocalUIApp:
                 "content-length": str(len(data)),
             }
             return HTTPStatus.OK, response_headers, b"" if head else data
+        finally:
+            conn.close()
+
+    def _preview_file_content(self, job_id: str, rel_path: str, *, head: bool = False) -> tuple[int, dict[str, str], bytes]:
+        safe_rel_path = _normalize_preview_rel_path(rel_path)
+        if not _is_allowed_preview_rel_path(safe_rel_path):
+            raise NotFoundError("preview file not found")
+        conn = self.connection()
+        try:
+            user = self._local_user(conn)
+            job = get_job(conn, user_id=user["id"], job_id=job_id)
+            assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job_id)
+            asset = next((item for item in assets if _asset_rel_path(item) == safe_rel_path), None)
+            if asset is None:
+                raise NotFoundError("preview file not found")
+            try:
+                data = self.storage().load_bytes(asset["storage_key"])
+            except FileNotFoundError as exc:
+                raise NotFoundError("preview file not found") from exc
+
+            content_type = asset.get("content_type") or mimetypes.guess_type(safe_rel_path)[0] or "application/octet-stream"
+            if safe_rel_path.endswith(".js") and content_type == "application/octet-stream":
+                content_type = "text/javascript"
+            if safe_rel_path.endswith(".json"):
+                try:
+                    document = json.loads(data.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise NotFoundError("preview file not found") from exc
+                data = (json.dumps(_public_review_value(document), indent=2, sort_keys=True) + "\n").encode("utf-8")
+                content_type = "application/json; charset=utf-8"
+            elif content_type.startswith(("text/", "application/javascript")) or content_type in {"text/javascript", "application/x-javascript"}:
+                if "charset=" not in content_type:
+                    content_type = f"{content_type}; charset=utf-8"
+
+            return (
+                HTTPStatus.OK,
+                {
+                    "content-type": content_type,
+                    "cache-control": "no-store",
+                    "content-length": str(len(data)),
+                },
+                b"" if head else data,
+            )
         finally:
             conn.close()
 

@@ -1842,6 +1842,37 @@ assert.equal(jobCenter.activeJobsCount, 2);
 assert.equal(jobCenter.selectedJobId, "job_new_running");
 assert.deepEqual(jobCenter.activeJobs.map((job) => job.id), ["job_new_running", "job_queued"]);
 
+const reconciledJobs = ui.mergeJobListSnapshot(
+  [
+    {
+      id: "job_reconciled",
+      type: "extract",
+      status: "running",
+      updatedAt: "2026-05-20T10:10:00Z",
+      lifecycle: { status: "running", rawStatus: "running", progress: { known: true, percent: 100, label: "100% complete" } },
+    },
+  ],
+  {
+    id: "job_reconciled",
+    type: "extract",
+    status: "succeeded",
+    updatedAt: "2026-05-20T10:11:00Z",
+    lifecycle: { status: "succeeded", rawStatus: "succeeded", phase: "complete", progress: { known: true, percent: 100, label: "job completed" } },
+  },
+);
+const reconciledJobCenter = ui.jobCenterStateFromSnapshot({ selectedJobId: "job_reconciled", jobs: reconciledJobs });
+assert.equal(reconciledJobCenter.activeJobsCount, 0);
+assert.equal(reconciledJobCenter.selectedJob.status, "succeeded");
+assert.equal(reconciledJobCenter.selectedJob.phase, "complete");
+
+const terminalLifecycleWithStaleRawStatus = ui.normalizeJobLifecycle({
+  id: "job_terminal_raw_running",
+  status: "succeeded",
+  lifecycle: { status: "succeeded", rawStatus: "running", phase: "complete" },
+});
+assert.equal(terminalLifecycleWithStaleRawStatus.terminal, true);
+assert.equal(terminalLifecycleWithStaleRawStatus.active, false);
+
 const manualJobCenter = ui.jobCenterStateFromSnapshot({
   selectedJobId: "job_old",
   jobs: [

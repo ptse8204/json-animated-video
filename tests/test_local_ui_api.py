@@ -111,6 +111,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/review" in health["routes"]
     assert "/api/jobs/{jobId}/exports" in health["routes"]
     assert "/api/jobs/{jobId}/cancel" in health["routes"]
+    assert "/api/jobs/{jobId}/preview-files/{relPath}" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
     assert "/api/videos/{videoId}/prepare-browser-preview" in health["routes"]
     assert "/api/assets/{assetId}/content" in health["routes"]
@@ -804,6 +805,83 @@ def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_
         assert status == 200
         assert headers["content-type"].startswith("image/")
         assert poster_body
+
+
+def test_local_ui_preview_file_route_serves_review_tools_and_blocks_unsafe_paths(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    _project, _video, job = create_completed_mock_job(app, "Preview Tool Route Project")
+
+    status, headers, body = app.handle("GET", f"/api/jobs/{job['id']}/preview-files/preview/canvas_player.html")
+    assert status == 200
+    assert headers["content-type"].startswith("text/html")
+    assert b"canvas" in body.lower()
+
+    status, headers, body = app.handle("GET", f"/api/jobs/{job['id']}/preview-files/scene_graph.json")
+    scene = decode(body)
+    assert status == 200
+    assert headers["content-type"].startswith("application/json")
+    assert scene["schema"] == "motionjson.scene_graph.v0.1"
+    assert "projects/" not in body.decode("utf-8")
+    assert str(tmp_path) not in body.decode("utf-8")
+
+    object_id = scene["objects"][0]["id"]
+    status, headers, body = app.handle("HEAD", f"/api/jobs/{job['id']}/preview-files/objects/{object_id}/spritesheet.webp")
+    assert status == 200
+    assert headers["content-type"] == "image/webp"
+    assert body == b""
+
+    blocked_paths = [
+        "../scene_graph.json",
+        "%2FUsers%2Fedwin%2Fsecret.json",
+        "provider_diagnostics.json",
+        "run_config.json",
+        "logs/job.log",
+        "masks/object_0/mask_000000.png",
+    ]
+    for rel_path in blocked_paths:
+        status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/preview-files/{rel_path}")
+        assert status == 404, rel_path
+        assert "[LOCAL_PATH_REDACTED]" in body.decode("utf-8") or "not found" in body.decode("utf-8")
+
+
+def test_local_ui_preview_file_route_serves_imported_result_directories(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    project, _video, job = create_completed_mock_job(app, "Imported Preview Tool Project")
+    import_dir = tmp_path / "importable_result"
+    conn = app.connection()
+    try:
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+    finally:
+        conn.close()
+    storage = app.storage()
+    for asset in assets:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+        rel_path = metadata.get("rel_path")
+        if not isinstance(rel_path, str) or not rel_path:
+            continue
+        target = import_dir / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(storage.load_bytes(asset["storage_key"]))
+
+    status, _headers, body = app.handle(
+        "POST",
+        f"/api/projects/{project['id']}/imports/motionjson",
+        body=json.dumps({"path": str(import_dir)}).encode("utf-8"),
+    )
+    imported = decode(body)["import"]
+    assert status == 200
+    assert imported["validation"]["ok"] is True
+
+    imported_job_id = imported["job"]["id"]
+    status, headers, body = app.handle("GET", f"/api/jobs/{imported_job_id}/preview-files/preview/timeline_editor.html")
+    assert status == 200
+    assert headers["content-type"].startswith("text/html")
+    assert b"timeline" in body.lower()
+
+    status, headers, body = app.handle("GET", f"/api/jobs/{imported_job_id}/preview-files/web_asset_manifest.json")
+    assert status == 200
+    assert headers["content-type"].startswith("application/json")
+    assert "projects/" not in body.decode("utf-8")
 
 
 def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_path, monkeypatch):
