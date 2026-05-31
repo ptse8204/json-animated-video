@@ -41,6 +41,32 @@ def decode(body: bytes) -> dict:
     return json.loads(body.decode("utf-8"))
 
 
+def multipart_body(fields: dict[str, str], files: dict[str, tuple[str, str, bytes]]) -> tuple[dict[str, str], bytes]:
+    boundary = "----motionjson-test-boundary"
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"),
+                str(value).encode("utf-8"),
+                b"\r\n",
+            ]
+        )
+    for name, (filename, content_type, data) in files.items():
+        chunks.extend(
+            [
+                f"--{boundary}\r\n".encode("utf-8"),
+                f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode("utf-8"),
+                f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+                data,
+                b"\r\n",
+            ]
+        )
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return {"content-type": f"multipart/form-data; boundary={boundary}"}, b"".join(chunks)
+
+
 def wait_for_job(app: LocalUIApp, job_id: str, *, timeout: float = 10.0) -> dict:
     deadline = time.time() + timeout
     last_job = {}
@@ -100,6 +126,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/capabilities" in health["routes"]
     assert "/api/progress" in health["routes"]
     assert "/api/artifacts" in health["routes"]
+    assert "/api/videos/upload" in health["routes"]
     assert "/api/videos/{videoId}/content" in health["routes"]
     assert "/api/run-config/validate" in health["routes"]
     assert "/api/provider-settings/{providerId}/diagnose" in health["routes"]
@@ -177,6 +204,40 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert {entry["id"] for entry in exports["exports"]} >= {"motionjson", "mp4", "website-zip", "remotion-plan"}
     assert {entry["id"] for entry in exports["presets"]} >= {"compact", "debug", "vector-heavy", "raster-fallback"}
+
+
+def test_local_ui_direct_video_upload_creates_project_and_video(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    headers, body = multipart_body(
+        {"projectName": "Uploaded Clip Project"},
+        {"video": ("uploaded demo.mp4", "video/mp4", demo_video().read_bytes())},
+    )
+
+    status, _headers, response_body = app.handle("POST", "/api/videos/upload", headers=headers, body=body)
+    payload = decode(response_body)
+
+    assert status == 200
+    assert payload["project"]["name"] == "Uploaded Clip Project"
+    assert payload["video"]["project_id"] == payload["project"]["id"]
+    assert payload["video"]["metadata"]["filename"] == "uploaded_demo.mp4"
+    assert payload["video"]["contentUrl"].startswith("/api/videos/")
+    assert payload["video"]["metadata"]["rights_context"]["source_uri"] == "upload://uploaded_demo.mp4"
+    assert str(tmp_path) not in json.dumps(payload)
+
+    status, _headers, videos_body = app.handle("GET", f"/api/videos?projectId={payload['project']['id']}")
+    videos = decode(videos_body)["videos"]
+    assert status == 200
+    assert [video["id"] for video in videos] == [payload["video"]["id"]]
+
+
+def test_local_ui_direct_video_upload_requires_real_multipart_file(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    headers, body = multipart_body({"projectName": "Missing File"}, {})
+
+    status, _headers, response_body = app.handle("POST", "/api/videos/upload", headers=headers, body=body)
+
+    assert status == 400
+    assert "video file is required" in decode(response_body)["error"]
 
 
 def test_capability_environment_profile_recommends_sam3_for_cuda_gpu():

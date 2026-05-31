@@ -17,6 +17,7 @@ assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/setup/star
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}/cancel"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
+assert.ok(ui.API_ROUTES.includes("/api/videos/upload"));
 assert.equal(ui.WORKFLOW_STEPS.length, 6);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
@@ -107,8 +108,9 @@ const videoStepContract = ui.workflowStepContractFromSnapshot(
   },
   "source_video",
 );
-assert.equal(videoStepContract.primaryLabel, "Add video");
-assert.equal(videoStepContract.enabled, false);
+assert.equal(videoStepContract.primaryLabel, "Choose video file");
+assert.equal(videoStepContract.primaryAction, "choose_video_file");
+assert.equal(videoStepContract.enabled, true);
 const readyPrepareContract = ui.workflowStepContractFromSnapshot(
   {
     selectedPreset: "trace_all_objects",
@@ -1518,6 +1520,23 @@ assert.deepEqual(ui.exportActionState({ job: { id: "job_1", status: "succeeded" 
   reason: "Static keyframe fallback tracks cannot be exported as MotionJSON motion.",
 });
 assert.equal(ui.exportActionState({ job: { id: "job_1", status: "succeeded" }, includedIds: ["object_0"], trackCount: 1, status: { ok: true } }).disabled, false);
+assert.deepEqual(
+  ui.exportArtifactsFromJobArtifacts([
+    { kind: "preview_overlay" },
+    { kind: "debug_log" },
+    { kind: "export_validation_report", metadata: { validation: { ok: true, issueCount: 0, checked: 1 } } },
+  ]).map((artifact) => artifact.kind),
+  ["preview_overlay", "export_validation_report"],
+);
+assert.deepEqual(
+  ui.exportValidationFromState({
+    artifacts: [
+      { kind: "export_validation_report", metadata: { validation: { ok: false, issueCount: 1, checked: 1 } } },
+      { kind: "export_validation_report", metadata: { validation: { ok: true, issueCount: 0, checked: 4 } } },
+    ],
+  }),
+  { ok: true, issueCount: 0, checked: 4 },
+);
 const movingReviewedTrack = {
   id: "red_ball",
   objectId: "red_ball",

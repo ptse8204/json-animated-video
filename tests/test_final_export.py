@@ -358,7 +358,9 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
         assert "runtime/index.js" in names
         assert "preview/canvas_player.html" in names
         assert "preview/object_selection_workflow.html" in names
+        assert "preview/object_selection_workflow.js" in names
         assert "preview/timeline_editor.html" in names
+        assert "preview/timeline_editor.js" in names
         assert "preview/website_templates/hero.html" in names
         assert "preview/website_templates/ecommerce.html" in names
         assert "preview/website_templates/education.html" in names
@@ -397,6 +399,10 @@ def test_website_package_zip_is_relative_self_contained_and_excludes_debug_asset
         preview_index = archive.read("preview/index.html").decode("utf-8")
         assert '../scene_graph.json' in preview_index
         assert '"./scene_graph.json"' not in preview_index
+        object_selection_js = archive.read("preview/object_selection_workflow.js").decode("utf-8")
+        assert "function exportMotionJson()" in object_selection_js
+        assert "postJson(exportUrl" in object_selection_js
+        assert "motionjson:export-complete" in object_selection_js
         object_layer_pack = json.loads(archive.read("object_layer_pack.json").decode("utf-8"))
         assert object_layer_pack["format"] == "motionjson.object_layer_pack.v0.1"
         assert object_layer_pack["selectedObjectIds"] == ["object_0"]

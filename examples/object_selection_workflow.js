@@ -5,6 +5,9 @@
   const defaultBase = window.location.pathname.includes('/preview/') ? '..' : '/out/demo';
   const manifestUrl = params.get('manifest') || params.get('asset') || `${defaultBase}/web_asset_manifest.json`;
   const sceneUrl = params.get('scene') || `${defaultBase}/scene_graph.json`;
+  const reviewUrl = params.get('review') || '';
+  const exportUrl = params.get('export') || '';
+  const jobId = params.get('jobId') || '';
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -36,6 +39,8 @@
     statusList: $('statusList'),
     jobBadge: $('jobBadge'),
     cliCommand: $('cliCommand'),
+    exportMotionJson: $('exportMotionJson'),
+    exportStatusLine: $('exportStatusLine'),
     correctionMode: $('correctionMode'),
     correctionFrame: $('correctionFrame'),
     correctionRadius: $('correctionRadius'),
@@ -92,7 +97,9 @@
     spriteSheet: null,
     animationRequest: 0,
     assetPlaying: true,
-    corrections: []
+    corrections: [],
+    review: null,
+    exportResult: null
   };
 
   function prettyJson(value) {
@@ -262,11 +269,18 @@
       parts.push('--lower-hsv', '0,80,80', '--upper-hsv', '12,255,255');
     }
 
-    const note = [
-      '# Simulated by this browser prototype; not executed here.',
-      '# Normal preview edits below use cached assets plus JSON transforms only.',
-      parts.join(' ')
-    ];
+    const note = exportUrl
+      ? [
+          `# Reviewing Local UI job ${jobId || '(current run)'}.`,
+          '# Use Export MotionJSON below to write the actual reviewed result.',
+          '# This command is a reproducible CLI equivalent for a new extraction run.',
+          parts.join(' ')
+        ]
+      : [
+          '# Standalone example mode; not connected to a Local UI job API.',
+          '# Normal preview edits below use cached assets plus JSON transforms only.',
+          parts.join(' ')
+        ];
     els.cliCommand.textContent = note.join('\n');
   }
 
@@ -548,6 +562,84 @@
     return response.json();
   }
 
+  async function postJson(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload || {})
+    });
+    const text = await response.text();
+    let body = {};
+    if (text) {
+      try {
+        body = JSON.parse(text);
+      } catch (error) {
+        body = { error: text.slice(0, 200) };
+      }
+    }
+    if (!response.ok) throw new Error(body.error || body.detail || `${url} returned ${response.status}`);
+    return body;
+  }
+
+  async function loadReviewState() {
+    if (!reviewUrl) return;
+    try {
+      const payload = await loadJson(reviewUrl);
+      appState.review = payload.review || payload;
+      const tracks = Array.isArray(appState.review.tracks) ? appState.review.tracks.length : 0;
+      const objects = Array.isArray(appState.review.objects) ? appState.review.objects.length : 0;
+      const reviewCount = tracks || objects;
+      els.exportStatusLine.textContent = `Connected to Local UI job ${jobId || ''}. ${reviewCount} reviewed object${reviewCount === 1 ? '' : 's'} available for export.`;
+      els.exportMotionJson.disabled = false;
+    } catch (error) {
+      els.exportStatusLine.textContent = `Review API unavailable: ${error.message}`;
+      els.exportMotionJson.disabled = !exportUrl;
+    }
+  }
+
+  async function exportMotionJson() {
+    if (!exportUrl) {
+      els.exportStatusLine.textContent = 'This standalone example is not connected to a Local UI export endpoint.';
+      return;
+    }
+    els.exportMotionJson.disabled = true;
+    els.exportStatusLine.textContent = 'Exporting reviewed MotionJSON artifacts...';
+    try {
+      const result = await postJson(exportUrl, {
+        preset: 'compact',
+        includeMasks: false,
+        includeContours: false,
+        includePreview: true
+      });
+      appState.exportResult = result.export || result;
+      const assets = Array.isArray(result.artifacts) ? result.artifacts : Array.isArray(appState.exportResult.assets) ? appState.exportResult.assets : [];
+      const sceneAsset = assets.find((asset) => ['validated_motionjson_scene', 'scene_graph'].includes(asset.kind));
+      const packageAsset = assets.find((asset) => ['website_package', 'motionjson_export_zip'].includes(asset.kind));
+      els.exportStatusLine.innerHTML = [
+        'Export complete.',
+        sceneAsset?.contentUrl ? `<a href="${sceneAsset.contentUrl}" target="_blank" rel="noopener noreferrer">Open scene_graph.json</a>` : '',
+        packageAsset?.contentUrl ? `<a href="${packageAsset.contentUrl}" target="_blank" rel="noopener noreferrer">Open package</a>` : ''
+      ].filter(Boolean).join(' ');
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(
+          {
+            type: 'motionjson:export-complete',
+            jobId,
+            export: appState.exportResult,
+            artifactCount: assets.length
+          },
+          window.location.origin
+        );
+      }
+      setHeaderStatus('Actual MotionJSON export finished for this Local UI run.', 'ready');
+    } catch (error) {
+      els.exportStatusLine.textContent = `Export failed: ${error.message}`;
+      setHeaderStatus('MotionJSON export failed.', 'error');
+    } finally {
+      els.exportMotionJson.disabled = false;
+    }
+  }
+
   async function loadAssetDocuments() {
     els.assetSource.textContent = manifestUrl;
     const [manifestResult, sceneResult] = await Promise.allSettled([
@@ -713,6 +805,7 @@
     els.pointMode.addEventListener('click', () => setMode('point'));
     els.boxMode.addEventListener('click', () => setMode('box'));
     els.providerSelect.addEventListener('change', buildCliCommand);
+    els.exportMotionJson.addEventListener('click', exportMotionJson);
     els.labelInput.addEventListener('input', () => {
       buildCliCommand();
       buildCorrectionCommand();
@@ -794,6 +887,7 @@
     bindEvents();
     try {
       await loadAssetDocuments();
+      await loadReviewState();
       setHeaderStatus(`Loaded cached assets from ${manifestUrl}`, 'ready');
     } catch (error) {
       els.assetStatus.textContent = 'asset load failed';

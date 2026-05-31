@@ -180,6 +180,7 @@ for (const route of [
   "/api/run-config/defaults",
   "/api/run-config/validate",
   "/api/videos",
+  "/api/videos/upload",
   "/api/videos/{videoId}/content",
   "/api/jobs",
   "/api/jobs/{jobId}",

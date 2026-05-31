@@ -4,9 +4,12 @@ import json
 import mimetypes
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 import webbrowser
+from email.parser import BytesParser
+from email.policy import default as email_policy_default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -165,6 +168,40 @@ def _json_loads(data: bytes) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("request body must be a JSON object")
     return parsed
+
+
+def _safe_upload_filename(value: str) -> str:
+    name = Path(value or "uploaded-video").name.strip() or "uploaded-video"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
+    return safe or "uploaded-video"
+
+
+def _parse_multipart_form(content_type: str, body: bytes) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    if "multipart/form-data" not in content_type.lower():
+        raise ValueError("video upload must use multipart/form-data")
+    header = f"Content-Type: {content_type}\r\nMIME-Version: 1.0\r\n\r\n".encode("utf-8")
+    message = BytesParser(policy=email_policy_default).parsebytes(header + body)
+    if not message.is_multipart():
+        raise ValueError("invalid multipart upload body")
+    fields: dict[str, str] = {}
+    files: dict[str, dict[str, Any]] = {}
+    for part in message.iter_parts():
+        if not part.get("content-disposition"):
+            continue
+        name = part.get_param("name", header="content-disposition")
+        if not name:
+            continue
+        data = part.get_payload(decode=True) or b""
+        filename = part.get_filename()
+        if filename:
+            files[str(name)] = {
+                "filename": _safe_upload_filename(filename),
+                "contentType": part.get_content_type() or "application/octet-stream",
+                "bytes": data,
+            }
+        else:
+            fields[str(name)] = data.decode(part.get_content_charset() or "utf-8", "replace")
+    return fields, files
 
 
 def _json_response(payload: Any, status: HTTPStatus = HTTPStatus.OK) -> tuple[int, dict[str, str], bytes]:
@@ -610,6 +647,15 @@ class LocalUIApp:
                 parts = [part for part in path.split("/") if part]
                 if len(parts) >= 5 and parts[0] == "api" and parts[1] == "jobs" and parts[3] == "preview-files":
                     return self._preview_file_content(parts[2], "/".join(parts[4:]), head=method == "HEAD")
+            if method == "POST" and path == "/api/videos/upload":
+                content_type = next((value for key, value in request_headers.items() if key.lower() == "content-type"), "")
+                fields, files = _parse_multipart_form(content_type, body)
+                conn = self.connection()
+                try:
+                    user = self._local_user(conn)
+                    return _json_response(self._upload_video_form(conn, user_id=user["id"], fields=fields, files=files))
+                finally:
+                    conn.close()
             payload = _json_loads(body) if method in {"POST", "PATCH", "PUT", "DELETE"} else {}
             return _json_response(self._route(method, path, query, payload))
         except json.JSONDecodeError as exc:
@@ -656,6 +702,7 @@ class LocalUIApp:
                     "/api/model-runs/{runId}/confirm-job",
                     "/api/projects",
                     "/api/videos",
+                    "/api/videos/upload",
                     "/api/videos/{videoId}/content",
                     "/api/videos/{videoId}/prepare-browser-preview",
                     "/api/run-config/defaults",
@@ -1628,6 +1675,56 @@ class LocalUIApp:
                 "installHint": provider.get("installHint"),
             }
         )
+
+    def _upload_video_form(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        user_id: str,
+        fields: dict[str, str],
+        files: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        upload = files.get("video") or files.get("file")
+        if not upload:
+            raise ValueError("video file is required")
+        data = upload.get("bytes")
+        if not isinstance(data, bytes) or not data:
+            raise ValueError("video file is empty")
+
+        filename = _safe_upload_filename(str(upload.get("filename") or "uploaded-video"))
+        project_id = str(fields.get("projectId") or fields.get("project_id") or "").strip()
+        project: dict[str, Any] | None = None
+        if not project_id:
+            project_name = str(fields.get("projectName") or fields.get("project_name") or Path(filename).stem or "MotionJSON local project").strip()
+            project = create_project(conn, user_id=user_id, name=project_name or "MotionJSON local project")
+            project_id = project["id"]
+
+        with tempfile.TemporaryDirectory(prefix="motionjson_ui_upload_") as tmpdir:
+            temp_path = Path(tmpdir) / filename
+            temp_path.write_bytes(data)
+            asset = register_upload(
+                conn,
+                storage=self.storage(),
+                user_id=user_id,
+                project_id=project_id,
+                path=temp_path,
+                kind="source_video",
+                content_type=str(upload.get("contentType") or mimetypes.guess_type(filename)[0] or "application/octet-stream"),
+                metadata={
+                    "rights_context": {
+                        "source_uri": f"upload://{filename}",
+                        "source_type": "user_upload",
+                        "display_text": filename,
+                    }
+                },
+            )
+
+        if project is None:
+            project = next((item for item in list_projects(conn, user_id=user_id) if item["id"] == project_id), {"id": project_id})
+        return {
+            "project": project,
+            "video": self._public_video_payload(conn, user_id=user_id, asset=asset, prepare_preview=True, force_preview=True),
+        }
 
     def _enqueue_extract_from_ui_payload(
         self,

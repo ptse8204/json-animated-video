@@ -84,10 +84,16 @@ guides users through:
 6. Review and export.
 
 Guided mode now keeps one visible footer action per screen. The footer always
-shows `Back` plus one explicit primary action such as `Add video`, `Continue`,
+shows `Back` plus one explicit primary action such as `Choose video file`, `Continue`,
 `Run trace`, `Run search`, `Run motion scan`, or `Export reviewed objects`.
 Secondary actions such as demo video, setup state details, `Change model`, or
 review bulk actions stay visually secondary inside the current panel.
+
+The Video step supports direct local upload. Choosing a video file creates the
+local project when needed, stores the source in the local asset library, and
+prepares the browser preview from that registered source. The advanced local
+path form remains available for CLI-style workflows or environments where the
+browser file picker cannot access the source file.
 
 After a run starts, the Job Center becomes part of the main workspace instead
 of living only in the details rail. It shows the selected job, active/recent

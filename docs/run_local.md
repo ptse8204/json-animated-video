@@ -110,6 +110,12 @@ Open:
 http://localhost:8080/examples/canvas_player.html?scene=/out/demo_red_ball/web_asset_manifest.json
 ```
 
+In the Local UI, use `Choose video file` on the Video step for the normal
+direct-upload path. MotionJSON creates the local project automatically, stores
+the source video locally, and prepares the review/export preview from that
+registered video. Use the advanced local path form only when you need to point
+the backend at a known filesystem path.
+
 ## Local backend API
 
 Start the dependency-light local API:

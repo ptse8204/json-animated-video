@@ -46,6 +46,7 @@ def test_static_prototype_structure_has_required_surfaces():
     assert parser.details >= 2
     assert "Mask Correction" in html
     assert "correction_request.json" in html
+    assert "Export MotionJSON" in html
     assert "AI object-layer editing for video and web graphics" in html
     assert "Cached raster/alpha assets" in html
     assert "universal video-to-JSON" not in html
@@ -93,7 +94,10 @@ def test_point_box_prompt_state_and_cli_command_are_generated_only():
     assert "same_coordinates" in js
     assert "centroid_delta" in js
     assert "frameRange" in js
-    assert "# Simulated by this browser prototype; not executed here." in js
+    assert "Use Export MotionJSON below to write the actual reviewed result." in js
+    assert "function exportMotionJson()" in js
+    assert "postJson(exportUrl" in js
+    assert "motionjson:export-complete" in js
     assert "fetch(" in js
     assert "function loadJson(url)" in js
     assert "XMLHttpRequest" not in js

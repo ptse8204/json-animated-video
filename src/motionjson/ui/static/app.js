@@ -27,6 +27,7 @@ const MotionJSONUI = (() => {
     "/api/run-config/defaults",
     "/api/run-config/validate",
     "/api/videos",
+    "/api/videos/upload",
     "/api/videos/{videoId}/content",
     "/api/videos/{videoId}/prepare-browser-preview",
     "/api/jobs",
@@ -213,6 +214,19 @@ const MotionJSONUI = (() => {
     "vector-heavy": { includeMasks: false, includeContours: true, includePreview: true },
     "raster-fallback": { includeMasks: true, includeContours: false, includePreview: true },
   };
+  const EXPORT_ARTIFACT_KINDS = new Set([
+    "validated_motionjson_scene",
+    "final_export_manifest",
+    "export_validation_report",
+    "export_quality_routing",
+    "preview_overlay",
+    "mp4_preview",
+    "contours_boxes",
+    "object_layer_pack",
+    "remotion_plan",
+    "website_package",
+    "motionjson_export_zip",
+  ]);
   const EXPORT_HANDOFF_DEFS = [
     {
       id: "website-package",
@@ -531,6 +545,8 @@ const MotionJSONUI = (() => {
       currentFrame: 0,
       loadedName: "",
     },
+    videoUploadStatus: "",
+    videoUploadBusy: false,
   });
 
   const state = defaultState();
@@ -612,6 +628,19 @@ const MotionJSONUI = (() => {
       .join("/");
     if (!id || !path) return "";
     return safeLocalContentUrl(`/api/jobs/${encodeURIComponent(id)}/preview-files/${path}`);
+  }
+
+  function reviewToolUrl(jobId, tool) {
+    const base = previewFileUrl(jobId, tool?.relPath);
+    if (!base) return "";
+    const params = new URLSearchParams({
+      scene: "../scene_graph.json",
+      manifest: "../web_asset_manifest.json",
+      jobId: String(jobId || ""),
+      review: `/api/jobs/${encodeURIComponent(jobId)}/review`,
+      export: `/api/jobs/${encodeURIComponent(jobId)}/exports`,
+    });
+    return safeLocalContentUrl(`${base}?${params.toString()}`);
   }
 
   function slugObjectId(value, fallback = "object_0") {
@@ -822,8 +851,8 @@ const MotionJSONUI = (() => {
 
   function defaultProjectSummaryText() {
     const project = state.projects.find((item) => item.id === state.selectedProjectId) || null;
-    if (project?.name) return `Using ${project.name}. Guided mode creates this local workspace automatically.`;
-    return "A local project is created automatically when you add a video or open an existing result.";
+    if (project?.name) return `Using ${project.name}. Uploads and exports stay in this local workspace.`;
+    return "A local project is created automatically when you upload a video or open an existing result.";
   }
 
   function primaryRunLabelForPreset(presetId = "trace_one_object") {
@@ -964,10 +993,10 @@ const MotionJSONUI = (() => {
       }
       return {
         id: activeStep,
-        primaryLabel: "Add video",
-        primaryAction: "add_video",
-        enabled: Boolean(videoPathValue),
-        blockedReason: "Enter a local video path or use the demo video to continue.",
+        primaryLabel: videoPathValue ? "Register path" : "Choose video file",
+        primaryAction: videoPathValue ? "add_video" : "choose_video_file",
+        enabled: true,
+        blockedReason: "",
         successAdvanceTo: requiresModel ? "provider_settings" : "prompt_preview",
         backTarget: "choose_goal",
       };
@@ -1095,16 +1124,17 @@ const MotionJSONUI = (() => {
         };
       }
       const videoPathValue = typeof document !== "undefined" ? document.querySelector("#videoPath")?.value.trim() || "" : "";
+      const importPathValue = typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() || "" : "";
       if (!hasVideo) {
         return {
           title: "Video",
           description: selectedPreset === "review_existing" ? "Open an existing MotionJSON result for review." : "Import a source video and confirm project settings.",
-          statusLabel: videoPathValue ? "Ready to add" : "Needs video",
-          statusTone: videoPathValue ? "is-ready" : "is-warn",
-          primaryLabel: selectedPreset === "review_existing" ? "Open result" : "Add video",
-          enabled: selectedPreset === "review_existing" ? Boolean(typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() : false) : Boolean(videoPathValue),
-          blockedReason: selectedPreset === "review_existing" ? "Enter a MotionJSON path to open an existing result." : "Enter a local video path or use the demo video.",
-          primaryAction: selectedPreset === "review_existing" ? "open_result" : "add_video",
+          statusLabel: selectedPreset === "review_existing" ? (importPathValue ? "Ready to open" : "Needs result") : videoPathValue ? "Ready to register" : "Ready for upload",
+          statusTone: selectedPreset === "review_existing" ? (importPathValue ? "is-ready" : "is-warn") : "is-ready",
+          primaryLabel: selectedPreset === "review_existing" ? "Open result" : videoPathValue ? "Register path" : "Choose video file",
+          enabled: selectedPreset === "review_existing" ? Boolean(typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() : false) : true,
+          blockedReason: selectedPreset === "review_existing" ? "Enter a MotionJSON path to open an existing result." : "",
+          primaryAction: selectedPreset === "review_existing" ? "open_result" : videoPathValue ? "add_video" : "choose_video_file",
           backTarget: "choose_goal",
         };
       }
@@ -2683,9 +2713,13 @@ const MotionJSONUI = (() => {
 
   async function api(path, options = {}) {
     let response;
+    const headers = { ...(options.headers || {}) };
+    if (!(options.body instanceof FormData)) {
+      headers["content-type"] = headers["content-type"] || "application/json";
+    }
     try {
       response = await fetch(path, {
-        headers: { "content-type": "application/json", ...(options.headers || {}) },
+        headers,
         ...options,
       });
     } catch (error) {
@@ -4960,7 +4994,7 @@ const MotionJSONUI = (() => {
       tone: "warn",
       badge: "Validate next",
       title: `Validate ${includedCount} reviewed object${includedCount === 1 ? "" : "s"}`,
-      detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} are selected. Validate once to confirm the final MotionJSON package.`,
+      detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} ${(movingCount || includedCount) === 1 ? "is" : "are"} selected. Validate once to confirm the final MotionJSON package.`,
       nextAction: "Validate export",
     };
   }
@@ -5001,6 +5035,18 @@ const MotionJSONUI = (() => {
 
   function assetByKind(assets, kind) {
     return asArray(assets).find((asset) => String(asset?.kind || "") === kind) || null;
+  }
+
+  function exportArtifactsFromJobArtifacts(artifacts = []) {
+    return asArray(artifacts).filter((artifact) => EXPORT_ARTIFACT_KINDS.has(String(artifact?.kind || "")));
+  }
+
+  function exportValidationFromState({ exported = null, validation = null, artifacts = [] } = {}) {
+    const storedValidationArtifact = exportArtifactsFromJobArtifacts(artifacts)
+      .slice()
+      .reverse()
+      .find((artifact) => artifact.kind === "export_validation_report" && artifact.metadata?.validation);
+    return exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation || null;
   }
 
   function exportHandoffCards({ job = null, includedIds = [], pendingIds = [], trackCount = 0, assets = [], objectLayerPack = null, status = null, copiedId = "" } = {}) {
@@ -5314,13 +5360,13 @@ const MotionJSONUI = (() => {
             ? "Choose your goal"
             : state.selectedPreset === "review_existing"
               ? "Open an existing result"
-              : "Import video and project settings",
+              : "Upload video and project settings",
         note:
           activeStep === "choose_goal"
             ? "Pick a goal-first workflow. Continue changes this workspace to the next step."
             : state.selectedPreset === "review_existing"
             ? "Open a local MotionJSON result for review. Guided mode creates the local workspace automatically."
-            : "Register the local video path. MotionJSON prepares a browser-safe preview automatically before you continue.",
+            : "Choose a local video file. MotionJSON creates the local workspace and prepares a browser-safe preview automatically.",
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
@@ -5869,6 +5915,8 @@ const MotionJSONUI = (() => {
       try {
         if (contract.primaryAction === "continue_to_video") {
           setWorkflowStep("source_video", { focusStep: true });
+        } else if (contract.primaryAction === "choose_video_file") {
+          $("#videoFileInput")?.click();
         } else if (contract.primaryAction === "add_video") {
           $("#videoForm")?.requestSubmit();
         } else if (contract.primaryAction === "retry_preview") {
@@ -7376,6 +7424,7 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Add a local video path or use the demo video to create the guided workspace.</div>`;
       loadSelectedVideoPreview();
       renderBrowserPreviewCard();
+      renderVideoUploadStatus();
       renderGuidedStart();
       renderConfigPreview();
     }
@@ -8017,7 +8066,7 @@ const MotionJSONUI = (() => {
       const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
       const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
       const exportState = exported || validation || {};
-      const status = exported?.validation || validation?.validation || null;
+      const status = exportValidationFromState({ exported, validation, artifacts: state.jobArtifacts });
       const { includedIds, pendingIds } = buildExportPanelSummary({
         exportState,
         reviewExport: state.jobReview?.export,
@@ -8456,7 +8505,7 @@ const MotionJSONUI = (() => {
         return {
           ...tool,
           available,
-          url: available ? previewFileUrl(jobId, tool.relPath) : "",
+          url: available ? reviewToolUrl(jobId, tool) : "",
         };
       });
     }
@@ -8522,22 +8571,7 @@ const MotionJSONUI = (() => {
       const job = selectedJob();
       const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
       const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
-      const exportArtifactKinds = [
-        "validated_motionjson_scene",
-        "final_export_manifest",
-        "export_validation_report",
-        "export_quality_routing",
-        "preview_overlay",
-        "mp4_preview",
-        "contours_boxes",
-        "object_layer_pack",
-        "remotion_plan",
-        "website_package",
-        "motionjson_export_zip",
-      ];
-      const storedExportArtifacts = state.jobArtifacts.filter((artifact) =>
-        exportArtifactKinds.includes(artifact.kind),
-      );
+      const storedExportArtifacts = exportArtifactsFromJobArtifacts(state.jobArtifacts);
       const storedValidationArtifact = storedExportArtifacts
         .slice()
         .reverse()
@@ -8550,7 +8584,7 @@ const MotionJSONUI = (() => {
         reviewTracks: state.reviewTracks,
         reviewObjects: state.jobReview?.objects,
       });
-      const status = exported?.validation || validation?.validation || storedValidationArtifact?.metadata?.validation;
+      const status = exportValidationFromState({ exported, validation, artifacts: state.jobArtifacts });
       const ok = status?.ok === true;
       const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
       const exportAction = exportActionState({ job, includedIds, pendingIds, trackCount: state.reviewTracks.length, status, staticFallbackCount });
@@ -10126,6 +10160,71 @@ const MotionJSONUI = (() => {
       });
       await refreshProjectData();
       return selectedVideo();
+    }
+
+    function uploadProjectName(file) {
+      if (state.selectedProjectId) return "";
+      const typed = $("#projectName")?.value?.trim() || "";
+      if (typed && typed !== "MotionJSON local project") return typed;
+      const stem = String(file?.name || "MotionJSON local project").replace(/\.[^.]+$/, "").trim();
+      return stem ? `${stem} project` : "MotionJSON local project";
+    }
+
+    function renderVideoUploadStatus() {
+      const status = $("#videoUploadStatus");
+      if (!status) return;
+      if (state.videoUploadBusy) {
+        status.textContent = state.videoUploadStatus || "Uploading video...";
+        status.className = "row-meta is-uploading";
+        return;
+      }
+      const video = selectedVideo();
+      if (video?.id) {
+        const filename = video.metadata?.filename || video.filename || video.id;
+        status.textContent = `${filename} is registered for this run.`;
+        status.className = "row-meta is-ready";
+        return;
+      }
+      status.textContent = state.videoUploadStatus || "No upload selected.";
+      status.className = "row-meta";
+    }
+
+    async function uploadVideoFile(file) {
+      if (!file) return;
+      state.videoUploadBusy = true;
+      state.videoUploadStatus = `Uploading ${file.name || "video"}...`;
+      renderVideoUploadStatus();
+      renderWorkflowStepper();
+      try {
+        const form = new FormData();
+        if (state.selectedProjectId) form.append("projectId", state.selectedProjectId);
+        else form.append("projectName", uploadProjectName(file));
+        form.append("video", file, file.name || "uploaded-video.mp4");
+        const response = await api("/api/videos/upload", {
+          method: "POST",
+          body: form,
+        });
+        if (response.project?.id) state.selectedProjectId = response.project.id;
+        if (response.video?.id) state.selectedVideoId = response.video.id;
+        state.videoUploadStatus = `${response.video?.metadata?.filename || response.video?.filename || file.name || "Video"} uploaded.`;
+        await loadRootData();
+        await refreshProjectData({ quiet: true });
+        renderProjects();
+        renderVideos();
+        setRunAlert("", "warning-box is-ready");
+        setWorkflowStep("source_video", { focusStep: true });
+      } catch (error) {
+        state.videoUploadStatus = error.message;
+        setRunAlert(error.message, "warning-box is-bad");
+        renderVideoUploadStatus();
+        renderWorkflowStepper();
+      } finally {
+        state.videoUploadBusy = false;
+        const input = $("#videoFileInput");
+        if (input) input.value = "";
+        renderVideoUploadStatus();
+        renderWorkflowStepper();
+      }
     }
 
     async function retrySelectedVideoPreview() {
@@ -12051,6 +12150,24 @@ const MotionJSONUI = (() => {
       state.selectedReviewToolId = button.dataset.reviewToolId;
       renderReviewTools();
     });
+    window.addEventListener("message", async (event) => {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data || {};
+      if (data.type !== "motionjson:export-complete") return;
+      const jobId = String(data.jobId || "");
+      if (!jobId || jobId !== state.selectedJobId) return;
+      state.exportResult = { ...(data.export || {}), jobId };
+      state.exportValidation = {
+        jobId,
+        validation: state.exportResult.validation,
+        includedObjectIds: state.exportResult.includedObjectIds,
+        excludedObjectIds: state.exportResult.excludedObjectIds,
+      };
+      await refreshSelectedJobReview();
+      renderExportPanel();
+      renderStudioReviewPanel();
+      renderWorkflowStepper();
+    });
     ["exportIncludeMasks", "exportIncludeContours", "exportIncludePreview"].forEach((id) => {
       $(`#${id}`).addEventListener("change", clearExportPreflightState);
     });
@@ -12312,8 +12429,19 @@ const MotionJSONUI = (() => {
     });
 
     $("#projectRailNewButton")?.addEventListener("click", () => {
-      setWorkflowStep("choose_goal", { focusStep: true });
-      $("#projectName")?.focus?.({ preventScroll: false });
+      state.selectedProjectId = "";
+      state.selectedVideoId = "";
+      state.selectedJobId = "";
+      state.selectedJob = null;
+      state.jobEvents = [];
+      state.jobArtifacts = [];
+      state.reviewTracks = [];
+      const disclosure = $("#projectWorkspaceDisclosure");
+      if (disclosure) disclosure.open = true;
+      setWorkflowStep("source_video", { focusStep: true });
+      $("#videoFileInput")?.focus?.({ preventScroll: false });
+      renderGuidedStart();
+      renderWorkflowStepper();
     });
 
     $("#projectRailList")?.addEventListener("click", async (event) => {
@@ -12379,14 +12507,10 @@ const MotionJSONUI = (() => {
 
     $("#retryPreviewButton").addEventListener("click", retrySelectedVideoPreview);
 
-    $("#videoFileInput").addEventListener("change", () => {
+    $("#videoFileInput").addEventListener("change", async () => {
       const file = $("#videoFileInput").files?.[0];
       if (!file) return;
-      if (state.previewObjectUrl) URL.revokeObjectURL(state.previewObjectUrl);
-      state.previewObjectUrl = URL.createObjectURL(file);
-      state.video.loadedName = file.name;
-      elements.video.src = state.previewObjectUrl;
-      elements.video.load();
+      await uploadVideoFile(file);
     });
 
     elements.video.addEventListener("loadedmetadata", () => {
@@ -12845,10 +12969,12 @@ const MotionJSONUI = (() => {
       $(`#${id}`).addEventListener("input", () => {
         renderVideoMetrics();
         renderConfigPreview();
+        if (id === "videoPath") renderWorkflowStepper();
       });
       $(`#${id}`).addEventListener("change", () => {
         renderVideoMetrics();
         renderConfigPreview();
+        if (id === "videoPath") renderWorkflowStepper();
       });
     });
 
@@ -12919,11 +13045,13 @@ const MotionJSONUI = (() => {
     eventRowsMarkup,
     eventSeverity,
     exportActionState,
+    exportArtifactsFromJobArtifacts,
     exportDecisionState,
     exportGateSummary,
     exportHandoffCards,
     exportNextStepText,
     exportReadinessSummary,
+    exportValidationFromState,
     exportValidationIssueText,
     filterReviewCandidates,
     jobStaleNotice,

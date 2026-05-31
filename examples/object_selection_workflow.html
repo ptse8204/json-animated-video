@@ -558,7 +558,7 @@
             <div class="metric"><span>Size</span><strong id="videoSizeOut">n/a</strong></div>
             <div class="metric"><span>Prompt</span><strong id="promptFrameOut">none</strong></div>
           </div>
-          <p class="small-note">Use a click point or drag a box on the preview. The browser records prompt coordinates and simulates the extraction queue.</p>
+          <p class="small-note">Use a click point or drag a box on the preview. In the Local UI review tab, the export action writes MotionJSON from the selected completed run.</p>
         </div>
       </section>
 
@@ -581,8 +581,8 @@
           <label class="field">
             <span class="field-label">Segmentation provider</span>
             <select id="providerSelect">
-              <option value="threshold" selected>threshold demo</option>
-              <option value="motion">motion demo</option>
+              <option value="threshold" selected>threshold</option>
+              <option value="motion">motion</option>
               <option value="sam2-local">sam2-local</option>
               <option value="sam2-hosted">sam2-hosted</option>
               <option value="external">external masks</option>
@@ -607,6 +607,10 @@
         <div class="panel-body">
           <div class="status-list" id="statusList"></div>
           <pre id="cliCommand"></pre>
+          <div class="button-row">
+            <button class="primary" id="exportMotionJson" type="button" disabled>Export MotionJSON</button>
+          </div>
+          <p class="small-note" id="exportStatusLine">Open this tool from a Local UI completed run to export the actual reviewed MotionJSON result.</p>
         </div>
       </section>
 

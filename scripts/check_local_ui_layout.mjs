@@ -645,6 +645,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           browserPreviewTitle: document.querySelector("#browserPreviewTitle")?.textContent?.trim() || "",
           browserPreviewMessage: document.querySelector("#browserPreviewMessage")?.textContent?.trim() || "",
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
+          uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
           modelSetupConfirmationVisible: visible(document.querySelector(".model-setup-confirmation")),
@@ -768,11 +769,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-cache-success" && (!stateValue.modelSetupProgressVisible || !/Model cached|100%|Setup complete/.test(stateValue.modelSetupProgressText))) {
       failures.push(`${viewport.name}/${state}: successful cache job should show completion progress`);
     }
-    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Import video and project settings" || !stateValue.videoFormVisible)) {
-      failures.push(`${viewport.name}/${state}: video step should expose import and project settings with the local video path form`);
+    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Upload video and project settings" || !stateValue.uploadDropzoneVisible)) {
+      failures.push(`${viewport.name}/${state}: video step should expose direct upload and project setup`);
     }
-    if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Add video") {
-      failures.push(`${viewport.name}/${state}: setup screen should promote Add video as the primary CTA before preview is ready`);
+    if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Choose video file") {
+      failures.push(`${viewport.name}/${state}: setup screen should promote file upload as the primary CTA before preview is ready`);
     }
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);

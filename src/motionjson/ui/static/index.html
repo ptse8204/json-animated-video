@@ -413,7 +413,7 @@
             <div id="guidedProjectSummary" class="step-action-card" data-workflow-fragment="source_video">
               <div>
                 <strong>Local workspace</strong>
-                <p id="guidedProjectSummaryNote" class="form-hint">A local project is created automatically when you add a video or open an existing result.</p>
+                <p id="guidedProjectSummaryNote" class="form-hint">A local project is created automatically when you upload a video or open an existing result.</p>
               </div>
             </div>
             <div class="workflow-fragment" data-workflow-fragment="project_video">
@@ -447,6 +447,17 @@
                 <span id="videoCount" class="subtle-chip">0 videos</span>
               </div>
               <p class="form-hint step-leading-note">The source file stays local. MotionJSON prepares a browser-safe preview automatically when needed.</p>
+              <div id="directUploadCard" class="upload-dropzone">
+                <div>
+                  <strong>Upload a video</strong>
+                  <p class="form-hint">Choose an MP4, MOV, WebM, or other local video file. This creates the local project and registers the source in one step.</p>
+                  <p id="videoUploadStatus" class="row-meta">No upload selected.</p>
+                </div>
+                <label class="file-control upload-file-control">
+                  <span>Choose video file</span>
+                  <input id="videoFileInput" type="file" accept="video/*" />
+                </label>
+              </div>
               <div id="browserPreviewCard" class="browser-preview-card">
                 <div class="browser-preview-poster-shell">
                   <img id="browserPreviewPoster" alt="" />
@@ -458,25 +469,21 @@
                 </div>
                 <button id="retryPreviewButton" type="button" hidden>Retry preview</button>
               </div>
-              <form id="videoForm" class="inline-form primary-form">
-                <label>
-                  <span>Local video path</span>
-                  <input id="videoPath" type="text" value="examples/demo_red_ball.mp4" required />
-                </label>
-                <button type="submit">Add video</button>
-              </form>
               <div class="inline-secondary-actions">
                 <button id="guidedDemoVideoButton" type="button">Use demo video</button>
               </div>
               <select id="videoSelect" aria-label="Registered video"></select>
-              <details class="advanced-panel">
-                <summary>Optional browser preview for drawing</summary>
+              <details id="localVideoPathDisclosure" class="advanced-panel">
+                <summary>Use a local file path instead</summary>
                 <div class="advanced-stack">
-                  <label class="file-control">
-                    <span>Browser preview</span>
-                    <input id="videoFileInput" type="file" accept="video/*" />
-                  </label>
-                  <p class="form-hint">Browser previews stay in this tab and help you place prompts on native video pixels.</p>
+                  <form id="videoForm" class="inline-form primary-form">
+                    <label>
+                      <span>Local video path</span>
+                      <input id="videoPath" type="text" placeholder="/Users/me/video.mp4 or examples/demo_red_ball.mp4" required />
+                    </label>
+                    <button type="submit">Register path</button>
+                  </form>
+                  <p class="form-hint">Use this when the browser file picker cannot access the source file. The upload path is safer for normal use.</p>
                 </div>
               </details>
               <div id="videoList" class="artifact-list"></div>
