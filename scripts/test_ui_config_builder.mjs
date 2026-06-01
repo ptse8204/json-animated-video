@@ -18,6 +18,24 @@ assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/setup-jobs/{jobId}/cancel"));
 assert.ok(ui.API_ROUTES.includes("/api/model-runs/{runId}/confirm-job"));
 assert.ok(ui.API_ROUTES.includes("/api/videos/upload"));
+const originalLocationDescriptor = Object.getOwnPropertyDescriptor(globalThis, "location");
+Object.defineProperty(globalThis, "location", {
+  value: new URL("https://colab.example.test/proxy/8766/ui/"),
+  configurable: true,
+});
+assert.equal(ui.localApiUrl("/api/videos?projectId=project_1"), "/proxy/8766/api/videos?projectId=project_1");
+assert.equal(ui.safeLocalContentUrl("/api/videos/video_1/content"), "/proxy/8766/api/videos/video_1/content");
+Object.defineProperty(globalThis, "location", {
+  value: new URL("http://127.0.0.1:8766/ui/"),
+  configurable: true,
+});
+assert.equal(ui.localApiUrl("/api/health"), "/api/health");
+assert.equal(ui.safeLocalContentUrl("/api/jobs/job_1/preview-files/preview/canvas_player.html"), "/api/jobs/job_1/preview-files/preview/canvas_player.html");
+if (originalLocationDescriptor) {
+  Object.defineProperty(globalThis, "location", originalLocationDescriptor);
+} else {
+  delete globalThis.location;
+}
 assert.equal(ui.WORKFLOW_STEPS.length, 6);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",

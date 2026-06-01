@@ -608,9 +608,29 @@ const MotionJSONUI = (() => {
     `;
   }
 
+  function localApiUrl(value) {
+    const path = String(value || "").trim();
+    if (!/^\/api(?:[/?#]|$)/.test(path)) return path;
+    const loc = globalThis.location;
+    if (!loc || !/^https?:$/i.test(String(loc.protocol || ""))) return path;
+    const origin = loc.origin || `${loc.protocol}//${loc.host}`;
+    let basePath = String(loc.pathname || "/");
+    if (basePath.endsWith("/ui")) {
+      basePath = `${basePath}/`;
+    } else if (!basePath.endsWith("/")) {
+      basePath = basePath.replace(/[^/]*$/, "");
+    }
+    try {
+      const url = new URL(`..${path}`, `${origin}${basePath}`);
+      return `${url.pathname}${url.search}${url.hash}`;
+    } catch {
+      return path;
+    }
+  }
+
   function safeLocalContentUrl(value) {
     const url = String(value || "").trim();
-    return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? url : "";
+    return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? localApiUrl(url) : "";
   }
 
   function artifactRelPath(artifact = {}) {
@@ -637,10 +657,10 @@ const MotionJSONUI = (() => {
       scene: "../scene_graph.json",
       manifest: "../web_asset_manifest.json",
       jobId: String(jobId || ""),
-      review: `/api/jobs/${encodeURIComponent(jobId)}/review`,
-      export: `/api/jobs/${encodeURIComponent(jobId)}/exports`,
+      review: localApiUrl(`/api/jobs/${encodeURIComponent(jobId)}/review`),
+      export: localApiUrl(`/api/jobs/${encodeURIComponent(jobId)}/exports`),
     });
-    return safeLocalContentUrl(`${base}?${params.toString()}`);
+    return `${base}?${params.toString()}`;
   }
 
   function slugObjectId(value, fallback = "object_0") {
@@ -2718,7 +2738,7 @@ const MotionJSONUI = (() => {
       headers["content-type"] = headers["content-type"] || "application/json";
     }
     try {
-      response = await fetch(path, {
+      response = await fetch(localApiUrl(path), {
         headers,
         ...options,
       });
@@ -13074,6 +13094,7 @@ const MotionJSONUI = (() => {
     capabilityWarningNamesForConfig,
     jobCenterStateFromSnapshot,
     mergeJobListSnapshot,
+    localApiUrl,
     normalizedModelConnection,
     normalizeJobLifecycle,
     normalizeCorrectionState,
