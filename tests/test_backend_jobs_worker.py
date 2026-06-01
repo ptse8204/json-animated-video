@@ -14,7 +14,7 @@ from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, lis
 from motionjson.backend.projects import create_project
 from motionjson.backend.queue import mark_failed
 from motionjson.backend.usage import summarize_usage
-from motionjson.backend.worker import _ui_discovery_provider, validate_extract_provider_policy, worker_once
+from motionjson.backend.worker import _server_runtime_value, _ui_discovery_provider, validate_extract_provider_policy, worker_once
 from motionjson.backend.models import ProviderPolicyError
 from motionjson.providers.discovery import (
     MockObjectDiscoveryProvider,
@@ -37,6 +37,13 @@ def backend(tmp_path):
 
 def demo_video() -> Path:
     return Path(__file__).resolve().parents[1] / "examples" / "demo_red_ball.mp4"
+
+
+def test_worker_resolves_public_redacted_local_paths_from_server_runtime_settings():
+    assert _server_runtime_value("[LOCAL_PATH_REDACTED]", "/content/sam2/checkpoint.pt") == "/content/sam2/checkpoint.pt"
+    assert _server_runtime_value("", "configs/sam2.yaml") == "configs/sam2.yaml"
+    assert _server_runtime_value("<redacted:sam2-local>", "cuda") == "cuda"
+    assert _server_runtime_value("configs/sam2.yaml", "server-side.yaml") == "configs/sam2.yaml"
 
 
 def test_worker_routes_non_mock_auto_discovery_to_sam2_adapter():

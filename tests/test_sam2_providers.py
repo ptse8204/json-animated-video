@@ -1,6 +1,7 @@
 import builtins
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -153,6 +154,79 @@ def test_local_sam2_provider_accepts_injected_factory_without_checkpoint():
 
     assert calls == ["called"]
     assert mask.sum() == 9 * 255
+
+
+def test_local_sam2_provider_normalizes_absolute_config_path_for_hydra(tmp_path):
+    checkpoint = tmp_path / "sam2.1_hiera_large.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    config = tmp_path / "sam2" / "configs" / "sam2.1" / "sam2.1_hiera_l.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text("model: test\n")
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    calls = {}
+
+    def factory(model_cfg=None, checkpoint=None, device=None):
+        calls["model_cfg"] = model_cfg
+        calls["checkpoint"] = checkpoint
+        calls["device"] = device
+        return FakeSAM2Predictor()
+
+    provider = LocalSAM2SegmentationProvider(
+        source_video=frames,
+        checkpoint=checkpoint,
+        model_config=config,
+        device="cuda",
+        predictor_factory=factory,
+    )
+
+    provider.prepare(VideoInfo(width=8, height=6, source_fps=12, sample_fps=12, total_source_frames=3))
+
+    assert calls == {
+        "model_cfg": "configs/sam2.1/sam2.1_hiera_l.yaml",
+        "checkpoint": str(checkpoint),
+        "device": "cuda",
+    }
+
+
+def test_local_sam2_provider_exports_video_file_to_frame_directory(tmp_path, monkeypatch):
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"placeholder")
+    frames_written = []
+
+    class FakeVideoCapture:
+        def __init__(self, path):
+            self.path = path
+            self.index = 0
+
+        def isOpened(self):
+            return True
+
+        def read(self):
+            if self.index >= 2:
+                return False, None
+            self.index += 1
+            return True, np.zeros((4, 5, 3), dtype=np.uint8)
+
+        def release(self):
+            pass
+
+    def fake_imwrite(path, frame):
+        frames_written.append(path)
+        Path(path).write_bytes(b"jpg")
+        return True
+
+    monkeypatch.setitem(sys.modules, "cv2", types.SimpleNamespace(VideoCapture=FakeVideoCapture, imwrite=fake_imwrite))
+    predictor = FakeSAM2Predictor()
+    provider = LocalSAM2SegmentationProvider(source_video=video_path, predictor=predictor)
+
+    provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
+    frame_dir = Path(provider.state["video_path"])
+
+    assert frame_dir.is_dir()
+    assert [Path(path).name for path in frames_written] == ["000000.jpg", "000001.jpg"]
+    provider.close()
+    assert not frame_dir.exists()
 
 
 def test_local_sam2_provider_lazy_import_failure_is_config_error():

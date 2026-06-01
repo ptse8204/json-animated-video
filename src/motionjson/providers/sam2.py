@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
@@ -16,11 +17,30 @@ from .base import BatchSegmentationRequest, ProviderConfigError, ProviderExecuti
 from .mask_cache import MaskCache, normalize_binary_mask
 
 SAM2_HF_AUTO_MASKS_DEFAULT_MODEL = "facebook/sam2.1-hiera-large"
+SAM2_VIDEO_FILE_SUFFIXES = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
 
 
 class JsonTransport(Protocol):
     def post_json(self, url: str, payload: Mapping[str, Any], *, headers: Mapping[str, str] | None = None) -> Mapping[str, Any]:
         """Post JSON and return decoded JSON."""
+
+
+def _sam2_build_config_name(model_config: str | Path | None) -> str | None:
+    if model_config is None:
+        return None
+    value = str(model_config)
+    path = Path(value)
+    if path.is_absolute():
+        parts = path.parts
+        if "configs" in parts:
+            index = parts.index("configs")
+            return "/".join(parts[index:])
+    return value
+
+
+def _sam2_package_config_reference(model_config: str | Path) -> bool:
+    value = str(model_config).replace("\\", "/")
+    return not Path(value).is_absolute() and value.startswith("configs/")
 
 
 @dataclass
@@ -126,7 +146,7 @@ class LocalSAM2AutomaticMaskProposalBackend:
             )
         if not Path(checkpoint).exists():
             raise ProviderConfigError("Configured SAM2 checkpoint path does not point to an existing file.")
-        if not Path(model_config).exists():
+        if not Path(model_config).exists() and not _sam2_package_config_reference(model_config):
             raise ProviderConfigError("Configured SAM2 model config path does not point to an existing file.")
         try:
             from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator  # type: ignore
@@ -138,7 +158,7 @@ class LocalSAM2AutomaticMaskProposalBackend:
             ) from exc
 
         def factory() -> Any:
-            model = build_sam2(model_config, checkpoint, device=self.device)
+            model = build_sam2(_sam2_build_config_name(model_config), checkpoint, device=self.device)
             return SAM2AutomaticMaskGenerator(model)
 
         return factory
@@ -297,17 +317,19 @@ class LocalSAM2SegmentationProvider:
     state: Any | None = field(default=None, init=False)
     _masks: dict[int, np.ndarray] = field(default_factory=dict, init=False)
     _prompted: bool = field(default=False, init=False)
+    _video_frames_tmp: tempfile.TemporaryDirectory[str] | None = field(default=None, init=False)
     provider_name: str = "sam2-local"
 
     def prepare(self, video_metadata: VideoInfo) -> None:
         self.video_metadata = video_metadata
         if self.predictor is None:
             self.predictor = self._build_predictor()
+        predictor_video_path = self._predictor_video_path()
         if hasattr(self.predictor, "init_state"):
             try:
-                self.state = self.predictor.init_state(video_path=str(self.source_video))
+                self.state = self.predictor.init_state(video_path=predictor_video_path)
             except TypeError:
-                self.state = self.predictor.init_state(str(self.source_video))
+                self.state = self.predictor.init_state(predictor_video_path)
         elif hasattr(self.predictor, "prepare"):
             self.state = self.predictor.prepare(str(self.source_video), video_metadata)
         else:
@@ -408,6 +430,9 @@ class LocalSAM2SegmentationProvider:
     def close(self) -> None:
         if self.predictor is not None and hasattr(self.predictor, "close"):
             self.predictor.close()
+        if self._video_frames_tmp is not None:
+            self._video_frames_tmp.cleanup()
+            self._video_frames_tmp = None
 
     def performance_summary(self) -> dict[str, Any]:
         return {
@@ -434,7 +459,7 @@ class LocalSAM2SegmentationProvider:
                 ) from exc
             self.predictor_factory = build_sam2_video_predictor
 
-        model_cfg = str(self.model_config) if self.model_config else None
+        model_cfg = _sam2_build_config_name(self.model_config)
         checkpoint = str(self.checkpoint) if self.checkpoint else None
         try:
             return self.predictor_factory(
@@ -447,6 +472,46 @@ class LocalSAM2SegmentationProvider:
                 return self.predictor_factory(model_cfg, checkpoint, device=self.device)
             except TypeError:
                 return self.predictor_factory()
+
+    def _predictor_video_path(self) -> str:
+        path = Path(self.source_video)
+        if path.is_file() and path.suffix.lower() in SAM2_VIDEO_FILE_SUFFIXES:
+            return str(self._materialize_video_frames(path))
+        return str(self.source_video)
+
+    def _materialize_video_frames(self, video_path: Path) -> Path:
+        if self._video_frames_tmp is not None:
+            return Path(self._video_frames_tmp.name)
+        try:
+            import cv2  # type: ignore
+        except ImportError as exc:
+            raise ProviderConfigError("sam2-local needs OpenCV to decode video files for the official SAM2 video predictor.") from exc
+
+        tmp = tempfile.TemporaryDirectory(prefix="motionjson-sam2-frames-")
+        frame_dir = Path(tmp.name)
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            tmp.cleanup()
+            raise FileNotFoundError(f"Could not open video for SAM2 frame export: {video_path}")
+
+        count = 0
+        try:
+            while True:
+                ok, frame_bgr = capture.read()
+                if not ok:
+                    break
+                frame_path = frame_dir / f"{count:06d}.jpg"
+                if not cv2.imwrite(str(frame_path), frame_bgr):
+                    raise ProviderExecutionError(f"Failed to write SAM2 frame export: {frame_path.name}")
+                count += 1
+        finally:
+            capture.release()
+
+        if count == 0:
+            tmp.cleanup()
+            raise ProviderExecutionError("SAM2 frame export produced no frames from the source video.")
+        self._video_frames_tmp = tmp
+        return frame_dir
 
     def _ensure_prompted(self, prompt_point: tuple[int, int] | None, prompt_box: tuple[int, int, int, int] | None) -> None:
         if self._prompted:

@@ -62,6 +62,13 @@ def _json(row: dict[str, Any], field: str) -> dict[str, Any]:
     return parsed
 
 
+def _server_runtime_value(config_value: Any, runtime_value: Any) -> Any:
+    text = str(config_value or "").strip()
+    if not text or text == "[LOCAL_PATH_REDACTED]" or text.startswith("<redacted:"):
+        return runtime_value
+    return config_value
+
+
 def _kind_for_rel_path(rel_path: str) -> str:
     job_kind = artifact_kind_for_rel_path(rel_path)
     if job_kind != "extraction_file":
@@ -645,13 +652,27 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                 if provider_name == "mock":
                     mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
                 elif provider_name == "sam2-local" and run_config is not None:
+                    runtime = provider_runtime_settings(
+                        conn,
+                        user_id=job["created_by_user_id"],
+                        provider_id="sam2-local",
+                    )
                     point, box = _prompt_point_and_box(run_config)
                     mask_provider = SegmentationMaskProvider(
                         LocalSAM2SegmentationProvider(
                             source_video=video_path,
-                            checkpoint=run_config.provider.sam2.checkpoint,
-                            model_config=run_config.provider.sam2.model_config,
-                            device=run_config.provider.sam2.device or "cpu",
+                            checkpoint=_server_runtime_value(
+                                run_config.provider.sam2.checkpoint,
+                                runtime.get("sam2_checkpoint_path"),
+                            ),
+                            model_config=_server_runtime_value(
+                                run_config.provider.sam2.model_config,
+                                runtime.get("sam2_model_config_path"),
+                            ),
+                            device=(
+                                _server_runtime_value(run_config.provider.sam2.device, runtime.get("sam2_device"))
+                                or "cpu"
+                            ),
                             prompt_frame_index=run_config.provider.sam2.prompt_frame,
                             object_id=run_config.object_id,
                             prompt_point=point,
