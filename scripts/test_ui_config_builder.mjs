@@ -153,6 +153,29 @@ const failedRunContract = ui.workflowStepContractFromSnapshot(
 assert.equal(failedRunContract.primaryLabel, "Change setup");
 assert.equal(failedRunContract.primaryAction, "prepare_new_run");
 assert.equal(failedRunContract.enabled, true);
+const assetStalledRunContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_asset_stalled",
+    selectedJobStatus: "failed",
+    selectedJobFailureReason: "asset_preparation_stalled",
+    hasFailure: true,
+  },
+  "run_monitor",
+);
+assert.equal(assetStalledRunContract.primaryLabel, "Retry asset prep");
+assert.equal(assetStalledRunContract.primaryAction, "retry_asset_preparation");
+assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "asset_preparation_stalled" } }), {
+  runAgain: "Retry asset prep",
+  changeSetup: "Retry from Model setup",
+  chooseModel: "Choose different model",
+});
+assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "provider_unavailable" } }), {
+  runAgain: "Run again",
+  changeSetup: "Change setup",
+  chooseModel: "Choose different model",
+});
 assert.equal(ui.jobProgressText({ status: "failed", progress: { known: true, percent: 100, label: "Failed" } }), "Failed");
 assert.equal(ui.jobProgressText({ status: "running", progress: { known: true, percent: 31 } }), "31% complete");
 assert.equal(ui.objectDiscoveryConfig({ preset: "trace_all_objects" }).qualityPreset, "balanced");

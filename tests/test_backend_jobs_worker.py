@@ -10,9 +10,10 @@ import pytest
 from motionjson.backend.assets import list_assets_for_job, register_upload
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
-from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, list_job_events
+from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, list_job_events, record_job_event
 from motionjson.backend.projects import create_project
 from motionjson.backend.queue import mark_failed
+from motionjson.backend.stale_jobs import reconcile_stale_asset_preparation_job
 from motionjson.backend.usage import summarize_usage
 from motionjson.backend.worker import _server_runtime_value, _ui_discovery_provider, validate_extract_provider_policy, worker_once
 from motionjson.backend.models import ProviderPolicyError
@@ -175,6 +176,83 @@ def test_queue_retry_then_failure_path(tmp_path):
 
     assert first["status"] == "pending"
     assert second["status"] == "failed"
+
+
+def test_reconcile_stale_asset_preparation_fails_running_job(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    stale_at = "2026-06-03T04:33:51+00:00"
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", (stale_at, job["id"]))
+    conn.execute("UPDATE queue_items SET status = 'running' WHERE job_id = ?", (job["id"],))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE job_id = ?", ("2026-06-03T04:26:56+00:00", job["id"]))
+    conn.commit()
+    event = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="progress",
+        message="prepared raster asset frame 1/48 for sam3_grid_024",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "progress": {"overallRatio": 0.73, "current": 1, "total": 48},
+            "metadata": {"objectId": "sam3_grid_024"},
+        },
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", (stale_at, event["id"]))
+    conn.commit()
+
+    reconciled = reconcile_stale_asset_preparation_job(
+        conn,
+        job_id=job["id"],
+        now="2026-06-03T04:45:37+00:00",
+        threshold_seconds=240,
+    )
+    events = list_job_events(conn, job_id=job["id"])
+    stalled_event = next(event for event in events if event["event_type"] == "asset_preparation_stalled")
+    stalled_metadata = json.loads(stalled_event["metadata_json"])
+    queue_row = conn.execute("SELECT status FROM queue_items WHERE job_id = ?", (job["id"],)).fetchone()
+
+    assert reconciled["status"] == "failed"
+    assert reconciled["attempts"] == 1
+    assert "frame 1/48 for sam3_grid_024" in reconciled["error"]
+    assert queue_row["status"] == "failed"
+    assert stalled_metadata["reasonCode"] == "asset_preparation_stalled"
+    assert stalled_metadata["phase"] == "asset_preparation"
+    assert stalled_metadata["objectId"] == "sam3_grid_024"
+    assert stalled_metadata["preparedFrames"] == 1
+    assert stalled_metadata["totalFrames"] == 48
+    assert stalled_metadata["artifactsAvailable"] is False
+    assert any(event["event_type"] == "failed" for event in events)
+
+
+def test_reconcile_asset_preparation_keeps_fresh_running_job(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    fresh_at = "2026-06-03T04:44:30+00:00"
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", (fresh_at, job["id"]))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE job_id = ?", ("2026-06-03T04:43:00+00:00", job["id"]))
+    conn.commit()
+    event = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="progress",
+        message="prepared raster asset frame 1/48 for sam3_grid_024",
+        metadata={"stage": "asset_preparation", "progress": {"overallRatio": 0.73, "current": 1, "total": 48}, "metadata": {"objectId": "sam3_grid_024"}},
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", (fresh_at, event["id"]))
+    conn.commit()
+
+    reconciled = reconcile_stale_asset_preparation_job(
+        conn,
+        job_id=job["id"],
+        now="2026-06-03T04:45:37+00:00",
+        threshold_seconds=240,
+    )
+
+    assert reconciled["status"] == "running"
+    assert not any(event["event_type"] == "asset_preparation_stalled" for event in list_job_events(conn, job_id=job["id"]))
 
 
 def test_provider_policy_rejects_openrouter_as_segmentation(tmp_path):

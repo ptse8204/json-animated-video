@@ -27,6 +27,7 @@ const CAPTURE_STATES = [
   "workflow-run",
   "workflow-run-stale",
   "workflow-run-logs-open",
+  "workflow-run-asset-stalled",
   "workflow-review",
   "workflow-review-failure",
   "workflow-correct",
@@ -536,6 +537,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "workflow-run": "run_monitor",
       "workflow-run-stale": "run_monitor",
       "workflow-run-logs-open": "run_monitor",
+      "workflow-run-asset-stalled": "run_monitor",
       "workflow-review": "review_export",
       "workflow-review-failure": "run_monitor",
       "workflow-correct": "review_export",
@@ -676,6 +678,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
           mainSelectedJobFactsText: document.querySelector("#mainSelectedJobFacts")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          failedRunActionsText: ((document.querySelector("#failedRunActions")?.textContent || "") + " " + (document.querySelector("#mainFailedRunActions")?.textContent || "")).trim().replace(/\\s+/g, " "),
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -813,6 +816,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
       failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
+    }
+    if (
+      state === "workflow-run-asset-stalled" &&
+      (stateValue.mainRunStatusText !== "failed" ||
+        !/Raster asset preparation stalled|frame 1\/48|sam3_grid_024/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.eventLogText}`) ||
+        !/Retry asset prep/.test(`${stateValue.workflowPrimaryLabel} ${stateValue.failedRunActionsText}`))
+    ) {
+      failures.push(`${viewport.name}/${state}: asset-preparation stall should be terminal with retry-specific recovery copy`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {

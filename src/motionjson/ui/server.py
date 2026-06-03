@@ -60,6 +60,7 @@ from motionjson.backend.provider_setup_jobs import (
 )
 from motionjson.backend.queue import request_cancel_job
 from motionjson.backend.selected_tracking import track_selected_candidates
+from motionjson.backend.stale_jobs import reconcile_stale_asset_preparation_job
 from motionjson.backend.workspace import (
     commercial_readiness_response,
     get_workspace_preferences,
@@ -2052,6 +2053,9 @@ class LocalUIApp:
         include_events: bool = False,
         include_review: bool = True,
     ) -> dict[str, Any]:
+        reconciled = reconcile_stale_asset_preparation_job(conn, job_id=job["id"])
+        if reconciled is not None:
+            job = reconciled
         events = list_job_events(conn, job_id=job["id"])
         review = self._job_review_for_lifecycle(conn, job) if include_review else {}
         return _public_job_snapshot(job, events=events, include_events=include_events, review=review)

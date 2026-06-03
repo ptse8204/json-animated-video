@@ -83,10 +83,12 @@ def review_lifecycle_summary(review: Mapping[str, Any]) -> dict[str, Any]:
 def _latest_event(events: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
     if not events:
         return None
+    metadata = _mapping(events[-1].get("metadata"))
     latest = events[-1]
     return {
         "type": _text(latest.get("type") or latest.get("event_type")),
         "message": _text(latest.get("message")),
+        "stage": _text(latest.get("stage") or metadata.get("stage")),
         "createdAt": _text(latest.get("created_at") or latest.get("createdAt")),
     }
 
@@ -143,7 +145,8 @@ def _phase(raw_status: str, status: str, latest_event: Mapping[str, Any] | None,
         return "complete"
     event_type = _text((latest_event or {}).get("type")).lower()
     event_message = _text((latest_event or {}).get("message")).lower()
-    combined = f"{event_type} {event_message}"
+    event_stage = _text((latest_event or {}).get("stage")).lower()
+    combined = f"{event_type} {event_stage} {event_message}"
     if "validat" in combined or "preflight" in combined:
         return "validating"
     if "discover" in combined or "candidate" in combined or "proposal" in combined:
@@ -198,6 +201,8 @@ def _failure_summary(
 
 def _failure_reason_code(message: str) -> str:
     normalized = message.lower()
+    if "asset preparation stalled" in normalized or "raster asset preparation stalled" in normalized:
+        return "asset_preparation_stalled"
     if any(token in normalized for token in ("sam2", "sam3", "cuda", "checkpoint", "model", "provider", "api key", "token", "credential", "not importable", "unavailable")):
         return "provider_unavailable"
     if any(token in normalized for token in ("config", "validation", "payload", "schema")):
@@ -208,6 +213,8 @@ def _failure_reason_code(message: str) -> str:
 
 
 def _failure_headline(message: str, reason_code: str) -> str:
+    if reason_code == "asset_preparation_stalled":
+        return "Raster asset preparation stalled"
     if reason_code == "provider_unavailable":
         if "sam3" in message.lower():
             return "SAM3 is not ready"
@@ -223,6 +230,8 @@ def _failure_headline(message: str, reason_code: str) -> str:
 
 
 def _suggested_action(reason_code: str) -> str:
+    if reason_code == "asset_preparation_stalled":
+        return "Retry asset preparation from the current setup, or return to Model setup before starting a new run."
     if reason_code == "provider_unavailable":
         return "Open Model Connections, fix the provider setup, or choose a no-model workflow."
     if reason_code == "validation_failed":
@@ -247,7 +256,8 @@ def _actions(
     )
     return {
         "canCancel": raw_status in {"pending", "queued", "running"},
-        "canRetry": False,
+        "canRetry": bool(failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled"),
+        "canRetryAssetPreparation": bool(failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled"),
         "canReview": can_review,
         "canTrackSelected": status == "waiting_review" and int(review.get("candidateCount") or 0) > 0 and int(review.get("trackCount") or 0) == 0,
         "canExport": status in {"waiting_review", "succeeded"} and int(review.get("exportableTrackCount") or 0) > 0,
@@ -262,6 +272,8 @@ def _next_action(
 ) -> dict[str, str]:
     if status in {"queued", "running"}:
         return {"label": "Watch job", "reason": "The run is still in progress."}
+    if failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled":
+        return {"label": "Retry asset prep", "reason": _text(failure.get("headline"))}
     if failure:
         return {"label": "Open logs", "reason": _text(failure.get("headline"))}
     if actions.get("canTrackSelected"):

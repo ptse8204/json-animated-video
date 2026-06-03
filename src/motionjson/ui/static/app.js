@@ -1070,10 +1070,11 @@ const MotionJSONUI = (() => {
         };
       }
       if (jobFailed) {
+        const recoveryLabels = failedRunRecoveryLabels({ failure: { reasonCode: snapshot.selectedJobFailureReason || "" } });
         return {
           id: activeStep,
-          primaryLabel: "Change setup",
-          primaryAction: "prepare_new_run",
+          primaryLabel: recoveryLabels.runAgain === "Retry asset prep" ? recoveryLabels.runAgain : "Change setup",
+          primaryAction: recoveryLabels.runAgain === "Retry asset prep" ? "retry_asset_preparation" : "prepare_new_run",
           enabled: true,
           blockedReason: "",
           successAdvanceTo: "provider_settings",
@@ -2578,6 +2579,22 @@ const MotionJSONUI = (() => {
       stale,
       timestamp: jobTimestamp(job),
       rawJob: job,
+    };
+  }
+
+  function failedRunRecoveryLabels(lifecycle = {}) {
+    const reasonCode = String(lifecycle.failure?.reasonCode || lifecycle.reasonCode || "").toLowerCase();
+    if (reasonCode === "asset_preparation_stalled") {
+      return {
+        runAgain: "Retry asset prep",
+        changeSetup: "Retry from Model setup",
+        chooseModel: "Choose different model",
+      };
+    }
+    return {
+      runAgain: "Run again",
+      changeSetup: "Change setup",
+      chooseModel: "Choose different model",
     };
   }
 
@@ -5485,6 +5502,7 @@ const MotionJSONUI = (() => {
         backendValidated: state.configValidation?.valid === true,
         selectedJobId: state.selectedJobId,
         selectedJobStatus: selectedLifecycle?.status || selectedJob()?.status || "",
+        selectedJobFailureReason: selectedLifecycle?.failure?.reasonCode || "",
         candidateCount: candidates.length,
         selectedCandidateCount: selectedCount,
         trackCount: state.reviewTracks.length,
@@ -6100,6 +6118,8 @@ const MotionJSONUI = (() => {
           await cancelSelectedJob();
         } else if (contract.primaryAction === "open_logs") {
           openRunLogsAndDiagnostics();
+        } else if (contract.primaryAction === "retry_asset_preparation") {
+          await runAgainFromTerminalJob();
         } else if (contract.primaryAction === "prepare_new_run") {
           prepareNewGuidedRun("prompt_preview");
         } else if (contract.primaryAction === "select_candidates") {
@@ -7610,7 +7630,7 @@ const MotionJSONUI = (() => {
               const progressText = jobProgressText(job);
               const status = job.status || "unknown";
               const selected = id && id === state.selectedJobId;
-              const diagnostics = [
+              const diagnostics = [...new Set([
                 job.stale?.stale ? job.stale.label : "",
                 job.failure?.message,
                 job.latestEvent?.message,
@@ -7620,7 +7640,7 @@ const MotionJSONUI = (() => {
                 job.rawJob?.vector_unavailable_reason,
                 job.rawJob?.rasterOnlyReason,
                 job.rawJob?.raster_only_reason,
-              ].filter(Boolean);
+              ].filter(Boolean))];
               return `
                 <button class="artifact-row job-choice ${selected ? "is-selected" : ""}" type="button" data-job-id="${escapeAttribute(id)}" aria-pressed="${selected}">
                   <strong>${escapeHtml(job.type || "job")}</strong>
@@ -7693,6 +7713,7 @@ const MotionJSONUI = (() => {
       const cancelDisabled = !lifecycle.actions.canCancel || normalizedStatus === "cancel_requested";
       const terminalFailure = isFailedJobStatus(normalizedStatus);
       const hasSelectedRun = Boolean(lifecycle.id);
+      const recoveryLabels = failedRunRecoveryLabels(lifecycle);
       cancelButton.disabled = cancelDisabled;
       cancelButton.textContent = normalizedStatus === "cancel_requested" ? "Cancel requested" : "Cancel run";
       if (mainCancelButton) {
@@ -7701,8 +7722,15 @@ const MotionJSONUI = (() => {
       }
       failedActionGroups.forEach((group) => {
         group.hidden = !hasSelectedRun;
-        group.querySelectorAll("#runAgainButton, #mainRunAgainButton, #changeSetupButton, #mainChangeSetupButton, #chooseModelButton, #mainChooseModelButton").forEach((button) => {
-          button.hidden = !terminalFailure;
+        [
+          ["#runAgainButton, #mainRunAgainButton", recoveryLabels.runAgain],
+          ["#changeSetupButton, #mainChangeSetupButton", recoveryLabels.changeSetup],
+          ["#chooseModelButton, #mainChooseModelButton", recoveryLabels.chooseModel],
+        ].forEach(([selector, label]) => {
+          group.querySelectorAll(selector).forEach((button) => {
+            button.hidden = !terminalFailure;
+            button.textContent = label;
+          });
         });
       });
       debugReportButtons.forEach((button) => {
@@ -11207,14 +11235,14 @@ const MotionJSONUI = (() => {
         renderPresetFields();
         renderConfigPreview();
         if (capture !== "prepare-sam3-trace-all-missing-runtime") setRunAlert("", "warning-box");
-      } else if (["workflow-run", "workflow-run-stale", "workflow-run-logs-open"].includes(capture)) {
+      } else if (["workflow-run", "workflow-run-stale", "workflow-run-logs-open", "workflow-run-asset-stalled"].includes(capture)) {
         if (shell) {
           shell.style.display = "grid";
           shell.style.minHeight = "100vh";
         }
         if (sidebar) sidebar.style.display = "";
         if (rightRail) rightRail.style.display = "none";
-        const staleRunCapture = capture === "workflow-run-stale" || capture === "workflow-run-logs-open";
+        const staleRunCapture = capture === "workflow-run-stale" || capture === "workflow-run-logs-open" || capture === "workflow-run-asset-stalled";
         if (capture === "workflow-run-logs-open" && rightRail) {
           rightRail.style.display = "";
         }
@@ -11290,42 +11318,70 @@ const MotionJSONUI = (() => {
             outputMode: "authoring",
             qualityPreset: "clean",
           });
+          const assetStalledCapture = capture === "workflow-run-asset-stalled";
           const staleEventAt = new Date(Date.now() - 5 * 60 * 1000).toISOString();
           const jobEvent = {
             event_type: "progress",
-            status: "running",
-            stage: "candidate_discovery",
-            message: "discovering object candidates",
+            status: assetStalledCapture ? "failed" : "running",
+            stage: assetStalledCapture ? "asset_preparation" : "candidate_discovery",
+            message: assetStalledCapture ? "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced." : "discovering object candidates",
             created_at: staleEventAt,
             metadata: {
-              progress: { overallRatio: 0.31 },
-              stage: "candidate_discovery",
+              progress: assetStalledCapture ? { overallRatio: 0.73, current: 1, total: 48 } : { overallRatio: 0.31 },
+              stage: assetStalledCapture ? "asset_preparation" : "candidate_discovery",
               provider: "sam3-auto-masks",
+              objectId: assetStalledCapture ? "sam3_grid_024" : undefined,
+              reasonCode: assetStalledCapture ? "asset_preparation_stalled" : undefined,
             },
           };
           const loadingEvent = {
             event_type: "progress",
             status: "running",
-            stage: "candidate_discovery",
-            message: "loading SAM3 Tracker scene-sweep model",
+            stage: assetStalledCapture ? "asset_preparation" : "candidate_discovery",
+            message: assetStalledCapture ? "prepared raster asset frame 1/48 for sam3_grid_024" : "loading SAM3 Tracker scene-sweep model",
             created_at: staleEventAt,
             metadata: {
-              progress: { overallRatio: 0.31 },
-              stage: "candidate_discovery",
+              progress: assetStalledCapture ? { overallRatio: 0.73, current: 1, total: 48 } : { overallRatio: 0.31 },
+              stage: assetStalledCapture ? "asset_preparation" : "candidate_discovery",
               provider: "sam3-local",
+              objectId: assetStalledCapture ? "sam3_grid_024" : undefined,
             },
           };
           const job = {
             id: `job_${capture}_layout`,
             type: "extract",
-            status: "running",
-            progress: 31,
-            percent: 31,
+            status: assetStalledCapture ? "failed" : "running",
+            progress: assetStalledCapture ? 73 : 31,
+            percent: assetStalledCapture ? 73 : 31,
             payload: { mask_provider: "sam3-local", run_config: runConfig },
             result: { objects: 1 },
+            error: assetStalledCapture ? "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced." : undefined,
+            lifecycle: assetStalledCapture
+              ? {
+                  jobId: `job_${capture}_layout`,
+                  status: "failed",
+                  rawStatus: "failed",
+                  phase: "failed",
+                  provider: { label: "SAM3 local", id: "sam3-local", engine: "sam3", locality: "local" },
+                  progress: { known: true, percent: 73, label: "Asset preparation" },
+                  latestEvent: {
+                    type: "failed",
+                    stage: "asset_preparation",
+                    message: "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.",
+                    createdAt: staleEventAt,
+                  },
+                  failure: {
+                    headline: "Raster asset preparation stalled",
+                    reasonCode: "asset_preparation_stalled",
+                    message: "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.",
+                    suggestedAction: "Retry asset preparation from the current setup, or return to Model setup before starting a new run.",
+                  },
+                  actions: { canCancel: false, canRetry: true, canRetryAssetPreparation: true, canReview: true, canExport: false },
+                }
+              : undefined,
             updated_at: staleEventAt,
             lastEventAt: staleEventAt,
-            message: "discovering object candidates",
+            message: assetStalledCapture ? "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced." : "discovering object candidates",
             events: [loadingEvent, jobEvent],
           };
           state.jobs = [job];
@@ -13253,6 +13309,7 @@ const MotionJSONUI = (() => {
     exportReadinessSummary,
     exportValidationFromState,
     exportValidationIssueText,
+    failedRunRecoveryLabels,
     filterReviewCandidates,
     jobStaleNotice,
     jobProgressText,

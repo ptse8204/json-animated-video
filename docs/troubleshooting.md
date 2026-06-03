@@ -178,6 +178,25 @@ Useful fixes:
 
 See [Track filtering and fallback diagnostics](track_filtering.md).
 
+## Run Stalls During Asset Preparation
+
+After vectorization, MotionJSON writes local masks, cutouts, and sprite assets.
+If the latest backend event stays in `asset_preparation` beyond the watchdog
+window, the Local UI converts the run from `running` to `failed` with reason
+code `asset_preparation_stalled`.
+
+The failure message includes the object id and frame counter when known, for
+example:
+
+```text
+Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.
+```
+
+Use **Retry asset prep** to rerun from the current setup, or **Retry from Model
+setup** if the provider/cache/runtime may have changed. Logs should remain
+available, and export stays blocked until a successful run creates reviewed
+tracks or artifacts.
+
 ## Object Discovery Finds Too Few Candidates
 
 Start with the default Clean preset. It is intentionally conservative: few

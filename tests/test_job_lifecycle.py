@@ -206,6 +206,41 @@ def test_job_lifecycle_summarizes_failure_and_recovery_action():
     assert lifecycle["actions"]["canRetry"] is False
 
 
+def test_job_lifecycle_summarizes_asset_preparation_stall():
+    job = {
+        "id": "job_asset_stalled",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "failed",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}}},
+        "error": "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.",
+        "result": {},
+    }
+    events = [
+        {
+            "event_type": "asset_preparation_stalled",
+            "message": "Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.",
+            "metadata": {
+                "stage": "asset_preparation",
+                "reasonCode": "asset_preparation_stalled",
+                "objectId": "sam3_grid_024",
+            },
+            "created_at": "2026-06-03T04:45:37+00:00",
+        }
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["status"] == "failed"
+    assert lifecycle["failure"]["headline"] == "Raster asset preparation stalled"
+    assert lifecycle["failure"]["reasonCode"] == "asset_preparation_stalled"
+    assert lifecycle["failure"]["suggestedAction"] == "Retry asset preparation from the current setup, or return to Model setup before starting a new run."
+    assert lifecycle["actions"]["canRetry"] is True
+    assert lifecycle["actions"]["canRetryAssetPreparation"] is True
+    assert lifecycle["actions"]["canExport"] is False
+    assert lifecycle["nextAction"]["label"] == "Retry asset prep"
+
+
 def test_job_lifecycle_gates_candidates_tracks_and_exports():
     job = {
         "id": "job_review",
@@ -330,6 +365,56 @@ def test_local_ui_job_lifecycle_redacts_failure_paths(tmp_path):
     assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "provider_unavailable"
     assert "[LOCAL_PATH_REDACTED]" in public_text
     assert str(tmp_path) not in public_text
+
+
+def test_local_ui_job_poll_reconciles_stale_asset_preparation(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Stale Asset Prep"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "sam3-local", "maxFrames": 48}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    stale_at = "2000-01-01T00:00:00+00:00"
+    conn = app.connection()
+    try:
+        conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", (stale_at, job["id"]))
+        conn.execute("UPDATE queue_items SET status = 'running' WHERE job_id = ?", (job["id"],))
+        conn.execute("UPDATE job_events SET created_at = ? WHERE job_id = ?", ("1999-12-31T23:59:00+00:00", job["id"]))
+        conn.commit()
+        event = record_job_event(
+            conn,
+            job_id=job["id"],
+            event_type="progress",
+            message="prepared raster asset frame 1/48 for sam3_grid_024",
+            metadata={
+                "stage": "asset_preparation",
+                "progress": {"overallRatio": 0.73, "current": 1, "total": 48},
+                "metadata": {"objectId": "sam3_grid_024"},
+            },
+        )
+        conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", (stale_at, event["id"]))
+        conn.commit()
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}")
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["job"]["status"] == "failed"
+    assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "asset_preparation_stalled"
+    assert payload["job"]["lifecycle"]["nextAction"]["label"] == "Retry asset prep"
+    assert payload["job"]["lifecycle"]["actions"]["canRetryAssetPreparation"] is True
+    assert any(event["event_type"] == "asset_preparation_stalled" for event in payload["job"]["events"])
 
 
 def test_completed_mock_job_lifecycle_reports_review_export_gate(tmp_path):
