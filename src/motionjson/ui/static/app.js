@@ -490,6 +490,7 @@ const MotionJSONUI = (() => {
     exportResult: null,
     exportCopyPayloads: {},
     exportCopiedHandoffId: "",
+    runDebugReportCopiedJobId: "",
     selectedReviewToolId: "canvas-player",
     libraryAssets: [],
     libraryCollections: [],
@@ -2577,6 +2578,142 @@ const MotionJSONUI = (() => {
       stale,
       timestamp: jobTimestamp(job),
       rawJob: job,
+    };
+  }
+
+  const DEBUG_REPORT_SECRET_KEY_RE = /api[_-]?key|token|secret|password|credential|authorization|auth[_-]?env|cookie/i;
+  const DEBUG_REPORT_TOKEN_VALUE_RE = /\b(?:hf|sk|ghp|github_pat)_[A-Za-z0-9._-]{12,}\b/g;
+
+  function redactDebugReportText(value) {
+    return String(value ?? "")
+      .replace(DEBUG_REPORT_TOKEN_VALUE_RE, "[REDACTED_TOKEN]")
+      .replace(/((?:api[_ -]?key|token|secret|password|credential|authorization)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
+  }
+
+  function redactDebugReportValue(value, key = "", depth = 0) {
+    if (DEBUG_REPORT_SECRET_KEY_RE.test(String(key || ""))) return "[REDACTED]";
+    if (value == null || typeof value === "number" || typeof value === "boolean") return value;
+    if (typeof value === "string") return redactDebugReportText(value);
+    if (depth > 4) return "[TRUNCATED]";
+    if (Array.isArray(value)) return value.slice(0, 20).map((item) => redactDebugReportValue(item, key, depth + 1));
+    if (typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value)
+          .slice(0, 40)
+          .map(([entryKey, entryValue]) => [entryKey, redactDebugReportValue(entryValue, entryKey, depth + 1)]),
+      );
+    }
+    return redactDebugReportText(value);
+  }
+
+  function runDebugReportEventSummary(event = {}) {
+    const metadata = eventMetadata(event);
+    const progress = eventProgress(event);
+    const ratio = progress.overallRatio ?? progress.ratio;
+    const progressLabel = typeof ratio === "number" ? `${Math.round((ratio <= 1 ? ratio * 100 : ratio))}%` : "";
+    return redactDebugReportValue({
+      at: event.createdAt || event.created_at || event.timestamp || "",
+      type: event.type || event.event_type || "",
+      stage: metadata.stage || event.stage || "",
+      phase: metadata.phase || event.phase || "",
+      progress: progressLabel,
+      message: event.message || metadata.message || "",
+      action: metadata.action || "",
+    });
+  }
+
+  function runConfigDebugSummary(config = null) {
+    if (!config || typeof config !== "object") return {};
+    return redactDebugReportValue({
+      provider: config.provider?.name || config.mask_provider || "",
+      discovery: config.discovery?.mode || config.discovery_provider || "",
+      objectId: config.object_id || config.objectId || "",
+      label: config.label || "",
+      sampleFps: config.sampling?.sample_fps || config.sample_fps || "",
+      maxFrames: config.sampling?.max_frames || config.max_frames || "",
+      outputMode: config.output?.mode || config.output_mode || "",
+    });
+  }
+
+  function buildRunDebugReport(snapshot = {}, options = {}) {
+    const job = snapshot.job || {};
+    const events = asArray(snapshot.events || job.events);
+    const artifacts = asArray(snapshot.artifacts);
+    const reviewTracks = asArray(snapshot.reviewTracks);
+    const lifecycle = normalizeJobLifecycle({ ...job, events }, { now: options.now });
+    const now = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
+    const generatedAt = new Date(now).toISOString();
+    const latestEvents = events.slice(-12).map(runDebugReportEventSummary);
+    const latestEvent = events.length ? events[events.length - 1] : {};
+    const sceneObjects = job.result?.scene?.objects;
+    const objectCount = Array.isArray(sceneObjects) ? sceneObjects.length : (sceneObjects ?? job.result?.objects ?? reviewTracks.length);
+    const project = redactDebugReportValue({
+      id: snapshot.project?.id || lifecycle.projectId || job.project_id || "",
+      name: snapshot.project?.name || snapshot.project?.title || "",
+    });
+    const video = redactDebugReportValue({
+      id: snapshot.video?.id || "",
+      name: snapshot.video?.filename || snapshot.video?.name || snapshot.video?.metadata?.filename || "",
+      type: snapshot.video?.content_type || snapshot.video?.contentType || "",
+    });
+    const summary = redactDebugReportValue({
+      jobId: lifecycle.id,
+      status: lifecycle.status,
+      rawStatus: lifecycle.rawStatus,
+      phase: lifecycle.phase,
+      provider: lifecycle.provider.displayLabel,
+      providerId: lifecycle.provider.providerId,
+      progress: lifecycle.progress.known ? `${lifecycle.progress.percent}%` : `${lifecycle.progress.percent}% estimated`,
+      active: lifecycle.active,
+      terminal: lifecycle.terminal,
+      watchdog: lifecycle.stale?.stale ? lifecycle.stale.detail : "fresh",
+      latestEventAt: lifecycle.latestEvent.createdAt || latestEvent.createdAt || latestEvent.created_at || "",
+      latestEvent: lifecycle.latestEvent.message,
+      artifacts: artifacts.length || job.result?.artifacts || 0,
+      objects: objectCount,
+      updatedAt: job.updated_at || job.updatedAt || "",
+    });
+    const runConfig = runConfigDebugSummary(snapshot.runConfig);
+    const lines = [
+      "# MotionJSON Run Debug Report",
+      `Generated: ${generatedAt}`,
+      `UI route: ${redactDebugReportText(snapshot.route || "")}`,
+      "",
+      "## Selected Run",
+      ...Object.entries(summary).map(([key, value]) => `${key}: ${value === "" ? "not reported" : value}`),
+      "",
+      "## Project",
+      ...Object.entries(project).map(([key, value]) => `${key}: ${value || "not reported"}`),
+      "",
+      "## Video",
+      ...Object.entries(video).map(([key, value]) => `${key}: ${value || "not reported"}`),
+      "",
+      "## Run Config Summary",
+      ...Object.entries(runConfig).map(([key, value]) => `${key}: ${value || "not reported"}`),
+      "",
+      "## Recent Events",
+      latestEvents.length
+        ? latestEvents
+            .map((event, index) => `${index + 1}. ${event.at || "no time"} ${event.type || "event"} ${event.stage || event.phase || ""} ${event.progress || ""} - ${event.message || "no message"}`.trim())
+            .join("\n")
+        : "No events returned by the backend.",
+      "",
+      "## Suggested Next Step",
+      lifecycle.stale?.stale
+        ? "The run has no recent backend progress. Open logs, capture this report, then cancel and retry from Model setup if the worker does not recover."
+        : lifecycle.failure?.suggestedAction || "Open logs if the run does not behave as expected.",
+      "",
+    ];
+    return {
+      format: "motionjson.local_ui_debug_report.v0.1",
+      generatedAt,
+      summary,
+      project,
+      video,
+      runConfig,
+      latestEvents,
+      eventCount: events.length,
+      text: lines.join("\n"),
     };
   }
 
@@ -7512,6 +7649,7 @@ const MotionJSONUI = (() => {
       const cancelButton = $("#cancelJobButton");
       const mainCancelButton = $("#mainCancelJobButton");
       const failedActionGroups = [$("#failedRunActions"), $("#mainFailedRunActions")].filter(Boolean);
+      const debugReportButtons = [$("#copyRunDebugReportButton"), $("#mainCopyRunDebugReportButton")].filter(Boolean);
       if (!job) {
         statusChipElement.textContent = "No run";
         statusChipElement.className = "status-chip is-muted";
@@ -7527,6 +7665,10 @@ const MotionJSONUI = (() => {
         }
         failedActionGroups.forEach((group) => {
           group.hidden = true;
+        });
+        debugReportButtons.forEach((button) => {
+          button.disabled = true;
+          button.textContent = "Copy debug report";
         });
         const facts = {
           status: "select or start a run",
@@ -7562,6 +7704,10 @@ const MotionJSONUI = (() => {
         group.querySelectorAll("#runAgainButton, #mainRunAgainButton, #changeSetupButton, #mainChangeSetupButton, #chooseModelButton, #mainChooseModelButton").forEach((button) => {
           button.hidden = !terminalFailure;
         });
+      });
+      debugReportButtons.forEach((button) => {
+        button.disabled = !hasSelectedRun;
+        button.textContent = state.runDebugReportCopiedJobId === lifecycle.id ? "Copied" : "Copy debug report";
       });
       const payload = job.payload || {};
       const result = job.result || {};
@@ -11905,6 +12051,37 @@ const MotionJSONUI = (() => {
       return copied;
     }
 
+    async function copySelectedRunDebugReport() {
+      const job = selectedJob();
+      if (!job) {
+        setRunAlert("Select a run before copying a debug report.", "warning-box is-bad");
+        return;
+      }
+      const project = state.projects.find((item) => item.id === state.selectedProjectId) || {};
+      const report = buildRunDebugReport(
+        {
+          job,
+          events: state.jobEvents.length ? state.jobEvents : asArray(job.events),
+          artifacts: state.jobArtifacts,
+          reviewTracks: state.reviewTracks,
+          project,
+          video: selectedVideo(),
+          runConfig: jobConfig(job),
+          route: globalThis.location?.pathname || "",
+        },
+        { now: Date.now() },
+      );
+      const copied = await copyTextToClipboard(report.text);
+      state.runDebugReportCopiedJobId = copied ? report.summary.jobId : "";
+      renderSelectedJobFacts();
+      setRunAlert(
+        copied
+          ? "Debug report copied. Paste it into an issue or support message; secrets and token-like values are redacted."
+          : "Could not copy automatically. Open logs and copy the visible run details manually.",
+        copied ? "warning-box is-ready" : "warning-box is-warn",
+      );
+    }
+
     async function handleExportHandoffAction(event) {
       const button = event.target.closest("[data-export-handoff-action]");
       if (!button) return;
@@ -12147,6 +12324,8 @@ const MotionJSONUI = (() => {
     $("#mainCancelJobButton")?.addEventListener("click", cancelSelectedJob);
     $("#openLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
     $("#mainOpenLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
+    $("#copyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
+    $("#mainCopyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
     $("#runAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#mainRunAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#changeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));
@@ -13050,6 +13229,7 @@ const MotionJSONUI = (() => {
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,
     buildExportPanelSummary,
+    buildRunDebugReport,
     buildRunConfig,
     buildRunPlan,
     buildReviewTracks,

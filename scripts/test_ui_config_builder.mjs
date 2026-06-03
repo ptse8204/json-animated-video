@@ -1764,6 +1764,43 @@ assert.equal(lifecycleStale.stale.stale, true);
 assert.match(lifecycleStale.stale.detail, /No progress update/);
 assert.equal(lifecycleStale.actions.canCancel, true);
 
+const staleDebugReport = ui.buildRunDebugReport(
+  {
+    job: {
+      id: "job_stale",
+      type: "extract",
+      status: "running",
+      updatedAt: "2026-05-20T10:00:00Z",
+      payload: { run_config: { provider: { name: "sam3-local" } } },
+    },
+    events: [
+      {
+        created_at: "2026-05-20T10:01:00Z",
+        event_type: "progress",
+        metadata: { progress: { overallRatio: 0.7 }, stage: "vectorization", token: "hf_1234567890abcdefTOKEN" },
+        message: "contours vectorized for sam3_grid_025 token=hf_1234567890abcdefTOKEN",
+      },
+    ],
+    artifacts: [],
+    project: { id: "project_1", name: "sample-10s project" },
+    video: { id: "video_1", filename: "sample-10s.mp4" },
+    runConfig: {
+      provider: { name: "sam3-local", hfToken: "hf_1234567890abcdefTOKEN" },
+      discovery: { mode: "sam3_auto_masks" },
+      sampling: { max_frames: 240, sample_fps: 12 },
+    },
+    route: "/ui/",
+  },
+  { now: Date.parse("2026-05-20T10:05:30Z") },
+);
+assert.equal(staleDebugReport.format, "motionjson.local_ui_debug_report.v0.1");
+assert.equal(staleDebugReport.summary.jobId, "job_stale");
+assert.match(staleDebugReport.text, /No progress update/);
+assert.match(staleDebugReport.text, /Suggested Next Step/);
+assert.match(staleDebugReport.text, /sam3-local/);
+assert.doesNotMatch(staleDebugReport.text, /hf_1234567890abcdefTOKEN/);
+assert.match(staleDebugReport.text, /REDACTED/);
+
 const lifecycleFresh = ui.normalizeJobLifecycle(
   {
     id: "job_fresh",
