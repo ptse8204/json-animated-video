@@ -25,7 +25,7 @@ from .providers.pipeline_adapters import (
     PerFrameMaskVideoTracker,
 )
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
-from .track_filters import TrackFilterConfig, build_raster_fallback, filter_and_dedupe_tracks
+from .track_filters import TrackFilterConfig, build_raster_fallback, evaluate_track, filter_and_dedupe_tracks
 from .tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
 from .vectorize import build_quality_scores, recommended_output
 from .video import iter_sampled_frames
@@ -447,6 +447,13 @@ def _job_check_cancel(job_context: Any | None, stage: str) -> None:
         check(stage)
 
 
+ASSET_MATERIALIZATION_SKIP_REASONS = {"masks_too_large_whole_frame", "no_masks_accepted"}
+
+
+def _should_skip_asset_materialization(reason_codes: Sequence[str]) -> bool:
+    return any(reason in ASSET_MATERIALIZATION_SKIP_REASONS for reason in reason_codes)
+
+
 def _object_dir(out_dir: Path, object_id: str) -> Path:
     return out_dir / "objects" / object_id
 
@@ -599,9 +606,48 @@ def _extract_object(
         run_context,
     )[0]
     _job_emit(job_context, "vectorization", "succeeded", f"contours vectorized for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.7}, metadata={"objectId": object_id})
+    pre_export_decision = evaluate_track(
+        track,
+        width=info.width,
+        height=info.height,
+        config=TrackFilterConfig(min_area=min_area),
+    )
+    pre_export_payload = pre_export_decision.to_dict()
+    pre_export_reason_codes = list(pre_export_decision.reason_codes)
+    skip_asset_materialization = (
+        pre_export_decision.status == "rejected"
+        and _should_skip_asset_materialization(pre_export_reason_codes)
+    )
+    track.metadata["trackFilterPreflight"] = pre_export_payload
+    if skip_asset_materialization:
+        track.export_status = "rejected"
+        track.warnings = list(dict.fromkeys([*track.warnings, *pre_export_reason_codes]))
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "skipped",
+            f"skipped raster asset materialization for rejected track {object_id}",
+            progress={"stageRatio": 1.0, "overallRatio": 0.73},
+            metadata={
+                "objectId": object_id,
+                "reasonCodes": pre_export_reason_codes,
+                "decision": pre_export_payload,
+            },
+        )
+    else:
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "running",
+            f"preparing raster assets for {object_id}",
+            progress={"overallRatio": 0.705},
+            metadata={"objectId": object_id, "frames": len(track.frames)},
+        )
     provider_performance = dict(track.metadata.get("providerPerformance") or {})
 
-    for track_frame in tqdm(track.frames, desc=f"processing {object_id}"):
+    total_track_frames = len(track.frames)
+    progress_stride = max(1, total_track_frames // 4)
+    for position, track_frame in enumerate(tqdm(track.frames, desc=f"processing {object_id}"), start=1):
         _job_check_cancel(job_context, "export")
         frame_number = track_frame.frame
         frame_name = f"frame_{frame_number:06d}.png"
@@ -620,7 +666,8 @@ def _extract_object(
             Image.fromarray(track_frame.rgb).save(frame_path)
         Image.fromarray(track_frame.mask).save(mask_path)
 
-        visible = bool(track_frame.visible and track_frame.bbox)
+        source_visible = bool(track_frame.visible and track_frame.bbox)
+        visible = source_visible and not skip_asset_materialization
         x = y = w = h = 0
         anchor = [0.0, 0.0]
         cutout_rel: str | None = None
@@ -678,6 +725,23 @@ def _extract_object(
                 "centroid": track_frame.centroid,
             }
         )
+        if (
+            not skip_asset_materialization
+            and (position == 1 or position == total_track_frames or position % progress_stride == 0)
+        ):
+            _job_emit(
+                job_context,
+                "asset_preparation",
+                "running",
+                f"prepared raster asset frame {position}/{total_track_frames} for {object_id}",
+                progress={
+                    "current": position,
+                    "total": total_track_frames,
+                    "stageRatio": round(position / total_track_frames, 4) if total_track_frames else 1.0,
+                    "overallRatio": round(0.705 + ((position / total_track_frames) if total_track_frames else 1.0) * 0.02, 4),
+                },
+                metadata={"objectId": object_id},
+            )
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
@@ -688,16 +752,47 @@ def _extract_object(
         quality=quality,
         rights_context=rights_context,
     )
+    if skip_asset_materialization:
+        discovery = {
+            **discovery,
+            "assetMaterialization": {
+                "status": "skipped",
+                "reasonCodes": pre_export_reason_codes,
+                "trackFilterPreflight": pre_export_payload,
+            },
+            "exportStatus": "rejected",
+            "exportValidationReasonCodes": pre_export_reason_codes,
+            "reviewRequired": True,
+        }
     sprite_path = object_dir / f"spritesheet.{sprite_format}"
-    sprite_meta = write_spritesheet(
-        cutout_paths=cutout_paths,
-        output_path=sprite_path,
-        format="WEBP" if sprite_format == "webp" else "PNG",
-    )
+    sprite_meta = None
+    if not skip_asset_materialization:
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "running",
+            f"writing spritesheet for {object_id}",
+            progress={"overallRatio": 0.728},
+            metadata={"objectId": object_id, "cutouts": len(cutout_paths)},
+        )
+        sprite_meta = write_spritesheet(
+            cutout_paths=cutout_paths,
+            output_path=sprite_path,
+            format="WEBP" if sprite_format == "webp" else "PNG",
+        )
     if sprite_meta:
         sprite_meta["path"] = _rel(sprite_path, out_dir)
         for entry, sprite_frame in zip((m for m in motion if m["asset"]), sprite_meta["frames"]):
             entry["sprite"] = sprite_frame
+    if not skip_asset_materialization:
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "succeeded",
+            f"raster assets prepared for {object_id}",
+            progress={"stageRatio": 1.0, "overallRatio": 0.73},
+            metadata={"objectId": object_id, "cutouts": len(cutout_paths), "spritesheet": bool(sprite_meta)},
+        )
 
     rights = build_object_rights(object_id=object_id, context=rights_context, fallback_source_uri=rights_context.get("source_uri") if rights_context else None)
     obj = {
@@ -723,7 +818,10 @@ def _extract_object(
         "rights": rights,
         "discovery": discovery,
     }
-    if output_mode in {"production", "both"}:
+    if skip_asset_materialization:
+        obj["exportStatus"] = "rejected"
+        obj["exportIncluded"] = False
+    if output_mode in {"production", "both"} and not skip_asset_materialization:
         production_assets = export_production_assets(
             out_dir=out_dir,
             object_id=object_id,

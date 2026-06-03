@@ -180,6 +180,26 @@ class EmptyCandidateProvider:
         return []
 
 
+class RecordingJobContext:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+        self.cancel_checks: list[str] = []
+
+    def emit(self, stage, status, message, *, progress=None, metadata=None):
+        self.events.append(
+            {
+                "stage": stage,
+                "status": status,
+                "message": message,
+                "progress": progress or {},
+                "metadata": metadata or {},
+            }
+        )
+
+    def check_cancel(self, stage):
+        self.cancel_checks.append(stage)
+
+
 def test_no_candidates_writes_fallback_diagnostics_before_failure(tmp_path):
     video = tmp_path / "tiny.mp4"
     out = tmp_path / "out"
@@ -207,6 +227,7 @@ def test_pipeline_writes_track_filter_metrics_and_fallback_summary(tmp_path):
     out = tmp_path / "out"
     mask_dir = tmp_path / "masks"
     full_mask = np.full((32, 40), 255, dtype=np.uint8)
+    job_context = RecordingJobContext()
     make_tiny_video(video)
     write_mask_dir(mask_dir, full_mask)
 
@@ -217,6 +238,7 @@ def test_pipeline_writes_track_filter_metrics_and_fallback_summary(tmp_path):
         sample_fps=12,
         max_frames=3,
         min_area=1,
+        job_context=job_context,
     )
 
     tracks = json.loads((out / "tracks.json").read_text())
@@ -226,4 +248,12 @@ def test_pipeline_writes_track_filter_metrics_and_fallback_summary(tmp_path):
     assert tracks["tracks"][0]["exportStatus"] == "rejected"
     assert "masks_too_large_whole_frame" in tracks["tracks"][0]["warnings"]
     assert fallback["diagnostics"][0]["reasonCode"] == "masks_too_large_whole_frame"
+    assert not list((out / "objects" / "object_0" / "cutouts").glob("cutout_*.png"))
+    assert not (out / "objects" / "object_0" / "spritesheet.webp").exists()
+    assert any(
+        event["stage"] == "asset_preparation"
+        and event["status"] == "skipped"
+        and "masks_too_large_whole_frame" in event["metadata"].get("reasonCodes", [])
+        for event in job_context.events
+    )
     assert validate_output_dir(out).ok
