@@ -51,7 +51,7 @@ def test_model_setup_renders_one_recommended_card_until_change_model():
     assert "compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId" in js
 
 
-def test_storyboard_shell_keeps_project_rail_and_bottom_cta_in_normal_mode():
+def test_storyboard_shell_keeps_project_rail_and_in_flow_cta_in_normal_mode():
     css = read("src/motionjson/ui/static/app.css")
     final_overrides = css.rsplit("Final storyboard overrides", 1)[1]
 
@@ -61,8 +61,8 @@ def test_storyboard_shell_keeps_project_rail_and_bottom_cta_in_normal_mode():
     assert ".sidebar-content > details" in final_overrides
     assert "display: flex" in final_overrides
     assert "#workflowController" in final_overrides
-    assert "position: fixed" in final_overrides
-    assert "left: 214px" in final_overrides
+    assert "position: static" in final_overrides
+    assert "pointer-events: none" in final_overrides
 
 
 def test_advanced_discover_objects_has_compatible_model_connections():

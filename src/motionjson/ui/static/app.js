@@ -11836,22 +11836,13 @@ const MotionJSONUI = (() => {
           renderCandidateSummary();
         }
       } else if (capture === "job-review") {
-        if (shell) {
-          shell.style.display = "grid";
-          shell.style.minHeight = "100vh";
-        }
-        if (sidebar) sidebar.style.display = "";
-        if (workspace) workspace.style.display = "none";
-        if (rightRail) {
-          rightRail.style.display = "grid";
-          rightRail.style.gridTemplateColumns = window.innerWidth < 760 ? "1fr" : "repeat(2, minmax(0, 1fr))";
-          rightRail.style.gap = "16px";
-          rightRail.style.borderLeft = "0";
-          rightRail.style.minHeight = "100vh";
-        }
+        applyReviewCaptureFixture("workflow-review");
+        markCaptureProviderReady("sam2-local");
+        setWorkflowStep("review_export", { persist: false });
+        setRunAlert("", "warning-box");
         document.querySelectorAll(".right-rail > details").forEach((details) => {
           const summary = details.querySelector("summary")?.textContent?.trim().toLowerCase() || "";
-          details.open = ["run monitor", "review", "review candidates and tracks", "artifacts and exports", "preview and export"].includes(summary);
+          details.open = ["run monitor", "review candidates and tracks", "artifacts and exports", "preview and export"].includes(summary);
         });
       }
 

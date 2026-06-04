@@ -264,6 +264,46 @@ Findings and changes:
   longer for capture readiness so the expanded model setup matrix can run
   repeatably.
 
+## UI-UX-01 Evidence
+
+UI-UX-01 added stricter product-quality checks to the layout gate after the
+guided review flow passed structural checks while still showing real UX
+failures.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --state real-empty-shell,workflow-goal,workflow-video,prepare-sam3-trace-all-runtime-ready,workflow-run-asset-stalled,workflow-review,workflow-export,job-review --screenshot-dir docs/design/screenshots/ui-ux-01-before
+```
+
+Baseline findings:
+
+- The mobile first-run and review states let the fixed workflow action bar cover
+  goal/review cards.
+- The desktop review/export states exposed more than one primary export action.
+- The `job-review` docs capture rendered a details heading with no useful run,
+  review, or diagnostics content.
+- The existing layout gate detected overflow and overlap, but not blank active
+  content, action occlusion, or duplicated export CTAs.
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state real-empty-shell,workflow-goal,workflow-video,prepare-sam3-trace-all-runtime-ready,workflow-run-asset-stalled,workflow-review,workflow-export,job-review --screenshot-dir docs/design/screenshots/ui-ux-01
+```
+
+Fixes made:
+
+- Added layout assertions for blank `job-review` content, fixed workflow footer
+  occlusion, missing export content, and duplicate primary export actions.
+- Repaired the `job-review` capture to use the seeded review fixture instead of
+  hiding the workspace behind an empty details rail.
+- Moved the guided workflow action bar into normal document flow so it no longer
+  covers cards at mobile or desktop widths.
+- Demoted the duplicate studio header export button so the export checklist
+  remains the single primary export action until the review/export redesign
+  phase.
+
 ## UI-MODEL-06 Evidence
 
 UI-MODEL-06 added a model-plan confirmation panel between model setup and

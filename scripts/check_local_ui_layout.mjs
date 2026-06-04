@@ -674,11 +674,48 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           fallbackDiagnosticBadCount: document.querySelectorAll("#fallbackDiagnostics .diagnostic-row.is-bad").length,
           fallbackDiagnosticsVisible: visible(document.querySelector("#fallbackDiagnostics")),
           exportArtifactsOpen: document.querySelector("#exportArtifactsDisclosure")?.open === true,
+          exportDecisionText: document.querySelector("#exportDecision")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioExportDecisionText: document.querySelector("#studioExportDecision")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          exportHandoffText: document.querySelector("#exportHandoffCards")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          exportSummaryText: document.querySelector("#exportSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobCenterVisible: visible(document.querySelector("#mainJobCenter")),
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
           mainSelectedJobFactsText: document.querySelector("#mainSelectedJobFacts")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           failedRunActionsText: ((document.querySelector("#failedRunActions")?.textContent || "") + " " + (document.querySelector("#mainFailedRunActions")?.textContent || "")).trim().replace(/\\s+/g, " "),
+          visibleExportPrimaryCount: [...document.querySelectorAll("button.primary-action, .studio-package-button")]
+            .filter((element) => {
+              if (!visible(element)) return false;
+              const text = element.textContent.trim();
+              return /export|validate/i.test(text) && !element.closest("#workflowController");
+            })
+            .length,
+          fixedFooterOcclusions: (() => {
+            const footer = document.querySelector("#workflowController");
+            if (!visible(footer)) return [];
+            const footerBox = footer.getBoundingClientRect();
+            const selectors = [
+              ".goal-card-grid > .goal-card",
+              "#postRunGuide .post-run-stage",
+              "#studioReviewPanel",
+              "#studioExportDecision",
+              "#studioObjectList .studio-object-row",
+              "#exportHandoffCards .handoff-card",
+              "#exportSummary .diagnostic-row",
+              "#mainJobCenter .compact-panel",
+            ];
+            const overlaps = [];
+            for (const selector of selectors) {
+              for (const element of document.querySelectorAll(selector)) {
+                if (!visible(element)) continue;
+                const box = element.getBoundingClientRect();
+                const x = Math.min(footerBox.right, box.right) - Math.max(footerBox.left, box.left);
+                const y = Math.min(footerBox.bottom, box.bottom) - Math.max(footerBox.top, box.top);
+                if (x > 2 && y > 2) overlaps.push(selector);
+              }
+            }
+            return [...new Set(overlaps)];
+          })(),
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -829,9 +866,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {
         failures.push(`${viewport.name}/${state}: review screen should keep the studio review panel visible with reviewed objects`);
       }
+      if (stateValue.fixedFooterOcclusions.length) {
+        failures.push(`${viewport.name}/${state}: fixed workflow footer occludes ${stateValue.fixedFooterOcclusions.join(", ")}`);
+      }
       if (stateValue.workflowPrimaryLabel !== "Export reviewed objects") {
         failures.push(`${viewport.name}/${state}: review flow should promote Export reviewed objects as the primary CTA`);
       }
+    }
+    if (state === "workflow-goal" && stateValue.fixedFooterOcclusions.length) {
+      failures.push(`${viewport.name}/${state}: fixed workflow footer occludes ${stateValue.fixedFooterOcclusions.join(", ")}`);
     }
     if (state === "workflow-review-failure") {
       const expectedJobId = `job_${state}_layout`;
@@ -859,6 +902,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "workflow-export" && stateValue.exportArtifactsOpen) {
       failures.push(`${viewport.name}/${state}: export step should keep generated artifact browser collapsed until requested`);
+    }
+    if (state === "workflow-export" && !stateValue.exportHandoffText && !stateValue.exportSummaryText) {
+      failures.push(`${viewport.name}/${state}: export screen should show export handoff or summary content`);
+    }
+    if (state === "workflow-export" && stateValue.visibleExportPrimaryCount > 1) {
+      failures.push(`${viewport.name}/${state}: export screen should expose one primary export/validate action, found ${stateValue.visibleExportPrimaryCount}`);
+    }
+    if (state === "job-review") {
+      const reviewText = `${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.eventLogText} ${stateValue.studioExportDecisionText} ${stateValue.exportSummaryText}`.trim();
+      if (!stateValue.mainJobCenterVisible && !stateValue.studioReviewVisible && reviewText.length < 80) {
+        failures.push(`${viewport.name}/${state}: job-review capture rendered blank review/diagnostics content`);
+      }
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
