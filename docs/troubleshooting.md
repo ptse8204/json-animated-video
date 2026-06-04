@@ -182,7 +182,9 @@ See [Track filtering and fallback diagnostics](track_filtering.md).
 
 After vectorization, MotionJSON writes local masks, cutouts, and sprite assets.
 If asset preparation stops making backend progress beyond the watchdog window,
-the Local UI converts the run from `running` to `failed` with a typed reason.
+the Local UI converts the run from `running` to a typed terminal outcome. Runs
+with no completed object manifests still fail. Runs with completed object
+manifests are reconciled as partial success so those objects remain reviewable.
 
 Common reason codes:
 
@@ -207,9 +209,13 @@ Example heartbeat-stale message:
 Worker heartbeat stopped during asset preparation after frame 1/48 for sam3_grid_024. No export artifacts were produced.
 ```
 
-Use **Retry asset prep** to rerun from the current setup. Use **Retry from Model
-setup** if provider/cache/runtime state may have changed. Logs should remain
-available. If earlier objects finished before the failure, their object
+Use **Review/Export** first when the report shows `partialSuccess: true` or an
+`asset_preparation_partial_success` event. The run kept completed object
+manifests and recorded the failed object/frame as an
+`asset_preparation_object_failed` event. Use **Retry asset prep** to rerun from
+the current setup only after checking the partial objects. Use **Retry from
+Model setup** if provider/cache/runtime state may have changed. Logs should
+remain available. If earlier objects finished before the failure, their object
 manifests should remain reviewable rather than reporting `objects: 0` and
 `artifacts: 0`.
 

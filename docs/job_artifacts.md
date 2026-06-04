@@ -92,6 +92,12 @@ Failures write `failure.json` and append the raw traceback to `logs.txt`.
 as generated assets so support tooling and future UI views can retrieve them.
 Object-level asset-prep failures may also write
 `objects/<object_id>/failure.json` and keep earlier object manifests registered.
+If the backend watchdog later detects an asset-prep heartbeat stall after one
+or more `object_manifest` assets were already registered, the job is reconciled
+as partial success instead of hard failure. The job result uses
+`motionjson.extract.partial_success.v0.1`, emits
+`asset_preparation_object_failed` with `eventSource: watchdog`, and preserves
+the failed object/frame plus the completed object ids for review.
 
 ## Cancellation
 

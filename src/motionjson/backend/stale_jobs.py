@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 from .jobs import record_job_event
-from .queue import mark_failed
+from .queue import mark_failed, mark_succeeded
 from .usage import utc_now
 
 
@@ -77,6 +77,73 @@ def reconcile_stale_asset_preparation_job(
     if not diagnostic:
         return dict(job)
 
+    partial_summary = _partial_artifact_summary(conn, job=dict(job), diagnostic=diagnostic)
+    if partial_summary["reviewableObjectCount"] > 0:
+        recovery_diagnostic = {
+            **diagnostic,
+            "artifactsAvailable": True,
+            "partialSuccess": True,
+            "reviewableObjectCount": partial_summary["reviewableObjectCount"],
+            "artifactCount": partial_summary["artifactCount"],
+            "assetKindCounts": partial_summary["assetKindCounts"],
+            "reviewableObjectIds": partial_summary["reviewableObjectIds"],
+            "message": _partial_success_message(diagnostic, partial_summary),
+            "suggestedAction": "Review the completed objects, then rerun with a lower sampling rate or stricter object filters for the missing object.",
+        }
+        record_job_event(
+            conn,
+            job_id=job_id,
+            event_type=diagnostic["reasonCode"],
+            message=diagnostic["message"],
+            metadata=recovery_diagnostic,
+        )
+        if recovery_diagnostic.get("objectId"):
+            record_job_event(
+                conn,
+                job_id=job_id,
+                event_type="asset_preparation_object_failed",
+                message=recovery_diagnostic["message"],
+                metadata={
+                    **recovery_diagnostic,
+                    "eventSource": "watchdog",
+                    "failureScope": "object",
+                },
+            )
+        result = {
+            "format": "motionjson.extract.partial_success.v0.1",
+            "status": "partial_success",
+            "partialSuccess": True,
+            "reasonCode": diagnostic["reasonCode"],
+            "compatibilityReasonCode": diagnostic["compatibilityReasonCode"],
+            "phase": "asset_preparation",
+            "progress": {"overallRatio": 1.0, "ratio": 1.0},
+            "message": recovery_diagnostic["message"],
+            "assetPreparationDiagnostic": recovery_diagnostic,
+            "reviewableObjectCount": partial_summary["reviewableObjectCount"],
+            "artifactCount": partial_summary["artifactCount"],
+            "reviewableObjectIds": partial_summary["reviewableObjectIds"],
+            "failedObjects": [
+                {
+                    "objectId": recovery_diagnostic.get("objectId"),
+                    "reasonCode": recovery_diagnostic.get("reasonCode"),
+                    "frame": recovery_diagnostic.get("frame"),
+                    "position": recovery_diagnostic.get("position"),
+                    "preparedFrames": recovery_diagnostic.get("preparedFrames"),
+                    "totalFrames": recovery_diagnostic.get("totalFrames"),
+                    "message": diagnostic["message"],
+                }
+            ] if recovery_diagnostic.get("objectId") else [],
+        }
+        succeeded = mark_succeeded(conn, job_id=job_id, result=result)
+        record_job_event(
+            conn,
+            job_id=job_id,
+            event_type="asset_preparation_partial_success",
+            message=recovery_diagnostic["message"],
+            metadata=result,
+        )
+        return dict(conn.execute("SELECT * FROM jobs WHERE id = ?", (succeeded["id"],)).fetchone())
+
     record_job_event(
         conn,
         job_id=job_id,
@@ -85,6 +152,58 @@ def reconcile_stale_asset_preparation_job(
         metadata=diagnostic,
     )
     return mark_failed(conn, job_id=job_id, error=diagnostic["message"], max_attempts=1)
+
+
+def _partial_artifact_summary(
+    conn: sqlite3.Connection,
+    *,
+    job: Mapping[str, Any],
+    diagnostic: Mapping[str, Any],
+) -> dict[str, Any]:
+    project_id = str(job.get("project_id") or job.get("projectId") or "")
+    job_id = str(job.get("id") or "")
+    rows = conn.execute(
+        "SELECT kind, metadata_json FROM assets WHERE project_id = ? AND source_job_id = ? ORDER BY created_at, id",
+        (project_id, job_id),
+    ).fetchall()
+    kind_counts: dict[str, int] = {}
+    reviewable_ids: set[str] = set()
+    failed_object_id = str(diagnostic.get("objectId") or "").strip()
+    for row in rows:
+        kind = str(row["kind"] or "")
+        kind_counts[kind] = int(kind_counts.get(kind, 0)) + 1
+        if kind != "object_manifest":
+            continue
+        rel_path = ""
+        try:
+            metadata = json.loads(row["metadata_json"] or "{}")
+        except json.JSONDecodeError:
+            metadata = {}
+        if isinstance(metadata, Mapping):
+            rel_path = str(metadata.get("rel_path") or "")
+        object_id = _object_id_from_rel_path(rel_path)
+        if object_id and object_id != failed_object_id:
+            reviewable_ids.add(object_id)
+    return {
+        "artifactCount": len(rows),
+        "assetKindCounts": kind_counts,
+        "reviewableObjectCount": len(reviewable_ids),
+        "reviewableObjectIds": sorted(reviewable_ids),
+    }
+
+
+def _object_id_from_rel_path(rel_path: str) -> str | None:
+    parts = [part for part in rel_path.replace("\\", "/").split("/") if part]
+    if len(parts) >= 3 and parts[0] == "objects" and parts[2] == "object_manifest.json":
+        return parts[1]
+    return None
+
+
+def _partial_success_message(diagnostic: Mapping[str, Any], summary: Mapping[str, Any]) -> str:
+    base = str(diagnostic.get("message") or "Asset preparation stopped before all objects finished.")
+    object_count = int(summary.get("reviewableObjectCount") or 0)
+    artifact_count = int(summary.get("artifactCount") or 0)
+    return f"{base} Kept {object_count} completed object{'s' if object_count != 1 else ''} and {artifact_count} artifact{'s' if artifact_count != 1 else ''} for review."
 
 
 def asset_preparation_stall_diagnostic(

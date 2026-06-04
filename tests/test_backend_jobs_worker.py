@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from motionjson.backend.assets import list_assets_for_job, register_upload
+from motionjson.backend.assets import list_assets_for_job, register_generated_asset, register_upload
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
 from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, list_job_events, record_job_event
@@ -241,6 +241,96 @@ def test_reconcile_stale_asset_preparation_fails_running_job(tmp_path):
     assert stalled_metadata["totalFrames"] == 48
     assert stalled_metadata["artifactsAvailable"] is False
     assert any(event["event_type"] == "failed" for event in events)
+
+
+def test_reconcile_worker_heartbeat_stale_with_partial_objects_succeeds_for_review(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    stale_at = "2026-06-04T01:07:13.494128+00:00"
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", (stale_at, job["id"]))
+    conn.execute("UPDATE queue_items SET status = 'running' WHERE job_id = ?", (job["id"],))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE job_id = ?", ("2026-06-04T01:01:00+00:00", job["id"]))
+    conn.commit()
+    register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        kind="object_manifest",
+        source_job_id=job["id"],
+        data=json.dumps({"objectId": "sam3_grid_021", "label": "partial", "motion": []}).encode("utf-8"),
+        rel_path="objects/sam3_grid_021/object_manifest.json",
+        content_type="application/json",
+    )
+    register_generated_asset(
+        conn,
+        storage=storage,
+        project_id=project["id"],
+        kind="object_manifest",
+        source_job_id=job["id"],
+        data=json.dumps({"objectId": "sam3_grid_022", "label": "partial", "motion": []}).encode("utf-8"),
+        rel_path="objects/sam3_grid_022/object_manifest.json",
+        content_type="application/json",
+    )
+    event = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="asset_preparation_frame_finished",
+        message="finished raster asset frame 41/48 for sam3_grid_023",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "progress": {"overallRatio": 0.73, "current": 41, "total": 48},
+            "metadata": {
+                "objectId": "sam3_grid_023",
+                "frame": 40,
+                "position": 41,
+                "totalFrames": 48,
+                "sourceFrameIndex": 40,
+            },
+        },
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", (stale_at, event["id"]))
+    conn.commit()
+
+    reconciled = reconcile_stale_asset_preparation_job(
+        conn,
+        job_id=job["id"],
+        now="2026-06-04T01:11:33.300141+00:00",
+        threshold_seconds=240,
+    )
+    events = list_job_events(conn, job_id=job["id"])
+    stale_event = next(event for event in events if event["event_type"] == "worker_heartbeat_stale")
+    object_failed_event = next(event for event in events if event["event_type"] == "asset_preparation_object_failed")
+    partial_event = next(event for event in events if event["event_type"] == "asset_preparation_partial_success")
+    stale_metadata = json.loads(stale_event["metadata_json"])
+    object_failed_metadata = json.loads(object_failed_event["metadata_json"])
+    partial_metadata = json.loads(partial_event["metadata_json"])
+    result = json.loads(reconciled["result_json"])
+    queue_row = conn.execute("SELECT status FROM queue_items WHERE job_id = ?", (job["id"],)).fetchone()
+
+    assert reconciled["status"] == "succeeded"
+    assert reconciled["error"] is None
+    assert queue_row["status"] == "succeeded"
+    assert result["partialSuccess"] is True
+    assert result["reasonCode"] == "worker_heartbeat_stale"
+    assert result["progress"]["overallRatio"] == 1.0
+    assert result["reviewableObjectCount"] == 2
+    assert result["reviewableObjectIds"] == ["sam3_grid_021", "sam3_grid_022"]
+    assert result["failedObjects"][0]["objectId"] == "sam3_grid_023"
+    assert result["failedObjects"][0]["preparedFrames"] == 41
+    assert "Kept 2 completed objects" in result["message"]
+    assert stale_metadata["artifactsAvailable"] is True
+    assert stale_metadata["partialSuccess"] is True
+    assert stale_metadata["reviewableObjectCount"] == 2
+    assert stale_metadata["objectId"] == "sam3_grid_023"
+    assert stale_metadata["preparedFrames"] == 41
+    assert object_failed_metadata["eventSource"] == "watchdog"
+    assert object_failed_metadata["failureScope"] == "object"
+    assert object_failed_metadata["objectId"] == "sam3_grid_023"
+    assert partial_metadata["assetPreparationDiagnostic"]["reasonCode"] == "worker_heartbeat_stale"
+    assert any(event["event_type"] == "succeeded" for event in events)
+    assert not any(event["event_type"] == "failed" for event in events)
 
 
 def test_reconcile_asset_preparation_frame_start_timeout_fails_running_job(tmp_path):

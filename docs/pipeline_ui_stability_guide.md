@@ -63,6 +63,12 @@ Watchdog reason codes:
 - `asset_preparation_stalled`: compatibility umbrella reason preserved as
   `compatibilityReasonCode`.
 
+When the watchdog sees one of these conditions after completed
+`object_manifest` artifacts already exist, it marks the failed object with an
+`asset_preparation_object_failed` event and completes the job as partial
+success. The Local UI should route that run to review/export for the completed
+objects while showing the failed object/frame in the event log.
+
 Timeout env vars:
 
 - `MOTIONJSON_ASSET_PREP_FRAME_TIMEOUT_SECONDS`
