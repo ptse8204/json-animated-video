@@ -250,7 +250,7 @@
               </div>
               <dl id="mainSelectedJobFacts" class="facts"></dl>
               <div id="mainFailedRunActions" class="inline-actions" hidden>
-                <button id="mainOpenLogsButton" type="button">Open logs</button>
+                <button id="mainOpenLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
                 <button id="mainCopyRunDebugReportButton" type="button">Copy debug report</button>
                 <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
                 <button id="mainChangeSetupButton" type="button">Change setup</button>
@@ -533,12 +533,13 @@
                 <input id="objectId" type="text" value="object_0" />
               </label>
               <label id="qualityPresetField" data-workflow-fragment="provider_settings prompt_preview">
-                <span>Scene sweep quality</span>
+                <span class="help-label" tabindex="0" data-tooltip="Balances object recall against speed, memory, and noisy background fragments.">Scene sweep quality</span>
                 <select id="discoveryQualityPreset">
                   <option value="clean">Clean</option>
                   <option value="balanced" selected>Balanced</option>
                   <option value="maximum_recall">Maximum recall</option>
                 </select>
+                <small id="qualityPresetAutoStatus" class="parameter-source">Auto</small>
               </label>
               <label id="textPromptField" data-workflow-fragment="prompt_preview">
                 <span>Text prompt</span>
@@ -576,22 +577,25 @@
                 <select id="maskProviderSelect"></select>
               </label>
               <label id="deviceField" data-workflow-fragment="provider_settings prompt_preview">
-                <span>Device</span>
+                <span class="help-label" tabindex="0" data-tooltip="Auto lets the backend choose CUDA, MPS, or CPU from local diagnostics. Override only when a device is known to be stable.">Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>
                   <option value="cpu">cpu</option>
                   <option value="cuda">cuda</option>
                   <option value="mps">mps</option>
                 </select>
+                <small id="deviceAutoStatus" class="parameter-source">Auto</small>
               </label>
             </div>
+
+            <div id="adaptiveParameterSummary" class="adaptive-parameter-summary" data-workflow-fragment="provider_settings prompt_preview" aria-live="polite"></div>
 
             <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel" data-workflow-fragment="prompt_preview">
               <summary>Scene sweep controls</summary>
               <div class="trace-everything-controls">
                 <label class="track-toggle">
                   <input id="traceEverythingMode" type="checkbox" />
-                  <span>Keep high-recall raw segments for review</span>
+                  <span class="help-label" tabindex="0" data-tooltip="Keeps many raw auto-mask segments for review. This is slower and noisy, so export stays blocked until objects are reviewed.">Keep high-recall raw segments for review</span>
                 </label>
                 <label class="track-toggle">
                   <input id="traceEverythingAck" type="checkbox" />
@@ -602,14 +606,20 @@
 
             <details class="advanced-panel" data-workflow-fragment="provider_settings prompt_preview">
               <summary>Advanced parameters</summary>
+              <div class="advanced-parameter-toolbar">
+                <span id="adaptiveOverrideSummary" class="parameter-source">Auto tuning active</span>
+                <button id="resetAutoParametersButton" type="button" data-tooltip="Reset tuned fields back to automatic values" hidden>Reset to auto</button>
+              </div>
               <div class="advanced-grid">
                 <label>
-                  <span>Sample FPS</span>
+                  <span class="help-label" tabindex="0" data-tooltip="How many source frames per second are sampled before tracking. Lower values improve stability on long or high-resolution videos.">Sample FPS</span>
                   <input id="sampleFps" type="number" min="0.1" step="0.1" value="12" />
+                  <small id="sampleFpsAutoStatus" class="parameter-source">Auto</small>
                 </label>
                 <label>
-                  <span>Max frames</span>
+                  <span class="help-label" tabindex="0" data-tooltip="Upper bound on sampled frames. Lower this when scene sweep stalls, runs out of memory, or produces too many artifacts.">Max frames</span>
                   <input id="maxFrames" type="number" min="1" step="1" value="48" />
+                  <small id="maxFramesAutoStatus" class="parameter-source">Auto</small>
                 </label>
                 <label>
                   <span>Min area</span>
@@ -640,8 +650,9 @@
                   <input id="motionSensitivity" type="number" min="1" max="255" step="1" value="32" />
                 </label>
                 <label>
-                  <span>Max objects</span>
+                  <span class="help-label" tabindex="0" data-tooltip="Maximum object candidates allowed into review. Lower values reduce memory pressure and keep review usable.">Max objects</span>
                   <input id="maxObjects" type="number" min="1" step="1" value="12" />
+                  <small id="maxObjectsAutoStatus" class="parameter-source">Auto</small>
                 </label>
                 <label>
                   <span>Model</span>
@@ -806,7 +817,7 @@
             <dl id="selectedJobFacts" class="facts"></dl>
             <button id="cancelJobButton" class="danger-action" type="button" data-tooltip="Request cooperative cancellation for the selected run" disabled>Cancel run</button>
             <div id="failedRunActions" class="inline-actions" hidden>
-              <button id="openLogsButton" type="button">Open logs</button>
+              <button id="openLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
               <button id="copyRunDebugReportButton" type="button">Copy debug report</button>
               <button id="runAgainButton" class="primary-action" type="button">Run again</button>
               <button id="changeSetupButton" type="button">Change setup</button>
@@ -916,7 +927,7 @@
               <summary>Advanced export settings</summary>
               <div class="export-panel">
                 <label>
-                  <span>Preset</span>
+                  <span class="help-label" tabindex="0" data-tooltip="Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.">Preset</span>
                   <select id="exportPresetSelect">
                     <option value="compact">compact</option>
                     <option value="debug">debug</option>

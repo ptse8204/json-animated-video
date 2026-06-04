@@ -105,7 +105,8 @@ a:focus-visible,
 .skip-link:focus-visible,
 summary:focus-visible,
 .viewer-stage:focus-visible,
-.load-config-button:focus-within {
+.load-config-button:focus-within,
+.adaptive-chip:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -676,6 +677,99 @@ input[type="range"] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   padding: 0 12px 12px;
+}
+
+.help-label {
+  width: fit-content;
+  color: var(--ink);
+  cursor: help;
+}
+
+.adaptive-parameter-summary {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #cfe4df;
+  border-radius: var(--radius-sm);
+  background: #f7fbfa;
+}
+
+.adaptive-parameter-heading,
+.advanced-parameter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.adaptive-parameter-heading strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink);
+}
+
+.adaptive-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.adaptive-chip {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.adaptive-chip span,
+.parameter-source {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.adaptive-chip strong {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.adaptive-chip small {
+  color: var(--muted);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.adaptive-chip.is-ready {
+  border-color: #b7dac7;
+}
+
+.adaptive-chip.is-warn {
+  border-color: #e4c167;
+  background: #fffaf0;
+}
+
+.adaptive-chip.is-bad {
+  border-color: #e49a90;
+  background: #fff5f3;
+}
+
+.advanced-parameter-toolbar {
+  padding: 0 12px 10px;
+}
+
+.parameter-source {
+  letter-spacing: 0.02em;
+}
+
+.parameter-source.is-override {
+  color: #9a6a00;
 }
 
 .prompt-row,
@@ -3755,6 +3849,7 @@ button,
   .workflow-steps,
   .wizard-fields,
   .advanced-grid,
+  .adaptive-chip-grid,
   .inline-form,
   .timeline-controls,
     .guided-start-actions,
@@ -3780,6 +3875,8 @@ button,
 
   .guided-start-header,
   .run-plan-intro,
+  .adaptive-parameter-heading,
+  .advanced-parameter-toolbar,
   .model-plan-heading,
   .model-plan-card-header,
   .model-plan-confirm-row,

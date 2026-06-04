@@ -258,6 +258,51 @@ try {
   }
 }
 assert.equal(ui.jobProgressText({ status: "failed", progress: { known: true, percent: 100, label: "Failed" } }), "Failed");
+assert.ok(ui.OPTION_HELP_TEXT.sampleFps.includes("sampled"));
+assert.ok(ui.OPTION_HELP_TEXT.partialResultRecovery.includes("reviewable"));
+const adaptiveSceneSweep = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  providerLabel: "SAM3 local",
+  video: { width: 1280, height: 720, duration: 10 },
+});
+assert.equal(adaptiveSceneSweep.values.sampleFps, 8);
+assert.equal(adaptiveSceneSweep.values.maxFrames, 48);
+assert.equal(adaptiveSceneSweep.values.maxObjects, 24);
+assert.equal(adaptiveSceneSweep.values.qualityPreset, "balanced");
+assert.equal(adaptiveSceneSweep.sources.sampleFps, "auto");
+assert.ok(adaptiveSceneSweep.chips.length >= 6);
+const adaptiveRetry = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  priorFailureReason: "worker_heartbeat_stale",
+  video: { width: 1280, height: 720, duration: 10 },
+});
+assert.equal(adaptiveRetry.values.sampleFps, 6);
+assert.equal(adaptiveRetry.values.maxFrames, 32);
+assert.equal(adaptiveRetry.values.maxObjects, 12);
+assert.equal(adaptiveRetry.values.qualityPreset, "clean");
+assert.equal(adaptiveRetry.chips.find((chip) => chip.id === "maxFrames").detail, "Reduced after the previous asset-prep failure.");
+const adaptiveOverride = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  sampleFps: "12",
+  maxFrames: "16",
+  currentValues: { sampleFps: "12", maxFrames: "16" },
+  userOverrides: { sampleFps: true, maxFrames: true },
+});
+assert.equal(adaptiveOverride.values.sampleFps, 12);
+assert.equal(adaptiveOverride.values.maxFrames, 16);
+assert.equal(adaptiveOverride.sources.sampleFps, "user_override");
+assert.equal(adaptiveOverride.sources.maxFrames, "user_override");
+const adaptiveLargeVideo = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  video: { width: 3840, height: 2160, duration: 12 },
+});
+assert.equal(adaptiveLargeVideo.values.sampleFps, 6);
+assert.equal(adaptiveLargeVideo.values.maxObjects, 18);
+assert.equal(adaptiveLargeVideo.values.materializationRisk, "high");
 assert.equal(ui.jobProgressText({ status: "running", progress: { known: true, percent: 31 } }), "31% complete");
 assert.equal(ui.objectDiscoveryConfig({ preset: "trace_all_objects" }).qualityPreset, "balanced");
 const completedRunContract = ui.workflowStepContractFromSnapshot(

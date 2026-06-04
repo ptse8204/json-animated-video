@@ -467,3 +467,43 @@ Findings and changes:
 - Screenshot coverage now includes `export-handoff`, `export-success`, and
   `copyable-snippet` states across the required viewport matrix, with full-page
   mobile captures to verify the long handoff and artifact stacks.
+
+## UI-UX-03 Evidence
+
+UI-UX-03 added adaptive run defaults with visible expert override. The prepare
+screen now shows tuned chips before raw advanced fields, and critical options
+have hover/focus help labels.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --state prepare-sam3-single,prepare-sam3-text,prepare-sam3-trace-all-runtime-ready,advanced-config --viewport mobile-390,desktop-1440 --screenshot-dir docs/design/screenshots/ui-ux-03-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state prepare-sam3-single,prepare-sam3-text,prepare-sam3-trace-all-runtime-ready,advanced-config --screenshot-dir docs/design/screenshots/ui-ux-03
+```
+
+Representative captures:
+
+![UI-UX-03 desktop scene sweep](screenshots/ui-ux-03/desktop-1440-prepare-sam3-trace-all-runtime-ready.png)
+
+![UI-UX-03 desktop advanced config](screenshots/ui-ux-03/desktop-1440-advanced-config.png)
+
+![UI-UX-03 mobile scene sweep](screenshots/ui-ux-03/mobile-390-prepare-sam3-trace-all-runtime-ready-full.png)
+
+Findings and changes:
+
+- The before prepare screens exposed raw controls but did not clearly explain
+  which values were safe defaults and which were expert choices.
+- The after prepare screens show auto-tuned sample FPS, max frames, max objects,
+  scene sweep quality, device choice, and materialization budget/risk before
+  advanced fields.
+- Scene-sweep retries after asset-prep or heartbeat failures now default to a
+  safer profile unless the user has explicitly overridden the field.
+- Each tuned chip includes a keyboard-focusable tooltip and source label, and
+  advanced fields show `Auto tuned` or `User override`.
+- Layout checks now fail when prepare screens lose the auto-tuned chip set,
+  critical help labels, or auto/override source labels.

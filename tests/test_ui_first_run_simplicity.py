@@ -70,6 +70,29 @@ def test_storyboard_shell_uses_project_drawer_and_in_flow_cta_in_normal_mode():
     assert "pointer-events: none" in final_overrides
 
 
+def test_guided_parameters_show_auto_tuning_and_keyboard_help():
+    html = read("src/motionjson/ui/static/index.html")
+    css = read("src/motionjson/ui/static/app.css")
+    js = read("src/motionjson/ui/static/app.js")
+
+    assert 'id="adaptiveParameterSummary"' in html
+    assert 'id="resetAutoParametersButton"' in html
+    assert 'id="sampleFpsAutoStatus"' in html
+    assert 'id="maxFramesAutoStatus"' in html
+    assert 'id="maxObjectsAutoStatus"' in html
+    assert 'id="qualityPresetAutoStatus"' in html
+    assert 'id="deviceAutoStatus"' in html
+    assert 'data-tooltip="How many source frames per second are sampled before tracking.' in html
+    assert 'data-tooltip="Maximum object candidates allowed into review.' in html
+    assert 'data-tooltip="Controls package size and debug detail.' in html
+    assert 'tabindex="0" data-tooltip=' in html
+    assert "adaptiveRunDefaultsFromSnapshot" in js
+    assert "OPTION_HELP_TEXT" in js
+    assert "parameterOverrides" in js
+    assert ".adaptive-chip-grid" in css
+    assert ".parameter-source.is-override" in css
+
+
 def test_advanced_discover_objects_has_compatible_model_connections():
     js = read("src/motionjson/ui/static/app.js")
 

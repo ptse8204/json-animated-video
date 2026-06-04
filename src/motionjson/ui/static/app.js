@@ -67,6 +67,25 @@ const MotionJSONUI = (() => {
     workflowStep: "motionjson.localUi.workflowStep",
     workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
+  const MATERIALIZATION_BUDGET_PIXELS = 64_000_000;
+  const AUTO_PARAMETER_FIELDS = {
+    sampleFps: "sampleFps",
+    maxFrames: "maxFrames",
+    maxObjects: "maxObjects",
+    discoveryQualityPreset: "qualityPreset",
+    deviceSelect: "device",
+  };
+  const AUTO_PARAMETER_KEYS = new Set(Object.values(AUTO_PARAMETER_FIELDS));
+  const OPTION_HELP_TEXT = {
+    sceneSweepQuality: "Balances object recall against speed, memory, and noisy background fragments.",
+    sampleFps: "How many source frames per second are sampled before tracking. Lower values improve stability on long or high-resolution videos.",
+    maxFrames: "Upper bound on sampled frames. Lower this when scene sweep stalls, runs out of memory, or produces too many artifacts.",
+    maxObjects: "Maximum object candidates allowed into review. Lower values reduce memory pressure and keep review usable.",
+    traceEverythingMode: "Keeps many raw auto-mask segments for review. Export stays blocked until objects are reviewed.",
+    device: "Auto lets the backend choose CUDA, MPS, or CPU from diagnostics. Override only when a device is known to be stable.",
+    exportPreset: "Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.",
+    partialResultRecovery: "Completed objects can remain reviewable even when a later object or frame fails.",
+  };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$|^\/api\/jobs\/[A-Za-z0-9._~-]+\/preview-files\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const REVIEW_TOOL_DEFS = [
@@ -527,6 +546,8 @@ const MotionJSONUI = (() => {
     errors: {},
     railOpenedByUser: false,
     selectedPreset: "trace_one_object",
+    parameterOverrides: new Set(),
+    applyingAdaptiveParameters: false,
     activeWorkflowStep: "choose_goal",
     workflowDashboard: false,
     activeTool: "point",
@@ -1624,6 +1645,156 @@ const MotionJSONUI = (() => {
       },
     };
     return defaults[qualityPreset] || defaults.clean;
+  }
+
+  function overrideFlagsFromSnapshot(snapshot = {}) {
+    const source = snapshot.userOverrides || snapshot.overrideFlags || snapshot.overrides || {};
+    if (source instanceof Set) return Object.fromEntries([...source].map((key) => [key, true]));
+    if (Array.isArray(source)) return Object.fromEntries(source.map((key) => [key, true]));
+    if (source && typeof source === "object") return { ...source };
+    return {};
+  }
+
+  function videoFactsFromSnapshot(snapshot = {}) {
+    const video = snapshot.video || snapshot.videoPreview || snapshot.preview || {};
+    const metadata = video.metadata || snapshot.videoMetadata || {};
+    const width = toInteger(snapshot.width ?? snapshot.videoWidth ?? video.width ?? metadata.width, 0);
+    const height = toInteger(snapshot.height ?? snapshot.videoHeight ?? video.height ?? metadata.height, 0);
+    const duration = toNumber(snapshot.duration ?? snapshot.videoDuration ?? video.duration ?? metadata.duration, 0);
+    return {
+      width,
+      height,
+      duration,
+      framePixels: width > 0 && height > 0 ? width * height : 0,
+    };
+  }
+
+  function priorFailureReasonFromSnapshot(snapshot = {}) {
+    return String(
+      snapshot.priorFailureReason ||
+        snapshot.reasonCode ||
+        snapshot.failureReason ||
+        snapshot.failure?.reasonCode ||
+        snapshot.lifecycle?.failure?.reasonCode ||
+        "",
+    ).toLowerCase();
+  }
+
+  function adaptiveSourceValue(key, automaticValue, snapshot, overrideFlags) {
+    const current = snapshot.currentValues || snapshot;
+    const override = Boolean(overrideFlags[key]);
+    const rawValue = current[key] ?? snapshot[key];
+    if (key === "device" || key === "qualityPreset") {
+      return {
+        value: override && rawValue !== undefined && rawValue !== "" ? String(rawValue) : automaticValue,
+        source: override ? "user_override" : "auto",
+      };
+    }
+    const numeric = key === "sampleFps" ? toNumber(rawValue, automaticValue) : toInteger(rawValue, automaticValue);
+    return {
+      value: override ? numeric : automaticValue,
+      source: override ? "user_override" : "auto",
+    };
+  }
+
+  function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
+    const presetId = snapshot.selectedPreset || snapshot.preset || snapshot.goal || "trace_one_object";
+    const providerId = String(snapshot.providerId || snapshot.providerName || snapshot.maskProvider || "");
+    const providerLabelText = snapshot.providerLabel || snapshot.displayLabel || providerLabel(providerId) || "Auto provider";
+    const failureReason = priorFailureReasonFromSnapshot(snapshot);
+    const retryingHeavyAssetPrep = ["asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"].includes(failureReason);
+    const video = videoFactsFromSnapshot(snapshot);
+    const largeVideo = video.framePixels >= 1920 * 1080;
+    const traceEverythingMode = Boolean(snapshot.traceEverythingMode);
+    let qualityPreset = traceEverythingMode
+      ? "trace_everything"
+      : String(snapshot.qualityPreset || (presetId === "trace_all_objects" ? "balanced" : "clean"));
+    let sampleFps = presetId === "trace_all_objects" ? 8 : presetId === "text_detector" ? 8 : 12;
+    let maxFrames = presetId === "trace_one_object" ? 48 : presetId === "text_detector" ? 32 : 48;
+    let maxObjects =
+      presetId === "trace_one_object"
+        ? 1
+        : presetId === "text_detector"
+          ? 6
+          : presetId === "class_detector" || presetId === "motion_foreground"
+            ? 8
+            : objectDiscoveryDefaults(qualityPreset).maxObjects;
+    let device = String(snapshot.device || "auto") || "auto";
+    const budgetPixels = Math.max(1, toInteger(snapshot.materializationBudgetPixels, MATERIALIZATION_BUDGET_PIXELS));
+
+    if (retryingHeavyAssetPrep && presetId === "trace_all_objects") {
+      qualityPreset = "clean";
+      sampleFps = 6;
+      maxFrames = 32;
+      maxObjects = 12;
+      device = "auto";
+    } else if (largeVideo && presetId === "trace_all_objects") {
+      qualityPreset = qualityPreset === "maximum_recall" ? "balanced" : qualityPreset;
+      sampleFps = Math.min(sampleFps, 6);
+      maxFrames = Math.min(maxFrames, 36);
+      maxObjects = Math.min(maxObjects, 18);
+    }
+
+    if (video.duration > 0) {
+      maxFrames = Math.max(1, Math.min(maxFrames, Math.ceil(video.duration * sampleFps)));
+    }
+
+    const overrideFlags = overrideFlagsFromSnapshot(snapshot);
+    const resolved = {
+      sampleFps: adaptiveSourceValue("sampleFps", sampleFps, snapshot, overrideFlags),
+      maxFrames: adaptiveSourceValue("maxFrames", maxFrames, snapshot, overrideFlags),
+      maxObjects: adaptiveSourceValue("maxObjects", maxObjects, snapshot, overrideFlags),
+      qualityPreset: adaptiveSourceValue("qualityPreset", qualityPreset, snapshot, overrideFlags),
+      device: adaptiveSourceValue("device", device, snapshot, overrideFlags),
+    };
+    const values = Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.value]));
+    const estimatedPixels = video.framePixels > 0 ? video.framePixels * Math.max(1, values.maxFrames) * Math.max(1, Math.min(values.maxObjects, 4)) : 0;
+    const materializationRisk =
+      !estimatedPixels ? "unknown" : estimatedPixels > budgetPixels ? "high" : estimatedPixels > budgetPixels * 0.55 ? "watch" : "normal";
+    const qualityLabel = {
+      clean: "Clean",
+      balanced: "Balanced",
+      maximum_recall: "Maximum recall",
+      trace_everything: "Trace everything",
+    }[values.qualityPreset] || values.qualityPreset;
+    const chip = (id, label, value, detail, source = resolved[id]?.source || "auto", tone = "neutral") => ({
+      id,
+      label,
+      value,
+      detail,
+      source,
+      tone,
+      help: OPTION_HELP_TEXT[id] || "",
+    });
+    return {
+      format: "motionjson.local_ui_adaptive_parameters.v0.1",
+      presetId,
+      providerId,
+      failureReason,
+      values: {
+        ...values,
+        traceEverythingMode,
+        materializationBudgetPixels: budgetPixels,
+        materializationEstimatedPixels: estimatedPixels,
+        materializationRisk,
+      },
+      sources: Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.source])),
+      chips: [
+        chip("sampleFps", "Sample FPS", `${values.sampleFps} fps`, "Sampling load tuned for this goal."),
+        chip("maxFrames", "Max frames", String(values.maxFrames), retryingHeavyAssetPrep ? "Reduced after the previous asset-prep failure." : "Capped before tracking starts."),
+        chip("maxObjects", "Max objects", String(values.maxObjects), "Keeps review and memory bounded."),
+        chip("qualityPreset", "Scene sweep", qualityLabel, retryingHeavyAssetPrep ? "Safer retry profile." : "Recall balanced against cleanup cost."),
+        chip("device", "Device", String(values.device || "auto"), providerLabelText, resolved.device.source),
+        chip(
+          "materialization",
+          "Materialization",
+          materializationRisk === "high" ? "High risk" : materializationRisk === "watch" ? "Watch" : materializationRisk === "unknown" ? "Unknown" : "Within budget",
+          estimatedPixels ? `${Math.round(estimatedPixels / 1_000_000)}M px worst-case / ${Math.round(budgetPixels / 1_000_000)}M budget.` : `${Math.round(budgetPixels / 1_000_000)}M px budget; video size unknown.`,
+          "auto",
+          materializationRisk === "high" ? "bad" : materializationRisk === "watch" ? "warn" : "ready",
+        ),
+      ],
+    };
   }
 
   function normalizedModelConnection(connection) {
@@ -3072,7 +3243,7 @@ const MotionJSONUI = (() => {
     );
   }
 
-  function collectFormState($) {
+  function collectRawFormState($) {
     const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
     const frameIndex = state.video.currentFrame || toInteger($("#frameSlider").value, 0);
     const hostedSam2Provider = providerSettingsById("sam2-hosted");
@@ -3139,6 +3310,54 @@ const MotionJSONUI = (() => {
       localSam3TrackerModel: providerEffectiveModel(localSam3Provider) || "facebook/sam3",
       localSam3ModelPath: localSam3Settings.sam3ModelPath || "",
       localSam3Device: localSam3Settings.sam3Device || "",
+    };
+  }
+
+  function currentVideoAdaptiveMetadata() {
+    const video = selectedVideo();
+    const metadata = video?.metadata || {};
+    const preview = selectedVideoBrowserPreview(video) || {};
+    return {
+      width: state.video.width || preview.width || metadata.width || 0,
+      height: state.video.height || preview.height || metadata.height || 0,
+      duration: state.video.duration || preview.duration || metadata.duration || 0,
+      name: video?.name || video?.filename || state.video.loadedName || "",
+    };
+  }
+
+  function currentFailureReason() {
+    const job = selectedJob();
+    if (!job) return "";
+    const lifecycle = normalizeJobLifecycle(job, { events: state.jobEvents });
+    return lifecycle.failure?.reasonCode || job.lifecycle?.failure?.reasonCode || job.result?.failure?.reasonCode || job.failure?.reasonCode || "";
+  }
+
+  function adaptiveSnapshotFromForm(raw = {}) {
+    const provider = providerContractForInput(raw);
+    return {
+      ...raw,
+      selectedPreset: raw.preset || state.selectedPreset,
+      providerId: provider.providerId || raw.maskProvider,
+      providerLabel: provider.displayLabel || providerLabel(provider.providerId || raw.maskProvider),
+      providerLocality: provider.locality || "",
+      video: currentVideoAdaptiveMetadata(),
+      priorFailureReason: currentFailureReason(),
+      userOverrides: Object.fromEntries([...state.parameterOverrides].map((key) => [key, true])),
+      currentValues: raw,
+    };
+  }
+
+  function collectFormState($) {
+    const raw = collectRawFormState($);
+    const adaptive = adaptiveRunDefaultsFromSnapshot(adaptiveSnapshotFromForm(raw));
+    return {
+      ...raw,
+      sampleFps: adaptive.values.sampleFps,
+      maxFrames: adaptive.values.maxFrames,
+      maxObjects: adaptive.values.maxObjects,
+      qualityPreset: adaptive.values.qualityPreset === "trace_everything" ? raw.qualityPreset : adaptive.values.qualityPreset,
+      device: adaptive.values.device,
+      adaptiveParameters: adaptive,
     };
   }
 
@@ -9148,6 +9367,82 @@ const MotionJSONUI = (() => {
       select.value = providerNames.includes(current) ? current : providerNames.includes(fallbackDefault) ? fallbackDefault : defaults.maskProvider || providerNames[0] || "threshold";
     }
 
+    function setAutoParameterFieldValue(fieldId, value) {
+      const field = $(`#${fieldId}`);
+      if (!field) return;
+      if (field.tagName === "SELECT") {
+        const option = [...field.options].find((item) => item.value === String(value));
+        if (option) field.value = String(value);
+        return;
+      }
+      field.value = String(value);
+    }
+
+    function parameterSourceLabel(key) {
+      return state.parameterOverrides.has(key) ? "User override" : "Auto tuned";
+    }
+
+    function renderAdaptiveParameterSummary() {
+      const container = $("#adaptiveParameterSummary");
+      if (!container) return null;
+      const raw = collectRawFormState($);
+      const summary = adaptiveRunDefaultsFromSnapshot(adaptiveSnapshotFromForm(raw));
+      state.applyingAdaptiveParameters = true;
+      try {
+        for (const [fieldId, key] of Object.entries(AUTO_PARAMETER_FIELDS)) {
+          if (!state.parameterOverrides.has(key)) {
+            setAutoParameterFieldValue(fieldId, summary.values[key]);
+          }
+        }
+      } finally {
+        state.applyingAdaptiveParameters = false;
+      }
+      const statusMap = {
+        sampleFps: $("#sampleFpsAutoStatus"),
+        maxFrames: $("#maxFramesAutoStatus"),
+        maxObjects: $("#maxObjectsAutoStatus"),
+        qualityPreset: $("#qualityPresetAutoStatus"),
+        device: $("#deviceAutoStatus"),
+      };
+      for (const [key, element] of Object.entries(statusMap)) {
+        if (!element) continue;
+        element.textContent = parameterSourceLabel(key);
+        element.classList.toggle("is-override", state.parameterOverrides.has(key));
+      }
+      const overrideCount = [...state.parameterOverrides].filter((key) => AUTO_PARAMETER_KEYS.has(key)).length;
+      const overrideSummary = $("#adaptiveOverrideSummary");
+      if (overrideSummary) {
+        overrideSummary.textContent = overrideCount ? `${overrideCount} user override${overrideCount === 1 ? "" : "s"} active` : "Auto tuning active";
+        overrideSummary.classList.toggle("is-override", overrideCount > 0);
+      }
+      const resetButton = $("#resetAutoParametersButton");
+      if (resetButton) resetButton.hidden = overrideCount === 0;
+      container.innerHTML = `
+        <div class="adaptive-parameter-heading">
+          <div>
+            <p class="section-kicker">Auto tuned</p>
+            <strong>Run parameters</strong>
+          </div>
+          <span class="status-chip ${overrideCount ? "is-warn" : "is-ready"}">${overrideCount ? "Expert override" : "Automatic"}</span>
+        </div>
+        <div class="adaptive-chip-grid">
+          ${summary.chips
+            .map(
+              (chip) => `
+                <div class="adaptive-chip is-${escapeAttribute(chip.tone || "neutral")}" tabindex="0" data-tooltip="${escapeAttribute(chip.help || chip.detail)}">
+                  <span>${escapeHtml(chip.label)}</span>
+                  <strong>${escapeHtml(chip.value)}</strong>
+                  <small class="parameter-source ${chip.source === "user_override" ? "is-override" : ""}">${chip.source === "user_override" ? "User override" : "Auto tuned"}</small>
+                  <small>${escapeHtml(chip.detail)}</small>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      `;
+      return summary;
+    }
+
     function renderPresetFields() {
       const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
       const enginePlan = guidedEnginePlan(collectFormState($));
@@ -9194,6 +9489,7 @@ const MotionJSONUI = (() => {
       if (sam3SingleObject && state.activeTool === "point") {
         updateTool("box");
       }
+      renderAdaptiveParameterSummary();
     }
 
     function allPromptsForDisplay() {
@@ -9605,6 +9901,7 @@ const MotionJSONUI = (() => {
     }
 
     function renderConfigPreview() {
+      renderAdaptiveParameterSummary();
       const formState = collectFormState($);
       state.configValidation = null;
       let config;
@@ -13401,15 +13698,26 @@ const MotionJSONUI = (() => {
       "videoPath",
     ].forEach((id) => {
       $(`#${id}`).addEventListener("input", () => {
+        const autoKey = AUTO_PARAMETER_FIELDS[id];
+        if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
         if (id === "videoPath") renderWorkflowStepper();
       });
       $(`#${id}`).addEventListener("change", () => {
+        const autoKey = AUTO_PARAMETER_FIELDS[id];
+        if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
         if (id === "videoPath") renderWorkflowStepper();
       });
+    });
+
+    $("#resetAutoParametersButton").addEventListener("click", () => {
+      state.parameterOverrides.clear();
+      renderAdaptiveParameterSummary();
+      renderConfigPreview();
+      renderWorkflowStepper();
     });
 
     $("#saveConfigButton").addEventListener("click", () => {
@@ -13461,6 +13769,8 @@ const MotionJSONUI = (() => {
     REVIEW_TOOL_DEFS,
     RUN_CONFIG_SCHEMA,
     WORKFLOW_STEPS,
+    OPTION_HELP_TEXT,
+    adaptiveRunDefaultsFromSnapshot,
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,
     buildExportPanelSummary,
