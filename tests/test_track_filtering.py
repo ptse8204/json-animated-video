@@ -64,6 +64,13 @@ def write_mask_dir(path: Path, mask: np.ndarray, count: int = 3) -> None:
         Image.fromarray(mask).save(path / f"mask_{index + 1:06d}.png")
 
 
+def write_budget_mask_dir(path: Path) -> Path:
+    mask = np.zeros((32, 40), dtype=np.uint8)
+    mask[10:18, 6:14] = 255
+    write_mask_dir(path, mask, count=2)
+    return path
+
+
 def test_whole_frame_mask_is_rejected_with_fallback_reason_and_suggestions():
     full_mask = np.full((32, 40), 255, dtype=np.uint8)
     decision = evaluate_track(
@@ -77,6 +84,44 @@ def test_whole_frame_mask_is_rejected_with_fallback_reason_and_suggestions():
     assert decision.reason_codes == ["masks_too_large_whole_frame"]
     assert decision.fallback.reason_code == "masks_too_large_whole_frame"
     assert any("tighter prompt" in suggestion for suggestion in decision.fallback.suggestions)
+
+
+def test_track_filter_uses_preserved_mask_area_after_arrays_are_stripped():
+    stripped = track("stripped", bbox=[2, 3, 5, 4], mask=None, frames=2)
+    for frame in stripped.frames:
+        frame.metadata["maskArea"] = 20
+        frame.metadata["maskShape"] = [32, 40]
+
+    decision = evaluate_track(stripped, width=40, height=32, config=TrackFilterConfig(min_area=1))
+
+    assert decision.status == "accepted"
+    assert decision.metrics["visibleFrameCount"] == 2
+    assert decision.metrics["meanArea"] == 20
+    assert stripped.frames[0].to_summary()["maskArea"] == 20
+
+
+def test_asset_materialization_budget_skips_cutouts_and_records_diagnostic(tmp_path, monkeypatch):
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video, frames=2)
+    monkeypatch.setenv("MOTIONJSON_MAX_OBJECT_CUTOUT_PIXELS", "1")
+
+    scene = run_pipeline(
+        video_path=video,
+        out_dir=out,
+        mask_provider=ExternalMaskProvider(write_budget_mask_dir(tmp_path / "masks")),
+        sample_fps=12,
+        max_frames=2,
+        min_area=1,
+    )
+    diagnostics = json.loads((out / "fallback_diagnostics.json").read_text(encoding="utf-8"))["diagnostics"]
+    object_manifest = json.loads((out / "objects" / "object_0" / "object_manifest.json").read_text(encoding="utf-8"))
+
+    assert scene["objects"][0]["exportStatus"] == "rejected"
+    assert "asset_materialization_budget_exceeded" in scene["objects"][0]["discovery"]["exportValidationReasonCodes"]
+    assert not list((out / "objects" / "object_0" / "cutouts").glob("*.png"))
+    assert diagnostics[0]["reasonCode"] == "asset_materialization_budget_exceeded"
+    assert object_manifest["discovery"]["assetMaterialization"]["status"] == "skipped"
 
 
 def test_small_and_short_tracks_are_rejected_with_specific_codes():

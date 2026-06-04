@@ -142,7 +142,10 @@ def test_single_prompt_pipeline_preserves_legacy_outputs(tmp_path, provider):
     assert (out / "candidates.json").exists()
     assert (out / "tracks.json").exists()
     candidates = json.loads((out / "candidates.json").read_text())
+    tracks = json.loads((out / "tracks.json").read_text())
     assert candidates["video"]["path"] == "tiny.mp4"
+    assert tracks["tracks"][0]["metadata"]["heavyArraysStripped"] is True
+    assert tracks["tracks"][0]["frames"][0]["maskArea"] > 0
     assert validate_output_dir(out).ok
 
 

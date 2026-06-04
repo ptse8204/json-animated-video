@@ -21,6 +21,7 @@ FALLBACK_REASON_CODES = {
     "mask_area_below_minimum",
     "track_too_short",
     "confidence_below_filter",
+    "asset_materialization_budget_exceeded",
 }
 
 FALLBACK_MESSAGES = {
@@ -36,6 +37,7 @@ FALLBACK_MESSAGES = {
     "mask_area_below_minimum": "The accepted mask area is below the configured minimum.",
     "track_too_short": "The track is visible in too few frames to export confidently.",
     "confidence_below_filter": "The track confidence is below the configured threshold.",
+    "asset_materialization_budget_exceeded": "Raster cutout materialization would exceed the configured local memory/pixel budget.",
 }
 
 FALLBACK_SUGGESTIONS = {
@@ -51,6 +53,7 @@ FALLBACK_SUGGESTIONS = {
     "mask_area_below_minimum": ["Lower the minimum area only for genuinely small objects.", "Use a tighter prompt or external masks."],
     "track_too_short": ["Add prompt keyframes or use external masks for more frames.", "Lower the minimum track length only after review."],
     "confidence_below_filter": ["Review the provider confidence and try another discovery mode."],
+    "asset_materialization_budget_exceeded": ["Reduce max frames or candidate count.", "Review masks first, then track only selected objects."],
 }
 
 
@@ -137,6 +140,11 @@ def build_raster_fallback(reason_code: str, *, metadata: dict[str, Any] | None =
 def _mask_area(frame: TrackFrame) -> int:
     if frame.mask is not None:
         return int(np.count_nonzero(frame.mask))
+    if frame.metadata.get("maskArea") is not None:
+        try:
+            return int(frame.metadata["maskArea"])
+        except (TypeError, ValueError):
+            return 0
     if frame.bbox:
         return int(frame.bbox[2] * frame.bbox[3])
     return 0
@@ -149,7 +157,7 @@ def _bbox_area(frame: TrackFrame) -> int:
 
 
 def _visible_frames(track: ObjectTrack) -> list[TrackFrame]:
-    return [frame for frame in track.frames if frame.visible and (frame.bbox or frame.mask is not None)]
+    return [frame for frame in track.frames if frame.visible and (frame.bbox or frame.mask is not None or frame.metadata.get("maskArea") is not None)]
 
 
 def track_metrics(track: ObjectTrack, *, width: int, height: int) -> dict[str, Any]:
@@ -206,6 +214,11 @@ def evaluate_track(track: ObjectTrack, *, width: int, height: int, config: Track
         warnings.append("background_likelihood_high")
     if track.confidence is not None and track.confidence < config.min_confidence:
         reason_codes.append("confidence_below_filter")
+    materialization = track.metadata.get("assetMaterialization") if isinstance(track.metadata.get("assetMaterialization"), dict) else {}
+    if str(materialization.get("status") or "") in {"skipped", "failed"}:
+        for reason in materialization.get("reasonCodes", []):
+            if reason in FALLBACK_REASON_CODES and reason not in reason_codes:
+                reason_codes.append(reason)
     discovery = track.metadata.get("discovery") if isinstance(track.metadata.get("discovery"), dict) else {}
     if (
         str(discovery.get("trackingProvider") or "") == "keyframe_seed_sequence"

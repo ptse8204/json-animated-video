@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,8 @@ from .providers.base import ObjectCandidateProvider, PhaseTiming, ProviderConfig
 
 
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+DEFAULT_MAX_OBJECT_CUTOUT_PIXELS = 64_000_000
+ASSET_MATERIALIZATION_BUDGET_REASON = "asset_materialization_budget_exceeded"
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,48 @@ def _written_file_metadata(paths: Mapping[str, Path | None], root: Path) -> dict
             continue
         written[label] = {"path": _rel(path, root), "byteSize": path.stat().st_size}
     return written
+
+
+def max_object_cutout_pixels() -> int:
+    raw = os.environ.get("MOTIONJSON_MAX_OBJECT_CUTOUT_PIXELS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_OBJECT_CUTOUT_PIXELS
+    try:
+        return max(0, int(float(raw)))
+    except ValueError:
+        return DEFAULT_MAX_OBJECT_CUTOUT_PIXELS
+
+
+def _estimated_cutout_pixels(track: ObjectTrack, *, frame_width: int, frame_height: int, padding: int) -> int:
+    total = 0
+    pad = max(0, int(padding))
+    for frame in track.frames:
+        if not (frame.visible and frame.bbox):
+            continue
+        x, y, w, h = [int(round(value)) for value in frame.bbox]
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(frame_width, x + w + pad)
+        y1 = min(frame_height, y + h + pad)
+        if x1 > x0 and y1 > y0:
+            total += (x1 - x0) * (y1 - y0)
+    return int(total)
+
+
+def _strip_heavy_track_arrays(track: ObjectTrack) -> ObjectTrack:
+    stripped_frames = 0
+    for frame in track.frames:
+        if frame.rgb is not None:
+            frame.metadata["rgbShape"] = list(frame.rgb.shape[:2])
+            frame.rgb = None
+        if frame.mask is not None:
+            frame.metadata["maskShape"] = list(frame.mask.shape[:2])
+            frame.metadata["maskArea"] = int(np.count_nonzero(frame.mask))
+            frame.mask = None
+        stripped_frames += 1
+    track.metadata["heavyArraysStripped"] = True
+    track.metadata["heavyArraysStrippedFrames"] = stripped_frames
+    return track
 
 
 def _fallback_payload(*, diagnostics: list[dict[str, Any]], summary: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -449,7 +494,12 @@ def _job_emit(
 ) -> None:
     emit = getattr(job_context, "emit", None)
     if callable(emit):
-        emit(stage, status, message, event_type=event_type, progress=progress, metadata=metadata)
+        try:
+            emit(stage, status, message, event_type=event_type, progress=progress, metadata=metadata)
+        except TypeError as exc:
+            if "event_type" not in str(exc):
+                raise
+            emit(stage, status, message, progress=progress, metadata=metadata)
 
 
 def _job_check_cancel(job_context: Any | None, stage: str) -> None:
@@ -655,14 +705,31 @@ def _extract_object(
     )
     pre_export_payload = pre_export_decision.to_dict()
     pre_export_reason_codes = list(pre_export_decision.reason_codes)
+    materialization_reason_codes = list(pre_export_reason_codes)
+    estimated_cutout_pixels = _estimated_cutout_pixels(
+        track,
+        frame_width=info.width,
+        frame_height=info.height,
+        padding=layer_padding,
+    )
+    max_cutout_pixels = max_object_cutout_pixels()
+    budget_exceeded = max_cutout_pixels > 0 and estimated_cutout_pixels > max_cutout_pixels
+    if budget_exceeded and ASSET_MATERIALIZATION_BUDGET_REASON not in materialization_reason_codes:
+        materialization_reason_codes.append(ASSET_MATERIALIZATION_BUDGET_REASON)
     skip_asset_materialization = (
         pre_export_decision.status == "rejected"
         and _should_skip_asset_materialization(pre_export_reason_codes)
-    )
+    ) or budget_exceeded
     track.metadata["trackFilterPreflight"] = pre_export_payload
+    track.metadata["assetMaterialization"] = {
+        "status": "skipped" if skip_asset_materialization else "planned",
+        "estimatedCutoutPixels": estimated_cutout_pixels,
+        "maxCutoutPixels": max_cutout_pixels,
+        "reasonCodes": materialization_reason_codes if skip_asset_materialization else [],
+    }
     if skip_asset_materialization:
         track.export_status = "rejected"
-        track.warnings = list(dict.fromkeys([*track.warnings, *pre_export_reason_codes]))
+        track.warnings = list(dict.fromkeys([*track.warnings, *materialization_reason_codes]))
         _job_emit(
             job_context,
             "asset_preparation",
@@ -671,8 +738,10 @@ def _extract_object(
             progress={"stageRatio": 1.0, "overallRatio": 0.73},
             metadata={
                 "objectId": object_id,
-                "reasonCodes": pre_export_reason_codes,
+                "reasonCodes": materialization_reason_codes,
                 "decision": pre_export_payload,
+                "estimatedCutoutPixels": estimated_cutout_pixels,
+                "maxCutoutPixels": max_cutout_pixels,
             },
         )
     else:
@@ -859,11 +928,13 @@ def _extract_object(
             **discovery,
             "assetMaterialization": {
                 "status": "skipped",
-                "reasonCodes": pre_export_reason_codes,
+                "reasonCodes": materialization_reason_codes,
                 "trackFilterPreflight": pre_export_payload,
+                "estimatedCutoutPixels": estimated_cutout_pixels,
+                "maxCutoutPixels": max_cutout_pixels,
             },
             "exportStatus": "rejected",
-            "exportValidationReasonCodes": pre_export_reason_codes,
+            "exportValidationReasonCodes": materialization_reason_codes,
             "reviewRequired": True,
         }
     sprite_path = object_dir / f"spritesheet.{sprite_format}"
@@ -1206,7 +1277,6 @@ def run_multi_object_pipeline(
         layers.append(layer)
         object_motions[spec.object_id] = object_motion
         provider_performance_objects.append(provider_performance)
-        object_tracks.append(object_track)
         if index == 0:
             first_detailed_frames = detailed_frames
         checkpoint = _job_checkpoint_object(job_context, spec.object_id, status="finished")
@@ -1218,6 +1288,7 @@ def run_multi_object_pipeline(
             event_type="asset_preparation_object_finished",
             metadata={"objectId": spec.object_id, "artifactCheckpoint": checkpoint},
         )
+        object_tracks.append(_strip_heavy_track_arrays(object_track))
     phase_timings.append(PhaseTiming(phase="extract_objects", elapsed_ms=_elapsed_ms(extract_start), count=len(object_specs)).to_dict())
     link_start = time.perf_counter()
     _job_emit(

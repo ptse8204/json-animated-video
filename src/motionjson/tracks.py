@@ -129,6 +129,11 @@ class InitialMask:
         if self.mask is not None:
             data["maskShape"] = list(self.mask.shape[:2])
             data["maskArea"] = int(np.count_nonzero(self.mask))
+        else:
+            if isinstance(self.metadata.get("maskShape"), list):
+                data["maskShape"] = list(self.metadata["maskShape"])
+            if self.metadata.get("maskArea") is not None:
+                data["maskArea"] = int(self.metadata["maskArea"])
         return data
 
 
@@ -166,6 +171,11 @@ class TrackFrame:
         if self.mask is not None:
             data["maskShape"] = list(self.mask.shape[:2])
             data["maskArea"] = int(np.count_nonzero(self.mask))
+        else:
+            if isinstance(self.metadata.get("maskShape"), list):
+                data["maskShape"] = list(self.metadata["maskShape"])
+            if self.metadata.get("maskArea") is not None:
+                data["maskArea"] = int(self.metadata["maskArea"])
         if self.mask_ref is not None:
             data["mask"] = self.mask_ref
         if self.asset_ref is not None:
