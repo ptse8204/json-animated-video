@@ -303,6 +303,23 @@ assert.equal(adaptiveSceneSweep.values.maxObjects, 24);
 assert.equal(adaptiveSceneSweep.values.qualityPreset, "balanced");
 assert.equal(adaptiveSceneSweep.sources.sampleFps, "auto");
 assert.ok(adaptiveSceneSweep.chips.length >= 6);
+const adaptiveSceneSweepCuda = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  preferredDevice: "cuda",
+  video: { width: 1280, height: 720, duration: 10 },
+});
+assert.equal(adaptiveSceneSweepCuda.values.device, "cuda");
+assert.equal(adaptiveSceneSweepCuda.sources.device, "auto");
+const adaptiveSceneSweepCpuOverride = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  device: "cpu",
+  currentValues: { device: "cpu" },
+  userOverrides: { device: true },
+});
+assert.equal(adaptiveSceneSweepCpuOverride.values.device, "cpu");
+assert.equal(adaptiveSceneSweepCpuOverride.sources.device, "user_override");
 const adaptiveRetry = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
@@ -2176,6 +2193,34 @@ const terminalLifecycleWithStaleRawStatus = ui.normalizeJobLifecycle({
 });
 assert.equal(terminalLifecycleWithStaleRawStatus.terminal, true);
 assert.equal(terminalLifecycleWithStaleRawStatus.active, false);
+const lifecycleLateCancelAfterSuccess = ui.normalizeJobLifecycle({
+  id: "job_late_cancel_after_success",
+  type: "extract",
+  status: "cancel_requested",
+  progress: 100,
+  lifecycle: { status: "running", rawStatus: "cancel_requested", phase: "extracting", progress: { known: true, percent: 100, label: "100% complete" } },
+  events: [
+    {
+      event_type: "job_succeeded",
+      message: "job completed",
+      metadata: { progress: { overallRatio: 1.0 }, stage: "succeeded" },
+      created_at: "2026-06-04T04:14:08Z",
+    },
+    {
+      event_type: "cancellation_requested",
+      message: "user_canceled",
+      metadata: { reason: "user_canceled" },
+      created_at: "2026-06-04T04:17:51Z",
+    },
+  ],
+});
+assert.equal(lifecycleLateCancelAfterSuccess.status, "succeeded");
+assert.equal(lifecycleLateCancelAfterSuccess.rawStatus, "cancel_requested");
+assert.equal(lifecycleLateCancelAfterSuccess.phase, "complete");
+assert.equal(lifecycleLateCancelAfterSuccess.progress.percent, 100);
+assert.equal(lifecycleLateCancelAfterSuccess.terminal, true);
+assert.equal(lifecycleLateCancelAfterSuccess.active, false);
+assert.equal(lifecycleLateCancelAfterSuccess.actions.canCancel, false);
 
 const manualJobCenter = ui.jobCenterStateFromSnapshot({
   selectedJobId: "job_old",

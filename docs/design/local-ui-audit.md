@@ -591,3 +591,50 @@ Findings and changes:
   tests verify that the same helpers are exposed through `MotionJSONUI`.
 - The concise UI contract is documented in `docs/design/local-ui-contract.md`
   to reduce future context required for UI changes.
+
+## UI-UX-06 Evidence
+
+UI-UX-06 addressed a real successful-run debug report where the backend had
+emitted `job_succeeded`, then a later cancel action left the public row looking
+like `rawStatus: cancel_requested`, `status: running`, and `phase: extracting`.
+The same phase also surfaced easier scene-sweep tuning for users who need
+rougher or more refined automatic masks.
+
+Baseline:
+
+- Debug report generated `2026-06-04T04:18:21.432Z` showed
+  `progress: 100%`, `artifacts: 4274`, `objects: 24`,
+  `latestEvent: user_canceled`, and recent event 11 as
+  `job_succeeded succeeded 100% - job completed`.
+- Visual baseline uses UI-UX-05 scene-sweep captures for the guided prepare
+  screen.
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state prepare-sam3-trace-all-runtime-ready,workflow-run,workflow-review --screenshot-dir docs/design/screenshots/ui-ux-06
+```
+
+Representative captures:
+
+![UI-UX-06 desktop scene sweep](screenshots/ui-ux-06/desktop-1440-prepare-sam3-trace-all-runtime-ready.png)
+
+![UI-UX-06 tablet scene sweep](screenshots/ui-ux-06/tablet-768-prepare-sam3-trace-all-runtime-ready.png)
+
+![UI-UX-06 mobile run monitor](screenshots/ui-ux-06/mobile-390-workflow-run.png)
+
+Findings and changes:
+
+- The backend now reconciles cancel requests made after a `job_succeeded` or
+  `succeeded` event by marking the job succeeded instead of recording a new
+  cancellation request.
+- Backend and UI lifecycle selectors now treat a success event as terminal when
+  the raw row is still active or `cancel_requested`.
+- Scene-sweep prepare now exposes guided `Mask detail` controls:
+  Rough, Balanced, and Refined. These map to the existing
+  `clean`, `balanced`, and `maximum_recall` quality presets.
+- Scene-sweep prepare now exposes guided `Runtime speed` controls:
+  Auto, GPU, and CPU. GPU writes `cuda` to the existing provider device fields.
+- Layout checks now fail if SAM3 trace-all prepare loses the guided
+  mask/runtime controls, if segmented labels clip on tablet, or if the mobile
+  project action clips a long project name.

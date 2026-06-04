@@ -2511,6 +2511,13 @@ const MotionJSONUI = (() => {
     return 0;
   }
 
+  function hasJobSucceededEvent(events = []) {
+    return asArray(events).some((event) => {
+      const label = String(event.event_type || event.eventType || event.type || "").toLowerCase();
+      return label === "job_succeeded" || label === "succeeded";
+    });
+  }
+
   function latestStageLabel(job) {
     const event = latestProgressEvent(job);
     const metadata = eventMetadata(event);
@@ -2603,8 +2610,10 @@ const MotionJSONUI = (() => {
   function normalizeJobLifecycle(job = {}, options = {}) {
     const lifecycle = job.lifecycle || {};
     const events = asArray(options.events || job.events);
-    const status = String(lifecycle.status || job.status || "queued").toLowerCase();
-    const rawStatus = String(lifecycle.rawStatus || job.status || status).toLowerCase();
+    const reportedStatus = String(lifecycle.status || job.status || "queued").toLowerCase();
+    const rawStatus = String(lifecycle.rawStatus || job.status || reportedStatus).toLowerCase();
+    const completedByEvent = hasJobSucceededEvent(events);
+    const status = completedByEvent && /queued|pending|running|working|started|cancel_requested/.test(`${reportedStatus} ${rawStatus}`) ? "succeeded" : reportedStatus;
     const progress = lifecycle.progress || job.progress || {};
     const directPercent = Number(progress.percent);
     const percent = Number.isFinite(directPercent) ? clamp(Math.round(directPercent), 0, 100) : normalizeProgress({ ...job, events });
@@ -2639,7 +2648,7 @@ const MotionJSONUI = (() => {
           ...lifecycle,
           status,
           rawStatus,
-          phase: lifecycle.phase || latestStageLabel({ ...job, events }),
+          phase: completedByEvent ? "complete" : lifecycle.phase || latestStageLabel({ ...job, events }),
           latestEvent,
         },
       },
@@ -2653,11 +2662,11 @@ const MotionJSONUI = (() => {
       workflow: lifecycle.workflow || job.workflow || "",
       status,
       rawStatus,
-      phase: lifecycle.phase || latestStageLabel({ ...job, events }),
+      phase: completedByEvent ? "complete" : lifecycle.phase || latestStageLabel({ ...job, events }),
       progress: {
         known: progressKnown,
-        percent,
-        label: progress.label || `${percent}% complete`,
+        percent: completedByEvent ? 100 : percent,
+        label: completedByEvent ? "job completed" : progress.label || `${percent}% complete`,
       },
       latestEvent: {
         type: latestEvent.type || "",
@@ -3149,12 +3158,14 @@ const MotionJSONUI = (() => {
 
   function adaptiveSnapshotFromForm(raw = {}) {
     const provider = providerContractForInput(raw);
+    const environment = environmentRecommendationSummary();
     return {
       ...raw,
       selectedPreset: raw.preset || state.selectedPreset,
       providerId: provider.providerId || raw.maskProvider,
       providerLabel: provider.displayLabel || providerLabel(provider.providerId || raw.maskProvider),
       providerLocality: provider.locality || "",
+      preferredDevice: environment.accelerator || "",
       video: currentVideoAdaptiveMetadata(),
       priorFailureReason: currentFailureReason(),
       userOverrides: Object.fromEntries([...state.parameterOverrides].map((key) => [key, true])),
@@ -6509,7 +6520,9 @@ const MotionJSONUI = (() => {
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed"),
           selectedProject: project,
         });
-        projectDrawerToggle.textContent = shellState.projectButtonLabel;
+        const compactProjectLabel = window.matchMedia?.("(max-width: 480px)")?.matches && shellState.projectButtonLabel !== "Local Project";
+        projectDrawerToggle.textContent = compactProjectLabel ? "Project" : shellState.projectButtonLabel;
+        projectDrawerToggle.title = shellState.projectButtonLabel;
         projectDrawerToggle.setAttribute("aria-label", shellState.projectButtonAriaLabel);
         projectDrawerToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
       }
@@ -9366,7 +9379,43 @@ const MotionJSONUI = (() => {
             .join("")}
         </div>
       `;
+      renderGuidedQualityControls(summary);
       return summary;
+    }
+
+    function renderGuidedQualityControls(summary = null) {
+      const panel = $("#guidedQualityControls");
+      if (!panel) return;
+      const visible = state.selectedPreset === "trace_all_objects";
+      panel.classList.toggle("is-hidden", !visible);
+      panel.setAttribute("aria-hidden", String(!visible));
+      if (!visible) return;
+
+      const quality = $("#discoveryQualityPreset")?.value || summary?.values?.qualityPreset || "balanced";
+      const qualityNotes = {
+        clean: "Rough: faster, stricter masks",
+        balanced: "Balanced mask detail",
+        maximum_recall: "Refined: more masks, slower review",
+        trace_everything: "Trace everything: review-heavy",
+      };
+      const maskDetailNote = $("#maskDetailNote");
+      if (maskDetailNote) maskDetailNote.textContent = qualityNotes[quality] || "Balanced mask detail";
+      panel.querySelectorAll("[data-quality-preset]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.qualityPreset === quality));
+      });
+
+      const rawDevice = $("#deviceSelect")?.value || summary?.values?.device || "auto";
+      const device = String(rawDevice).startsWith("cuda") ? "cuda" : rawDevice === "cpu" ? "cpu" : "auto";
+      const deviceNotes = {
+        auto: "Auto device",
+        cuda: "GPU requested (CUDA)",
+        cpu: "CPU requested",
+      };
+      const runtimeDeviceNote = $("#runtimeDeviceNote");
+      if (runtimeDeviceNote) runtimeDeviceNote.textContent = deviceNotes[device] || `Device: ${rawDevice}`;
+      panel.querySelectorAll("[data-device-preset]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(button.dataset.devicePreset === device));
+      });
     }
 
     function renderPresetFields() {
@@ -9398,6 +9447,7 @@ const MotionJSONUI = (() => {
       $("#objectIdField").classList.toggle("is-hidden", !showAdvancedProviderInternals);
       $("#maskProviderField").classList.toggle("is-hidden", !showAdvancedProviderInternals);
       $("#deviceField").classList.toggle("is-hidden", !showAdvancedProviderInternals && !showSceneSweepControls);
+      $("#guidedQualityControls")?.classList.toggle("is-hidden", !showSceneSweepControls);
       const sceneSweepDisclosure = $("#traceEverythingDisclosure");
       if (sceneSweepDisclosure && showSceneSweepControls) sceneSweepDisclosure.open = true;
       $("#videoForm")?.classList.toggle("is-hidden", reviewingExisting);
@@ -13674,6 +13724,7 @@ const MotionJSONUI = (() => {
         if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
+        if (id === "discoveryQualityPreset" || id === "deviceSelect") renderGuidedQualityControls();
         if (id === "videoPath") renderWorkflowStepper();
       });
       $(`#${id}`).addEventListener("change", () => {
@@ -13681,7 +13732,32 @@ const MotionJSONUI = (() => {
         if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
+        if (id === "discoveryQualityPreset" || id === "deviceSelect") renderGuidedQualityControls();
         if (id === "videoPath") renderWorkflowStepper();
+      });
+    });
+
+    document.querySelectorAll("[data-quality-preset]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const value = button.dataset.qualityPreset;
+        if (!value || !$("#discoveryQualityPreset")) return;
+        $("#discoveryQualityPreset").value = value;
+        state.parameterOverrides.add("qualityPreset");
+        renderPresetFields();
+        renderConfigPreview();
+        renderWorkflowStepper();
+      });
+    });
+
+    document.querySelectorAll("[data-device-preset]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const value = button.dataset.devicePreset;
+        if (!value || !$("#deviceSelect")) return;
+        $("#deviceSelect").value = value;
+        state.parameterOverrides.add("device");
+        renderPresetFields();
+        renderConfigPreview();
+        renderWorkflowStepper();
       });
     });
 
@@ -13721,7 +13797,10 @@ const MotionJSONUI = (() => {
       }
     });
 
-    window.addEventListener("resize", scheduleDrawOverlay);
+    window.addEventListener("resize", () => {
+      scheduleDrawOverlay();
+      renderShellIndicators();
+    });
 
     initShellNavigation();
     initWorkflowController();

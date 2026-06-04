@@ -29,7 +29,8 @@ def job_lifecycle_summary(
     review_summary = review_lifecycle_summary(review or {})
     latest_event = _latest_event(event_list)
     raw_status = _text(job.get("status")).lower()
-    status = _lifecycle_status(raw_status, review_summary)
+    has_success_event = _has_success_event(event_list)
+    status = _lifecycle_status(raw_status, review_summary, has_success_event=has_success_event)
     phase = _phase(raw_status, status, latest_event, review_summary)
     failure = _failure_summary(job, event_list, review or {}, raw_status)
     actions = _actions(job, raw_status, status, review_summary, failure)
@@ -114,14 +115,24 @@ def _progress(events: Sequence[Mapping[str, Any]], raw_status: str, status: str,
         return {"known": True, "percent": int(round(ratio * 100)), "label": label}
     if raw_status == "failed":
         percent = 0
-    elif raw_status in TERMINAL_JOB_STATUSES or status == "waiting_review":
+    elif raw_status in TERMINAL_JOB_STATUSES or status in {"succeeded", "waiting_review"}:
         percent = 100
     else:
         percent = 0
     return {"known": False, "percent": percent, "label": _status_label(status)}
 
 
-def _lifecycle_status(raw_status: str, review: Mapping[str, Any]) -> str:
+def _has_success_event(events: Sequence[Mapping[str, Any]]) -> bool:
+    for event in events:
+        event_type = _text(event.get("event_type") or event.get("type")).lower()
+        if event_type in {"job_succeeded", "succeeded"}:
+            return True
+    return False
+
+
+def _lifecycle_status(raw_status: str, review: Mapping[str, Any], *, has_success_event: bool = False) -> str:
+    if has_success_event and raw_status in ACTIVE_JOB_STATUSES:
+        raw_status = "succeeded"
     if raw_status in {"failed"}:
         return "failed"
     if raw_status in {"canceled", "cancelled"}:

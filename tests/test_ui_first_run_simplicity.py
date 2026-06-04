@@ -84,9 +84,14 @@ def test_guided_parameters_show_auto_tuning_and_keyboard_help():
     assert 'id="maxObjectsAutoStatus"' in html
     assert 'id="qualityPresetAutoStatus"' in html
     assert 'id="deviceAutoStatus"' in html
+    assert 'id="guidedQualityControls"' in html
+    assert 'data-quality-preset="maximum_recall"' in html
+    assert 'data-device-preset="cuda"' in html
     assert 'data-tooltip="How many source frames per second are sampled before tracking.' in html
     assert 'data-tooltip="Maximum object candidates allowed into review.' in html
     assert 'data-tooltip="Controls package size and debug detail.' in html
+    assert "Mask detail" in html
+    assert "Runtime speed" in html
     assert 'tabindex="0" data-tooltip=' in html
     assert "adaptiveRunDefaultsFromSnapshot" in js
     assert 'from "./ui_selectors.js"' in js
@@ -97,6 +102,8 @@ def test_guided_parameters_show_auto_tuning_and_keyboard_help():
     assert "OPTION_HELP_TEXT" in js
     assert "parameterOverrides" in js
     assert ".adaptive-chip-grid" in css
+    assert ".guided-quality-controls" in css
+    assert ".segmented-control" in css
     assert ".parameter-source.is-override" in css
 
 

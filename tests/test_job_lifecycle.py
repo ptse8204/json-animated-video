@@ -184,6 +184,39 @@ def test_job_lifecycle_canceled_job_has_no_cancel_or_retry_actions():
     assert lifecycle["nextAction"]["label"] == "Open logs"
 
 
+def test_job_lifecycle_success_event_overrides_late_cancel_requested_status():
+    job = {
+        "id": "job_late_cancel",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "cancel_requested",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}}},
+        "result": {},
+    }
+    events = [
+        {
+            "event_type": "job_succeeded",
+            "message": "job completed",
+            "metadata": {"stage": "succeeded"},
+            "created_at": "2026-06-04T04:14:08Z",
+        },
+        {
+            "event_type": "cancellation_requested",
+            "message": "user_canceled",
+            "metadata": {"reason": "user_canceled"},
+            "created_at": "2026-06-04T04:17:51Z",
+        },
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["status"] == "succeeded"
+    assert lifecycle["rawStatus"] == "cancel_requested"
+    assert lifecycle["phase"] == "complete"
+    assert lifecycle["progress"]["percent"] == 100
+    assert lifecycle["actions"]["canCancel"] is False
+
+
 def test_job_lifecycle_summarizes_failure_and_recovery_action():
     job = {
         "id": "job_failed",

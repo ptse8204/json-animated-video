@@ -9,9 +9,9 @@ import pytest
 from motionjson.backend.assets import list_assets_for_job, register_upload
 from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
-from motionjson.backend.jobs import enqueue_extract_job, list_job_events
+from motionjson.backend.jobs import enqueue_extract_job, list_job_events, record_job_event
 from motionjson.backend.projects import create_project
-from motionjson.backend.queue import request_cancel_job
+from motionjson.backend.queue import mark_running, request_cancel_job
 from motionjson.backend.worker import worker_once
 from motionjson.cli import main
 from motionjson.job_artifacts import LocalJobRun
@@ -314,6 +314,36 @@ def test_backend_running_job_cancel_request_before_finalize_keeps_artifacts_canc
     assert result["status"] == "canceled"
     assert failure["reasonCode"] == "user_canceled"
     assert state["status"] == "canceled"
+
+
+def test_backend_cancel_after_artifact_success_reconciles_succeeded(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="threshold", max_frames=1)
+    mark_running(conn, job_id=job["id"])
+    record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="job_succeeded",
+        message="job completed",
+        metadata={
+            "type": "job",
+            "status": "succeeded",
+            "progress": {"overallRatio": 1.0},
+            "metadata": {"frames": 36, "objects": 24, "sceneGraph": "scene_graph.json"},
+        },
+    )
+
+    reconciled = request_cancel_job(conn, job_id=job["id"], reason="user_canceled")
+    events = list_job_events(conn, job_id=job["id"])
+    result = json.loads(reconciled["result_json"])
+
+    assert reconciled["status"] == "succeeded"
+    assert reconciled["error"] is None
+    assert result["objects"] == 24
+    assert result["frames"] == 36
+    assert any(event["event_type"] == "succeeded" for event in events)
+    assert not any(event["event_type"] == "cancellation_requested" for event in events)
 
 
 def test_job_progress_overall_ratio_is_monotonic(tmp_path):

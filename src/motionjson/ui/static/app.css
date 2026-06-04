@@ -760,6 +760,64 @@ input[type="range"] {
   background: #fff5f3;
 }
 
+.guided-quality-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 12px;
+}
+
+.guided-quality-controls.is-hidden {
+  display: none;
+}
+
+.guided-control-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.guided-control-group small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 4px;
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid #d7e2df;
+  border-radius: 7px;
+  background: #eef6f4;
+}
+
+.segmented-control button {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.segmented-control button[aria-pressed="true"] {
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(20, 42, 38, 0.12);
+}
+
 .advanced-parameter-toolbar {
   padding: 0 12px 10px;
 }
@@ -3850,6 +3908,7 @@ button,
   .wizard-fields,
   .advanced-grid,
   .adaptive-chip-grid,
+  .guided-quality-controls,
   .inline-form,
   .timeline-controls,
     .guided-start-actions,
@@ -5326,6 +5385,16 @@ body {
   .studio-review-heading,
   .studio-segment-gate {
     flex-direction: column;
+  }
+
+  .project-drawer-trigger {
+    align-self: flex-start;
+    max-width: 100%;
+    height: auto;
+    min-height: 30px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
   }
 
   .studio-progress {

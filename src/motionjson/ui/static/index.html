@@ -580,7 +580,7 @@
                 <select id="maskProviderSelect"></select>
               </label>
               <label id="deviceField" data-workflow-fragment="provider_settings prompt_preview">
-                <span class="help-label" tabindex="0" data-tooltip="Auto lets the backend choose CUDA, MPS, or CPU from local diagnostics. Override only when a device is known to be stable.">Device</span>
+                <span class="help-label" tabindex="0" data-tooltip="Auto is conservative for local SAM runs. Choose GPU to explicitly request CUDA when diagnostics show it is available.">Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>
                   <option value="cpu">cpu</option>
@@ -592,6 +592,31 @@
             </div>
 
             <div id="adaptiveParameterSummary" class="adaptive-parameter-summary" data-workflow-fragment="provider_settings prompt_preview" aria-live="polite"></div>
+
+            <div id="guidedQualityControls" class="guided-quality-controls" data-workflow-fragment="provider_settings prompt_preview">
+              <div class="guided-control-group">
+                <div>
+                  <span class="help-label" tabindex="0" data-tooltip="Rough is faster and filters more background. Refined searches more masks and can improve small or missed objects, but is slower and noisier.">Mask detail</span>
+                  <small id="maskDetailNote">Balanced mask detail</small>
+                </div>
+                <div class="segmented-control" role="group" aria-label="Mask detail">
+                  <button type="button" data-quality-preset="clean" data-tooltip="Faster, stricter filtering. Use when the scene has many bad background masks.">Rough</button>
+                  <button type="button" data-quality-preset="balanced" data-tooltip="Good default for most scene sweeps.">Balanced</button>
+                  <button type="button" data-quality-preset="maximum_recall" data-tooltip="More candidate masks for small or missed objects. Slower and review-heavy.">Refined</button>
+                </div>
+              </div>
+              <div class="guided-control-group">
+                <div>
+                  <span class="help-label" tabindex="0" data-tooltip="GPU maps to CUDA for SAM3 local scene sweep. Auto may fall back to CPU if provider diagnostics do not confirm CUDA.">Runtime speed</span>
+                  <small id="runtimeDeviceNote">Auto device</small>
+                </div>
+                <div class="segmented-control" role="group" aria-label="Runtime speed">
+                  <button type="button" data-device-preset="auto" data-tooltip="Let the backend choose from current diagnostics.">Auto</button>
+                  <button type="button" data-device-preset="cuda" data-tooltip="Request CUDA GPU for local SAM3 scene sweep.">GPU</button>
+                  <button type="button" data-device-preset="cpu" data-tooltip="Use CPU. Slower, but useful when CUDA setup is unstable.">CPU</button>
+                </div>
+              </div>
+            </div>
 
             <details id="traceEverythingDisclosure" class="advanced-panel trace-everything-panel" data-workflow-fragment="prompt_preview">
               <summary>Scene sweep controls</summary>

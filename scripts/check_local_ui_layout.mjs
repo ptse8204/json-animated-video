@@ -657,6 +657,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           adaptiveSummaryVisible: visible(document.querySelector("#adaptiveParameterSummary")),
           adaptiveSummaryText: document.querySelector("#adaptiveParameterSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           adaptiveChipCount: [...document.querySelectorAll("#adaptiveParameterSummary .adaptive-chip")].filter(visible).length,
+          guidedQualityVisible: visible(document.querySelector("#guidedQualityControls")),
+          guidedQualityText: document.querySelector("#guidedQualityControls")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          guidedQualityPresetCount: [...document.querySelectorAll("#guidedQualityControls [data-quality-preset]")].filter(visible).length,
+          guidedDevicePresetCount: [...document.querySelectorAll("#guidedQualityControls [data-device-preset]")].filter(visible).length,
           autoParameterSourceCount: [...document.querySelectorAll(".parameter-source")].filter(visible).length,
           criticalHelpLabelCount: [...document.querySelectorAll(".help-label[data-tooltip], #adaptiveParameterSummary [data-tooltip]")].filter(visible).length,
           visibleGoalCardCount: [...document.querySelectorAll(".goal-card-grid > .goal-card")].filter(visible).length,
@@ -875,6 +879,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && (stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should hide prompt tools and mask-provider internals`);
+    }
+    if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state)) {
+      if (!stateValue.guidedQualityVisible || stateValue.guidedQualityPresetCount !== 3 || stateValue.guidedDevicePresetCount !== 3 || !/Mask detail/.test(stateValue.guidedQualityText) || !/Runtime speed/.test(stateValue.guidedQualityText)) {
+        failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should expose guided mask-detail and runtime-speed controls`);
+      }
     }
     if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime", "advanced-config"].includes(state)) {
       if (!stateValue.adaptiveSummaryVisible || stateValue.adaptiveChipCount < 5 || !/Auto tuned|Run parameters/.test(stateValue.adaptiveSummaryText)) {

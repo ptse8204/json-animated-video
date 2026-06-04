@@ -9,6 +9,34 @@ from .jobs import record_job_event
 from .usage import record_usage_event, utc_now
 
 
+TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
+
+
+def _completed_result_from_events(conn: sqlite3.Connection, job_id: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT event_type, metadata_json
+        FROM job_events
+        WHERE job_id = ? AND event_type IN ('job_succeeded', 'succeeded')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (job_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        metadata = json.loads(row["metadata_json"] or "{}")
+    except json.JSONDecodeError:
+        metadata = {}
+    if not isinstance(metadata, dict):
+        return {}
+    if row["event_type"] == "job_succeeded":
+        result = metadata.get("metadata")
+        return result if isinstance(result, dict) else {}
+    return metadata
+
+
 def claim_next(conn: sqlite3.Connection, *, worker_id: str, now: str | None = None) -> dict[str, Any] | None:
     current = now or utc_now()
     row = conn.execute(
@@ -92,8 +120,11 @@ def request_cancel_job(conn: sqlite3.Connection, *, job_id: str, reason: str = "
     job = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
     if job is None:
         raise ValueError(f"job not found: {job_id}")
-    if job["status"] in {"succeeded", "failed", "canceled"}:
+    if job["status"] in TERMINAL_JOB_STATUSES:
         return dict(job)
+    completed_result = _completed_result_from_events(conn, job_id)
+    if completed_result is not None:
+        return mark_succeeded(conn, job_id=job_id, result=completed_result)
     if job["status"] in {"pending", "queued"}:
         return mark_canceled(conn, job_id=job_id, reason=reason)
     if job["status"] == "running":

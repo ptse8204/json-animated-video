@@ -16,7 +16,7 @@ export const OPTION_HELP_TEXT = {
   maxFrames: "Upper bound on sampled frames. Lower this when scene sweep stalls, runs out of memory, or produces too many artifacts.",
   maxObjects: "Maximum object candidates allowed into review. Lower values reduce memory pressure and keep review usable.",
   traceEverythingMode: "Keeps many raw auto-mask segments for review. Export stays blocked until objects are reviewed.",
-  device: "Auto lets the backend choose CUDA, MPS, or CPU from diagnostics. Override only when a device is known to be stable.",
+  device: "Auto is conservative for local SAM runs. Choose GPU to explicitly request CUDA when diagnostics show it is available.",
   exportPreset: "Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.",
   partialResultRecovery: "Completed objects can remain reviewable even when a later object or frame fails.",
 };
@@ -178,7 +178,11 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
         : presetId === "class_detector" || presetId === "motion_foreground"
           ? 8
           : objectDiscoveryDefaults(qualityPreset).maxObjects;
-  let device = String(snapshot.device || "auto") || "auto";
+  const preferredDevice = String(snapshot.preferredDevice || snapshot.accelerator || "").toLowerCase();
+  let device =
+    presetId === "trace_all_objects" && providerId === "sam3-local" && preferredDevice === "cuda"
+      ? "cuda"
+      : String(snapshot.device || "auto") || "auto";
   const budgetPixels = Math.max(1, toInteger(snapshot.materializationBudgetPixels, MATERIALIZATION_BUDGET_PIXELS));
 
   if (retryingHeavyAssetPrep && presetId === "trace_all_objects") {
@@ -186,7 +190,7 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
     sampleFps = 6;
     maxFrames = 32;
     maxObjects = 12;
-    device = "auto";
+    device = providerId === "sam3-local" && preferredDevice === "cuda" ? "cuda" : "auto";
   } else if (largeVideo && presetId === "trace_all_objects") {
     qualityPreset = qualityPreset === "maximum_recall" ? "balanced" : qualityPreset;
     sampleFps = Math.min(sampleFps, 6);
