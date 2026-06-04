@@ -81,7 +81,7 @@ def artifact_kind_for_rel_path(rel_path: str) -> str:
         return "job_metrics"
     if rel_path == "artifacts.json":
         return "artifact_manifest"
-    if rel_path == "failure.json":
+    if name == "failure.json":
         return "failure_diagnostics"
     if rel_path == "provider_diagnostics.json":
         return "provider_diagnostics"

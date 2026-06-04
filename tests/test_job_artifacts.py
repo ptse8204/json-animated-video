@@ -41,6 +41,12 @@ def read_events(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def asset_rel_path(asset: dict) -> str | None:
+    metadata = json.loads(asset.get("metadata_json") or "{}")
+    value = metadata.get("rel_path")
+    return value if isinstance(value, str) else None
+
+
 def test_cli_extract_job_artifacts_preserve_legacy_outputs(tmp_path, capsys):
     out = tmp_path / "out"
 
@@ -195,7 +201,8 @@ def test_cli_extract_success_then_failure_does_not_manifest_stale_outputs(tmp_pa
     artifact_paths = {artifact["path"] for artifact in read_json(out / "artifacts.json")["artifacts"]}
     assert "failure.json" in artifact_paths
     assert "scene_graph.json" not in artifact_paths
-    assert all(not path.startswith(("objects/", "masks/", "preview/")) for path in artifact_paths)
+    assert all(path.endswith("/failure.json") or not path.startswith("objects/") for path in artifact_paths)
+    assert all(not path.startswith(("masks/", "preview/")) for path in artifact_paths)
 
 
 def test_backend_extract_job_registers_structured_artifacts_and_progress(tmp_path):
@@ -207,13 +214,22 @@ def test_backend_extract_job_registers_structured_artifacts_and_progress(tmp_pat
     assets = list_assets_for_job(conn, project_id=project["id"], source_job_id=job["id"])
     kinds = {asset["kind"] for asset in assets}
     events = list_job_events(conn, job_id=job["id"])
+    rel_paths = [rel_path for rel_path in (asset_rel_path(asset) for asset in assets) if rel_path]
+    event_types = {event["event_type"] for event in events}
 
     assert result["status"] == "succeeded"
+    assert len(rel_paths) == len(set(rel_paths))
     assert {"run_config", "job_state", "job_events", "job_logs", "job_metrics", "artifact_manifest", "provider_diagnostics"}.issubset(kinds)
     assert {"candidate_summary", "track_summary", "fallback_diagnostics"}.issubset(kinds)
     assert {"scene_graph", "object_manifest", "web_manifest"}.issubset(kinds)
     assert {"debug_frame", "mask", "cutout", "preview"}.issubset(kinds)
     assert any(event["event_type"] == "progress" and "video" in event["message"] for event in events)
+    assert {
+        "asset_preparation_frame_started",
+        "asset_preparation_frame_finished",
+        "asset_preparation_object_finished",
+        "object_artifacts_registered",
+    }.issubset(event_types)
 
 
 def test_backend_failed_job_registers_failure_artifacts_and_traceback(tmp_path):

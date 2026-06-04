@@ -45,7 +45,7 @@ from motionjson.providers.mocks import MockSegmentationProvider
 from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2HFAutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
-from .assets import _asset_row, list_assets_for_job, register_generated_asset
+from .assets import _asset_row, list_assets_for_job, register_generated_asset, register_generated_asset_once
 from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
@@ -106,6 +106,7 @@ def _register_output_tree(
     job_id: str,
     out_dir: Path,
     source_asset_id: str | None = None,
+    object_id_filter: str | None = None,
 ) -> list[dict]:
     assets: list[dict] = []
     rights_manifest: dict[str, Any] = {}
@@ -118,7 +119,9 @@ def _register_output_tree(
             continue
         rel_path = str(path.relative_to(out_dir)).replace("\\", "/")
         object_id = _object_id_for_rel_path(rel_path)
-        asset = register_generated_asset(
+        if object_id_filter is not None and object_id != object_id_filter:
+            continue
+        asset, created = register_generated_asset_once(
             conn,
             storage=storage,
             project_id=project_id,
@@ -129,6 +132,8 @@ def _register_output_tree(
             content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
         )
         assets.append(asset)
+        if not created:
+            continue
         record_asset_lineage(
             conn,
             project_id=project_id,
@@ -177,7 +182,13 @@ def _materialize_job_assets(
 
 def _event_mirror(conn: sqlite3.Connection, job_id: str):
     def mirror(event: dict[str, Any]) -> None:
-        event_type = "progress" if event.get("type") == "progress" else f"job_{event.get('status', 'event')}"
+        raw_type = str(event.get("type") or "")
+        if raw_type == "progress":
+            event_type = "progress"
+        elif raw_type == "job":
+            event_type = f"job_{event.get('status', 'event')}"
+        else:
+            event_type = raw_type or f"job_{event.get('status', 'event')}"
         record_job_event(
             conn,
             job_id=job_id,
@@ -544,6 +555,26 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             event_callback=_event_mirror(conn, job["id"]),
             cancel_check=lambda: _backend_cancel_requested(conn, job["id"]),
         )
+        def checkpoint_object_outputs(object_id: str, *, status: str = "finished") -> dict[str, Any]:
+            assets = _register_output_tree(
+                conn,
+                storage=storage,
+                project_id=job["project_id"],
+                job_id=job["id"],
+                out_dir=out_dir,
+                source_asset_id=source_asset["id"],
+                object_id_filter=object_id,
+            )
+            record_job_event(
+                conn,
+                job_id=job["id"],
+                event_type="object_artifacts_registered",
+                message=f"registered {len(assets)} {status} object artifacts for {object_id}",
+                metadata={"objectId": object_id, "status": status, "assetCount": len(assets)},
+            )
+            return {"objectId": object_id, "status": status, "assetCount": len(assets)}
+
+        job_run.checkpoint_object_outputs = checkpoint_object_outputs  # type: ignore[attr-defined]
         job_run.initialize(video_path=video_path, output_dir=out_dir)
         job_run.start()
         job_run.emit("validating_config", "succeeded", "backend extraction payload validated", progress={"overallRatio": 0.03}, metadata={"provider": provider_name})

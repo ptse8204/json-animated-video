@@ -442,3 +442,39 @@ def test_completed_mock_job_lifecycle_reports_review_export_gate(tmp_path):
     assert lifecycle["review"]["trackCount"] >= 1
     assert lifecycle["actions"]["canReview"] is True
     assert lifecycle["review"]["exportableTrackCount"] >= 1
+
+
+def test_object_manifest_review_surfaces_partial_track_metadata():
+    review = {"objects": [], "tracks": []}
+    document = {
+        "format": "motionjson.object_manifest.v0.1",
+        "objectId": "sam3_grid_023",
+        "label": "SAM3 grid 023",
+        "renderMode": "raster_alpha_sequence",
+        "recommendedOutput": "raster_alpha_sequence",
+        "motion": [
+            {
+                "frame": 1,
+                "sourceFrameIndex": 0,
+                "t": 0.0,
+                "visible": True,
+                "x": 10,
+                "y": 12,
+                "w": 24,
+                "h": 18,
+                "asset": "objects/sam3_grid_023/cutouts/cutout_000001.png",
+                "mask": "masks/sam3_grid_023/mask_000001.png",
+            }
+        ],
+        "discovery": {"candidateProvider": "sam3_auto_masks"},
+    }
+
+    LocalUIApp._apply_object_manifest_review(review, document)
+    LocalUIApp._apply_object_manifest_review(review, document)
+
+    assert len(review["objects"]) == 1
+    assert len(review["tracks"]) == 1
+    assert review["objects"][0]["objectId"] == "sam3_grid_023"
+    assert review["objects"][0]["visibleFrameCount"] == 1
+    assert review["tracks"][0]["metadata"]["partialObjectManifest"] is True
+    assert review["tracks"][0]["frames"][0]["asset"] == "objects/sam3_grid_023/cutouts/cutout_000001.png"

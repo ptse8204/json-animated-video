@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
@@ -148,6 +149,15 @@ def _rel(path: Path, root: Path) -> str:
 
 def _elapsed_ms(start: float) -> float:
     return round((time.perf_counter() - start) * 1000, 3)
+
+
+def _written_file_metadata(paths: Mapping[str, Path | None], root: Path) -> dict[str, dict[str, Any]]:
+    written: dict[str, dict[str, Any]] = {}
+    for label, path in paths.items():
+        if path is None or not path.exists() or not path.is_file():
+            continue
+        written[label] = {"path": _rel(path, root), "byteSize": path.stat().st_size}
+    return written
 
 
 def _fallback_payload(*, diagnostics: list[dict[str, Any]], summary: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -433,18 +443,49 @@ def _job_emit(
     status: str,
     message: str,
     *,
+    event_type: str = "progress",
     progress: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
     emit = getattr(job_context, "emit", None)
     if callable(emit):
-        emit(stage, status, message, progress=progress, metadata=metadata)
+        emit(stage, status, message, event_type=event_type, progress=progress, metadata=metadata)
 
 
 def _job_check_cancel(job_context: Any | None, stage: str) -> None:
     check = getattr(job_context, "check_cancel", None)
     if callable(check):
         check(stage)
+
+
+def _job_checkpoint_object(job_context: Any | None, object_id: str, *, status: str = "finished") -> dict[str, Any]:
+    checkpoint = getattr(job_context, "checkpoint_object_outputs", None)
+    if callable(checkpoint):
+        result = checkpoint(object_id, status=status)
+        if isinstance(result, Mapping):
+            return dict(result)
+    return {"objectId": object_id, "status": status, "assetCount": 0}
+
+
+def _write_object_failure_diagnostic(
+    *,
+    out_dir: Path,
+    object_id: str,
+    exc: BaseException,
+    stage: str,
+) -> dict[str, Any]:
+    diagnostic = {
+        "format": "motionjson.object_failure.v0.1",
+        "objectId": object_id,
+        "stage": stage,
+        "reasonCode": "object_extraction_failed",
+        "exceptionType": type(exc).__name__,
+        "message": str(exc) or type(exc).__name__,
+        "reviewRequired": True,
+        "exportStatus": "failed",
+    }
+    write_json(_object_dir(out_dir, object_id) / "failure.json", diagnostic)
+    return diagnostic
 
 
 ASSET_MATERIALIZATION_SKIP_REASONS = {"masks_too_large_whole_frame", "no_masks_accepted"}
@@ -649,6 +690,7 @@ def _extract_object(
     progress_stride = max(1, total_track_frames // 4)
     for position, track_frame in enumerate(tqdm(track.frames, desc=f"processing {object_id}"), start=1):
         _job_check_cancel(job_context, "export")
+        frame_start = time.perf_counter()
         frame_number = track_frame.frame
         frame_name = f"frame_{frame_number:06d}.png"
         mask_name = f"mask_{frame_number:06d}.png"
@@ -662,6 +704,35 @@ def _extract_object(
             raise RuntimeError(f"Track frame {frame_number} for {object_id} is missing RGB frame data")
         if track_frame.mask is None:
             raise RuntimeError(f"Track frame {frame_number} for {object_id} is missing mask data")
+        mask_area = int(np.count_nonzero(track_frame.mask))
+        planned_cutout_rel = _rel(cutout_path, out_dir) if track_frame.visible and track_frame.bbox and not skip_asset_materialization else None
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "running",
+            f"started raster asset frame {position}/{total_track_frames} for {object_id}",
+            event_type="asset_preparation_frame_started",
+            progress={
+                "current": position,
+                "total": total_track_frames,
+                "stageRatio": round((position - 1) / total_track_frames, 4) if total_track_frames else 1.0,
+                "overallRatio": round(0.705 + (((position - 1) / total_track_frames) if total_track_frames else 1.0) * 0.02, 4),
+            },
+            metadata={
+                "objectId": object_id,
+                "frame": frame_number,
+                "position": position,
+                "totalFrames": total_track_frames,
+                "sourceFrameIndex": track_frame.source_frame_index,
+                "bbox": track_frame.bbox,
+                "maskArea": mask_area,
+                "plannedRelPaths": {
+                    "frame": _rel(frame_path, out_dir),
+                    "mask": _rel(mask_path, out_dir),
+                    "cutout": planned_cutout_rel,
+                },
+            },
+        )
         if not frame_path.exists():
             Image.fromarray(track_frame.rgb).save(frame_path)
         Image.fromarray(track_frame.mask).save(mask_path)
@@ -724,6 +795,37 @@ def _extract_object(
                 "mask": _rel(mask_path, out_dir),
                 "centroid": track_frame.centroid,
             }
+        )
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "running",
+            f"finished raster asset frame {position}/{total_track_frames} for {object_id}",
+            event_type="asset_preparation_frame_finished",
+            progress={
+                "current": position,
+                "total": total_track_frames,
+                "stageRatio": round(position / total_track_frames, 4) if total_track_frames else 1.0,
+                "overallRatio": round(0.705 + ((position / total_track_frames) if total_track_frames else 1.0) * 0.02, 4),
+            },
+            metadata={
+                "objectId": object_id,
+                "frame": frame_number,
+                "position": position,
+                "totalFrames": total_track_frames,
+                "sourceFrameIndex": track_frame.source_frame_index,
+                "bbox": [x, y, w, h] if visible else track_frame.bbox,
+                "sourceBbox": track_frame.bbox,
+                "maskArea": mask_area,
+                "cropWidth": w,
+                "cropHeight": h,
+                "visible": visible,
+                "elapsedMs": _elapsed_ms(frame_start),
+                "writtenFiles": _written_file_metadata(
+                    {"frame": frame_path, "mask": mask_path, "cutout": cutout_path if cutout_rel else None},
+                    out_dir,
+                ),
+            },
         )
         if (
             not skip_asset_materialization
@@ -1063,25 +1165,43 @@ def run_multi_object_pipeline(
     extract_start = time.perf_counter()
     for index, spec in enumerate(object_specs):
         _job_check_cancel(job_context, "extract_objects")
-        obj, layer, object_motion, detailed_frames, provider_performance, object_track = _extract_object(
-            out_dir=out_dir,
-            frames_dir=frames_dir,
-            info=info,
-            frames=frames,
-            video_source=video_source,
-            initial_masks=initial_masks,
-            run_context=run_context,
-            spec=spec,
-            min_area=min_area,
-            simplify_ratio=simplify_ratio,
-            feather=feather,
-            layer_padding=layer_padding,
-            sprite_format=sprite_format,
-            output_mode=output_mode,
-            production_avif=production_avif,
-            rights_context=rights_payload,
-            job_context=job_context,
-        )
+        try:
+            obj, layer, object_motion, detailed_frames, provider_performance, object_track = _extract_object(
+                out_dir=out_dir,
+                frames_dir=frames_dir,
+                info=info,
+                frames=frames,
+                video_source=video_source,
+                initial_masks=initial_masks,
+                run_context=run_context,
+                spec=spec,
+                min_area=min_area,
+                simplify_ratio=simplify_ratio,
+                feather=feather,
+                layer_padding=layer_padding,
+                sprite_format=sprite_format,
+                output_mode=output_mode,
+                production_avif=production_avif,
+                rights_context=rights_payload,
+                job_context=job_context,
+            )
+        except Exception as exc:
+            diagnostic = _write_object_failure_diagnostic(
+                out_dir=out_dir,
+                object_id=spec.object_id,
+                exc=exc,
+                stage="extract_objects",
+            )
+            checkpoint = _job_checkpoint_object(job_context, spec.object_id, status="failed")
+            _job_emit(
+                job_context,
+                "asset_preparation",
+                "failed",
+                f"object asset preparation failed for {spec.object_id}: {diagnostic['message']}",
+                event_type="asset_preparation_object_failed",
+                metadata={**diagnostic, "artifactCheckpoint": checkpoint},
+            )
+            raise
         objects.append(obj)
         layers.append(layer)
         object_motions[spec.object_id] = object_motion
@@ -1089,6 +1209,15 @@ def run_multi_object_pipeline(
         object_tracks.append(object_track)
         if index == 0:
             first_detailed_frames = detailed_frames
+        checkpoint = _job_checkpoint_object(job_context, spec.object_id, status="finished")
+        _job_emit(
+            job_context,
+            "asset_preparation",
+            "succeeded",
+            f"object raster artifacts checkpointed for {spec.object_id}",
+            event_type="asset_preparation_object_finished",
+            metadata={"objectId": spec.object_id, "artifactCheckpoint": checkpoint},
+        )
     phase_timings.append(PhaseTiming(phase="extract_objects", elapsed_ms=_elapsed_ms(extract_start), count=len(object_specs)).to_dict())
     link_start = time.perf_counter()
     _job_emit(

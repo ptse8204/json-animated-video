@@ -130,6 +130,7 @@ REVIEW_JSON_ARTIFACT_KINDS = {
     "failure_diagnostics",
     "job_metrics",
     "job_state",
+    "object_manifest",
     "provider_diagnostics",
     "review_state_manifest",
     "scene_graph",
@@ -496,6 +497,62 @@ def _scene_object_review_summary(item: dict[str, Any]) -> dict[str, Any]:
         "firstVisibleFrame": visible_motion[0].get("frame") if visible_motion else None,
         "lastVisibleFrame": visible_motion[-1].get("frame") if visible_motion else None,
     }
+
+
+def _object_manifest_review_summary(item: dict[str, Any]) -> dict[str, Any]:
+    motion = item.get("motion") if isinstance(item.get("motion"), list) else []
+    visible_motion = [frame for frame in motion if isinstance(frame, dict) and frame.get("visible")]
+    return {
+        "objectId": item.get("objectId"),
+        "label": item.get("label"),
+        "renderMode": item.get("renderMode"),
+        "recommendedOutput": item.get("recommendedOutput"),
+        "frameCount": len(motion),
+        "visibleFrameCount": len(visible_motion),
+        "quality": item.get("quality", {}),
+        "firstVisibleFrame": visible_motion[0].get("frame") if visible_motion else None,
+        "lastVisibleFrame": visible_motion[-1].get("frame") if visible_motion else None,
+    }
+
+
+def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
+    motion = item.get("motion") if isinstance(item.get("motion"), list) else []
+    visible_motion = [frame for frame in motion if isinstance(frame, dict) and frame.get("visible")]
+    discovery = item.get("discovery") if isinstance(item.get("discovery"), dict) else {}
+    return {
+        "objectId": item.get("objectId"),
+        "label": item.get("label"),
+        "source": "object_manifest",
+        "providerName": discovery.get("trackingProvider") or discovery.get("candidateProvider"),
+        "frameCount": len(motion),
+        "visibleFrameCount": len(visible_motion),
+        "exportStatus": discovery.get("exportStatus") or item.get("exportStatus") or "accepted",
+        "warnings": item.get("warnings", []),
+        "metadata": {"partialObjectManifest": True, "recommendedOutput": item.get("recommendedOutput")},
+        "frames": [
+            {
+                "frame": frame.get("frame"),
+                "sourceFrameIndex": frame.get("sourceFrameIndex"),
+                "outIndex": frame.get("outIndex"),
+                "t": frame.get("t"),
+                "visible": frame.get("visible"),
+                "area": frame.get("area"),
+                "bbox": [frame.get("x"), frame.get("y"), frame.get("w"), frame.get("h")] if frame.get("visible") else None,
+                "centroid": frame.get("centroid"),
+                "mask": frame.get("mask"),
+                "asset": frame.get("asset"),
+            }
+            for frame in motion
+            if isinstance(frame, dict)
+        ],
+    }
+
+
+def _append_unique_by_object_id(items: list[dict[str, Any]], item: dict[str, Any]) -> None:
+    object_id = item.get("objectId")
+    if object_id and any(existing.get("objectId") == object_id for existing in items if isinstance(existing, dict)):
+        return
+    items.append(item)
 
 
 def _append_unique_fallback(review: dict[str, Any], item: Any, seen: set[str]) -> None:
@@ -2204,6 +2261,8 @@ class LocalUIApp:
                 self._apply_fallback_review(review, document, seen_fallback)
             elif kind == "scene_graph":
                 self._apply_scene_review(review, document)
+            elif kind == "object_manifest":
+                self._apply_object_manifest_review(review, document)
             elif kind == "failure_diagnostics":
                 review["failure"] = _public_review_value(document)
             elif kind == "provider_diagnostics":
@@ -2348,6 +2407,13 @@ class LocalUIApp:
             if source_asset_id:
                 break
         review["rightsSummary"] = _public_review_value(build_rights_review_report(scene=document, source_asset_id=source_asset_id))
+
+    @staticmethod
+    def _apply_object_manifest_review(review: dict[str, Any], document: dict[str, Any]) -> None:
+        object_summary = _public_review_value(_object_manifest_review_summary(document))
+        track_summary = _public_review_value(_object_manifest_track_summary(document))
+        _append_unique_by_object_id(review["objects"], object_summary)
+        _append_unique_by_object_id(review["tracks"], track_summary)
 
     def _video_content(self, asset_id: str, *, headers: dict[str, str], head: bool = False) -> tuple[int, dict[str, str], bytes]:
         conn = self.connection()

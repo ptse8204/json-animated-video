@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from motionjson.masks import ThresholdMaskProvider
-from motionjson.pipeline import ObjectExtractionSpec, run_pipeline
+from motionjson.pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline
 from motionjson.providers import (
     Exporter,
     MaskProvider,
@@ -144,6 +144,63 @@ def test_single_prompt_pipeline_preserves_legacy_outputs(tmp_path, provider):
     candidates = json.loads((out / "candidates.json").read_text())
     assert candidates["video"]["path"] == "tiny.mp4"
     assert validate_output_dir(out).ok
+
+
+def test_multi_object_pipeline_checkpoints_completed_object_before_later_failure(tmp_path, monkeypatch):
+    import motionjson.pipeline as pipeline_module
+
+    video = tmp_path / "tiny.mp4"
+    out = tmp_path / "out"
+    make_tiny_video(video, frame_count=2)
+    first = ObjectExtractionSpec("object_a", "Object A", ThresholdMaskProvider((0, 80, 80), (12, 255, 255)))
+    second = ObjectExtractionSpec("object_b", "Object B", ThresholdMaskProvider((0, 80, 80), (12, 255, 255)))
+    original_extract_object = pipeline_module._extract_object
+
+    class FakeJobContext:
+        def __init__(self):
+            self.events = []
+            self.checkpoints = []
+
+        def emit(self, stage, status, message, *, event_type="progress", progress=None, metadata=None):
+            self.events.append({"stage": stage, "status": status, "message": message, "type": event_type, "metadata": metadata or {}})
+
+        def check_cancel(self, stage):
+            return None
+
+        def checkpoint_object_outputs(self, object_id, *, status="finished"):
+            self.checkpoints.append({"objectId": object_id, "status": status})
+            return {"objectId": object_id, "status": status, "assetCount": 3}
+
+    def fail_on_second(*args, **kwargs):
+        spec = kwargs.get("spec")
+        if spec.object_id == "object_b":
+            raise RuntimeError("synthetic asset-prep failure")
+        return original_extract_object(*args, **kwargs)
+
+    context = FakeJobContext()
+    monkeypatch.setattr(pipeline_module, "_extract_object", fail_on_second)
+
+    with pytest.raises(RuntimeError, match="synthetic asset-prep failure"):
+        run_multi_object_pipeline(
+            video_path=video,
+            out_dir=out,
+            object_specs=[first, second],
+            sample_fps=12,
+            max_frames=2,
+            min_area=1,
+            job_context=context,
+        )
+
+    event_types = [event["type"] for event in context.events]
+    assert {
+        "asset_preparation_frame_started",
+        "asset_preparation_frame_finished",
+        "asset_preparation_object_finished",
+        "asset_preparation_object_failed",
+    }.issubset(event_types)
+    assert context.checkpoints == [{"objectId": "object_a", "status": "finished"}, {"objectId": "object_b", "status": "failed"}]
+    assert (out / "objects" / "object_a" / "object_manifest.json").exists()
+    assert json.loads((out / "objects" / "object_b" / "failure.json").read_text(encoding="utf-8"))["reasonCode"] == "object_extraction_failed"
 
 
 class FailingMaskProvider:

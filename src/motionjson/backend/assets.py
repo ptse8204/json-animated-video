@@ -198,6 +198,72 @@ def register_generated_asset(
     return asset
 
 
+def generated_asset_for_rel_path(
+    conn: sqlite3.Connection,
+    *,
+    project_id: str,
+    source_job_id: str,
+    rel_path: str,
+) -> dict | None:
+    rows = conn.execute(
+        "SELECT * FROM assets WHERE project_id = ? AND source_job_id = ? ORDER BY created_at, id",
+        (project_id, source_job_id),
+    ).fetchall()
+    for row in rows:
+        asset = dict(row)
+        try:
+            metadata = json.loads(asset.get("metadata_json") or "{}")
+        except json.JSONDecodeError:
+            continue
+        if metadata.get("rel_path") == rel_path:
+            return asset
+    return None
+
+
+def register_generated_asset_once(
+    conn: sqlite3.Connection,
+    *,
+    storage: StorageProvider,
+    project_id: str,
+    kind: str,
+    source_job_id: str,
+    data: bytes | None = None,
+    path: str | Path | None = None,
+    rel_path: str | None = None,
+    content_type: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    user_id: str | None = None,
+) -> tuple[dict, bool]:
+    if not rel_path and path is not None:
+        rel_path = Path(path).name
+    if not rel_path:
+        rel_path = f"{kind}.bin"
+    existing = generated_asset_for_rel_path(
+        conn,
+        project_id=project_id,
+        source_job_id=source_job_id,
+        rel_path=rel_path,
+    )
+    if existing is not None:
+        return existing, False
+    return (
+        register_generated_asset(
+            conn,
+            storage=storage,
+            project_id=project_id,
+            kind=kind,
+            source_job_id=source_job_id,
+            data=data,
+            path=path,
+            rel_path=rel_path,
+            content_type=content_type,
+            metadata=metadata,
+            user_id=user_id,
+        ),
+        True,
+    )
+
+
 def load_asset_bytes(conn: sqlite3.Connection, *, storage: StorageProvider, user_id: str, asset_id: str) -> bytes:
     asset = get_asset(conn, user_id=user_id, asset_id=asset_id)
     return storage.load_bytes(asset["storage_key"])
