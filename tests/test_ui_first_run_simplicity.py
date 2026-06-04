@@ -93,6 +93,22 @@ def test_guided_parameters_show_auto_tuning_and_keyboard_help():
     assert ".parameter-source.is-override" in css
 
 
+def test_review_export_workspace_has_distinct_review_and_export_hooks():
+    html = read("src/motionjson/ui/static/index.html")
+    css = read("src/motionjson/ui/static/app.css")
+    js = read("src/motionjson/ui/static/app.js")
+
+    assert 'id="studioReviewTitle"' in html
+    assert 'id="studioExportCard"' in html
+    assert 'id="studioExportIncludedObjects"' in html
+    assert 'id="studioPartialDiagnostic"' in html
+    assert "is-review-export-screen-review" in css
+    assert "is-review-export-screen-export" in css
+    assert "reviewExportSubscreen" in js
+    assert "Review partial objects" in js
+    assert "workflow-partial-success" in js
+
+
 def test_advanced_discover_objects_has_compatible_model_connections():
     js = read("src/motionjson/ui/static/app.js")
 

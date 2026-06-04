@@ -507,3 +507,46 @@ Findings and changes:
   advanced fields show `Auto tuned` or `User override`.
 - Layout checks now fail when prepare screens lose the auto-tuned chip set,
   critical help labels, or auto/override source labels.
+
+## UI-UX-04 Evidence
+
+UI-UX-04 repaired the Review and Export workspace split. The same
+`review_export` workflow step now has a Review sub-screen for object decisions
+and an Export sub-screen for package readiness, included objects, rights notes,
+and handoff checks.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --state workflow-review,workflow-export,job-review --viewport mobile-390,desktop-1440 --screenshot-dir docs/design/screenshots/ui-ux-04-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state workflow-review,workflow-export,workflow-partial-success,job-review --screenshot-dir docs/design/screenshots/ui-ux-04
+```
+
+Representative captures:
+
+![UI-UX-04 desktop review](screenshots/ui-ux-04/desktop-1440-workflow-review.png)
+
+![UI-UX-04 desktop export](screenshots/ui-ux-04/desktop-1440-workflow-export.png)
+
+![UI-UX-04 desktop partial success](screenshots/ui-ux-04/desktop-1440-workflow-partial-success.png)
+
+Findings and changes:
+
+- The before `workflow-review` and `workflow-export` captures rendered the same
+  object-review/export-checklist composition.
+- The after Review capture keeps the viewer, object list, quality status chips,
+  keep/export controls, and correction/review tools visible while hiding package
+  readiness.
+- The after Export capture removes the large viewer/object list and centers the
+  export package checklist, included objects, rights note, and validation state.
+- The new `workflow-partial-success` capture verifies that completed objects
+  stay reviewable even when the selected job is terminal failed, and that the
+  failed object/frame diagnostic is visible.
+- Layout checks now fail if Review and Export show the same primary content, if
+  Review loses object rows, if Export loses included-object/rights content, or
+  if partial-success diagnostics disappear.

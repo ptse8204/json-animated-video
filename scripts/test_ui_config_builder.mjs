@@ -341,6 +341,56 @@ const candidateOnlyFlow = ui.reviewFlowStateFromSnapshot({
 });
 assert.equal(candidateOnlyFlow.gate.primaryAction, "track_selected");
 assert.equal(candidateOnlyFlow.stages.find((stage) => stage.id === "track_selected").value, "2 ready");
+const reviewScreenContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_review",
+    selectedJobStatus: "succeeded",
+    trackCount: 4,
+    exportIncludedCount: 4,
+    reviewExportSubscreen: "review",
+  },
+  "review_export",
+);
+assert.equal(reviewScreenContract.primaryLabel, "Validate reviewed objects");
+assert.equal(reviewScreenContract.primaryAction, "validate_export");
+const exportScreenContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_export",
+    selectedJobStatus: "succeeded",
+    trackCount: 4,
+    exportIncludedCount: 4,
+    reviewExportSubscreen: "export",
+  },
+  "review_export",
+);
+assert.equal(exportScreenContract.primaryLabel, "Validate export");
+assert.equal(exportScreenContract.primaryAction, "validate_export");
+const partialRunContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    selectedVideoId: "video_1",
+    selectedJobId: "job_partial",
+    selectedJobStatus: "failed",
+    partialSuccess: true,
+    reviewableObjectCount: 2,
+    trackCount: 2,
+    exportIncludedCount: 2,
+  },
+  "run_monitor",
+);
+assert.equal(partialRunContract.primaryLabel, "Review partial objects");
+assert.equal(partialRunContract.primaryAction, "continue_to_review");
+const partialReviewGate = ui.reviewGateFromSnapshot({
+  job: { id: "job_partial", status: "failed" },
+  partialSuccess: true,
+  trackCount: 2,
+  exportIncludedCount: 2,
+});
+assert.equal(partialReviewGate.primaryAction, "export_reviewed");
 const failedPostRunSummary = ui.postRunWorkflowSummaryFromSnapshot({
   selectedJobStatus: "failed",
   hasFailure: true,

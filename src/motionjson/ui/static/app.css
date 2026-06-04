@@ -4625,6 +4625,34 @@ body {
 }
 
 .studio-review-heading {
+  order: 1;
+}
+
+.studio-bulk-actions {
+  order: 2;
+}
+
+.studio-partial-diagnostic {
+  order: 3;
+}
+
+.studio-object-list {
+  order: 4;
+}
+
+.studio-segment-gate {
+  order: 5;
+}
+
+.review-tools-panel {
+  order: 6;
+}
+
+.studio-export-card {
+  order: 7;
+}
+
+.studio-review-heading {
   display: flex;
   gap: 14px;
   align-items: flex-start;
@@ -4873,6 +4901,65 @@ body {
   border: 1px solid #dce3e8;
   border-radius: 8px;
   background: #fbfcfd;
+}
+
+.studio-partial-diagnostic {
+  display: grid;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid #f0dca6;
+  border-left: 5px solid #d99016;
+  border-radius: 7px;
+  color: #4b3a16;
+  background: #fffaf0;
+}
+
+.studio-partial-diagnostic[hidden] {
+  display: none !important;
+}
+
+.studio-partial-diagnostic strong {
+  color: #27210f;
+}
+
+.studio-export-included-list {
+  display: grid;
+  gap: 7px;
+}
+
+.studio-export-included-list .artifact-row {
+  background: #ffffff;
+}
+
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .studio-export-card,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) #studioExportAllButton,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .studio-bottom-cta {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
+  grid-template-columns: minmax(0, 980px);
+  grid-template-areas: "review";
+  justify-content: center;
+  max-width: 1040px;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-bulk-actions,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-object-list,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-segment-gate,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportAllButton,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-actions {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
+  order: 2;
+  background: #ffffff;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tools-panel {
+  order: 3;
 }
 
 .studio-export-heading {

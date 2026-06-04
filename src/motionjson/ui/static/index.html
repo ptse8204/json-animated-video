@@ -274,7 +274,7 @@
           <div class="panel-heading compact-heading">
             <div>
               <p class="section-kicker">Post-run flow</p>
-              <h2>Review before export</h2>
+              <h2 id="postRunGuideTitle">Review before export</h2>
             </div>
             <span id="postRunGuideStatus" class="status-chip is-muted">No run</span>
           </div>
@@ -358,7 +358,8 @@
           <article id="studioReviewPanel" class="panel studio-review-panel" data-workflow-panel="review_candidates correct_tracks export" aria-label="Review all objects">
             <div class="studio-review-heading">
               <div>
-                <h2>Review all objects</h2>
+                <p id="studioReviewModeKicker" class="section-kicker">Review</p>
+                <h2 id="studioReviewTitle">Review all objects</h2>
                 <p id="studioReviewSummary" class="panel-note">Object masks appear here after a run completes.</p>
               </div>
               <button id="studioExportAllButton" type="button">Export all reviewed</button>
@@ -368,7 +369,8 @@
               <button id="studioMergeDuplicatesButton" type="button">Merge duplicates</button>
               <button id="studioExportSelectedButton" type="button">Export selected</button>
             </div>
-            <div class="studio-export-card" aria-label="Export checklist">
+            <div id="studioPartialDiagnostic" class="studio-partial-diagnostic" hidden></div>
+            <div class="studio-export-card" id="studioExportCard" aria-label="Export checklist">
               <div class="studio-export-heading">
                 <div>
                   <strong>Export checklist</strong>
@@ -377,6 +379,7 @@
                 <span id="studioExportStatus" class="status-chip is-muted">Not validated</span>
               </div>
               <div id="studioExportDecision" class="export-decision-slot" aria-live="polite"></div>
+              <div id="studioExportIncludedObjects" class="studio-export-included-list" aria-live="polite"></div>
               <div id="studioExportChecklist" class="studio-export-checklist" aria-live="polite"></div>
               <div class="studio-export-actions">
                 <button id="studioValidateExportButton" type="button">Validate again</button>

@@ -29,6 +29,7 @@ const CAPTURE_STATES = [
   "workflow-run-stale",
   "workflow-run-logs-open",
   "workflow-run-asset-stalled",
+  "workflow-partial-success",
   "workflow-review",
   "workflow-review-failure",
   "workflow-correct",
@@ -548,6 +549,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "workflow-run-stale": "run_monitor",
       "workflow-run-logs-open": "run_monitor",
       "workflow-run-asset-stalled": "run_monitor",
+      "workflow-partial-success": "review_export",
       "workflow-review": "review_export",
       "workflow-review-failure": "run_monitor",
       "workflow-correct": "review_export",
@@ -682,7 +684,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           videoFormVisible: visible(document.querySelector("#videoForm")),
           postRunGuideVisible: visible(document.querySelector("#postRunGuide")),
           studioReviewVisible: visible(document.querySelector("#studioReviewPanel")),
+          studioReviewTitle: document.querySelector("#studioReviewTitle")?.textContent?.trim() || "",
+          studioReviewModeKicker: document.querySelector("#studioReviewModeKicker")?.textContent?.trim() || "",
           studioObjectRowCount: document.querySelectorAll("#studioObjectList .studio-object-row").length,
+          studioObjectListVisible: visible(document.querySelector("#studioObjectList")),
+          studioExportCardVisible: visible(document.querySelector("#studioExportCard")),
+          studioExportIncludedText: document.querySelector("#studioExportIncludedObjects")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioPartialDiagnosticVisible: visible(document.querySelector("#studioPartialDiagnostic")),
+          studioPartialDiagnosticText: document.querySelector("#studioPartialDiagnostic")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
           postRunStageCount: document.querySelectorAll("#postRunGuideList .post-run-stage").length,
           runMonitorSummaryCount: document.querySelectorAll("#runMonitorSummary .status-summary-card").length,
@@ -898,15 +907,31 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     ) {
       failures.push(`${viewport.name}/${state}: asset-preparation stall should be terminal with retry-specific recovery copy`);
     }
-    if (["workflow-review", "workflow-correct", "workflow-export"].includes(state)) {
+    if (["workflow-review", "workflow-correct", "workflow-export", "workflow-partial-success"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {
         failures.push(`${viewport.name}/${state}: review screen should keep the studio review panel visible with reviewed objects`);
       }
       if (stateValue.fixedFooterOcclusions.length) {
         failures.push(`${viewport.name}/${state}: fixed workflow footer occludes ${stateValue.fixedFooterOcclusions.join(", ")}`);
       }
-      if (stateValue.workflowPrimaryLabel !== "Export reviewed objects") {
-        failures.push(`${viewport.name}/${state}: review flow should promote Export reviewed objects as the primary CTA`);
+    }
+    if (state === "workflow-review" || state === "workflow-partial-success") {
+      if (stateValue.workflowPrimaryLabel !== "Validate reviewed objects" && stateValue.workflowPrimaryLabel !== "Continue to export") {
+        failures.push(`${viewport.name}/${state}: review screen should promote validation or continue-to-export as the primary CTA`);
+      }
+      if (stateValue.studioReviewTitle !== "Review all objects" || !stateValue.studioObjectListVisible || stateValue.studioExportCardVisible) {
+        failures.push(`${viewport.name}/${state}: review screen should show object review content and hide export package content`);
+      }
+    }
+    if (state === "workflow-partial-success" && (!stateValue.studioPartialDiagnosticVisible || !/Partial result is reviewable|sam3_grid_023|frame 41/.test(stateValue.studioPartialDiagnosticText))) {
+      failures.push(`${viewport.name}/${state}: partial success should keep completed objects reviewable and show the failed object/frame diagnostic`);
+    }
+    if (state === "workflow-export") {
+      if (stateValue.workflowPrimaryLabel !== "Export MotionJSON" && stateValue.workflowPrimaryLabel !== "Validate export") {
+        failures.push(`${viewport.name}/${state}: export screen should promote Export MotionJSON or the exact blocked export action`);
+      }
+      if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible || !/Included objects|Rights note/.test(stateValue.studioExportIncludedText)) {
+        failures.push(`${viewport.name}/${state}: export screen should show package readiness, included objects, and rights notes instead of the review object list`);
       }
     }
     if (state === "workflow-goal" && stateValue.fixedFooterOcclusions.length) {
