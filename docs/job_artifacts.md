@@ -64,6 +64,7 @@ Current extraction emits coarse stages for UI/API polling:
 - `propagation`
 - `track_linking`
 - `vectorization`
+- `asset_preparation`
 - `export`
 
 Phase 4 routes the legacy single-object flow through provider-stage adapters, so
@@ -71,12 +72,26 @@ Phase 4 routes the legacy single-object flow through provider-stage adapters, so
 `vectorization` now report real provider-stage work even when the provider is a
 deterministic no-model mock.
 
+Asset preparation also emits object-level checkpoint events:
+
+- `asset_preparation_frame_started`
+- `asset_preparation_frame_finished`
+- `asset_preparation_object_finished`
+- `asset_preparation_object_failed`
+
+Frame events should carry object id, frame position, source frame index, bbox,
+mask area, crop dimensions, written relative paths, byte sizes, and elapsed
+milliseconds when known. Completed objects are registered incrementally so
+review can still surface partial objects if a later object fails.
+
 ## Failure Diagnostics
 
 Failures write `failure.json` and append the raw traceback to `logs.txt`.
 `failure.json` includes a `reasonCode`, user-readable `message`,
 `exceptionType`, and `tracebackRef`. Backend failures also register these files
 as generated assets so support tooling and future UI views can retrieve them.
+Object-level asset-prep failures may also write
+`objects/<object_id>/failure.json` and keep earlier object manifests registered.
 
 ## Cancellation
 

@@ -72,3 +72,22 @@ tracks, and duplicate tracks receive explicit reason codes and suggested fixes
 in `fallback_diagnostics.json`. Core scene output remains schema-compatible;
 review tooling should read the auxiliary diagnostics when deciding what to
 show, hide, merge, or repair.
+
+## Object Checkpoints And Memory Bounds
+
+Multi-object runs checkpoint each completed object's generated files before the
+next object starts. Artifact registration is idempotent by relative path, so
+incremental checkpoints and final output-tree registration can safely see the
+same file.
+
+After checkpointing, completed tracks keep lightweight review/filtering fields
+and drop retained full-frame `rgb` and `mask` arrays. Filtering must use
+preserved `maskArea` and `maskShape` metadata when raw arrays are absent.
+
+Cutout materialization is bounded by
+`MOTIONJSON_MAX_OBJECT_CUTOUT_PIXELS` (default `64000000`). Oversized
+background-like candidates should keep masks and diagnostics, skip
+cutouts/spritesheets, and require review instead of exhausting memory.
+
+See [Pipeline and UI stability guide](pipeline_ui_stability_guide.md) for the
+short lifecycle and watchdog map.

@@ -181,21 +181,70 @@ See [Track filtering and fallback diagnostics](track_filtering.md).
 ## Run Stalls During Asset Preparation
 
 After vectorization, MotionJSON writes local masks, cutouts, and sprite assets.
-If the latest backend event stays in `asset_preparation` beyond the watchdog
-window, the Local UI converts the run from `running` to `failed` with reason
-code `asset_preparation_stalled`.
+If asset preparation stops making backend progress beyond the watchdog window,
+the Local UI converts the run from `running` to `failed` with a typed reason.
 
-The failure message includes the object id and frame counter when known, for
-example:
+Common reason codes:
+
+- `asset_preparation_frame_timeout`: a frame-start event did not receive its
+  matching finish event before the timeout. The failure should identify the
+  object and frame when known.
+- `worker_heartbeat_stale`: no heartbeat/progress arrived and no in-flight
+  frame is known.
+- `asset_preparation_stalled`: compatibility umbrella reason. New debug-report
+  consumers should prefer `reasonCode` and treat this as
+  `compatibilityReasonCode` when present.
+
+Example frame-timeout message:
 
 ```text
-Raster asset preparation stalled after frame 1/48 for sam3_grid_024. No export artifacts were produced.
+Raster asset preparation timed out on frame 13/48 for sam3_grid_024. No frame-finished event arrived.
 ```
 
-Use **Retry asset prep** to rerun from the current setup, or **Retry from Model
-setup** if the provider/cache/runtime may have changed. Logs should remain
-available, and export stays blocked until a successful run creates reviewed
-tracks or artifacts.
+Example heartbeat-stale message:
+
+```text
+Worker heartbeat stopped during asset preparation after frame 1/48 for sam3_grid_024. No export artifacts were produced.
+```
+
+Use **Retry asset prep** to rerun from the current setup. Use **Retry from Model
+setup** if provider/cache/runtime state may have changed. Logs should remain
+available. If earlier objects finished before the failure, their object
+manifests should remain reviewable rather than reporting `objects: 0` and
+`artifacts: 0`.
+
+Optional watchdog overrides:
+
+```bash
+export MOTIONJSON_ASSET_PREP_FRAME_TIMEOUT_SECONDS=240
+export MOTIONJSON_WORKER_HEARTBEAT_STALE_SECONDS=240
+```
+
+Do not use larger timeouts as the first fix. First inspect the per-frame
+asset-prep events, failed object id, crop dimensions, and file sizes.
+
+## Auto-Mask Object Is Too Large To Materialize
+
+Scene Sweep and automatic-mask runs may find background-like candidates. If an
+object would exceed the cutout materialization budget, MotionJSON should keep
+masks and diagnostics but skip cutout/spritesheet writing for that object.
+
+Look for reason code:
+
+```text
+asset_materialization_budget_exceeded
+```
+
+Default budget:
+
+```bash
+MOTIONJSON_MAX_OBJECT_CUTOUT_PIXELS=64000000
+```
+
+Better fixes are usually to reduce candidate count, use Clean/Balanced instead
+of maximum recall, add tighter discovery filters, or trace one object first.
+Raise the budget only when the machine has enough memory for the expected crop
+sizes.
 
 ## Object Discovery Finds Too Few Candidates
 

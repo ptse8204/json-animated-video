@@ -50,6 +50,9 @@ MotionJSON output:
   whole-frame mask rejection, raster fallback reason codes, and suggested fixes.
 - [Job artifacts and progress](job_artifacts.md) lists the files and events a
   job writes.
+- [Pipeline and UI stability guide](pipeline_ui_stability_guide.md) maps object
+  lifecycle checkpoints, watchdog meanings, and UI selector contracts for
+  engineers and Codex sessions.
 
 ## I Want To Build A Website Embed
 
@@ -95,6 +98,8 @@ vectorization, or export providers:
 - [Extraction provider pipeline](provider_pipeline.md) explains the
   `ObjectCandidateProvider`, `MaskProvider`, `VideoTracker`, `TrackLinker`,
   `Vectorizer`, and `Exporter` boundaries.
+- [Pipeline and UI stability guide](pipeline_ui_stability_guide.md) is the
+  short operational map for partial outputs, watchdogs, and UI state selectors.
 - [SAM2 segmentation providers](sam2_segmentation.md) documents optional local
   and hosted SAM2 paths, cache behavior, fallback routing, and tests.
 - [SAM3 local discovery](sam3_local.md) documents SAM3 Scene Sweep
