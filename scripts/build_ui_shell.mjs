@@ -3,7 +3,7 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const staticDir = join(root, "src", "motionjson", "ui", "static");
-const files = ["index.html", "app.css", "app.js", "config_builder.js", "favicon.svg"];
+const files = ["index.html", "app.css", "app.js", "config_builder.js", "ui_selectors.js", "favicon.svg"];
 const contents = new Map();
 
 for (const file of files) {
@@ -18,6 +18,7 @@ const index = contents.get("index.html");
 const script = contents.get("app.js");
 const style = contents.get("app.css");
 const configBuilder = contents.get("config_builder.js");
+const uiSelectors = contents.get("ui_selectors.js");
 const combined = [...contents.values()].join("\n");
 
 for (const reference of ["/ui/app.css", "/ui/app.js", "/ui/favicon.svg"]) {
@@ -319,6 +320,21 @@ for (const affordance of [
 
 if (!configBuilder.includes("export function buildRunConfig") || !configBuilder.includes("export function clientPointToVideoPoint")) {
   throw new Error("config_builder.js must export the Phase 8 config builder and coordinate mapper");
+}
+
+for (const helper of [
+  "export const OPTION_HELP_TEXT",
+  "export function adaptiveRunDefaultsFromSnapshot",
+  "export function projectShellStateFromSnapshot",
+  "export function reviewExportScreenStateFromSnapshot",
+]) {
+  if (!uiSelectors.includes(helper)) {
+    throw new Error(`ui_selectors.js must expose ${helper}`);
+  }
+}
+
+if (!script.includes("from \"./ui_selectors.js\"")) {
+  throw new Error("app.js must import the dependency-free UI selectors");
 }
 
 const remotePattern = /https?:\/\//;

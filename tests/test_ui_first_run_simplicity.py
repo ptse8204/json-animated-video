@@ -74,6 +74,8 @@ def test_guided_parameters_show_auto_tuning_and_keyboard_help():
     html = read("src/motionjson/ui/static/index.html")
     css = read("src/motionjson/ui/static/app.css")
     js = read("src/motionjson/ui/static/app.js")
+    selectors = read("src/motionjson/ui/static/ui_selectors.js")
+    build_script = read("scripts/build_ui_shell.mjs")
 
     assert 'id="adaptiveParameterSummary"' in html
     assert 'id="resetAutoParametersButton"' in html
@@ -87,6 +89,11 @@ def test_guided_parameters_show_auto_tuning_and_keyboard_help():
     assert 'data-tooltip="Controls package size and debug detail.' in html
     assert 'tabindex="0" data-tooltip=' in html
     assert "adaptiveRunDefaultsFromSnapshot" in js
+    assert 'from "./ui_selectors.js"' in js
+    assert "export function adaptiveRunDefaultsFromSnapshot" in selectors
+    assert "export function projectShellStateFromSnapshot" in selectors
+    assert "export function reviewExportScreenStateFromSnapshot" in selectors
+    assert '"ui_selectors.js"' in build_script
     assert "OPTION_HELP_TEXT" in js
     assert "parameterOverrides" in js
     assert ".adaptive-chip-grid" in css
@@ -97,6 +104,7 @@ def test_review_export_workspace_has_distinct_review_and_export_hooks():
     html = read("src/motionjson/ui/static/index.html")
     css = read("src/motionjson/ui/static/app.css")
     js = read("src/motionjson/ui/static/app.js")
+    selectors = read("src/motionjson/ui/static/ui_selectors.js")
 
     assert 'id="studioReviewTitle"' in html
     assert 'id="studioExportCard"' in html
@@ -105,6 +113,8 @@ def test_review_export_workspace_has_distinct_review_and_export_hooks():
     assert "is-review-export-screen-review" in css
     assert "is-review-export-screen-export" in css
     assert "reviewExportSubscreen" in js
+    assert "reviewExportScreenStateFromSnapshot" in js
+    assert "motionjson.local_ui_review_export_screen.v0.1" in selectors
     assert "Review partial objects" in js
     assert "workflow-partial-success" in js
 

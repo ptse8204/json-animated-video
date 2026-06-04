@@ -550,3 +550,44 @@ Findings and changes:
 - Layout checks now fail if Review and Export show the same primary content, if
   Review loses object rows, if Export loses included-object/rights content, or
   if partial-success diagnostics disappear.
+
+## UI-UX-05 Evidence
+
+UI-UX-05 extracted stable Local UI state decisions into a small dependency-free
+selector module while preserving the static app and `MotionJSONUI` public
+helper surface.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --state workflow-goal,prepare-sam3-trace-all-runtime-ready,project-drawer-open,workflow-review,workflow-export,workflow-partial-success --viewport mobile-390,desktop-1440 --screenshot-dir docs/design/screenshots/ui-ux-05-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state workflow-goal,prepare-sam3-trace-all-runtime-ready,project-drawer-open,workflow-review,workflow-export,workflow-partial-success --screenshot-dir docs/design/screenshots/ui-ux-05
+```
+
+Representative captures:
+
+![UI-UX-05 desktop project drawer](screenshots/ui-ux-05/desktop-1440-project-drawer-open.png)
+
+![UI-UX-05 desktop export](screenshots/ui-ux-05/desktop-1440-workflow-export.png)
+
+![UI-UX-05 mobile partial success](screenshots/ui-ux-05/mobile-390-workflow-partial-success-full.png)
+
+Findings and changes:
+
+- The before state was visually acceptable, but adaptive parameters, project
+  drawer accessibility, help copy, and Review/Export screen labels still lived
+  inside the large `app.js` file.
+- The after state uses `ui_selectors.js` for adaptive defaults, project drawer
+  accessibility state, Review/Export headings and summaries, and critical
+  option help text.
+- `app.js` still owns DOM reads, API calls, focus movement, and rendering, but
+  consumes selector outputs for these stable state decisions.
+- `scripts/build_ui_shell.mjs` now checks the selector module, and the Node UI
+  tests verify that the same helpers are exposed through `MotionJSONUI`.
+- The concise UI contract is documented in `docs/design/local-ui-contract.md`
+  to reduce future context required for UI changes.

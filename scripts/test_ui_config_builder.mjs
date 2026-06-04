@@ -4,12 +4,16 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const selectors = await import("../src/motionjson/ui/static/ui_selectors.js");
 await import("../src/motionjson/ui/static/app.js");
 
 const ui = globalThis.MotionJSONUI;
 assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appSource = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
+const selectorSource = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/ui_selectors.js"), "utf8");
+assert.ok(appSource.includes("from \"./ui_selectors.js\""), "app.js should import extracted UI selectors");
+assert.ok(selectorSource.includes("export function adaptiveRunDefaultsFromSnapshot"), "ui_selectors.js should export adaptive defaults");
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
@@ -258,8 +262,35 @@ try {
   }
 }
 assert.equal(ui.jobProgressText({ status: "failed", progress: { known: true, percent: 100, label: "Failed" } }), "Failed");
+assert.equal(ui.adaptiveRunDefaultsFromSnapshot, selectors.adaptiveRunDefaultsFromSnapshot);
+assert.equal(ui.projectShellStateFromSnapshot, selectors.projectShellStateFromSnapshot);
+assert.equal(ui.reviewExportScreenStateFromSnapshot, selectors.reviewExportScreenStateFromSnapshot);
 assert.ok(ui.OPTION_HELP_TEXT.sampleFps.includes("sampled"));
 assert.ok(ui.OPTION_HELP_TEXT.partialResultRecovery.includes("reviewable"));
+const closedProjectShell = ui.projectShellStateFromSnapshot({ sidebarCollapsed: true, projectName: "sample-10s project" });
+assert.equal(closedProjectShell.sidebarAriaHidden, "true");
+assert.equal(closedProjectShell.sidebarContentInert, true);
+assert.equal(closedProjectShell.projectButtonExpanded, "false");
+assert.equal(closedProjectShell.projectButtonLabel, "sample-10s project");
+const openProjectShell = ui.projectShellStateFromSnapshot({ sidebarCollapsed: false });
+assert.equal(openProjectShell.sidebarAriaHidden, "false");
+assert.equal(openProjectShell.sidebarContentInert, false);
+assert.equal(openProjectShell.projectButtonExpanded, "true");
+const reviewScreenState = ui.reviewExportScreenStateFromSnapshot({
+  mode: "review",
+  rowCount: 4,
+  reviewedCount: 3,
+  movingReviewedCount: 2,
+  exportValidated: true,
+});
+assert.equal(reviewScreenState.title, "Review all objects");
+assert.equal(reviewScreenState.primaryLabel, "Continue to export");
+assert.ok(reviewScreenState.summary.includes("moving"));
+const exportScreenState = ui.reviewExportScreenStateFromSnapshot({ mode: "export", exportStageValue: "Validated", exportValidated: true });
+assert.equal(exportScreenState.title, "Export MotionJSON");
+assert.equal(exportScreenState.statusLabel, "Validated");
+assert.equal(exportScreenState.primaryLabel, "Export MotionJSON");
+assert.notEqual(reviewScreenState.guideTitle, exportScreenState.guideTitle);
 const adaptiveSceneSweep = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",

@@ -1,3 +1,11 @@
+import {
+  OPTION_HELP_TEXT,
+  adaptiveRunDefaultsFromSnapshot,
+  objectDiscoveryDefaults,
+  projectShellStateFromSnapshot,
+  reviewExportScreenStateFromSnapshot,
+} from "./ui_selectors.js";
+
 const MotionJSONUI = (() => {
   const API_ROUTES = [
     "/api/health",
@@ -67,7 +75,6 @@ const MotionJSONUI = (() => {
     workflowStep: "motionjson.localUi.workflowStep",
     workflowDashboard: "motionjson.localUi.workflowDashboard",
   };
-  const MATERIALIZATION_BUDGET_PIXELS = 64_000_000;
   const AUTO_PARAMETER_FIELDS = {
     sampleFps: "sampleFps",
     maxFrames: "maxFrames",
@@ -76,16 +83,6 @@ const MotionJSONUI = (() => {
     deviceSelect: "device",
   };
   const AUTO_PARAMETER_KEYS = new Set(Object.values(AUTO_PARAMETER_FIELDS));
-  const OPTION_HELP_TEXT = {
-    sceneSweepQuality: "Balances object recall against speed, memory, and noisy background fragments.",
-    sampleFps: "How many source frames per second are sampled before tracking. Lower values improve stability on long or high-resolution videos.",
-    maxFrames: "Upper bound on sampled frames. Lower this when scene sweep stalls, runs out of memory, or produces too many artifacts.",
-    maxObjects: "Maximum object candidates allowed into review. Lower values reduce memory pressure and keep review usable.",
-    traceEverythingMode: "Keeps many raw auto-mask segments for review. Export stays blocked until objects are reviewed.",
-    device: "Auto lets the backend choose CUDA, MPS, or CPU from diagnostics. Override only when a device is known to be stable.",
-    exportPreset: "Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.",
-    partialResultRecovery: "Completed objects can remain reviewable even when a later object or frame fails.",
-  };
   const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$|^\/api\/jobs\/[A-Za-z0-9._~-]+\/preview-files\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const REVIEW_TOOL_DEFS = [
@@ -1611,222 +1608,6 @@ const MotionJSONUI = (() => {
       object_id: prompt.object_id,
       label: prompt.label,
       data: { ...prompt.data },
-    };
-  }
-
-  function objectDiscoveryDefaults(qualityPreset) {
-    const defaults = {
-      clean: {
-        intent: "discover_objects_clean",
-        keyframePolicy: "scene_changes",
-        maxKeyframes: 3,
-        frameInterval: null,
-        maxCandidatesPerKeyframe: 32,
-        maxObjects: 12,
-        minMaskArea: 96,
-        maxMaskAreaRatio: 0.45,
-        dedupeIou: 0.78,
-        stabilityThreshold: 0.86,
-        trackSelectedOnly: true,
-        trackTopCandidates: false,
-        requireExplicitCostWarning: false,
-      },
-      balanced: {
-        intent: "discover_objects_balanced",
-        keyframePolicy: "scene_changes",
-        maxKeyframes: 5,
-        frameInterval: null,
-        maxCandidatesPerKeyframe: 64,
-        maxObjects: 24,
-        minMaskArea: 64,
-        maxMaskAreaRatio: 0.6,
-        dedupeIou: 0.84,
-        stabilityThreshold: 0.78,
-        trackSelectedOnly: true,
-        trackTopCandidates: false,
-        requireExplicitCostWarning: false,
-      },
-      maximum_recall: {
-        intent: "discover_objects_maximum_recall",
-        keyframePolicy: "scene_changes",
-        maxKeyframes: 8,
-        frameInterval: 24,
-        maxCandidatesPerKeyframe: 128,
-        maxObjects: 64,
-        minMaskArea: 32,
-        maxMaskAreaRatio: 0.75,
-        dedupeIou: 0.9,
-        stabilityThreshold: 0.7,
-        trackSelectedOnly: true,
-        trackTopCandidates: false,
-        requireExplicitCostWarning: false,
-      },
-      trace_everything: {
-        intent: "trace_everything",
-        keyframePolicy: "uniform_interval",
-        maxKeyframes: 8,
-        frameInterval: 24,
-        maxCandidatesPerKeyframe: 128,
-        maxObjects: 64,
-        minMaskArea: 32,
-        maxMaskAreaRatio: 0.75,
-        dedupeIou: 0.9,
-        stabilityThreshold: 0.7,
-        trackSelectedOnly: false,
-        trackTopCandidates: true,
-        requireExplicitCostWarning: true,
-      },
-    };
-    return defaults[qualityPreset] || defaults.clean;
-  }
-
-  function overrideFlagsFromSnapshot(snapshot = {}) {
-    const source = snapshot.userOverrides || snapshot.overrideFlags || snapshot.overrides || {};
-    if (source instanceof Set) return Object.fromEntries([...source].map((key) => [key, true]));
-    if (Array.isArray(source)) return Object.fromEntries(source.map((key) => [key, true]));
-    if (source && typeof source === "object") return { ...source };
-    return {};
-  }
-
-  function videoFactsFromSnapshot(snapshot = {}) {
-    const video = snapshot.video || snapshot.videoPreview || snapshot.preview || {};
-    const metadata = video.metadata || snapshot.videoMetadata || {};
-    const width = toInteger(snapshot.width ?? snapshot.videoWidth ?? video.width ?? metadata.width, 0);
-    const height = toInteger(snapshot.height ?? snapshot.videoHeight ?? video.height ?? metadata.height, 0);
-    const duration = toNumber(snapshot.duration ?? snapshot.videoDuration ?? video.duration ?? metadata.duration, 0);
-    return {
-      width,
-      height,
-      duration,
-      framePixels: width > 0 && height > 0 ? width * height : 0,
-    };
-  }
-
-  function priorFailureReasonFromSnapshot(snapshot = {}) {
-    return String(
-      snapshot.priorFailureReason ||
-        snapshot.reasonCode ||
-        snapshot.failureReason ||
-        snapshot.failure?.reasonCode ||
-        snapshot.lifecycle?.failure?.reasonCode ||
-        "",
-    ).toLowerCase();
-  }
-
-  function adaptiveSourceValue(key, automaticValue, snapshot, overrideFlags) {
-    const current = snapshot.currentValues || snapshot;
-    const override = Boolean(overrideFlags[key]);
-    const rawValue = current[key] ?? snapshot[key];
-    if (key === "device" || key === "qualityPreset") {
-      return {
-        value: override && rawValue !== undefined && rawValue !== "" ? String(rawValue) : automaticValue,
-        source: override ? "user_override" : "auto",
-      };
-    }
-    const numeric = key === "sampleFps" ? toNumber(rawValue, automaticValue) : toInteger(rawValue, automaticValue);
-    return {
-      value: override ? numeric : automaticValue,
-      source: override ? "user_override" : "auto",
-    };
-  }
-
-  function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
-    const presetId = snapshot.selectedPreset || snapshot.preset || snapshot.goal || "trace_one_object";
-    const providerId = String(snapshot.providerId || snapshot.providerName || snapshot.maskProvider || "");
-    const providerLabelText = snapshot.providerLabel || snapshot.displayLabel || providerLabel(providerId) || "Auto provider";
-    const failureReason = priorFailureReasonFromSnapshot(snapshot);
-    const retryingHeavyAssetPrep = ["asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"].includes(failureReason);
-    const video = videoFactsFromSnapshot(snapshot);
-    const largeVideo = video.framePixels >= 1920 * 1080;
-    const traceEverythingMode = Boolean(snapshot.traceEverythingMode);
-    let qualityPreset = traceEverythingMode
-      ? "trace_everything"
-      : String(snapshot.qualityPreset || (presetId === "trace_all_objects" ? "balanced" : "clean"));
-    let sampleFps = presetId === "trace_all_objects" ? 8 : presetId === "text_detector" ? 8 : 12;
-    let maxFrames = presetId === "trace_one_object" ? 48 : presetId === "text_detector" ? 32 : 48;
-    let maxObjects =
-      presetId === "trace_one_object"
-        ? 1
-        : presetId === "text_detector"
-          ? 6
-          : presetId === "class_detector" || presetId === "motion_foreground"
-            ? 8
-            : objectDiscoveryDefaults(qualityPreset).maxObjects;
-    let device = String(snapshot.device || "auto") || "auto";
-    const budgetPixels = Math.max(1, toInteger(snapshot.materializationBudgetPixels, MATERIALIZATION_BUDGET_PIXELS));
-
-    if (retryingHeavyAssetPrep && presetId === "trace_all_objects") {
-      qualityPreset = "clean";
-      sampleFps = 6;
-      maxFrames = 32;
-      maxObjects = 12;
-      device = "auto";
-    } else if (largeVideo && presetId === "trace_all_objects") {
-      qualityPreset = qualityPreset === "maximum_recall" ? "balanced" : qualityPreset;
-      sampleFps = Math.min(sampleFps, 6);
-      maxFrames = Math.min(maxFrames, 36);
-      maxObjects = Math.min(maxObjects, 18);
-    }
-
-    if (video.duration > 0) {
-      maxFrames = Math.max(1, Math.min(maxFrames, Math.ceil(video.duration * sampleFps)));
-    }
-
-    const overrideFlags = overrideFlagsFromSnapshot(snapshot);
-    const resolved = {
-      sampleFps: adaptiveSourceValue("sampleFps", sampleFps, snapshot, overrideFlags),
-      maxFrames: adaptiveSourceValue("maxFrames", maxFrames, snapshot, overrideFlags),
-      maxObjects: adaptiveSourceValue("maxObjects", maxObjects, snapshot, overrideFlags),
-      qualityPreset: adaptiveSourceValue("qualityPreset", qualityPreset, snapshot, overrideFlags),
-      device: adaptiveSourceValue("device", device, snapshot, overrideFlags),
-    };
-    const values = Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.value]));
-    const estimatedPixels = video.framePixels > 0 ? video.framePixels * Math.max(1, values.maxFrames) * Math.max(1, Math.min(values.maxObjects, 4)) : 0;
-    const materializationRisk =
-      !estimatedPixels ? "unknown" : estimatedPixels > budgetPixels ? "high" : estimatedPixels > budgetPixels * 0.55 ? "watch" : "normal";
-    const qualityLabel = {
-      clean: "Clean",
-      balanced: "Balanced",
-      maximum_recall: "Maximum recall",
-      trace_everything: "Trace everything",
-    }[values.qualityPreset] || values.qualityPreset;
-    const chip = (id, label, value, detail, source = resolved[id]?.source || "auto", tone = "neutral") => ({
-      id,
-      label,
-      value,
-      detail,
-      source,
-      tone,
-      help: OPTION_HELP_TEXT[id] || "",
-    });
-    return {
-      format: "motionjson.local_ui_adaptive_parameters.v0.1",
-      presetId,
-      providerId,
-      failureReason,
-      values: {
-        ...values,
-        traceEverythingMode,
-        materializationBudgetPixels: budgetPixels,
-        materializationEstimatedPixels: estimatedPixels,
-        materializationRisk,
-      },
-      sources: Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.source])),
-      chips: [
-        chip("sampleFps", "Sample FPS", `${values.sampleFps} fps`, "Sampling load tuned for this goal."),
-        chip("maxFrames", "Max frames", String(values.maxFrames), retryingHeavyAssetPrep ? "Reduced after the previous asset-prep failure." : "Capped before tracking starts."),
-        chip("maxObjects", "Max objects", String(values.maxObjects), "Keeps review and memory bounded."),
-        chip("qualityPreset", "Scene sweep", qualityLabel, retryingHeavyAssetPrep ? "Safer retry profile." : "Recall balanced against cleanup cost."),
-        chip("device", "Device", String(values.device || "auto"), providerLabelText, resolved.device.source),
-        chip(
-          "materialization",
-          "Materialization",
-          materializationRisk === "high" ? "High risk" : materializationRisk === "watch" ? "Watch" : materializationRisk === "unknown" ? "Unknown" : "Within budget",
-          estimatedPixels ? `${Math.round(estimatedPixels / 1_000_000)}M px worst-case / ${Math.round(budgetPixels / 1_000_000)}M budget.` : `${Math.round(budgetPixels / 1_000_000)}M px budget; video size unknown.`,
-          "auto",
-          materializationRisk === "high" ? "bad" : materializationRisk === "watch" ? "warn" : "ready",
-        ),
-      ],
     };
   }
 
@@ -6059,18 +5840,23 @@ const MotionJSONUI = (() => {
       const trackStage = stages.find((stage) => stage.id === "tracks");
       const correctionStage = stages.find((stage) => stage.id === "corrections");
       const exportStage = stages.find((stage) => stage.id === "export");
-      const exportSubscreen = state.reviewExportSubscreen === "export";
+      const reviewExportScreen = reviewExportScreenStateFromSnapshot({
+        mode: state.reviewExportSubscreen,
+        exportStageValue: exportStage?.value,
+        reviewPrimaryLabel: reviewFlow.gate.primaryLabel,
+        reviewNote: reviewFlow.gate.reason || next?.detail,
+        nextStatus: next?.status,
+        nextValue: next?.value,
+      });
 
       if ($("#postRunGuideList")) $("#postRunGuideList").innerHTML = postRunStageCards(stages);
-      if ($("#postRunGuideTitle")) $("#postRunGuideTitle").textContent = exportSubscreen ? "Export reviewed package" : "Review before export";
+      if ($("#postRunGuideTitle")) $("#postRunGuideTitle").textContent = reviewExportScreen.guideTitle;
       if ($("#postRunGuideStatus")) {
-        $("#postRunGuideStatus").textContent = exportSubscreen ? exportStage?.value || "Package" : reviewFlow.gate.primaryLabel || (next?.status === "done" ? "Ready" : next?.value || "Needs review");
+        $("#postRunGuideStatus").textContent = reviewExportScreen.statusLabel;
         $("#postRunGuideStatus").className = `status-chip ${next?.tone || "is-muted"}`;
       }
       if ($("#postRunGuideNote")) {
-        $("#postRunGuideNote").textContent = exportSubscreen
-          ? "Validate package readiness, included objects, rights notes, and handoff links before writing MotionJSON."
-          : reviewFlow.gate.reason || next?.detail || "Review, correct, and export reviewed object tracks.";
+        $("#postRunGuideNote").textContent = reviewExportScreen.note;
       }
       const runSummaryMarkup = summaryCards([runStage].filter(Boolean));
       if ($("#runMonitorSummary")) $("#runMonitorSummary").innerHTML = runSummaryMarkup;
@@ -6651,20 +6437,21 @@ const MotionJSONUI = (() => {
       shell?.classList.toggle("is-sidebar-collapsed", collapsed);
       const sidebar = $("#workspaceSidebar");
       const content = $("#sidebarNavigationContent");
+      const shellState = projectShellStateFromSnapshot({ sidebarCollapsed: collapsed });
       if (sidebar) {
-        sidebar.setAttribute("aria-hidden", String(collapsed));
+        sidebar.setAttribute("aria-hidden", shellState.sidebarAriaHidden);
       }
       if (content) {
-        content.setAttribute("aria-hidden", String(collapsed));
-        content.inert = collapsed;
+        content.setAttribute("aria-hidden", shellState.sidebarContentAriaHidden);
+        content.inert = shellState.sidebarContentInert;
       }
       if (sidebarToggle) {
-        sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
-        sidebarToggle.textContent = "Close";
-        sidebarToggle.setAttribute("aria-label", "Close project drawer");
+        sidebarToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
+        sidebarToggle.textContent = shellState.closeButtonText;
+        sidebarToggle.setAttribute("aria-label", shellState.closeButtonAriaLabel);
       }
       if (projectDrawerToggle) {
-        projectDrawerToggle.setAttribute("aria-expanded", String(!collapsed));
+        projectDrawerToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
       }
       if (collapsed && content?.contains(document.activeElement)) {
         projectDrawerToggle?.focus();
@@ -6718,8 +6505,13 @@ const MotionJSONUI = (() => {
       $("#collapsedGoalLabel").textContent = currentPresetLabel();
       if (projectDrawerToggle) {
         const project = state.projects.find((item) => item.id === state.selectedProjectId);
-        projectDrawerToggle.textContent = project?.name || "Local Project";
-        projectDrawerToggle.setAttribute("aria-label", project ? `Open project drawer for ${project.name}` : "Open project drawer");
+        const shellState = projectShellStateFromSnapshot({
+          sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed"),
+          selectedProject: project,
+        });
+        projectDrawerToggle.textContent = shellState.projectButtonLabel;
+        projectDrawerToggle.setAttribute("aria-label", shellState.projectButtonAriaLabel);
+        projectDrawerToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
       }
       const summary = $("#diagnosticsSummary");
       if (summary) {
@@ -8730,16 +8522,15 @@ const MotionJSONUI = (() => {
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
-      const exportSubscreen = state.reviewExportSubscreen === "export";
-      if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = exportSubscreen ? "Export" : "Review";
-      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = exportSubscreen ? "Export MotionJSON" : "Review all objects";
-      summary.textContent = exportSubscreen
-        ? "Validate the package, included objects, rights notes, and handoff links before writing files."
-        : rows.length
-          ? movingReviewedCount
-            ? `${movingReviewedCount} moving track${movingReviewedCount === 1 ? "" : "s"} ready for MotionJSON export`
-            : `${reviewedCount} reviewed object${reviewedCount === 1 ? "" : "s"} ready`
-          : "Object masks appear here after a run completes.";
+      const reviewExportScreen = reviewExportScreenStateFromSnapshot({
+        mode: state.reviewExportSubscreen,
+        rowCount: rows.length,
+        reviewedCount,
+        movingReviewedCount,
+      });
+      if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = reviewExportScreen.kicker;
+      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = reviewExportScreen.title;
+      summary.textContent = reviewExportScreen.summary;
       const job = selectedJob();
       const lifecycle = job ? normalizeJobLifecycle(job, { events: state.jobEvents }) : null;
       const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
@@ -8842,7 +8633,7 @@ const MotionJSONUI = (() => {
           readableRightsText(rightsSummary.summary) ||
           readableRightsText(rightsSummary) ||
           "Confirm source rights before sharing exported packages.";
-        $("#studioExportIncludedObjects").innerHTML = exportSubscreen
+        $("#studioExportIncludedObjects").innerHTML = reviewExportScreen.mode === "export"
           ? `
               <div class="artifact-row">
                 <strong>Included objects</strong>
@@ -13952,6 +13743,7 @@ const MotionJSONUI = (() => {
     WORKFLOW_STEPS,
     OPTION_HELP_TEXT,
     adaptiveRunDefaultsFromSnapshot,
+    objectDiscoveryDefaults,
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,
     buildExportPanelSummary,
@@ -14007,6 +13799,7 @@ const MotionJSONUI = (() => {
     normalizeCorrectionState,
     normalizeWorkflowStepId,
     objectDiscoveryConfig,
+    projectShellStateFromSnapshot,
     providerContractForInput,
     providerIdFromConnectionId,
     mapClientPointToVideo,
@@ -14014,6 +13807,7 @@ const MotionJSONUI = (() => {
     parseCsv,
     parseKeyframes,
     postRunWorkflowSummaryFromSnapshot,
+    reviewExportScreenStateFromSnapshot,
     reviewGateFromSnapshot,
     reviewCandidates,
     reviewFlowStateFromSnapshot,
