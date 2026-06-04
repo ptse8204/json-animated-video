@@ -10,6 +10,11 @@ NO_MODEL_PROVIDERS = {"mock", "threshold", "motion", "motion_foreground", "exter
 REVIEW_PENDING_STATUSES = {"pending", "review_pending", "needs_review", "awaiting_review"}
 EXPORT_READY_STATUSES = {"accepted", "ready", "reviewed"}
 EXPORT_BLOCKED_STATUSES = {"rejected", "deleted", "excluded", "fallback_raster"}
+ASSET_PREPARATION_RECOVERY_REASONS = {
+    "asset_preparation_stalled",
+    "asset_preparation_frame_timeout",
+    "worker_heartbeat_stale",
+}
 
 
 def job_lifecycle_summary(
@@ -201,6 +206,10 @@ def _failure_summary(
 
 def _failure_reason_code(message: str) -> str:
     normalized = message.lower()
+    if "frame-finished event" in normalized or "asset preparation timed out" in normalized:
+        return "asset_preparation_frame_timeout"
+    if "worker heartbeat stopped during asset preparation" in normalized:
+        return "worker_heartbeat_stale"
     if "asset preparation stalled" in normalized or "raster asset preparation stalled" in normalized:
         return "asset_preparation_stalled"
     if any(token in normalized for token in ("sam2", "sam3", "cuda", "checkpoint", "model", "provider", "api key", "token", "credential", "not importable", "unavailable")):
@@ -213,6 +222,10 @@ def _failure_reason_code(message: str) -> str:
 
 
 def _failure_headline(message: str, reason_code: str) -> str:
+    if reason_code == "asset_preparation_frame_timeout":
+        return "Asset prep frame timed out"
+    if reason_code == "worker_heartbeat_stale":
+        return "Worker heartbeat stopped"
     if reason_code == "asset_preparation_stalled":
         return "Raster asset preparation stalled"
     if reason_code == "provider_unavailable":
@@ -230,7 +243,7 @@ def _failure_headline(message: str, reason_code: str) -> str:
 
 
 def _suggested_action(reason_code: str) -> str:
-    if reason_code == "asset_preparation_stalled":
+    if reason_code in ASSET_PREPARATION_RECOVERY_REASONS:
         return "Retry asset preparation from the current setup, or return to Model setup before starting a new run."
     if reason_code == "provider_unavailable":
         return "Open Model Connections, fix the provider setup, or choose a no-model workflow."
@@ -256,8 +269,8 @@ def _actions(
     )
     return {
         "canCancel": raw_status in {"pending", "queued", "running"},
-        "canRetry": bool(failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled"),
-        "canRetryAssetPreparation": bool(failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled"),
+        "canRetry": bool(failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS),
+        "canRetryAssetPreparation": bool(failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS),
         "canReview": can_review,
         "canTrackSelected": status == "waiting_review" and int(review.get("candidateCount") or 0) > 0 and int(review.get("trackCount") or 0) == 0,
         "canExport": status in {"waiting_review", "succeeded"} and int(review.get("exportableTrackCount") or 0) > 0,
@@ -272,7 +285,7 @@ def _next_action(
 ) -> dict[str, str]:
     if status in {"queued", "running"}:
         return {"label": "Watch job", "reason": "The run is still in progress."}
-    if failure and _text(failure.get("reasonCode")) == "asset_preparation_stalled":
+    if failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS:
         return {"label": "Retry asset prep", "reason": _text(failure.get("headline"))}
     if failure:
         return {"label": "Open logs", "reason": _text(failure.get("headline"))}

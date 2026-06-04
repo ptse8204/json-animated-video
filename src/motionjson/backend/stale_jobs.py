@@ -13,6 +13,8 @@ from .usage import utc_now
 
 
 ASSET_PREPARATION_STALL_REASON = "asset_preparation_stalled"
+ASSET_PREPARATION_FRAME_TIMEOUT_REASON = "asset_preparation_frame_timeout"
+WORKER_HEARTBEAT_STALE_REASON = "worker_heartbeat_stale"
 DEFAULT_ASSET_PREPARATION_STALL_SECONDS = 4 * 60
 _FRAME_PROGRESS_RE = re.compile(r"frame\s+(\d+)\s*/\s*(\d+)", re.IGNORECASE)
 
@@ -25,6 +27,26 @@ def asset_preparation_stall_threshold_seconds() -> float:
         return max(30.0, float(raw))
     except ValueError:
         return float(DEFAULT_ASSET_PREPARATION_STALL_SECONDS)
+
+
+def asset_preparation_frame_timeout_seconds() -> float:
+    raw = os.environ.get("MOTIONJSON_ASSET_PREP_FRAME_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return asset_preparation_stall_threshold_seconds()
+    try:
+        return max(30.0, float(raw))
+    except ValueError:
+        return asset_preparation_stall_threshold_seconds()
+
+
+def worker_heartbeat_stale_seconds() -> float:
+    raw = os.environ.get("MOTIONJSON_WORKER_HEARTBEAT_STALE_SECONDS", "").strip()
+    if not raw:
+        return asset_preparation_stall_threshold_seconds()
+    try:
+        return max(30.0, float(raw))
+    except ValueError:
+        return asset_preparation_stall_threshold_seconds()
 
 
 def reconcile_stale_asset_preparation_job(
@@ -58,7 +80,7 @@ def reconcile_stale_asset_preparation_job(
     record_job_event(
         conn,
         job_id=job_id,
-        event_type=ASSET_PREPARATION_STALL_REASON,
+        event_type=diagnostic["reasonCode"],
         message=diagnostic["message"],
         metadata=diagnostic,
     )
@@ -77,7 +99,7 @@ def asset_preparation_stall_diagnostic(
     latest = _latest_event(events)
     if latest is None:
         return None
-    if _event_type(latest) in {ASSET_PREPARATION_STALL_REASON, "failed", "canceled", "cancelled"}:
+    if _event_type(latest) in {ASSET_PREPARATION_STALL_REASON, ASSET_PREPARATION_FRAME_TIMEOUT_REASON, WORKER_HEARTBEAT_STALE_REASON, "failed", "canceled", "cancelled"}:
         return None
     stage = _event_stage(latest)
     if stage != "asset_preparation":
@@ -86,7 +108,11 @@ def asset_preparation_stall_diagnostic(
     current_time = _parse_dt(now or utc_now())
     if latest_at is None or current_time is None or current_time <= latest_at:
         return None
-    threshold = threshold_seconds if threshold_seconds is not None else asset_preparation_stall_threshold_seconds()
+    event_type = _event_type(latest)
+    reason_code = ASSET_PREPARATION_FRAME_TIMEOUT_REASON if event_type == ASSET_PREPARATION_FRAME_TIMEOUT_REASON or event_type == "asset_preparation_frame_started" else WORKER_HEARTBEAT_STALE_REASON
+    threshold = threshold_seconds if threshold_seconds is not None else (
+        asset_preparation_frame_timeout_seconds() if reason_code == ASSET_PREPARATION_FRAME_TIMEOUT_REASON else worker_heartbeat_stale_seconds()
+    )
     age_seconds = (current_time - latest_at).total_seconds()
     if age_seconds < threshold:
         return None
@@ -95,14 +121,17 @@ def asset_preparation_stall_diagnostic(
     nested_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), Mapping) else {}
     progress = metadata.get("progress") if isinstance(metadata.get("progress"), Mapping) else {}
     object_id = str(nested_metadata.get("objectId") or metadata.get("objectId") or "").strip()
-    frame_current, frame_total = _frame_progress(latest, progress)
-    message = _stall_message(object_id=object_id, frame_current=frame_current, frame_total=frame_total)
+    frame_current, frame_total = _frame_progress(latest, progress, nested_metadata)
+    message = _stall_message(reason_code=reason_code, object_id=object_id, frame_current=frame_current, frame_total=frame_total)
     return {
         "format": "motionjson.asset_preparation_stall.v0.1",
-        "reasonCode": ASSET_PREPARATION_STALL_REASON,
+        "reasonCode": reason_code,
+        "compatibilityReasonCode": ASSET_PREPARATION_STALL_REASON,
         "phase": "asset_preparation",
         "stage": "asset_preparation",
         "objectId": object_id or None,
+        "frame": _int_or_none(nested_metadata.get("frame")),
+        "position": _int_or_none(nested_metadata.get("position")) or frame_current,
         "preparedFrames": frame_current,
         "totalFrames": frame_total,
         "lastEventAt": latest_at.isoformat(),
@@ -146,9 +175,10 @@ def _event_stage(event: Mapping[str, Any]) -> str:
     return str(event.get("stage") or metadata.get("stage") or "").strip().lower()
 
 
-def _frame_progress(event: Mapping[str, Any], progress: Mapping[str, Any]) -> tuple[int | None, int | None]:
-    current = _int_or_none(progress.get("current"))
-    total = _int_or_none(progress.get("total"))
+def _frame_progress(event: Mapping[str, Any], progress: Mapping[str, Any], metadata: Mapping[str, Any] | None = None) -> tuple[int | None, int | None]:
+    metadata = metadata or {}
+    current = _int_or_none(metadata.get("position")) or _int_or_none(progress.get("current"))
+    total = _int_or_none(metadata.get("totalFrames")) or _int_or_none(progress.get("total"))
     if current is not None or total is not None:
         return current, total
     match = _FRAME_PROGRESS_RE.search(str(event.get("message") or ""))
@@ -157,11 +187,15 @@ def _frame_progress(event: Mapping[str, Any], progress: Mapping[str, Any]) -> tu
     return int(match.group(1)), int(match.group(2))
 
 
-def _stall_message(*, object_id: str, frame_current: int | None, frame_total: int | None) -> str:
+def _stall_message(*, reason_code: str, object_id: str, frame_current: int | None, frame_total: int | None) -> str:
     object_text = f" for {object_id}" if object_id else ""
+    if reason_code == ASSET_PREPARATION_FRAME_TIMEOUT_REASON:
+        if frame_current is not None and frame_total is not None:
+            return f"Raster asset preparation timed out on frame {frame_current}/{frame_total}{object_text}. No frame-finished event arrived."
+        return f"Raster asset preparation timed out{object_text}. No frame-finished event arrived."
     if frame_current is not None and frame_total is not None:
-        return f"Raster asset preparation stalled after frame {frame_current}/{frame_total}{object_text}. No export artifacts were produced."
-    return f"Raster asset preparation stalled{object_text}. No export artifacts were produced."
+        return f"Worker heartbeat stopped during asset preparation after frame {frame_current}/{frame_total}{object_text}. No export artifacts were produced."
+    return f"Worker heartbeat stopped during asset preparation{object_text}. No export artifacts were produced."
 
 
 def _int_or_none(value: Any) -> int | None:

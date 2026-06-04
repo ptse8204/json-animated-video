@@ -2584,7 +2584,7 @@ const MotionJSONUI = (() => {
 
   function failedRunRecoveryLabels(lifecycle = {}) {
     const reasonCode = String(lifecycle.failure?.reasonCode || lifecycle.reasonCode || "").toLowerCase();
-    if (reasonCode === "asset_preparation_stalled") {
+    if (["asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"].includes(reasonCode)) {
       return {
         runAgain: "Retry asset prep",
         changeSetup: "Retry from Model setup",

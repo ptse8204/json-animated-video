@@ -13,7 +13,11 @@ from motionjson.backend.db import initialize_database
 from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, list_job_events, record_job_event
 from motionjson.backend.projects import create_project
 from motionjson.backend.queue import mark_failed
-from motionjson.backend.stale_jobs import reconcile_stale_asset_preparation_job
+from motionjson.backend.stale_jobs import (
+    asset_preparation_frame_timeout_seconds,
+    reconcile_stale_asset_preparation_job,
+    worker_heartbeat_stale_seconds,
+)
 from motionjson.backend.usage import summarize_usage
 from motionjson.backend.worker import _server_runtime_value, _ui_discovery_provider, validate_extract_provider_policy, worker_once
 from motionjson.backend.models import ProviderPolicyError
@@ -178,6 +182,18 @@ def test_queue_retry_then_failure_path(tmp_path):
     assert second["status"] == "failed"
 
 
+def test_asset_preparation_watchdog_timeout_env_overrides(monkeypatch):
+    monkeypatch.setenv("MOTIONJSON_ASSET_PREP_FRAME_TIMEOUT_SECONDS", "360")
+    monkeypatch.setenv("MOTIONJSON_WORKER_HEARTBEAT_STALE_SECONDS", "420")
+    assert asset_preparation_frame_timeout_seconds() == 360.0
+    assert worker_heartbeat_stale_seconds() == 420.0
+
+    monkeypatch.setenv("MOTIONJSON_ASSET_PREP_FRAME_TIMEOUT_SECONDS", "5")
+    monkeypatch.setenv("MOTIONJSON_WORKER_HEARTBEAT_STALE_SECONDS", "bad")
+    assert asset_preparation_frame_timeout_seconds() == 30.0
+    assert worker_heartbeat_stale_seconds() == 240.0
+
+
 def test_reconcile_stale_asset_preparation_fails_running_job(tmp_path):
     conn, storage, user, project = backend(tmp_path)
     upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
@@ -209,20 +225,76 @@ def test_reconcile_stale_asset_preparation_fails_running_job(tmp_path):
         threshold_seconds=240,
     )
     events = list_job_events(conn, job_id=job["id"])
-    stalled_event = next(event for event in events if event["event_type"] == "asset_preparation_stalled")
+    stalled_event = next(event for event in events if event["event_type"] == "worker_heartbeat_stale")
     stalled_metadata = json.loads(stalled_event["metadata_json"])
     queue_row = conn.execute("SELECT status FROM queue_items WHERE job_id = ?", (job["id"],)).fetchone()
 
     assert reconciled["status"] == "failed"
     assert reconciled["attempts"] == 1
-    assert "frame 1/48 for sam3_grid_024" in reconciled["error"]
+    assert "after frame 1/48 for sam3_grid_024" in reconciled["error"]
     assert queue_row["status"] == "failed"
-    assert stalled_metadata["reasonCode"] == "asset_preparation_stalled"
+    assert stalled_metadata["reasonCode"] == "worker_heartbeat_stale"
+    assert stalled_metadata["compatibilityReasonCode"] == "asset_preparation_stalled"
     assert stalled_metadata["phase"] == "asset_preparation"
     assert stalled_metadata["objectId"] == "sam3_grid_024"
     assert stalled_metadata["preparedFrames"] == 1
     assert stalled_metadata["totalFrames"] == 48
     assert stalled_metadata["artifactsAvailable"] is False
+    assert any(event["event_type"] == "failed" for event in events)
+
+
+def test_reconcile_asset_preparation_frame_start_timeout_fails_running_job(tmp_path):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    stale_at = "2026-06-03T04:33:51+00:00"
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", (stale_at, job["id"]))
+    conn.execute("UPDATE queue_items SET status = 'running' WHERE job_id = ?", (job["id"],))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE job_id = ?", ("2026-06-03T04:26:56+00:00", job["id"]))
+    conn.commit()
+    event = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="asset_preparation_frame_started",
+        message="started raster asset frame 13/48 for sam3_grid_024",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "progress": {"overallRatio": 0.73, "current": 13, "total": 48},
+            "metadata": {
+                "objectId": "sam3_grid_024",
+                "frame": 12,
+                "position": 13,
+                "totalFrames": 48,
+                "sourceFrameIndex": 12,
+            },
+        },
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", (stale_at, event["id"]))
+    conn.commit()
+
+    reconciled = reconcile_stale_asset_preparation_job(
+        conn,
+        job_id=job["id"],
+        now="2026-06-03T04:45:37+00:00",
+        threshold_seconds=240,
+    )
+    events = list_job_events(conn, job_id=job["id"])
+    timeout_event = next(event for event in events if event["event_type"] == "asset_preparation_frame_timeout")
+    timeout_metadata = json.loads(timeout_event["metadata_json"])
+    queue_row = conn.execute("SELECT status FROM queue_items WHERE job_id = ?", (job["id"],)).fetchone()
+
+    assert reconciled["status"] == "failed"
+    assert "timed out on frame 13/48 for sam3_grid_024" in reconciled["error"]
+    assert queue_row["status"] == "failed"
+    assert timeout_metadata["reasonCode"] == "asset_preparation_frame_timeout"
+    assert timeout_metadata["compatibilityReasonCode"] == "asset_preparation_stalled"
+    assert timeout_metadata["phase"] == "asset_preparation"
+    assert timeout_metadata["objectId"] == "sam3_grid_024"
+    assert timeout_metadata["frame"] == 12
+    assert timeout_metadata["position"] == 13
+    assert timeout_metadata["preparedFrames"] == 13
+    assert timeout_metadata["totalFrames"] == 48
     assert any(event["event_type"] == "failed" for event in events)
 
 
@@ -252,7 +324,7 @@ def test_reconcile_asset_preparation_keeps_fresh_running_job(tmp_path):
     )
 
     assert reconciled["status"] == "running"
-    assert not any(event["event_type"] == "asset_preparation_stalled" for event in list_job_events(conn, job_id=job["id"]))
+    assert not any(event["event_type"] in {"asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"} for event in list_job_events(conn, job_id=job["id"]))
 
 
 def test_provider_policy_rejects_openrouter_as_segmentation(tmp_path):

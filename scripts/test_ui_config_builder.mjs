@@ -171,6 +171,16 @@ assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "asset_prep
   changeSetup: "Retry from Model setup",
   chooseModel: "Choose different model",
 });
+assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "asset_preparation_frame_timeout" } }), {
+  runAgain: "Retry asset prep",
+  changeSetup: "Retry from Model setup",
+  chooseModel: "Choose different model",
+});
+assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "worker_heartbeat_stale" } }), {
+  runAgain: "Retry asset prep",
+  changeSetup: "Retry from Model setup",
+  chooseModel: "Choose different model",
+});
 assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "provider_unavailable" } }), {
   runAgain: "Run again",
   changeSetup: "Change setup",

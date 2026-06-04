@@ -241,6 +241,35 @@ def test_job_lifecycle_summarizes_asset_preparation_stall():
     assert lifecycle["nextAction"]["label"] == "Retry asset prep"
 
 
+def test_job_lifecycle_summarizes_typed_asset_preparation_failures():
+    frame_timeout_job = {
+        "id": "job_asset_frame_timeout",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "failed",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}}},
+        "error": "Raster asset preparation timed out on frame 13/48 for sam3_grid_024. No frame-finished event arrived.",
+        "result": {},
+    }
+    heartbeat_job = {
+        **frame_timeout_job,
+        "id": "job_worker_heartbeat_stale",
+        "error": "Worker heartbeat stopped during asset preparation after frame 1/48 for sam3_grid_024. No export artifacts were produced.",
+    }
+
+    frame_timeout = job_lifecycle_summary(frame_timeout_job)
+    heartbeat_stale = job_lifecycle_summary(heartbeat_job)
+
+    assert frame_timeout["failure"]["headline"] == "Asset prep frame timed out"
+    assert frame_timeout["failure"]["reasonCode"] == "asset_preparation_frame_timeout"
+    assert frame_timeout["actions"]["canRetryAssetPreparation"] is True
+    assert frame_timeout["nextAction"]["label"] == "Retry asset prep"
+    assert heartbeat_stale["failure"]["headline"] == "Worker heartbeat stopped"
+    assert heartbeat_stale["failure"]["reasonCode"] == "worker_heartbeat_stale"
+    assert heartbeat_stale["actions"]["canRetryAssetPreparation"] is True
+    assert heartbeat_stale["nextAction"]["label"] == "Retry asset prep"
+
+
 def test_job_lifecycle_gates_candidates_tracks_and_exports():
     job = {
         "id": "job_review",
@@ -411,10 +440,10 @@ def test_local_ui_job_poll_reconciles_stale_asset_preparation(tmp_path):
 
     assert status == 200
     assert payload["job"]["status"] == "failed"
-    assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "asset_preparation_stalled"
+    assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "worker_heartbeat_stale"
     assert payload["job"]["lifecycle"]["nextAction"]["label"] == "Retry asset prep"
     assert payload["job"]["lifecycle"]["actions"]["canRetryAssetPreparation"] is True
-    assert any(event["event_type"] == "asset_preparation_stalled" for event in payload["job"]["events"])
+    assert any(event["event_type"] == "worker_heartbeat_stale" for event in payload["job"]["events"])
 
 
 def test_completed_mock_job_lifecycle_reports_review_export_gate(tmp_path):
