@@ -304,6 +304,39 @@ Fixes made:
   remains the single primary export action until the review/export redesign
   phase.
 
+## UI-UX-02 Evidence
+
+UI-UX-02 replaced the always-visible project rail with a contextual project
+drawer. The default first-run surface now gives the guided workflow the full
+viewport width, while project switching, workspace preferences, Local API
+status, and capabilities remain available from the topbar project button.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --state real-empty-shell,workflow-goal,workflow-video,nav-collapsed,diagnostics-open --screenshot-dir docs/design/screenshots/ui-ux-02-before
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --state real-empty-shell,workflow-goal,workflow-video,project-drawer-open,nav-collapsed,diagnostics-open --screenshot-dir docs/design/screenshots/ui-ux-02
+```
+
+Findings and changes:
+
+- The before state reserved a 214px project rail even when no project action was
+  needed.
+- The after state closes the project drawer by default and opens it only from
+  the topbar project control.
+- The drawer keeps existing project, workspace preference, Local API, and
+  capability controls instead of duplicating project management elsewhere.
+- Layout assertions now cover the default closed state and an explicit
+  `project-drawer-open` state across all required viewports.
+- Drawer controls expose stable `aria-controls`, update `aria-expanded`, hide
+  closed content from assistive technology, close on Escape, and cycle keyboard
+  focus while open.
+
 ## UI-MODEL-06 Evidence
 
 UI-MODEL-06 added a model-plan confirmation panel between model setup and

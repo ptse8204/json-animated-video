@@ -5309,7 +5309,7 @@ body {
 .app-shell.is-sidebar-collapsed,
 .app-shell.is-rail-collapsed,
 .app-shell.is-sidebar-collapsed.is-rail-collapsed {
-  grid-template-columns: 214px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100vh;
   min-height: 100vh;
   overflow: hidden;
@@ -5318,15 +5318,25 @@ body {
 
 .app-shell:not(.is-rail-collapsed),
 .app-shell.is-sidebar-collapsed:not(.is-rail-collapsed) {
-  grid-template-columns: 214px minmax(0, 1fr) minmax(292px, 318px);
+  grid-template-columns: minmax(0, 1fr) minmax(292px, 318px);
 }
 
 .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 24;
   display: flex;
   gap: 10px;
+  width: min(360px, calc(100vw - 24px));
+  height: 100vh;
   padding: 12px 10px;
   border-right: 1px solid #d9e1e8;
   background: #f8fafc;
+  box-shadow: 18px 0 42px rgba(15, 23, 42, 0.16);
+}
+
+.app-shell.is-sidebar-collapsed .sidebar {
+  display: none;
 }
 
 .brand {
@@ -5350,7 +5360,9 @@ body {
 
 .sidebar-toggle,
 .collapsed-goal-label {
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .sidebar-content {
@@ -5416,6 +5428,13 @@ body {
   padding: 0 10px;
   border-radius: 6px;
   font-size: 12px;
+}
+
+.project-drawer-trigger {
+  max-width: min(230px, 46vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-rail-card {
@@ -5850,6 +5869,10 @@ body {
   .sidebar,
   .right-rail {
     display: none;
+  }
+
+  .app-shell:not(.is-sidebar-collapsed) .sidebar {
+    display: flex;
   }
 
   .workspace {

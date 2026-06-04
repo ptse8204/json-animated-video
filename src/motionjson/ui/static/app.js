@@ -5544,6 +5544,7 @@ const MotionJSONUI = (() => {
     let overlayFrame = 0;
     const shell = $(".app-shell");
     const sidebarToggle = $("#sidebarToggle");
+    const projectDrawerToggle = $("#projectDrawerToggle");
     const detailsToggle = $("#detailsToggle");
     const railCloseButton = $("#railCloseButton");
     const workflowRailSteps = new Set(["review_export"]);
@@ -6357,20 +6358,27 @@ const MotionJSONUI = (() => {
 
     function setSidebarCollapsed(collapsed, { persist = true, focusToggle = false } = {}) {
       shell?.classList.toggle("is-sidebar-collapsed", collapsed);
+      const sidebar = $("#workspaceSidebar");
       const content = $("#sidebarNavigationContent");
+      if (sidebar) {
+        sidebar.setAttribute("aria-hidden", String(collapsed));
+      }
       if (content) {
         content.setAttribute("aria-hidden", String(collapsed));
         content.inert = collapsed;
       }
       if (sidebarToggle) {
         sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
-        sidebarToggle.textContent = collapsed ? "Menu" : "Collapse menu";
-        sidebarToggle.setAttribute("aria-label", collapsed ? "Expand workspace navigation" : "Collapse workspace navigation");
+        sidebarToggle.textContent = "Close";
+        sidebarToggle.setAttribute("aria-label", "Close project drawer");
+      }
+      if (projectDrawerToggle) {
+        projectDrawerToggle.setAttribute("aria-expanded", String(!collapsed));
       }
       if (collapsed && content?.contains(document.activeElement)) {
-        sidebarToggle?.focus();
+        projectDrawerToggle?.focus();
       } else if (focusToggle) {
-        sidebarToggle?.focus();
+        (collapsed ? projectDrawerToggle : sidebarToggle || projectDrawerToggle)?.focus();
       }
       if (persist) storage.set(SHELL_STORAGE_KEYS.sidebarCollapsed, String(collapsed));
       renderShellIndicators();
@@ -6417,6 +6425,11 @@ const MotionJSONUI = (() => {
 
     function renderShellIndicators() {
       $("#collapsedGoalLabel").textContent = currentPresetLabel();
+      if (projectDrawerToggle) {
+        const project = state.projects.find((item) => item.id === state.selectedProjectId);
+        projectDrawerToggle.textContent = project?.name || "Local Project";
+        projectDrawerToggle.setAttribute("aria-label", project ? `Open project drawer for ${project.name}` : "Open project drawer");
+      }
       const summary = $("#diagnosticsSummary");
       if (summary) {
         const diagnostic = shellDiagnosticSummary();
@@ -6430,10 +6443,13 @@ const MotionJSONUI = (() => {
     }
 
     function initShellNavigation() {
-      setSidebarCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.sidebarCollapsed, false), { persist: false });
+      setSidebarCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.sidebarCollapsed, true), { persist: false });
       setRailCollapsed(true, { persist: false });
+      projectDrawerToggle?.addEventListener("click", () => {
+        setSidebarCollapsed(false, { focusToggle: true });
+      });
       sidebarToggle?.addEventListener("click", () => {
-        setSidebarCollapsed(!shell?.classList.contains("is-sidebar-collapsed"), { focusToggle: true });
+        setSidebarCollapsed(true, { focusToggle: true });
       });
       detailsToggle?.addEventListener("click", () => {
         setWorkflowDashboard(!state.workflowDashboard);
@@ -6441,6 +6457,30 @@ const MotionJSONUI = (() => {
       railCloseButton?.addEventListener("click", () => {
         state.railOpenedByUser = false;
         setWorkflowDashboard(false);
+      });
+      document.addEventListener("keydown", (event) => {
+        const drawerOpen = !shell?.classList.contains("is-sidebar-collapsed");
+        if (!drawerOpen) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setSidebarCollapsed(true, { focusToggle: true });
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const drawer = $("#workspaceSidebar");
+        if (!drawer) return;
+        const focusable = [...drawer.querySelectorAll("button, input, select, textarea, summary, a[href]")]
+          .filter((element) => !element.disabled && element.tabIndex !== -1 && element.offsetParent !== null);
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
       });
       renderShellIndicators();
     }

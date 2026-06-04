@@ -18,6 +18,7 @@ const VIEWPORTS = [
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
 const CAPTURE_STATES = [
   "nav-collapsed",
+  "project-drawer-open",
   "diagnostics-open",
   "workflow-goal",
   "workflow-project",
@@ -514,6 +515,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         `,
       });
     }
+    if (state === "project-drawer-open") {
+      await cdp.send("Runtime.evaluate", {
+        expression: `
+          if (document.querySelector(".app-shell")?.classList.contains("is-sidebar-collapsed")) {
+            document.querySelector("#projectDrawerToggle")?.click();
+          }
+        `,
+      });
+    }
     if (state === "diagnostics-open") {
       await cdp.send("Runtime.evaluate", {
         expression: `
@@ -591,6 +601,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         (failure) => !/horizontal overflow|\.config-panel wider than viewport/.test(failure),
       );
     }
+    if (state === "project-drawer-open") {
+      layout.failures = layout.failures.filter((failure) => !/\.sidebar overlaps \.workspace/.test(failure));
+    }
     if (state === "workflow-keyboard") {
       await exerciseWorkflowKeyboard(cdp);
     }
@@ -617,6 +630,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarExpanded: document.querySelector("#sidebarToggle")?.getAttribute("aria-expanded") || "",
           sidebarControls: document.querySelector("#sidebarToggle")?.getAttribute("aria-controls") || "",
           sidebarLabel: document.querySelector("#sidebarToggle")?.getAttribute("aria-label") || document.querySelector("#sidebarToggle")?.textContent?.trim() || "",
+          projectDrawerButtonExpanded: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-expanded") || "",
+          projectDrawerButtonControls: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-controls") || "",
+          projectDrawerVisible: visible(document.querySelector("#workspaceSidebar")),
+          projectDrawerAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
           detailsExpanded: document.querySelector("#detailsToggle")?.getAttribute("aria-expanded") || "",
           detailsControls: document.querySelector("#detailsToggle")?.getAttribute("aria-controls") || "",
           railCloseControls: document.querySelector("#railCloseButton")?.getAttribute("aria-controls") || "",
@@ -752,6 +769,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "nav-collapsed" && (stateValue.sidebarContentAriaHidden !== "true" || !stateValue.sidebarContentInert || !stateValue.sidebarLabel)) {
       failures.push(`${viewport.name}/${state}: collapsed sidebar content should be hidden from assistive tech and focus order`);
     }
+    if (["real-empty-shell", "workflow-goal"].includes(state) && stateValue.projectDrawerVisible) {
+      failures.push(`${viewport.name}/${state}: project drawer should stay closed in the default guided first-run screen`);
+    }
+    if (state === "project-drawer-open" && (stateValue.sidebarCollapsed || !stateValue.projectDrawerVisible || stateValue.projectDrawerButtonExpanded !== "true" || stateValue.sidebarContentAriaHidden === "true" || stateValue.sidebarContentInert)) {
+      failures.push(`${viewport.name}/${state}: project drawer should open with visible, interactive project controls`);
+    }
     if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
       failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
     }
@@ -764,7 +787,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "real-empty-shell" && (stateValue.railAriaHidden !== "true" || !stateValue.railInert)) {
       failures.push(`${viewport.name}/${state}: collapsed diagnostics rail should be hidden from assistive tech and focus order`);
     }
-    if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.detailsControls !== "diagnosticsRail" || stateValue.railCloseControls !== "diagnosticsRail") {
+    if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.projectDrawerButtonControls !== "workspaceSidebar" || stateValue.detailsControls !== "diagnosticsRail" || stateValue.railCloseControls !== "diagnosticsRail") {
       failures.push(`${viewport.name}/${state}: shell collapse controls should expose stable aria-controls targets`);
     }
     if (!stateValue.workflowKeyshortcuts.includes("ArrowRight") || !stateValue.workflowKeyshortcuts.includes("ArrowDown") || !stateValue.workflowKeyshortcuts.includes("ArrowLeft") || !stateValue.workflowKeyshortcuts.includes("ArrowUp") || !stateValue.workflowKeyshortcuts.includes("Home") || !stateValue.workflowKeyshortcuts.includes("End")) {

@@ -51,15 +51,20 @@ def test_model_setup_renders_one_recommended_card_until_change_model():
     assert "compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId" in js
 
 
-def test_storyboard_shell_keeps_project_rail_and_in_flow_cta_in_normal_mode():
+def test_storyboard_shell_uses_project_drawer_and_in_flow_cta_in_normal_mode():
     css = read("src/motionjson/ui/static/app.css")
+    html = read("src/motionjson/ui/static/index.html")
     final_overrides = css.rsplit("Final storyboard overrides", 1)[1]
 
-    assert "grid-template-columns: 214px minmax(0, 1fr)" in final_overrides
+    assert "id=\"projectDrawerToggle\"" in html
+    assert "aria-controls=\"workspaceSidebar\"" in html
+    assert "grid-template-columns: minmax(0, 1fr)" in final_overrides
     assert ".sidebar" in final_overrides
+    assert "position: fixed" in final_overrides
     assert ".project-rail-list" in final_overrides
     assert ".sidebar-content > details" in final_overrides
-    assert "display: flex" in final_overrides
+    assert ".app-shell.is-sidebar-collapsed .sidebar" in final_overrides
+    assert "display: none" in final_overrides
     assert "#workflowController" in final_overrides
     assert "position: static" in final_overrides
     assert "pointer-events: none" in final_overrides

@@ -67,6 +67,7 @@ def test_phase03a_layout_check_reports_viewport_matrix():
         "real-empty-shell",
         "real-seeded-shell",
         "real-expanded-shell",
+        "project-drawer-open",
         "first-run",
         "new-project",
         "extraction-wizard",
