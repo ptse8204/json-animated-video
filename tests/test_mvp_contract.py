@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import cv2
@@ -79,7 +80,21 @@ def test_pipeline_writes_mvp_schema_and_profile(tmp_path):
     assert "vectorSuitability" in obj["quality"]
     assert (out / "resource_profile.json").exists()
     assert (out / "web_asset_manifest.json").exists()
-    assert (out / "objects" / "object_0" / "object_manifest.json").exists()
+    object_manifest_path = out / "objects" / "object_0" / "object_manifest.json"
+    assert object_manifest_path.exists()
+    object_manifest = json.loads(object_manifest_path.read_text(encoding="utf-8"))
+    first_motion = object_manifest["motion"][0]
+    first_frame = object_manifest["frames"][0]
+    assert first_motion["polygon"]
+    assert first_motion["outlineStatus"] == "mask_outline"
+    assert first_motion["outlineSource"] == "segmentation_contour"
+    assert first_motion["maskArea"] > 0
+    assert first_motion["sourceBbox"]
+    assert first_motion["sampleIndex"] == first_motion["outIndex"]
+    assert object_manifest["frameMap"][0]["sourceFrameIndex"] == first_motion["sourceFrameIndex"]
+    assert first_frame["contourPoints"] > 0
+    assert first_frame["outlineStatus"] == "mask_outline"
+    assert scene["source"]["frameMap"][0]["sampleFps"] == scene["source"]["sampleFps"]
     assert (out / "preview" / "canvas_player.html").exists()
     assert (out / "preview" / "pixi_player.html").exists()
     assert (out / "preview" / "plain_js_embed.html").exists()

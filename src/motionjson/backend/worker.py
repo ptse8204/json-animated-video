@@ -107,6 +107,7 @@ def _register_output_tree(
     out_dir: Path,
     source_asset_id: str | None = None,
     object_id_filter: str | None = None,
+    replace_existing: bool = False,
 ) -> list[dict]:
     assets: list[dict] = []
     rights_manifest: dict[str, Any] = {}
@@ -130,6 +131,7 @@ def _register_output_tree(
             path=path,
             rel_path=rel_path,
             content_type=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+            replace_existing=replace_existing,
         )
         assets.append(asset)
         if not created:
@@ -437,6 +439,7 @@ def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any],
     verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
     model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
     default_runtime_kind = "transformers_sam3_tracker_direct" if provider_id == "sam3-local" else "transformers_mask_generation"
+    accelerator_kind = str(verification.get("acceleratorKind") or _accelerator_kind_from_device(str(verification.get("deviceActual") or device_requested or "")))
     return {
         "providerId": provider_id,
         "modelId": _safe_public_runtime_model_id(str(model_cache.get("model") or runtime.get("selected_model") or "")),
@@ -445,11 +448,30 @@ def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any],
         "deviceRequested": str(verification.get("deviceRequested") or device_requested or ""),
         "deviceActual": str(verification.get("deviceActual") or device_requested or ""),
         "runtimeKind": str(verification.get("runtimeKind") or default_runtime_kind),
+        "acceleratorKind": accelerator_kind,
+        "runtimeProofStatus": str(verification.get("runtimeProofStatus") or ("verified" if verification.get("verified") else "not_verified")),
         "loadedOnCuda": bool(verification.get("loadedOnCuda")),
+        "loadedOnMps": bool(verification.get("loadedOnMps")),
+        "cudaAvailable": bool(verification.get("cudaAvailable")),
+        "mpsAvailable": bool(verification.get("mpsAvailable")),
+        "gpuMemoryBefore": verification.get("gpuMemoryBefore") if isinstance(verification.get("gpuMemoryBefore"), dict) else {},
+        "gpuMemoryAfter": verification.get("gpuMemoryAfter") if isinstance(verification.get("gpuMemoryAfter"), dict) else {},
+        "reasonCode": str(verification.get("reasonCode") or ""),
         "warmupStatus": str(verification.get("warmupStatus") or "not_verified"),
         "lastVerifiedAt": verification.get("lastVerifiedAt") or "",
         "runtimeModelSource": str(runtime.get("runtime_model_source") or "saved_cache"),
     }
+
+
+def _accelerator_kind_from_device(device: str) -> str:
+    text = str(device or "").strip().lower()
+    if text.startswith("cuda"):
+        return "cuda"
+    if text.startswith("mps"):
+        return "mps"
+    if text.startswith("cpu") or text == "-1":
+        return "cpu"
+    return "unknown"
 
 
 def _safe_public_runtime_model_id(value: str) -> str:

@@ -231,7 +231,7 @@ class ModelEstimate:
     hosted_calls_required: bool = False
     frames_leave_device: bool = False
     estimated_units: int = 0
-    message: str = "Fake planner runs locally and has no provider cost."
+    message: str = "Fake planner runs in process and has no hosted cost."
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -374,13 +374,13 @@ def validate_run_config_payload(run_config: Mapping[str, Any]) -> dict[str, Any]
 class FakeModelConnector:
     provider = ModelProviderDefinition(
         id="fake-local-planner",
-        label="Fake local planner",
+        label="Fake in-process planner",
         locality="local",
         implemented=True,
         network_required=False,
         hosted_calls_required=False,
         credential_required=False,
-        description="Deterministic no-network planner for Local UI tests and smoke runs.",
+        description="Deterministic no-network planner for Workspace tests and smoke runs.",
     )
 
     def readiness(self) -> dict[str, Any]:
@@ -389,7 +389,7 @@ class FakeModelConnector:
             "runnable": True,
             "networkAttempted": False,
             "hostedCallsRequired": False,
-            "message": "Fake local planner is ready. It never calls hosted APIs.",
+            "message": "Fake in-process planner is ready. It never calls hosted APIs.",
         }
 
     def test(self, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
@@ -399,7 +399,7 @@ class FakeModelConnector:
             "status": "ready",
             "networkAttempted": False,
             "hostedCallsRequired": False,
-            "message": "Fake local planner test passed without network access.",
+            "message": "Fake in-process planner test passed without network access.",
         }
 
     def estimate(self, request: ModelPlanRequest) -> ModelEstimate:
@@ -853,7 +853,7 @@ class OpenAIPlanningConnector:
             validation=validation,
             requires_user_confirmation=True,
             messages=[
-                "OpenAI proposed a plan; MotionJSON generated and validated the run config locally.",
+                "OpenAI proposed a plan; MotionJSON generated and validated the run config inside the Runtime API.",
                 *troubleshooting,
             ],
         )
@@ -892,7 +892,7 @@ class OpenRouterSettingsModelConnector:
             "ready": False,
             "networkAttempted": False,
             "hostedCallsRequired": True,
-            "message": "Use the Local UI provider settings test for OpenRouter readiness. No hosted request was made.",
+            "message": "Use the Workspace provider settings test for OpenRouter readiness. No hosted request was made.",
         }
 
     def estimate(self, request: ModelPlanRequest) -> ModelEstimate:
@@ -933,7 +933,7 @@ class ModelConnectorRegistry:
 
 
 class VolatileModelRunStore:
-    """Thread-safe process-local model run store for Local UI planning smoke."""
+    """Thread-safe process-local model run store for Workspace planning smoke."""
 
     def __init__(self, *, max_runs: int = 128):
         self.max_runs = max_runs

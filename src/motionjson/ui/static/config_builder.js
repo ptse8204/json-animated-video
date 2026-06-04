@@ -505,7 +505,7 @@ export function buildRunConfig(input) {
     rights: {
       source_type: "user_upload",
       source_uri: videoRef,
-      display_text: "Local UI source video",
+      display_text: "Workspace source video",
       license: "user_uploaded_unverified",
       license_name: "User uploaded - rights unverified",
       license_scope: "unknown",

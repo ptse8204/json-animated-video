@@ -19,7 +19,11 @@
         "fps": { "$ref": "#/$defs/nonNegativeNumber" },
         "sampleFps": { "$ref": "#/$defs/nonNegativeNumber" },
         "totalSourceFrames": { "type": "integer", "minimum": 0 },
-        "sampledFrameCount": { "type": "integer", "minimum": 0 }
+        "sampledFrameCount": { "type": "integer", "minimum": 0 },
+        "frameMap": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/frameMapEntry" }
+        }
       }
     },
     "objects": {
@@ -111,6 +115,19 @@
       "type": "array",
       "items": { "$ref": "#/$defs/point" }
     },
+    "frameMapEntry": {
+      "type": "object",
+      "required": ["sampleIndex", "sourceFrameIndex", "t", "frame", "outIndex", "sampleFps"],
+      "additionalProperties": false,
+      "properties": {
+        "sampleIndex": { "type": "integer", "minimum": 0 },
+        "sourceFrameIndex": { "type": "integer", "minimum": 0 },
+        "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "frame": { "type": "integer", "minimum": 1 },
+        "outIndex": { "type": "integer", "minimum": 0 },
+        "sampleFps": { "$ref": "#/$defs/nonNegativeNumber" }
+      }
+    },
     "spriteFrame": {
       "type": "object",
       "required": ["x", "y", "w", "h"],
@@ -166,13 +183,17 @@
       "additionalProperties": false,
       "properties": {
         "frame": { "type": "integer", "minimum": 1 },
+        "sampleIndex": { "type": "integer", "minimum": 0 },
         "sourceFrameIndex": { "type": "integer", "minimum": 0 },
+        "outIndex": { "type": "integer", "minimum": 0 },
         "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "sampleFps": { "$ref": "#/$defs/nonNegativeNumber" },
         "visible": { "type": "boolean" },
         "x": { "type": "integer" },
         "y": { "type": "integer" },
         "w": { "type": "integer", "minimum": 0 },
         "h": { "type": "integer", "minimum": 0 },
+        "bbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
         "scale": { "type": "number" },
         "rotation": { "type": "number" },
         "opacity": { "type": "number", "minimum": 0 },
@@ -180,6 +201,18 @@
         "asset": { "type": ["string", "null"] },
         "mask": { "$ref": "#/$defs/nonEmptyString" },
         "centroid": { "anyOf": [{ "$ref": "#/$defs/numberPair" }, { "type": "null" }] },
+        "polygon": { "$ref": "#/$defs/polygon" },
+        "contourPoints": { "type": "integer", "minimum": 0 },
+        "maskArea": { "type": "integer", "minimum": 0 },
+        "maskShape": {
+          "type": "array",
+          "prefixItems": [{ "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "sourceBbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
+        "outlineStatus": { "type": "string", "enum": ["mask_outline", "outline_missing"] },
+        "outlineSource": { "type": "string" },
         "sprite": { "$ref": "#/$defs/spriteFrame" }
       }
     },
@@ -206,13 +239,28 @@
         "source_frame_index": { "type": "integer", "minimum": 0 },
         "frame": { "type": "integer", "minimum": 1 },
         "out_index": { "type": "integer", "minimum": 0 },
+        "sampleIndex": { "type": "integer", "minimum": 0 },
+        "sourceFrameIndex": { "type": "integer", "minimum": 0 },
+        "outIndex": { "type": "integer", "minimum": 0 },
         "t": { "$ref": "#/$defs/nonNegativeNumber" },
+        "sampleFps": { "$ref": "#/$defs/nonNegativeNumber" },
         "visible": { "type": "boolean" },
         "area": { "$ref": "#/$defs/nonNegativeNumber" },
         "bbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
         "centroid": { "anyOf": [{ "$ref": "#/$defs/numberPair" }, { "type": "null" }] },
         "polygon": { "$ref": "#/$defs/polygon" },
         "contour_points": { "type": "integer", "minimum": 0 },
+        "contourPoints": { "type": "integer", "minimum": 0 },
+        "maskArea": { "type": "integer", "minimum": 0 },
+        "maskShape": {
+          "type": "array",
+          "prefixItems": [{ "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 }],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "sourceBbox": { "anyOf": [{ "$ref": "#/$defs/bbox" }, { "type": "null" }] },
+        "outlineStatus": { "type": "string", "enum": ["mask_outline", "outline_missing"] },
+        "outlineSource": { "type": "string" },
         "framePath": { "$ref": "#/$defs/nonEmptyString" },
         "mask": { "$ref": "#/$defs/nonEmptyString" },
         "asset": { "type": ["string", "null"] },

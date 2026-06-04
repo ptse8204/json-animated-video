@@ -1294,6 +1294,13 @@ def test_sam3_runtime_verification_invalidates_when_device_changes(tmp_path, mon
     provider = provider_by_id(decode(body), "sam3-local")
     assert status == 200
     assert provider["runtimeVerification"]["verified"] is True
+    assert provider["runtimeVerification"]["acceleratorKind"] == "cuda"
+    assert provider["runtimeVerification"]["runtimeProofStatus"] == "verified"
+    assert provider["runtimeVerification"]["deviceActual"] == "cuda:0"
+    assert provider["runtimeVerification"]["loadedOnCuda"] is True
+    assert provider["runtimeVerification"]["cudaAvailable"] is True
+    assert isinstance(provider["runtimeVerification"]["gpuMemoryBefore"], dict)
+    assert isinstance(provider["runtimeVerification"]["gpuMemoryAfter"], dict)
 
     status, _headers, body = app.handle(
         "POST",
@@ -1303,6 +1310,8 @@ def test_sam3_runtime_verification_invalidates_when_device_changes(tmp_path, mon
     provider = provider_by_id(decode(body), "sam3-local")
     assert status == 200
     assert provider["runtimeVerification"]["verified"] is False
+    assert provider["runtimeVerification"]["runtimeProofStatus"] == "stale"
+    assert provider["runtimeVerification"]["reasonCode"] == "runtime_verification_stale"
     assert provider["setupState"]["status"] == "needs_smoke"
 
 
@@ -1449,6 +1458,11 @@ def test_worker_cached_runtime_providers_require_verified_runtime_without_public
     assert sam3_runtime["runtimeModel"] == str(sam3_dir)
     assert sam3_runtime["runtimeModelSource"] == "saved_cache"
     assert sam3_runtime["runtimeVerification"]["verified"] is True
+    assert sam3_runtime["runtimeVerification"]["acceleratorKind"] == "cuda"
+    assert sam3_runtime["runtimeVerification"]["runtimeProofStatus"] == "verified"
+    assert sam3_config["runtimeContractPublic"]["acceleratorKind"] == "cuda"
+    assert sam3_config["runtimeContractPublic"]["runtimeProofStatus"] == "verified"
+    assert sam3_config["runtimeContractPublic"]["loadedOnCuda"] is True
 
 
 def test_hugging_face_cache_probe_uses_local_files_only_and_reports_cached(tmp_path, monkeypatch):

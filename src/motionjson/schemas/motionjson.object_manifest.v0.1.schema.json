@@ -35,6 +35,20 @@
       "type": "array",
       "items": { "$ref": "#/$defs/motionFrame" }
     },
+    "frames": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "frameMap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
     "quality": { "$ref": "#/$defs/quality" },
     "recommendedOutput": { "$ref": "#/$defs/recommendedOutput" },
     "rights": { "$ref": "#/$defs/rightsBlockCompat" },
@@ -114,7 +128,7 @@
         "mask",
         "centroid"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "frame": { "type": "integer", "minimum": 1 },
         "sourceFrameIndex": { "type": "integer", "minimum": 0 },

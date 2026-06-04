@@ -92,6 +92,7 @@ def track_selected_candidates(
             job_id=job_id,
             out_dir=output_dir,
             source_asset_id=source_asset["id"],
+            replace_existing=True,
         )
     record_job_event(
         conn,

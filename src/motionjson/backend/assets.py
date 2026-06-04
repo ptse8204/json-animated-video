@@ -233,6 +233,7 @@ def register_generated_asset_once(
     content_type: str | None = None,
     metadata: dict[str, Any] | None = None,
     user_id: str | None = None,
+    replace_existing: bool = False,
 ) -> tuple[dict, bool]:
     if not rel_path and path is not None:
         rel_path = Path(path).name
@@ -245,6 +246,42 @@ def register_generated_asset_once(
         rel_path=rel_path,
     )
     if existing is not None:
+        if replace_existing:
+            if data is None:
+                if path is None:
+                    raise ValueError("data or path is required")
+                file_path = Path(path)
+                data = file_path.read_bytes()
+                content_type = content_type or mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+            safe_rel = "/".join(_safe_name(part) for part in Path(rel_path.replace("\\", "/")).parts if part not in {"", "."})
+            key = f"projects/{project_id}/jobs/{source_job_id}/{safe_rel}"
+            uri = storage.save_bytes(key, data, content_type=content_type)
+            updated = {
+                **existing,
+                "kind": kind,
+                "storage_key": key,
+                "uri": uri,
+                "content_type": content_type,
+                "byte_size": len(data),
+                "metadata_json": json.dumps({"rel_path": rel_path, **(metadata or {})}, sort_keys=True),
+                "created_at": utc_now(),
+            }
+            conn.execute(
+                """
+                UPDATE assets
+                SET kind = :kind,
+                    storage_key = :storage_key,
+                    uri = :uri,
+                    content_type = :content_type,
+                    byte_size = :byte_size,
+                    metadata_json = :metadata_json,
+                    created_at = :created_at
+                WHERE id = :id
+                """,
+                updated,
+            )
+            conn.commit()
+            return updated, False
         return existing, False
     return (
         register_generated_asset(

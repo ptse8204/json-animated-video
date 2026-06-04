@@ -264,8 +264,8 @@ def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str
     else:
         accelerator = "cpu"
 
-    host = "local"
-    host_label = f"Local {system}"
+    host = "runtime"
+    host_label = f"{system} runtime"
     if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
         host = "google_colab"
         host_label = "Google Colab"
@@ -280,23 +280,23 @@ def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str
         host_label = "CI runner"
     elif system == "Darwin":
         host = "local_mac"
-        host_label = "Local macOS"
+        host_label = "macOS runtime"
     elif system == "Linux":
         host = "local_linux"
-        host_label = "Local Linux"
+        host_label = "Linux runtime"
     elif system == "Windows":
         host = "local_windows"
-        host_label = "Local Windows"
+        host_label = "Windows runtime"
 
     if accelerator == "cuda":
         label = f"{host_label} with CUDA GPU"
-        summary = "CUDA is available through PyTorch, so local GPU model setup can target SAM3 Scene Sweep."
+        summary = "CUDA is available through PyTorch, so GPU model setup can target SAM3 Scene Sweep."
     elif accelerator == "mps":
         label = f"{host_label} with Apple MPS"
-        summary = "Apple MPS is available through PyTorch, but SAM3 Scene Sweep is still guided as a CUDA-first local GPU workflow."
+        summary = "Apple MPS is available through PyTorch. Treat SAM3 Scene Sweep as CUDA-first unless this runtime proves MPS support for the selected model."
     else:
         label = f"{host_label} CPU"
-        summary = "No CUDA GPU was detected through PyTorch; use CPU-safe workflows or configure a hosted/local GPU environment."
+        summary = "No CUDA GPU was detected through PyTorch; use CPU-safe workflows, Apple MPS where supported, a CUDA runtime, or a hosted provider."
 
     notes: list[str] = []
     if not bool(cuda_info.get("torchInstalled")):
@@ -329,7 +329,7 @@ def gpu_model_recommendation(
     provider_records: list[Mapping[str, Any]],
     environment_profile: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return the UI's best model recommendation for the detected local runtime."""
+    """Return the UI's best model recommendation for the detected runtime."""
 
     providers = {str(provider.get("name") or ""): provider for provider in provider_records}
     sam3_scene_sweep = providers.get("sam3-auto-masks") or {}
@@ -355,7 +355,7 @@ def gpu_model_recommendation(
             "nextActions": [
                 "Install the sam3-transformers runtime if the tracker classes are missing.",
                 "Check Hugging Face access when facebook/sam3 is gated.",
-                "Cache facebook/sam3 from Model setup so the resolved local path is recorded server-side.",
+                "Cache facebook/sam3 from Model setup so the resolved runtime path is recorded server-side.",
                 "Run a bounded smoke test before starting a real scene sweep.",
             ],
         }
@@ -369,7 +369,7 @@ def gpu_model_recommendation(
             "connectionId": "sam2-hf-auto-masks",
             "model": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
             "label": "SAM2 HF fallback while on Apple MPS",
-            "reason": "Apple MPS is available, but MotionJSON treats SAM3 Scene Sweep as CUDA-first. Use the SAM2 HF automatic-mask fallback locally, or move to a CUDA runtime for SAM3 Scene Sweep.",
+            "reason": "Apple MPS is available, but MotionJSON treats SAM3 Scene Sweep as CUDA-first. Use the SAM2 HF automatic-mask fallback in this runtime, or move to a CUDA runtime for SAM3 Scene Sweep.",
             "status": str(sam2_hf.get("status") or "not_configured"),
             "runnable": bool(sam2_hf.get("runnable")),
             "missing": list(sam2_hf.get("reasons") or []),
@@ -395,7 +395,7 @@ def gpu_model_recommendation(
         "nextActions": [
             "Use no-model CPU paths for smoke checks and simple moving-object footage.",
             "Choose a hosted provider only after explicit cost/privacy opt-in.",
-            "Use a CUDA GPU environment to run the recommended SAM3 Scene Sweep model locally.",
+            "Use a CUDA GPU runtime to run the recommended SAM3 Scene Sweep model.",
         ],
     }
 
@@ -665,10 +665,10 @@ def provider_capabilities(
         reason
         for reason in (
             None if sam3_installed else "Python module 'sam3' is not importable.",
-            *_model_path_reasons(sam3_model, "SAM3 local model", "SAM3_LOCAL_MODEL"),
+            *_model_path_reasons(sam3_model, "SAM3 runtime model", "SAM3_LOCAL_MODEL"),
             None if torch_info["torchInstalled"] else "torch is not installed.",
             None if sam3_runtime["pythonSupported"] else sam3_runtime["reasons"][0],
-            None if torch_info["available"] else "SAM3 local execution expects a CUDA-compatible GPU; CUDA is not available.",
+            None if torch_info["available"] else "SAM3 runtime execution expects a CUDA-compatible GPU; CUDA is not available.",
         )
         if reason
     ]
@@ -684,7 +684,7 @@ def provider_capabilities(
         for reason in (
             None if transformers_installed else "Python module 'transformers' is not importable. Use Model setup -> Install scene sweep.",
             None if not transformers_installed or sam3_tracker_auto_masks_installed else "Installed Transformers does not expose SAM3 Tracker automatic-mask classes. Upgrade the sam3-transformers extra from Model setup.",
-            None if sam3_tracker_model.get("valid") else str(sam3_tracker_model.get("reason") or "SAM3 Tracker model is not a Hugging Face repo id or local model directory."),
+            None if sam3_tracker_model.get("valid") else str(sam3_tracker_model.get("reason") or "SAM3 Tracker model is not a Hugging Face repo id or runtime model directory."),
             None if torch_info["torchInstalled"] else "torch is not installed.",
         )
         if reason
@@ -963,7 +963,7 @@ def provider_capabilities(
                     None if hosted_endpoint["configured"] or not hosted_endpoint["required"] else f"{hosted_endpoint['env']} is not set.",
                     None if hosted_auth["configured"] else f"{hosted_auth['env']} is not set.",
                     None if hosted_endpoint_valid else "Hosted segmentation endpoint must be an http:// or https:// URL.",
-                    None if not hosted_settings_only or not hosted_configured else "Saved Local UI hosted credentials are not available to extraction runtime.",
+                    None if not hosted_settings_only or not hosted_configured else "Saved Runtime API hosted credentials are not available to the extraction runtime.",
                     None if hosted_allow_network_effective or not hosted_configured else "Hosted segmentation requires explicit network opt-in.",
                 )
                 if reason
@@ -981,7 +981,7 @@ def provider_capabilities(
                 _check("endpoint_env", "ok" if hosted_endpoint["configured"] or not hosted_endpoint["required"] else "missing", hosted_endpoint["env"], hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if hosted_auth["configured"] else "missing", hosted_auth["env"], hosted_auth["configured"]),
                 _check("network_opt_in", "ok" if hosted_allow_network_effective else "required", "Hosted segmentation requires explicit network opt-in.", hosted_allow_network_effective),
-                _check("settings_runtime", "settings_only" if hosted_settings_only else "runtime", "Local UI saved provider keys are available to local worker runtime.", not hosted_settings_only),
+                _check("settings_runtime", "settings_only" if hosted_settings_only else "runtime", "Runtime API saved provider keys are available to the worker runtime.", not hosted_settings_only),
             ],
             metadata={
                 "hostedProfileId": hosted_profile,
@@ -1067,7 +1067,7 @@ def provider_capabilities(
                     None if sam3_hosted_endpoint["configured"] or not sam3_hosted_endpoint["required"] else f"{sam3_hosted_endpoint['env']} is not set.",
                     None if sam3_hosted_auth["configured"] else f"{sam3_hosted_auth['env']} is not set.",
                     None if sam3_hosted_endpoint_valid else "Hosted SAM3 endpoint must be an http:// or https:// URL.",
-                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Local UI SAM3 credentials are not available to extraction runtime.",
+                    None if not sam3_hosted_settings_only or not sam3_hosted_configured else "Saved Runtime API SAM3 credentials are not available to the extraction runtime.",
                     None if sam3_hosted_allow_network_effective or not sam3_hosted_configured else "Hosted SAM3 requires explicit network opt-in.",
                 )
                 if reason
@@ -1085,7 +1085,7 @@ def provider_capabilities(
                 _check("endpoint_env", "ok" if sam3_hosted_endpoint["configured"] or not sam3_hosted_endpoint["required"] else "missing", sam3_hosted_endpoint["env"], sam3_hosted_endpoint["configured"]),
                 _check("auth_env", "ok" if sam3_hosted_auth["configured"] else "missing", sam3_hosted_auth["env"], sam3_hosted_auth["configured"]),
                 _check("network_opt_in", "ok" if sam3_hosted_allow_network_effective else "required", "Hosted SAM3 requires explicit network opt-in.", sam3_hosted_allow_network_effective),
-                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Local UI saved SAM3 keys are available to local worker runtime.", not sam3_hosted_settings_only),
+                _check("settings_runtime", "settings_only" if sam3_hosted_settings_only else "runtime", "Runtime API saved SAM3 keys are available to the worker runtime.", not sam3_hosted_settings_only),
             ],
             metadata={
                 "hostedProfileId": sam3_hosted_profile,
@@ -1201,7 +1201,7 @@ def provider_capabilities(
                 for reason in (
                     None if openrouter_key["configured"] else "OPENROUTER_API_KEY is not set.",
                     None if openrouter_base_url_valid else "OPENROUTER_BASE_URL must be an http:// or https:// URL.",
-                    None if not openrouter_settings_only or not openrouter_configured else "Saved Local UI OpenRouter keys are settings-only; OpenRouterLLMProvider currently reads constructor values or environment variables.",
+                    None if not openrouter_settings_only or not openrouter_configured else "Saved Runtime API OpenRouter keys are settings-only; OpenRouterLLMProvider currently reads constructor values or environment variables.",
                 )
                 if reason
             ],
@@ -1348,7 +1348,7 @@ def provider_capabilities(
             ],
             metadata={
                 "uiDescription": "Automatic visible-segment proposals from a configured SAM2-style backend.",
-                "whenToUse": "Use when the user wants broad visible-segment proposals and local SAM2 is configured.",
+                "whenToUse": "Use when the user wants broad visible-segment proposals and a SAM2 runtime is configured.",
                 "sam2AutomaticProposals": True,
             },
         ),
@@ -1593,6 +1593,7 @@ def build_capability_report(
             "providersTotal": len(providers),
             "readyNoModelProviders": ready_no_model,
             "runnableProviders": runnable_providers,
+            "runtimeFreeRunnableProviders": local_free_providers,
             "localFreeRunnableProviders": local_free_providers,
             "canRunNoModelSmoke": all(name in ready_no_model for name in ("mock", "threshold", "motionjson-json")),
             "gpuModelRecommendation": model_recommendation,
@@ -1601,8 +1602,8 @@ def build_capability_report(
                 "recommendedCommand": "python3 -m motionjson.cli ui --no-open",
                 "recommendedDemoCommand": "python3 examples/make_demo_video.py --out examples/demo_red_ball.mp4 && python3 -m motionjson.cli extract examples/demo_red_ball.mp4 --out out/demo_red_ball --mask-provider threshold --lower-hsv 0,80,80 --upper-hsv 12,255,255 --sample-fps 12 --max-frames 12",
                 "nextActions": [
-                    "Launch the local UI.",
-                    "Connect a local or hosted SAM provider in Model Connections.",
+                    "Launch the MotionJSON Workspace.",
+                    "Connect a runtime or hosted SAM provider in Model Connections.",
                     "Use debug mock mode only for contributor smoke checks.",
                 ],
                 "nonBlockingOptionalMissing": missing_optional,
@@ -1658,7 +1659,7 @@ def format_capability_report(report: dict[str, Any]) -> str:
     else:
         lines.append("No-model providers ready: none reported")
     if local_free:
-        lines.append(f"Runnable local/free providers: {', '.join(local_free)}")
+        lines.append(f"Runnable runtime/free providers: {', '.join(local_free)}")
     lines.append(
         "Debug smoke: "
         + (

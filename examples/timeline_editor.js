@@ -20,7 +20,11 @@ const {
 } = await import(runtimePath);
 
 const params = new URLSearchParams(location.search);
-const defaultScene = location.pathname.includes("/preview/") ? "../scene_graph.json" : "/out/demo/scene_graph.json";
+const jobId = params.get("jobId") || "";
+const previewPackageMode = location.pathname.includes("/preview/");
+const explicitArtifactMode = params.has("scene") || params.has("manifest") || params.has("review") || params.has("export");
+const demoMode = !jobId && !previewPackageMode && !explicitArtifactMode;
+const defaultScene = previewPackageMode ? "../scene_graph.json" : demoMode ? "/out/demo/scene_graph.json" : "";
 const sceneUrl = params.get("scene") || params.get("manifest") || defaultScene;
 
 const els = {
@@ -625,6 +629,9 @@ function renderSwatches() {
 async function boot() {
   renderSwatches();
   bindEvents();
+  if (!sceneUrl) {
+    throw new Error("Actual run artifacts are missing. Open this editor from a completed run or pass scene=.");
+  }
   const response = await fetch(sceneUrl);
   if (!response.ok) throw new Error(`Could not load ${sceneUrl}`);
   const documentJson = await response.json();

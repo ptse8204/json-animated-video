@@ -16,7 +16,7 @@ export const OPTION_HELP_TEXT = {
   maxFrames: "Upper bound on sampled frames. Lower this when scene sweep stalls, runs out of memory, or produces too many artifacts.",
   maxObjects: "Maximum object candidates allowed into review. Lower values reduce memory pressure and keep review usable.",
   traceEverythingMode: "Keeps many raw auto-mask segments for review. Export stays blocked until objects are reviewed.",
-  device: "Auto is conservative for local SAM runs. Choose GPU to explicitly request CUDA when diagnostics show it is available.",
+  device: "Auto is conservative for SAM runtimes. Choose GPU to explicitly request CUDA when diagnostics show it is available.",
   exportPreset: "Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.",
   partialResultRecovery: "Completed objects can remain reviewable even when a later object or frame fails.",
 };
@@ -272,7 +272,7 @@ export function projectShellStateFromSnapshot(snapshot = {}) {
     sidebarContentAriaHidden: String(!drawerOpen),
     sidebarContentInert: !drawerOpen,
     projectButtonExpanded: String(Boolean(drawerOpen)),
-    projectButtonLabel: projectName || "Local Project",
+    projectButtonLabel: projectName || "Project",
     projectButtonAriaLabel: projectName ? `Open project drawer for ${projectName}` : "Open project drawer",
     closeButtonText: "Close",
     closeButtonAriaLabel: "Close project drawer",

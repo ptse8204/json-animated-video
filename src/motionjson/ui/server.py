@@ -134,6 +134,7 @@ REVIEW_JSON_ARTIFACT_KINDS = {
     "provider_diagnostics",
     "review_state_manifest",
     "scene_graph",
+    "selected_candidate_tracking",
     "track_summary",
 }
 PREVIEW_FILE_JSON_PATHS = {
@@ -462,16 +463,23 @@ def _track_review_summary(track: dict[str, Any]) -> dict[str, Any]:
         "frames": [
             {
                 "frame": frame.get("frame"),
+                "sampleIndex": frame.get("sampleIndex"),
                 "sourceFrameIndex": frame.get("sourceFrameIndex"),
                 "outIndex": frame.get("outIndex"),
+                "sampleFps": frame.get("sampleFps"),
                 "t": frame.get("t"),
                 "visible": frame.get("visible"),
                 "area": frame.get("area"),
                 "bbox": frame.get("bbox"),
+                "sourceBbox": frame.get("sourceBbox"),
                 "centroid": frame.get("centroid"),
                 "mask": frame.get("mask"),
+                "maskArea": frame.get("maskArea"),
+                "maskShape": frame.get("maskShape"),
                 "asset": frame.get("asset"),
                 "contourPoints": frame.get("contourPoints"),
+                "outlineStatus": frame.get("outlineStatus"),
+                "outlineSource": frame.get("outlineSource"),
                 "polygon": frame.get("polygon"),
             }
             for frame in frames
@@ -516,7 +524,8 @@ def _object_manifest_review_summary(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
-    motion = item.get("motion") if isinstance(item.get("motion"), list) else []
+    manifest_frames = item.get("frames") if isinstance(item.get("frames"), list) else []
+    motion = manifest_frames or (item.get("motion") if isinstance(item.get("motion"), list) else [])
     visible_motion = [frame for frame in motion if isinstance(frame, dict) and frame.get("visible")]
     discovery = item.get("discovery") if isinstance(item.get("discovery"), dict) else {}
     return {
@@ -528,19 +537,32 @@ def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
         "visibleFrameCount": len(visible_motion),
         "exportStatus": discovery.get("exportStatus") or item.get("exportStatus") or "accepted",
         "warnings": item.get("warnings", []),
-        "metadata": {"partialObjectManifest": True, "recommendedOutput": item.get("recommendedOutput")},
+        "metadata": {
+            "partialObjectManifest": True,
+            "recommendedOutput": item.get("recommendedOutput"),
+            "frameMap": item.get("frameMap") if isinstance(item.get("frameMap"), list) else [],
+        },
         "frames": [
             {
                 "frame": frame.get("frame"),
+                "sampleIndex": frame.get("sampleIndex"),
                 "sourceFrameIndex": frame.get("sourceFrameIndex"),
                 "outIndex": frame.get("outIndex"),
+                "sampleFps": frame.get("sampleFps"),
                 "t": frame.get("t"),
                 "visible": frame.get("visible"),
                 "area": frame.get("area"),
-                "bbox": [frame.get("x"), frame.get("y"), frame.get("w"), frame.get("h")] if frame.get("visible") else None,
+                "bbox": frame.get("bbox") or ([frame.get("x"), frame.get("y"), frame.get("w"), frame.get("h")] if frame.get("visible") else None),
+                "sourceBbox": frame.get("sourceBbox"),
                 "centroid": frame.get("centroid"),
                 "mask": frame.get("mask"),
+                "maskArea": frame.get("maskArea"),
+                "maskShape": frame.get("maskShape"),
                 "asset": frame.get("asset"),
+                "contourPoints": frame.get("contourPoints"),
+                "outlineStatus": frame.get("outlineStatus"),
+                "outlineSource": frame.get("outlineSource"),
+                "polygon": frame.get("polygon"),
             }
             for frame in motion
             if isinstance(frame, dict)
@@ -777,6 +799,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/cancel",
                     "/api/jobs/{jobId}/validate",
                     "/api/jobs/{jobId}/exports",
+                    "/api/jobs/{jobId}/exports/motionjson",
                     "/api/jobs/{jobId}/model-plan",
                     "/api/jobs/{jobId}/run",
                     "/api/progress",
@@ -1039,8 +1062,8 @@ class LocalUIApp:
                         conn,
                         job_id=job["id"],
                         event_type="worker_start_requested",
-                        message="local UI worker start requested",
-                        metadata={"source": "local_ui"},
+                        message="workspace worker start requested",
+                        metadata={"source": "workspace"},
                     )
                     response["worker"] = self._start_worker()
                     response["job"] = self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"]))
@@ -1073,8 +1096,8 @@ class LocalUIApp:
                         conn,
                         job_id=job["id"],
                         event_type="worker_start_requested",
-                        message="local UI worker start requested",
-                        metadata={"source": "local_ui"},
+                        message="workspace worker start requested",
+                        metadata={"source": "workspace"},
                     )
                     return {
                         "job": self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"])),
@@ -1157,7 +1180,9 @@ class LocalUIApp:
                         include_preview=payload.get("includePreview"),
                     )
                     return _public_value(validation)
-                if len(parts) == 4 and parts[3] == "exports":
+                if (len(parts) == 4 and parts[3] == "exports") or (
+                    len(parts) == 5 and parts[3] == "exports" and parts[4] == "motionjson"
+                ):
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     exported = export_motionjson_job(
                         conn,
@@ -1630,8 +1655,8 @@ class LocalUIApp:
                     conn,
                     job_id=job["id"],
                     event_type="worker_start_requested",
-                    message="local UI worker start requested after model-plan confirmation",
-                    metadata={"source": "local_ui", "modelRunId": run_id},
+                    message="workspace worker start requested after model-plan confirmation",
+                    metadata={"source": "workspace", "modelRunId": run_id},
                 )
                 response["worker"] = self._start_worker()
                 response["job"] = self._public_job_snapshot_for_job(conn, get_job(conn, user_id=user_id, job_id=job["id"]), include_events=True)
@@ -1696,7 +1721,7 @@ class LocalUIApp:
                     "field": "provider.name",
                     "provider": config.provider.name,
                     "severity": "error",
-                    "action": "Choose a compatible SAM2 or SAM3 engine, or use mock, motion, threshold, or external masks for the local UI worker.",
+                    "action": "Choose a compatible SAM2 or SAM3 engine, or use mock, motion, threshold, or external masks for the workspace worker.",
                     "message": str(exc),
                 }
             )
@@ -1800,7 +1825,7 @@ class LocalUIApp:
 
             if not asset_id:
                 if not project_id:
-                    raise ValueError("projectId is required when runConfig.input.path is not a local UI asset")
+                    raise ValueError("projectId is required when runConfig.input.path is not a workspace asset")
                 source_path = Path(config.input_video.path).expanduser()
                 if not source_path.exists() or not source_path.is_file():
                     raise ValueError("runConfig input must reference assetId, videoId, or local-ui://assets/{assetId}")
@@ -2241,6 +2266,7 @@ class LocalUIApp:
             "fallbackDiagnostics": [],
             "diagnostics": [],
             "rasterFallback": False,
+            "selection": {},
         }
         storage = self.storage()
         seen_fallback: set[str] = set()
@@ -2281,6 +2307,8 @@ class LocalUIApp:
                         "export": manifest_review.get("export") if isinstance(manifest_review.get("export"), dict) else {},
                     }
                 )
+            elif kind == "selected_candidate_tracking":
+                review["selection"] = _public_review_value(document)
 
         review["rasterFallback"] = bool(review["fallbackDiagnostics"])
         if review["fallbackDiagnostics"]:
@@ -2297,6 +2325,51 @@ class LocalUIApp:
         correction_state = build_track_correction_state(corrections or [], job_id=job_id or "")
         if corrections is not None:
             review = apply_track_correction_state(review, correction_state)
+        selection = review.get("selection") if isinstance(review.get("selection"), dict) else {}
+        selected_ids = {str(item) for item in selection.get("selectedCandidateIds", []) if item}
+        if selected_ids and selection.get("trackMode") == "selected_only":
+            review["tracks"] = [
+                track
+                for track in review.get("tracks", [])
+                if str(track.get("objectId") or "") in selected_ids
+            ]
+            review["objects"] = [
+                item
+                for item in review.get("objects", [])
+                if str(item.get("objectId") or "") in selected_ids
+            ]
+            if selection.get("exportReviewRequired") is True:
+                track_edits = correction_state.get("trackEdits") if isinstance(correction_state.get("trackEdits"), dict) else {}
+                for track in review["tracks"]:
+                    track_id = str(track.get("objectId") or "")
+                    edit = track_edits.get(track_id) if isinstance(track_edits.get(track_id), dict) else {}
+                    if edit.get("exportIncluded") is True:
+                        continue
+                    track["exportStatus"] = "review_pending"
+                    track["exportIncluded"] = False
+                    discovery = track.get("discovery") if isinstance(track.get("discovery"), dict) else {}
+                    track["discovery"] = {
+                        **discovery,
+                        "reviewStatus": "selected",
+                        "selectedForTracking": True,
+                        "reviewRequired": True,
+                        "exportStatus": "review_pending",
+                    }
+                for item in review["objects"]:
+                    item["exportStatus"] = "review_pending"
+            candidate_summary = review.get("candidateSummary") if isinstance(review.get("candidateSummary"), dict) else {}
+            if candidate_summary:
+                candidate_summary["acceptedCandidateCount"] = len(selected_ids)
+                candidate_summary["selectedCandidateCount"] = len(selected_ids)
+                candidate_summary["trackMode"] = selection.get("trackMode")
+                review["candidateSummary"] = candidate_summary
+            for candidate in review.get("candidates", []):
+                candidate_id = str(candidate.get("candidateId") or candidate.get("id") or "")
+                candidate["selectedForTracking"] = candidate_id in selected_ids
+                if candidate_id in selected_ids:
+                    candidate["reviewStatus"] = "selected"
+                elif candidate.get("reviewStatus") == "accepted":
+                    candidate["reviewStatus"] = "ignored"
         review["timeline"] = review_timeline_payload(
             candidates=review.get("candidates") if isinstance(review.get("candidates"), list) else [],
             tracks=review.get("tracks") if isinstance(review.get("tracks"), list) else [],
@@ -2318,7 +2391,7 @@ class LocalUIApp:
                 "code": "artifact_review_too_large",
                 "artifactId": asset.get("id"),
                 "kind": kind,
-                "message": "artifact is too large to inline for local UI review",
+                "message": "artifact is too large to inline for workspace review",
             }
         try:
             document = json.loads(storage.load_bytes(asset["storage_key"]).decode("utf-8"))
@@ -2388,7 +2461,10 @@ class LocalUIApp:
                 "width": source.get("width") or canvas.get("width"),
                 "height": source.get("height") or canvas.get("height"),
                 "fps": source.get("sampleFps") or canvas.get("fps"),
+                "sampleFps": source.get("sampleFps") or canvas.get("fps"),
+                "sourceFps": source.get("fps"),
                 "frameCount": source.get("sampledFrameCount") or canvas.get("frame_count"),
+                "frameMap": source.get("frameMap") if isinstance(source.get("frameMap"), list) else [],
             }
         )
         objects = document.get("objects") if isinstance(document.get("objects"), list) else []
@@ -2458,7 +2534,7 @@ class LocalUIApp:
             if not asset.get("source_job_id"):
                 raise NotFoundError("artifact not found")
             if not self._has_public_artifact_content(_public_asset(asset)):
-                raise NotFoundError("artifact content is not public through the local UI")
+                raise NotFoundError("artifact content is not public through the Runtime API")
             try:
                 data = self.storage().load_bytes(asset["storage_key"])
             except FileNotFoundError as exc:
@@ -2525,7 +2601,7 @@ class LocalUIApp:
                 raise NotFoundError("use the source video route for source_video assets")
             content_type = str(asset.get("content_type") or "application/octet-stream")
             if not (content_type.startswith(("image/", "video/")) or asset["kind"] in PUBLIC_DOWNLOAD_ARTIFACT_KINDS):
-                raise NotFoundError("asset content is not public through the local UI")
+                raise NotFoundError("asset content is not public through the Runtime API")
             try:
                 data = self.storage().load_bytes(asset["storage_key"])
             except FileNotFoundError as exc:

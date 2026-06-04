@@ -13,6 +13,13 @@
       "type": "array",
       "items": { "$ref": "#/$defs/motionFrame" }
     },
+    "frameMap": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
     "quality": { "$ref": "#/$defs/quality" },
     "recommendedOutput": { "$ref": "#/$defs/recommendedOutput" },
     "discovery": { "$ref": "#/$defs/discoveryMetadata" },
@@ -69,7 +76,7 @@
         "mask",
         "centroid"
       ],
-      "additionalProperties": false,
+      "additionalProperties": true,
       "properties": {
         "frame": { "type": "integer", "minimum": 1 },
         "sourceFrameIndex": { "type": "integer", "minimum": 0 },

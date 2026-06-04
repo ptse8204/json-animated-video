@@ -129,11 +129,11 @@ def describe_sam3_model_path(
     if is_probably_hf_repo_id(raw):
         status["valueKind"] = "huggingface_repo_id"
         status["reason"] = (
-            f"{env}={raw} is a Hugging Face repo id, not a local file path. "
+            f"{env}={raw} is a Hugging Face repo id, not a runtime file path. "
             "Use hf_hub_download(repo_id=\"facebook/sam3\", filename=\"sam3.pt\") and set "
             f"{env} to the returned local sam3.pt checkpoint path."
         )
-        status["action"] = "Resolve or download facebook/sam3 sam3.pt, then paste the returned local file path."
+        status["action"] = "Resolve or download facebook/sam3 sam3.pt, then paste the returned runtime file path."
         return status
 
     model_path = Path(raw).expanduser()
@@ -158,7 +158,7 @@ def describe_sam3_model_path(
         status["valueKind"] = "missing_path"
         status["reason"] = (
             f"Configured {env} path does not exist: {model_path}. "
-            "Resolve or download facebook/sam3 sam3.pt and set SAM3_LOCAL_MODEL to that local file path."
+            "Resolve or download facebook/sam3 sam3.pt and set SAM3_LOCAL_MODEL to that runtime file path."
         )
         status["action"] = "Run the checkpoint resolver or paste an existing local sam3.pt path."
         return status
@@ -196,7 +196,7 @@ def describe_sam3_tracker_model(
     env: str = "SAM3_TRACKER_MODEL",
     source: str = "unset",
 ) -> dict[str, Any]:
-    """Describe a Transformers SAM3 Tracker model id or local model directory.
+    """Describe a Transformers SAM3 Tracker model id or runtime model directory.
 
     SAM3 scene sweep uses Hugging Face Transformers `from_pretrained` inputs:
     a repo id such as `facebook/sam3` or a local snapshot/model directory. It
@@ -240,7 +240,7 @@ def describe_sam3_tracker_model(
         return status
     status["valueKind"] = "missing_path"
     status["reason"] = (
-        f"Configured SAM3 Tracker model is neither a Hugging Face repo id nor an existing local model directory: {model_path}. "
+        f"Configured SAM3 Tracker model is neither a Hugging Face repo id nor an existing runtime model directory: {model_path}. "
         "Use facebook/sam3 or cache/select a local Hugging Face model directory."
     )
     status["action"] = "Use Model setup -> Cache model, or paste a local Hugging Face model directory in Advanced."
@@ -382,10 +382,21 @@ def sam3_scene_sweep_warmup(
             progress("model_files_verified", "Verified cached SAM3 model files", 26, True)
 
     cuda_requested = requested_device.lower().startswith("cuda")
+    mps_requested = requested_device.lower().startswith("mps")
     cuda_index = _cuda_device_index(requested_device)
     gpu_before = _cuda_memory_snapshot(torch, cuda_index) if cuda_requested else {}
-    if cuda_requested:
+    cuda_available = False
+    mps_available = False
+    try:
         cuda_available = bool(getattr(getattr(torch, "cuda", None), "is_available", lambda: False)())
+    except Exception:
+        cuda_available = False
+    try:
+        mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+        mps_available = bool(mps_backend and mps_backend.is_available())
+    except Exception:
+        mps_available = False
+    if cuda_requested:
         if not cuda_available:
             raise ProviderConfigError(
                 "CUDA was requested for SAM3 Scene Sweep, but PyTorch cannot see CUDA. "
@@ -397,7 +408,7 @@ def sam3_scene_sweep_warmup(
     if progress:
         progress(
             "loading_sam3_tracker_processor",
-            "Loading SAM3 Tracker processor from the recorded local cache",
+            "Loading SAM3 Tracker processor from the recorded runtime cache",
             46,
             True,
         )
@@ -424,6 +435,8 @@ def sam3_scene_sweep_warmup(
             "Choose a CUDA device or fix the CUDA torch/Transformers installation."
         )
     loaded_on_cuda = bool(cuda_requested and (inspected_device.get("deviceType") in {"cuda", ""} or str(device_actual).startswith("cuda")))
+    loaded_on_mps = bool(mps_requested and (inspected_device.get("deviceType") in {"mps", ""} or str(device_actual).startswith("mps")))
+    accelerator_kind = "cuda" if loaded_on_cuda else "mps" if loaded_on_mps else "cpu" if str(device_actual).startswith("cpu") else "unknown"
     if progress:
         progress("model_device_verified", f"SAM3 Tracker device verified as {device_actual}", 70, True)
 
@@ -454,7 +467,12 @@ def sam3_scene_sweep_warmup(
         "deviceRequested": requested_device,
         "deviceActual": device_actual,
         "deviceInspection": inspected_device,
+        "acceleratorKind": accelerator_kind,
+        "runtimeProofStatus": "verified",
         "loadedOnCuda": loaded_on_cuda,
+        "loadedOnMps": loaded_on_mps,
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
         "warmupStatus": "succeeded",
         "recordCount": len(records),
         "frameShape": [image.height, image.width, 3],

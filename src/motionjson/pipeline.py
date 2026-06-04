@@ -105,6 +105,32 @@ def _candidate_rejection_summary(counts: Mapping[str, int]) -> str:
     return f" Rejection reasons: {details}."
 
 
+def _outline_status(polygon: Sequence[Any] | None, mask_area: int) -> tuple[str, str]:
+    if polygon and len(polygon) >= 3 and mask_area > 0:
+        return "mask_outline", "segmentation_contour"
+    if mask_area > 0:
+        return "outline_missing", "mask_without_contour"
+    return "outline_missing", "empty_mask"
+
+
+def _frame_sync_record(
+    *,
+    sample_index: int,
+    source_frame_index: int,
+    frame: int,
+    t: float,
+    sample_fps: float,
+) -> dict[str, Any]:
+    return {
+        "sampleIndex": int(sample_index),
+        "sourceFrameIndex": int(source_frame_index),
+        "t": round(float(t), 6),
+        "frame": int(frame),
+        "outIndex": int(sample_index),
+        "sampleFps": float(sample_fps),
+    }
+
+
 def _clear_generated_frames(*directories: Path) -> None:
     for directory in directories:
         if not directory.exists():
@@ -774,6 +800,16 @@ def _extract_object(
         if track_frame.mask is None:
             raise RuntimeError(f"Track frame {frame_number} for {object_id} is missing mask data")
         mask_area = int(np.count_nonzero(track_frame.mask))
+        source_bbox = list(track_frame.bbox) if track_frame.bbox else None
+        mask_shape = [int(track_frame.mask.shape[0]), int(track_frame.mask.shape[1])]
+        outline_status, outline_source = _outline_status(track_frame.polygon, mask_area)
+        frame_sync = _frame_sync_record(
+            sample_index=track_frame.out_index,
+            source_frame_index=track_frame.source_frame_index,
+            frame=frame_number,
+            t=track_frame.t,
+            sample_fps=info.sample_fps,
+        )
         planned_cutout_rel = _rel(cutout_path, out_dir) if track_frame.visible and track_frame.bbox and not skip_asset_materialization else None
         _job_emit(
             job_context,
@@ -790,11 +826,17 @@ def _extract_object(
             metadata={
                 "objectId": object_id,
                 "frame": frame_number,
+                "sampleIndex": track_frame.out_index,
                 "position": position,
                 "totalFrames": total_track_frames,
                 "sourceFrameIndex": track_frame.source_frame_index,
                 "bbox": track_frame.bbox,
+                "sourceBbox": source_bbox,
                 "maskArea": mask_area,
+                "maskShape": mask_shape,
+                "contourPoints": track_frame.contour_points,
+                "outlineStatus": outline_status,
+                "outlineSource": outline_source,
                 "plannedRelPaths": {
                     "frame": _rel(frame_path, out_dir),
                     "mask": _rel(mask_path, out_dir),
@@ -834,12 +876,19 @@ def _extract_object(
             "frame": frame_number,
             "out_index": track_frame.out_index,
             "t": round(track_frame.t, 6),
+            **frame_sync,
             "visible": visible,
             "area": track_frame.area,
             "bbox": [x, y, w, h] if visible else None,
             "centroid": track_frame.centroid,
             "polygon": track_frame.polygon,
             "contour_points": track_frame.contour_points,
+            "contourPoints": track_frame.contour_points,
+            "maskArea": mask_area,
+            "maskShape": mask_shape,
+            "sourceBbox": source_bbox,
+            "outlineStatus": outline_status,
+            "outlineSource": outline_source,
             "framePath": _rel(frame_path, out_dir),
             "mask": _rel(mask_path, out_dir),
             "asset": cutout_rel,
@@ -849,13 +898,17 @@ def _extract_object(
         motion.append(
             {
                 "frame": frame_number,
+                "sampleIndex": track_frame.out_index,
                 "sourceFrameIndex": track_frame.source_frame_index,
+                "outIndex": track_frame.out_index,
                 "t": round(track_frame.t, 6),
+                "sampleFps": info.sample_fps,
                 "visible": visible,
                 "x": x,
                 "y": y,
                 "w": w,
                 "h": h,
+                "bbox": source_bbox,
                 "scale": 1.0,
                 "rotation": 0.0,
                 "opacity": 1.0 if visible else 0.0,
@@ -863,6 +916,13 @@ def _extract_object(
                 "asset": cutout_rel,
                 "mask": _rel(mask_path, out_dir),
                 "centroid": track_frame.centroid,
+                "polygon": track_frame.polygon,
+                "contourPoints": track_frame.contour_points,
+                "maskArea": mask_area,
+                "maskShape": mask_shape,
+                "sourceBbox": source_bbox,
+                "outlineStatus": outline_status,
+                "outlineSource": outline_source,
             }
         )
         _job_emit(
@@ -880,12 +940,17 @@ def _extract_object(
             metadata={
                 "objectId": object_id,
                 "frame": frame_number,
+                "sampleIndex": track_frame.out_index,
                 "position": position,
                 "totalFrames": total_track_frames,
                 "sourceFrameIndex": track_frame.source_frame_index,
                 "bbox": [x, y, w, h] if visible else track_frame.bbox,
                 "sourceBbox": track_frame.bbox,
                 "maskArea": mask_area,
+                "maskShape": mask_shape,
+                "contourPoints": track_frame.contour_points,
+                "outlineStatus": outline_status,
+                "outlineSource": outline_source,
                 "cropWidth": w,
                 "cropHeight": h,
                 "visible": visible,
@@ -1006,6 +1071,17 @@ def _extract_object(
         )
         obj["assets"]["production"] = production_assets
 
+    frame_map = [
+        {
+            "sampleIndex": frame["sampleIndex"],
+            "sourceFrameIndex": frame["sourceFrameIndex"],
+            "t": frame["t"],
+            "frame": frame["frame"],
+            "outIndex": frame["outIndex"],
+            "sampleFps": frame["sampleFps"],
+        }
+        for frame in detailed_frames
+    ]
     object_manifest = {
         "schema": "motionjson.object_manifest.v0.1",
         "objectId": object_id,
@@ -1015,6 +1091,8 @@ def _extract_object(
         "masks": [entry["mask"] for entry in motion],
         "spritesheet": sprite_meta,
         "motion": motion,
+        "frames": detailed_frames,
+        "frameMap": frame_map,
         "quality": quality,
         "recommendedOutput": route,
         "rights": rights,
@@ -1027,6 +1105,7 @@ def _extract_object(
         "objectId": object_id,
         "fps": info.sample_fps,
         "motion": motion,
+        "frameMap": frame_map,
         "quality": quality,
         "recommendedOutput": route,
         "discovery": discovery,
@@ -1135,6 +1214,16 @@ def run_multi_object_pipeline(
         "sampleFps": info.sample_fps,
         "totalSourceFrames": info.total_source_frames,
         "sampledFrameCount": len(frames),
+        "frameMap": [
+            _frame_sync_record(
+                sample_index=frame.out_index,
+                source_frame_index=frame.index,
+                frame=frame.out_index + 1,
+                t=frame.time_sec,
+                sample_fps=info.sample_fps,
+            )
+            for frame in frames
+        ],
     }
     video_source = VideoSource(path=video_path, info=info, frames=frames)
     run_context = RunContext(out_dir=out_dir, job_context=job_context)

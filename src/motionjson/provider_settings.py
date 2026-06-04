@@ -35,7 +35,14 @@ LOCAL_MODEL_RUNTIME_KEYS = {
     "runtime_device_requested",
     "runtime_device_actual",
     "runtime_kind",
+    "runtime_accelerator_kind",
+    "runtime_proof_status",
     "runtime_loaded_on_cuda",
+    "runtime_loaded_on_mps",
+    "runtime_cuda_available",
+    "runtime_mps_available",
+    "runtime_gpu_memory_before",
+    "runtime_gpu_memory_after",
     "runtime_warmup_status",
 }
 
@@ -51,7 +58,7 @@ SAM2_HOSTED_PROFILES: list[dict[str, Any]] = [
         "modelOptions": [{"id": "meta/sam-2-video", "label": "meta/sam-2-video"}],
         "docs": "https://replicate.com/meta/sam-2-video/api",
         "setupGuide": {
-            "recommendedFor": "Hosted fallback for tracing one prompted object when local SAM2 is not installed.",
+            "recommendedFor": "Hosted fallback for tracing one prompted object when the in-process SAM2 runtime is not installed.",
             "setupSummary": "Paste a Replicate API token, keep model meta/sam-2-video, then run the hosted smoke test only after cost/privacy opt-in.",
         },
         "warning": "Uploads the selected video to Replicate for promptable SAM2 video segmentation.",
@@ -181,8 +188,8 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "customModelAllowed": False,
         "capabilities": ["segmentation", "tracking smoke", "review smoke"],
         "hardware": "CPU",
-        "cost": {"status": "zero_local", "label": "Free local"},
-        "privacy": "Frames stay on this machine.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime.",
         "warning": "",
         "docs": "docs/local_ui.md",
     },
@@ -201,8 +208,8 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "customModelAllowed": False,
         "capabilities": ["segmentation", "binary masks"],
         "hardware": "CPU",
-        "cost": {"status": "zero_local", "label": "Free local"},
-        "privacy": "Frames stay on this machine.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime.",
         "warning": "",
         "docs": "docs/provider_capabilities.md",
     },
@@ -221,8 +228,8 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "customModelAllowed": False,
         "capabilities": ["moving object proposals", "binary masks"],
         "hardware": "CPU",
-        "cost": {"status": "zero_local", "label": "Free local"},
-        "privacy": "Frames stay on this machine.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime.",
         "warning": "",
         "docs": "docs/provider_capabilities.md",
     },
@@ -241,14 +248,14 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "customModelAllowed": False,
         "capabilities": ["mask import", "multi-object review"],
         "hardware": "CPU",
-        "cost": {"status": "zero_local", "label": "Free local"},
-        "privacy": "Imported masks stay on this machine.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Imported masks stay inside the selected runtime.",
         "warning": "",
         "docs": "docs/provider_capabilities.md",
     },
     {
         "id": "sam2-local",
-        "name": "SAM2 local",
+        "name": "SAM2 runtime",
         "capabilityName": "sam2-local",
         "kind": "mask_provider",
         "locality": "local",
@@ -266,7 +273,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
             {"id": "sam2/hiera-small", "label": "SAM2 Hiera small"},
             {"id": "sam2/hiera-base-plus", "label": "SAM2 Hiera base+"},
             {"id": "sam2/hiera-large", "label": "SAM2 Hiera large"},
-            {"id": CUSTOM_MODEL_ID, "label": "Custom local model id"},
+            {"id": CUSTOM_MODEL_ID, "label": "Custom model id"},
         ],
         "defaultModel": "sam2/hiera-tiny",
         "customModelAllowed": True,
@@ -278,9 +285,9 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "supportsAutoMasks": True,
         "supportsTracking": True,
         "hardware": "CPU, MPS, or CUDA depending on torch/SAM2 setup",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when SAM2 is installed locally.",
-        "warning": "Requires local SAM2 and model paths. It is not part of the default CPU install.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when SAM2 is installed there.",
+        "warning": "Requires SAM2 and model paths in the selected runtime. It is not part of the default CPU install.",
         "setupGuide": {
             "recommendedFor": "Best default for tracing one prompted object through a video.",
             "setupSummary": "Install the official SAM2 package, download a SAM2.1 checkpoint, then save the checkpoint and config paths here.",
@@ -357,8 +364,8 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "supportsAutoMasks": True,
         "supportsTracking": False,
         "hardware": "CPU, MPS, or CUDA depending on torch/Transformers setup",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine. Model caching may download weights after confirmation.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime. Model caching may download weights after confirmation.",
         "warning": "This is the HF automatic-mask fallback for scene sweep. It is separate from official SAM2 prompt tracking and does not use official SAM2 checkpoint/config paths.",
         "setupGuide": {
             "recommendedFor": "Fallback for finding everything in scene when SAM3 Scene Sweep is blocked.",
@@ -372,7 +379,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "id": "sam3-local",
-        "name": "SAM3 local",
+        "name": "SAM3 Scene Sweep runtime",
         "capabilityName": "sam3-local",
         "kind": "discovery_provider",
         "locality": "local",
@@ -408,7 +415,7 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         ],
         "modelOptions": [
             {"id": SAM3_HF_REPO_ID, "label": "facebook/sam3 (SAM3 Scene Sweep)"},
-            {"id": CUSTOM_MODEL_ID, "label": "Custom HF repo id or local model directory"},
+            {"id": CUSTOM_MODEL_ID, "label": "Custom HF repo id or runtime model directory"},
         ],
         "defaultModel": SAM3_HF_REPO_ID,
         "customModelAllowed": True,
@@ -419,13 +426,13 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "supportsExemplar": True,
         "supportsAutoMasks": True,
         "supportsTracking": True,
-        "hardware": "CUDA-capable local SAM3 environment",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Normal scene sweep uses the independent sam3-transformers extra and facebook/sam3 access. Concept/exemplar workflows are advanced and require the official SAM3 package plus a local sam3.pt checkpoint path.",
+        "hardware": "CUDA-capable SAM3 runtime",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime unless a hosted SAM provider is chosen.",
+        "warning": "Normal scene sweep uses the independent sam3-transformers extra and facebook/sam3 access. Concept/exemplar workflows are advanced and require the official SAM3 package plus a sam3.pt checkpoint path.",
         "setupGuide": {
-            "recommendedFor": "Best local path for scene-wide discovery, concept prompts such as 'red ball', and one-object SAM3 tracking.",
-            "setupSummary": "For scene sweep, install the sam3-transformers extra, paste a Hugging Face token if the model is gated, and cache facebook/sam3 from the UI. For advanced concept/exemplar workflows, install the official SAM3 source package and save a local sam3.pt checkpoint path.",
+            "recommendedFor": "Best runtime path for scene-wide discovery, concept prompts such as 'red ball', and one-object SAM3 tracking.",
+            "setupSummary": "For scene sweep, install the sam3-transformers extra, paste a Hugging Face token if the model is gated, and cache facebook/sam3 from the UI. For advanced concept/exemplar workflows, install the official SAM3 source package and save a sam3.pt checkpoint path.",
             "commands": [
                 "pip install 'motionjson[sam3-transformers]'",
                 "conda create -n sam3 python=3.12",
@@ -490,10 +497,10 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "defaultModel": "sam3/local-model-path",
         "customModelAllowed": True,
         "capabilities": ["text concept discovery", "open-vocabulary instances", "mock candidates"],
-        "hardware": "CUDA-capable local SAM3 environment",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Real concept discovery requires SAM3. Mock mode is available for local UI/API smoke checks.",
+        "hardware": "CUDA-capable SAM3 runtime",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when SAM3 is installed there.",
+        "warning": "Real concept discovery requires SAM3. Mock mode is available for Runtime API smoke checks.",
         "docs": "docs/discovery_providers.md",
     },
     {
@@ -510,10 +517,10 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "defaultModel": "sam3/local-model-path",
         "customModelAllowed": True,
         "capabilities": ["visual exemplar discovery", "similar object instances", "mock candidates"],
-        "hardware": "CUDA-capable local SAM3 environment",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Real exemplar discovery requires SAM3. Mock mode is available for local UI/API smoke checks.",
+        "hardware": "CUDA-capable SAM3 runtime",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when SAM3 is installed there.",
+        "warning": "Real exemplar discovery requires SAM3. Mock mode is available for Runtime API smoke checks.",
         "docs": "docs/discovery_providers.md",
     },
     {
@@ -530,10 +537,10 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "defaultModel": "sam3/local-model-path",
         "customModelAllowed": True,
         "capabilities": ["higher recall proposals", "semantic masks", "mock candidates"],
-        "hardware": "CUDA-capable local SAM3 environment",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when SAM3 is installed locally.",
-        "warning": "Real SAM3 auto masks require SAM3. Mock mode is available for local UI/API smoke checks.",
+        "hardware": "CUDA-capable SAM3 runtime",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when SAM3 is installed there.",
+        "warning": "Real SAM3 auto masks require SAM3. Mock mode is available for Runtime API smoke checks.",
         "docs": "docs/discovery_providers.md",
     },
     {
@@ -599,13 +606,13 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "runsInLocalWorker": False,
         "credentialRequired": False,
         "credentialFields": [],
-        "modelOptions": [{"id": "detector/local-model-path", "label": "Configured local detector"}],
+        "modelOptions": [{"id": "detector/local-model-path", "label": "Configured detector"}],
         "defaultModel": "detector/local-model-path",
         "customModelAllowed": True,
         "capabilities": ["text-guided boxes", "object candidates"],
         "hardware": "CPU/GPU depending on detector package",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when a local detector is configured.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when a detector is configured.",
         "warning": "The current text detector path is scaffolded and remains capability-gated.",
         "docs": "docs/provider_capabilities.md",
     },
@@ -619,13 +626,13 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "runsInLocalWorker": False,
         "credentialRequired": False,
         "credentialFields": [],
-        "modelOptions": [{"id": "yolo/local-model-path", "label": "Configured local class model"}],
+        "modelOptions": [{"id": "yolo/local-model-path", "label": "Configured class model"}],
         "defaultModel": "yolo/local-model-path",
         "customModelAllowed": True,
         "capabilities": ["known-class boxes", "object candidates"],
         "hardware": "CPU/GPU depending on detector package",
-        "cost": {"status": "zero_local", "label": "Free local runtime"},
-        "privacy": "Frames stay on this machine when a local detector is configured.",
+        "cost": {"status": "zero_local", "label": "No hosted cost"},
+        "privacy": "Frames stay inside the selected runtime when a detector is configured.",
         "warning": "The current class detector path is scaffolded and remains capability-gated.",
         "docs": "docs/provider_capabilities.md",
     },
@@ -766,7 +773,7 @@ def provider_settings_response(
             "credentialPrecedence": ["environment", "local_settings", "unset"],
         },
         "redaction": {
-            "policy": "Raw keys are never returned by the Local UI API.",
+            "policy": "Raw keys are never returned by the Runtime API.",
             "displayExample": "sk-...abcd",
             "environmentOverridesLocal": True,
         },
@@ -884,7 +891,7 @@ def provider_runtime_model_info(
     provider_id: str,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Return backend-only runtime model resolution for local cached providers."""
+    """Return backend-only runtime model resolution for cached providers."""
 
     environ = environ or os.environ
     definition = _definition(provider_id)
@@ -903,7 +910,7 @@ def record_provider_model_cache(
     local_model_dir: str,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Persist a locally resolved from_pretrained directory without exposing it publicly."""
+    """Persist a resolved from_pretrained directory without exposing it publicly."""
 
     definition = _definition(provider_id)
     if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
@@ -942,13 +949,32 @@ def record_provider_runtime_verification(
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
     runtime_info = _runtime_model_info(definition, settings, secrets, environ or os.environ)
+    device_requested = str(verification.get("deviceRequested") or "")
+    device_actual = str(verification.get("deviceActual") or "")
+    loaded_on_cuda = bool(verification.get("loadedOnCuda"))
+    loaded_on_mps = bool(verification.get("loadedOnMps"))
+    accelerator_kind = str(
+        verification.get("acceleratorKind")
+        or _runtime_accelerator_kind(device_actual, device_requested, loaded_on_cuda=loaded_on_cuda, loaded_on_mps=loaded_on_mps)
+    )
+    warmup_status = str(verification.get("warmupStatus") or verification.get("status") or "")
+    runtime_proof_status = str(verification.get("runtimeProofStatus") or "")
+    if not runtime_proof_status:
+        runtime_proof_status = "verified" if warmup_status == "succeeded" else "failed" if warmup_status else "not_verified"
     settings["runtime_verified_at"] = utc_now()
     settings["runtime_verified_model_id"] = str(runtime_info.get("selectedModel") or runtime_info.get("modelCache", {}).get("model") or "")
-    settings["runtime_device_requested"] = str(verification.get("deviceRequested") or "")
-    settings["runtime_device_actual"] = str(verification.get("deviceActual") or "")
+    settings["runtime_device_requested"] = device_requested
+    settings["runtime_device_actual"] = device_actual
     settings["runtime_kind"] = str(verification.get("runtimeKind") or "")
-    settings["runtime_loaded_on_cuda"] = bool(verification.get("loadedOnCuda"))
-    settings["runtime_warmup_status"] = str(verification.get("warmupStatus") or verification.get("status") or "")
+    settings["runtime_accelerator_kind"] = accelerator_kind
+    settings["runtime_proof_status"] = runtime_proof_status
+    settings["runtime_loaded_on_cuda"] = loaded_on_cuda
+    settings["runtime_loaded_on_mps"] = loaded_on_mps
+    settings["runtime_cuda_available"] = bool(verification.get("cudaAvailable"))
+    settings["runtime_mps_available"] = bool(verification.get("mpsAvailable"))
+    settings["runtime_gpu_memory_before"] = _safe_runtime_snapshot(verification.get("gpuMemoryBefore"))
+    settings["runtime_gpu_memory_after"] = _safe_runtime_snapshot(verification.get("gpuMemoryAfter"))
+    settings["runtime_warmup_status"] = warmup_status
     _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
     return provider_settings_response(conn, user_id=user_id, environ=environ)
 
@@ -960,7 +986,7 @@ def provider_advanced_local_paths(
     provider_id: str,
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Return intentionally raw local paths for Local UI Advanced display only."""
+    """Return intentionally raw runtime paths for Workspace Advanced display only."""
 
     if provider_id != "sam3-local":
         return {
@@ -1029,9 +1055,9 @@ def _hf_cache_error_message(exc: Exception, model_id: str) -> str:
     text = redact_secret_text(str(exc) or name)
     lowered = text.lower()
     if "offline" in lowered:
-        return f"Offline mode is enabled and {model_id} is not cached locally. Disable offline mode or cache the model first."
+        return f"Offline mode is enabled and {model_id} is not cached in this runtime. Disable offline mode or cache the model first."
     if "not found" in lowered or "cannot find" in lowered or "localentrynotfound" in name.lower():
-        return f"{model_id} is not cached locally yet. Use Cache model after confirming network and disk access."
+        return f"{model_id} is not cached in this runtime yet. Use Cache model after confirming network and disk access."
     if "permission" in lowered or "denied" in lowered:
         return "MotionJSON cannot read the Hugging Face cache directory. Fix local permissions or choose a readable model directory."
     if "no space" in lowered or "enospc" in lowered or "disk" in lowered:
@@ -1083,7 +1109,7 @@ def _model_cache_state(
             "localPathDisplay": "[LOCAL_PATH_REDACTED]",
             "pathSummary": "Resolved model directory is recorded server-side and redacted in browser responses."
             if recorded
-            else "Resolved model directory was found locally and is redacted in browser responses.",
+            else "Resolved model directory was found in the runtime cache and is redacted in browser responses.",
             "message": message,
         }
         if include_runtime_path:
@@ -1095,22 +1121,22 @@ def _model_cache_state(
         saved_path = Path(saved_dir).expanduser()
         ok, detail = _local_from_pretrained_dir_status(saved_path)
         if ok:
-            return cached_state(str(saved_path), source="saved_cache", message="Previously cached local model directory is available.")
+            return cached_state(str(saved_path), source="saved_cache", message="Previously cached runtime model directory is available.")
         base.update({"status": "invalid_cache", "source": "saved_cache", "message": detail, "nextAction": "cache_model"})
         return base
 
     raw = str(model_id or "").strip()
     if not raw:
-        base.update({"status": "missing_model", "message": "No model id or local model directory is selected.", "nextAction": "choose_model"})
+        base.update({"status": "missing_model", "message": "No model id or runtime model directory is selected.", "nextAction": "choose_model"})
         return base
     if raw == "[LOCAL_PATH_REDACTED]":
-        base.update({"status": "invalid_model", "message": "The saved model path was redacted in the browser. Choose the local model directory again from Model setup.", "nextAction": "choose_model"})
+        base.update({"status": "invalid_model", "message": "The saved model path was redacted in the browser. Choose the runtime model directory again from Model setup.", "nextAction": "choose_model"})
         return base
     if raw.endswith(".pt"):
         base.update(
             {
                 "status": "invalid_model",
-                "message": "A single .pt checkpoint is not valid for this from_pretrained model path. Choose a Hugging Face repo id or local model directory.",
+                "message": "A single .pt checkpoint is not valid for this from_pretrained model path. Choose a Hugging Face repo id or runtime model directory.",
                 "nextAction": "choose_model",
             }
         )
@@ -1123,10 +1149,10 @@ def _model_cache_state(
         base.update({"status": "invalid_model", "source": "local_directory", "message": detail, "nextAction": "choose_model"})
         return base
     if not _looks_like_hf_repo_id(raw):
-        base.update({"status": "invalid_model", "message": f"{raw} is neither a Hugging Face repo id nor a local model directory.", "nextAction": "choose_model"})
+        base.update({"status": "invalid_model", "message": f"{raw} is neither a Hugging Face repo id nor a runtime model directory.", "nextAction": "choose_model"})
         return base
     if not _module_available("huggingface_hub"):
-        base.update({"status": "cache_unknown", "message": "huggingface_hub is not installed, so MotionJSON cannot inspect the local model cache. Install the Transformers setup extra first.", "nextAction": "install"})
+        base.update({"status": "cache_unknown", "message": "huggingface_hub is not installed, so MotionJSON cannot inspect the runtime model cache. Install the Transformers setup extra first.", "nextAction": "install"})
         return base
     try:
         from huggingface_hub import snapshot_download  # type: ignore
@@ -1195,6 +1221,39 @@ def _runtime_model_info(
     }
 
 
+def _safe_runtime_snapshot(value: Any) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    safe: dict[str, Any] = {}
+    for key in ("index", "name", "deviceCount", "freeBytes", "totalBytes", "usedBytes", "freeMiB", "totalMiB", "usedMiB"):
+        item = value.get(key)
+        if isinstance(item, (str, int, float, bool)) or item is None:
+            safe[str(key)] = item
+    return safe
+
+
+def _runtime_accelerator_kind(
+    device_actual: str,
+    device_requested: str = "",
+    *,
+    loaded_on_cuda: bool = False,
+    loaded_on_mps: bool = False,
+) -> str:
+    actual = str(device_actual or "").strip().lower()
+    requested = str(device_requested or "").strip().lower()
+    if loaded_on_cuda or actual.startswith("cuda"):
+        return "cuda"
+    if loaded_on_mps or actual.startswith("mps"):
+        return "mps"
+    if actual.startswith("cpu") or actual == "-1":
+        return "cpu"
+    if requested.startswith("cuda") or requested.startswith("mps"):
+        return "unknown"
+    if requested.startswith("cpu") or requested in {"", "auto"}:
+        return "cpu" if actual else "unknown"
+    return "unknown"
+
+
 def _runtime_verification_state(
     definition: Mapping[str, Any],
     settings: Mapping[str, Any],
@@ -1216,10 +1275,25 @@ def _runtime_verification_state(
     model_matches = bool(not verified_model or not current_model or verified_model == current_model)
     device_matches = bool(not verified_device or verified_device == requested_device)
     cache_is_current = bool(not recorded_at or not verified_at or str(verified_at) >= recorded_at)
-    cuda_requested = requested_device.lower().startswith("cuda")
+    requested_lower = requested_device.lower()
+    cuda_requested = requested_lower.startswith("cuda")
+    mps_requested = requested_lower.startswith("mps")
     loaded_on_cuda = bool(settings.get("runtime_loaded_on_cuda"))
+    loaded_on_mps = bool(settings.get("runtime_loaded_on_mps"))
     actual_device = str(settings.get("runtime_device_actual") or "")
-    device_verified = bool(not cuda_requested or (loaded_on_cuda and actual_device.lower().startswith("cuda")))
+    accelerator_kind = str(settings.get("runtime_accelerator_kind") or "").strip().lower() or _runtime_accelerator_kind(
+        actual_device,
+        requested_device,
+        loaded_on_cuda=loaded_on_cuda,
+        loaded_on_mps=loaded_on_mps,
+    )
+    cuda_available = bool(settings.get("runtime_cuda_available"))
+    mps_available = bool(settings.get("runtime_mps_available"))
+    gpu_memory_before = _safe_runtime_snapshot(settings.get("runtime_gpu_memory_before"))
+    gpu_memory_after = _safe_runtime_snapshot(settings.get("runtime_gpu_memory_after"))
+    cuda_verified = bool(not cuda_requested or (loaded_on_cuda and actual_device.lower().startswith("cuda")))
+    mps_verified = bool(not mps_requested or (loaded_on_mps and actual_device.lower().startswith("mps")))
+    device_verified = bool(cuda_verified and mps_verified)
     verified = bool(cached and verified_at and warmup_status == "succeeded" and model_matches and device_matches and cache_is_current and device_verified)
     stale_reasons = []
     if cached and verified_at:
@@ -1229,21 +1303,53 @@ def _runtime_verification_state(
             stale_reasons.append("device changed")
         if not cache_is_current:
             stale_reasons.append("cache changed")
-        if not device_verified:
+        if cuda_requested and not cuda_verified:
             stale_reasons.append("CUDA placement not verified")
+        if mps_requested and not mps_verified:
+            stale_reasons.append("MPS placement not verified")
     stale_detail = f" Previous smoke verification is stale because {', '.join(stale_reasons)}." if stale_reasons else ""
+    persisted_proof_status = str(settings.get("runtime_proof_status") or "").strip()
+    if verified:
+        runtime_proof_status = "verified"
+        reason_code = ""
+    elif cuda_requested and not cuda_verified and verified_at:
+        runtime_proof_status = "gpu_device_mismatch"
+        reason_code = "gpu_device_mismatch"
+    elif mps_requested and not mps_verified and verified_at:
+        runtime_proof_status = "gpu_device_mismatch"
+        reason_code = "gpu_device_mismatch"
+    elif stale_reasons:
+        runtime_proof_status = "stale"
+        reason_code = "runtime_verification_stale"
+    elif persisted_proof_status:
+        runtime_proof_status = persisted_proof_status
+        reason_code = "runtime_verification_stale" if persisted_proof_status == "stale" else persisted_proof_status if persisted_proof_status.endswith("_mismatch") else ""
+    elif warmup_status and warmup_status != "succeeded":
+        runtime_proof_status = "failed"
+        reason_code = "runtime_warmup_failed"
+    else:
+        runtime_proof_status = "not_verified"
+        reason_code = ""
     return {
         "required": True,
         "verified": verified,
         "status": "verified" if verified else "not_verified",
         "runtimeKind": settings.get("runtime_kind") or "",
+        "acceleratorKind": accelerator_kind,
+        "runtimeProofStatus": runtime_proof_status,
         "deviceRequested": verified_device or requested_device,
         "deviceActual": actual_device,
         "loadedOnCuda": loaded_on_cuda,
+        "loadedOnMps": loaded_on_mps,
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
+        "gpuMemoryBefore": gpu_memory_before,
+        "gpuMemoryAfter": gpu_memory_after,
         "warmupStatus": warmup_status or "not_run",
         "lastVerifiedAt": verified_at,
+        "reasonCode": reason_code,
         "message": (
-            "Cached model loaded and warmed up successfully."
+            f"Cached model loaded and warmed up successfully on {accelerator_kind.upper() if accelerator_kind in {'cuda', 'mps'} else accelerator_kind}."
             if verified
             else f"Run a smoke test to load the cached model on the selected device and warm it up.{stale_detail}"
             if cached
@@ -1321,8 +1427,11 @@ def _apply_settings_payload(
         assign_runtime_sensitive("sam3_device", _optional_text(payload.get("sam3Device", payload.get("sam3_device"))), default="cuda")
 
     if runtime_sensitive_changed and provider_id in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+        had_runtime_verification = any(settings.get(key) for key in LOCAL_MODEL_RUNTIME_KEYS)
         for key in LOCAL_MODEL_RUNTIME_KEYS:
             settings.pop(key, None)
+        if had_runtime_verification:
+            settings["runtime_proof_status"] = "stale"
 
     profiled_definition = _profiled_definition(definition, settings)
     for field in profiled_definition.get("credentialFields", []):
@@ -1638,14 +1747,14 @@ def diagnose_provider_settings(
         device_problem = _device_problem(device, torch_ok=find_spec("torch") is not None)
         item("transformers_package", "SAM2 Transformers package", find_spec("transformers") is not None, "Python can import transformers." if find_spec("transformers") is not None else "Python cannot import transformers.", "Install the independent sam2-transformers extra. Official SAM2 is not required.")
         item("torch_package", "PyTorch", find_spec("torch") is not None, "Python can import torch.", "Install torch for the selected CPU/MPS/CUDA runtime.")
-        item("model_id", "HF model id or directory", True, model_detail, "Use Cache model if the model is not already available locally.")
-        item("model_cache", "Local model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a local from_pretrained directory, or fix local cache access.")
+        item("model_id", "HF model id or directory", True, model_detail, "Use Cache model if the model is not already available in this runtime.")
+        item("model_cache", "Runtime model cache", bool(model_cache.get("cached")), str(model_cache.get("message") or "Model cache has not been resolved."), "Run Cache model, choose a from_pretrained directory, or fix runtime cache access.")
         item(
             "runtime_warmup",
             "Load and warm up model",
             bool(runtime_verification.get("verified")),
             str(runtime_verification.get("message") or "Run a smoke test after caching the model."),
-            "Run smoke test or Prepare local model.",
+            "Run smoke test or Prepare runtime model.",
         )
         item("device", "Device", not device_problem, device_problem or f"Selected device: {device}", "Choose cpu, mps, cuda, or cuda:0.")
         item("official_sam2", "Official SAM2 checkpoint/config", True, "Not required for SAM2 HF automatic masks.", "", required=False)
@@ -1694,7 +1803,7 @@ def diagnose_provider_settings(
             "Load on GPU and warm up",
             bool(runtime_verification.get("verified")),
             str(runtime_verification.get("message") or "Run a smoke test after caching the model."),
-            "Run smoke test or Prepare local model.",
+            "Run smoke test or Prepare runtime model.",
         )
         item("python", "Python >= 3.12 for concept/exemplar", py_ok, f"Current Python is {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}.", "Use a Python 3.12 environment for official-package SAM3 concept/exemplar workflows.", required=False)
         item("sam3_package", "Official SAM3 package for concept/exemplar", find_spec("sam3") is not None, "Python can import sam3.", "Install official facebookresearch/sam3 for concept/exemplar workflows.", required=False)
@@ -1755,12 +1864,12 @@ def local_sam_smoke_test(
     environ: Mapping[str, str] | None = None,
     progress: Any | None = None,
 ) -> dict[str, Any]:
-    """Run a bounded local SAM setup smoke check without network access."""
+    """Run a bounded SAM runtime setup smoke check without network access."""
 
     if provider_id not in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
         raise ValueError("Local SAM smoke tests are only available for sam2-local, sam2-hf-auto-masks, or sam3-local.")
     if not _truthy(payload.get("allowHeavyLocal", payload.get("allow_heavy_local"))):
-        raise ValueError("Local SAM smoke test requires allowHeavyLocal=true before importing heavy local model runtimes.")
+        raise ValueError("SAM runtime smoke test requires allowHeavyLocal=true before importing heavy model runtimes.")
     diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
     smoke: dict[str, Any] | None = None
     runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
@@ -2426,7 +2535,7 @@ def _setup_state_for_provider(
         return {
             "status": "not_configured",
             "label": "Needs setup",
-            "message": str(model_cache.get("message") or "Install setup tools before checking the local model cache."),
+            "message": str(model_cache.get("message") or "Install setup tools before checking the runtime model cache."),
             "preflight": preflight,
             "runnable": False,
             "nextAction": "install",

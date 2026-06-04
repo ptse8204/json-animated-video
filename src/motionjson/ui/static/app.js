@@ -117,7 +117,7 @@ const MotionJSONUI = (() => {
       workflow: "Trace one object",
       title: "SAM2 prompt tracking",
       capabilities: ["point", "box", "tracking"],
-      recommendation: "Recommended local path for cutting out one prompted object.",
+      recommendation: "Recommended runtime path for cutting out one prompted object.",
       nextAction: "Install SAM2 fallback or save checkpoint and config paths",
       profileId: "",
     },
@@ -144,7 +144,7 @@ const MotionJSONUI = (() => {
       workflow: "Trace one object",
       title: "Replicate SAM2 video",
       capabilities: ["point", "box", "tracking", "hosted"],
-      recommendation: "Hosted fallback for promptable SAM2 video tracking when local SAM2 is not ready.",
+      recommendation: "Hosted fallback for promptable SAM2 video tracking when the in-process SAM2 runtime is not ready.",
       nextAction: "Link Replicate API token",
     },
     {
@@ -156,7 +156,7 @@ const MotionJSONUI = (() => {
       workflow: "Find everything in scene",
       title: "SAM3 Scene Sweep",
       capabilities: ["scene_sweep", "concept", "box", "tracking", "auto_masks"],
-      recommendation: "Recommended local path for finding everything in the scene with SAM3 Tracker masks and video tracking.",
+      recommendation: "Recommended CUDA runtime path for finding everything in the scene with SAM3 Tracker masks and video tracking.",
       nextAction: "Install scene sweep, check Hugging Face access, then cache facebook/sam3",
       profileId: "",
     },
@@ -673,12 +673,13 @@ const MotionJSONUI = (() => {
   function reviewToolUrl(jobId, tool) {
     const base = previewFileUrl(jobId, tool?.relPath);
     if (!base) return "";
+    const encodedJobId = encodeURIComponent(jobId);
     const params = new URLSearchParams({
-      scene: "../scene_graph.json",
-      manifest: "../web_asset_manifest.json",
+      scene: previewFileUrl(jobId, "scene_graph.json"),
+      manifest: previewFileUrl(jobId, "web_asset_manifest.json"),
       jobId: String(jobId || ""),
-      review: localApiUrl(`/api/jobs/${encodeURIComponent(jobId)}/review`),
-      export: localApiUrl(`/api/jobs/${encodeURIComponent(jobId)}/exports`),
+      review: localApiUrl(`/api/jobs/${encodedJobId}/review`),
+      export: localApiUrl(`/api/jobs/${encodedJobId}/exports/motionjson`),
     });
     return `${base}?${params.toString()}`;
   }
@@ -2197,7 +2198,7 @@ const MotionJSONUI = (() => {
     const sourceDetail = hasRegisteredVideo
       ? "The backend can run against the registered local asset."
       : hasBrowserPreview
-        ? "The browser preview is ready for drawing. Register a local path before starting a backend job."
+        ? "The browser preview is ready for drawing. Register a runtime path before starting a backend job."
         : "Register a local video path for backend jobs, and optionally add a browser preview for drawing.";
 
     const steps = [
@@ -2328,7 +2329,7 @@ const MotionJSONUI = (() => {
       discoveryProvider: providerPlan.discoveryProvider || modelPlan?.runConfig?.discovery?.mode || "not reported",
       maskProvider: providerPlan.maskProvider || modelPlan?.runConfig?.provider?.name || "not reported",
       trackingMode: providerPlan.trackingMode || "selected_only",
-      privacy: privacy.summary || (privacy.hostedCallsRequired ? "Hosted planning required confirmation." : "Frames stay on this machine."),
+      privacy: privacy.summary || (privacy.hostedCallsRequired ? "Hosted planning required confirmation." : "Frames stay inside the selected runtime."),
       cost: estimatedCost.message || estimatedCost.label || estimatedCost.status || "not reported",
       validationLabel: valid ? (messages.warnings.length ? "Valid with warnings" : "Ready to confirm") : "Blocked",
       valid,
@@ -2967,7 +2968,7 @@ const MotionJSONUI = (() => {
           ? stage("tracks", "Tracks", "Not created", "Track selected candidates before correcting or exporting.", "needs-action")
           : stage("tracks", "Tracks", "None", "Tracks appear after candidate tracking.", running ? "running" : "needs-action");
     const correctionsStage = counts.correctionCount
-      ? stage("corrections", "Corrections", `${counts.correctionCount} edit${counts.correctionCount === 1 ? "" : "s"}`, "Correction edits are saved locally before export.", "done")
+      ? stage("corrections", "Corrections", `${counts.correctionCount} edit${counts.correctionCount === 1 ? "" : "s"}`, "Correction edits are saved in the project before export.", "done")
       : counts.trackCount
         ? stage("corrections", "Corrections", "Optional", "Repair, relabel, merge, split, or continue to export.", "ready")
         : stage("corrections", "Corrections", "No tracks", "Correction tools become useful after tracks exist.", failed ? "blocked" : "needs-action");
@@ -3012,7 +3013,7 @@ const MotionJSONUI = (() => {
         ...options,
       });
     } catch (error) {
-      throw new Error(`Local API unavailable: ${error.message}`);
+      throw new Error(`Runtime API unavailable: ${error.message}`);
     }
 
     const body = await response.text();
@@ -3460,11 +3461,32 @@ const MotionJSONUI = (() => {
       recorded,
       pathKnown,
       status: cache.status || (cached ? "cached" : "not_cached"),
-      label: cached ? (recorded ? "Cached path recorded" : "Cached locally") : "Cache needed",
+      label: cached ? (recorded ? "Cached path recorded" : "Cached in runtime") : "Cache needed",
       message: cache.pathSummary || cache.message || (cached ? "Model cache is available." : "Cache the model before running."),
       model: cache.model || providerEffectiveModel(provider),
       updatedAt: cache.recordedAt || provider?.settings?.updatedAt || "",
     };
+  }
+
+  function runtimeProofBadge(runtimeVerification = {}, provider = null, setupJob = null) {
+    const smoke = setupJob?.result?.smokeTest || {};
+    if (provider?.locality === "hosted") {
+      return { label: "Hosted runtime", tone: "is-warn", acceleratorKind: "hosted" };
+    }
+    const deviceActual = String(runtimeVerification.deviceActual || smoke.deviceActual || "").toLowerCase();
+    const kind = String(runtimeVerification.acceleratorKind || smoke.acceleratorKind || "").toLowerCase();
+    const loadedOnCuda = runtimeVerification.loadedOnCuda === true || smoke.loadedOnCuda === true;
+    const loadedOnMps = runtimeVerification.loadedOnMps === true || smoke.loadedOnMps === true;
+    if (loadedOnCuda || kind === "cuda" || deviceActual.startsWith("cuda")) {
+      return { label: "CUDA active", tone: "is-ready", acceleratorKind: "cuda" };
+    }
+    if (loadedOnMps || kind === "mps" || deviceActual.startsWith("mps")) {
+      return { label: "MPS active", tone: "is-warn", acceleratorKind: "mps" };
+    }
+    if (kind === "cpu" || deviceActual.startsWith("cpu") || deviceActual === "-1") {
+      return { label: "CPU fallback", tone: "is-muted", acceleratorKind: "cpu" };
+    }
+    return { label: "Runtime unverified", tone: "is-muted", acceleratorKind: "unknown" };
   }
 
   function modelSetupPlaybookSteps(connection = {}, provider = null, setupState = {}, setupJob = null) {
@@ -3481,7 +3503,7 @@ const MotionJSONUI = (() => {
     const setupEvents = asArray(setupJob?.events);
     const hasSetupEvent = (...names) => setupEvents.some((event) => names.includes(String(event.eventType || event.type || "")));
     const verificationReady = runtimeVerification.verified === true || (!localCacheProvider && setupState.status === "ready") || setupJob?.result?.ready === true;
-    const loadedOnCuda = runtimeVerification.loadedOnCuda === true || setupJob?.result?.smokeTest?.loadedOnCuda === true;
+    const proofBadge = runtimeProofBadge(runtimeVerification, provider, setupJob);
     const deviceActual = runtimeVerification.deviceActual || setupJob?.result?.smokeTest?.deviceActual || provider?.settings?.sam3Device || "cuda";
     const loadRunning =
       setupRunning &&
@@ -3523,12 +3545,12 @@ const MotionJSONUI = (() => {
     }
     steps.push({
       id: "load_gpu",
-      label: providerId === "sam3-local" ? "Load on GPU" : "Load model",
-      status: loadedOnCuda || (verificationReady && providerId !== "sam3-local") ? "done" : loadRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
-      detail: loadedOnCuda
-        ? `Model loaded on ${deviceActual || "CUDA"}.`
+      label: providerId === "sam3-local" ? "Prove accelerator" : "Load model",
+      status: verificationReady ? "done" : loadRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
+      detail: verificationReady
+        ? `${proofBadge.label}. Model loaded on ${deviceActual || "reported runtime"}.`
         : providerId === "sam3-local"
-          ? "Smoke test must prove the SAM3 Tracker model loads on CUDA."
+          ? "Smoke test must prove whether the SAM3 Tracker model loaded on CUDA, MPS, or CPU."
           : "Smoke test loads the cached model before extraction.",
     });
     steps.push({
@@ -3745,7 +3767,7 @@ const MotionJSONUI = (() => {
       return { id: "save", label: "Save setup", primary: true };
     }
     if (localSetupProvider && ["needs_access", "needs_download_confirmation", "needs_path", "not_configured"].includes(status)) {
-      return { id: "prepare-model", label: "Prepare local model", primary: true };
+      return { id: "prepare-model", label: "Prepare runtime model", primary: true };
     }
     if (status === "needs_access") {
       return { id: providerId.includes("hosted") ? "test" : "check-access", label: providerId.includes("hosted") ? "Check access" : "Check Hugging Face access", primary: true };
@@ -3776,7 +3798,7 @@ const MotionJSONUI = (() => {
     const labels = {
       "check-access": "Check Hugging Face access",
       test: "Check access",
-      "prepare-model": "Prepare local model",
+      "prepare-model": "Prepare runtime model",
       install: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
       "cache-model": "Cache model",
       smoke: hosted ? "Run hosted smoke test" : "Run local smoke test",
@@ -3784,17 +3806,17 @@ const MotionJSONUI = (() => {
     const flags = [];
     if (["check-access", "cache-model", "prepare-model", "install"].includes(normalized) || hosted) flags.push("network");
     if (normalized === "cache-model" || normalized === "prepare-model") flags.push("disk");
-    if (normalized === "install" || normalized === "prepare-model" || (normalized === "smoke" && !hosted)) flags.push("heavy local runtime");
+    if (normalized === "install" || normalized === "prepare-model" || (normalized === "smoke" && !hosted)) flags.push("heavy in-process runtime");
     if (hosted && normalized === "smoke") flags.push("hosted cost/privacy");
     const copy = {
-      "check-access": "This checks Hugging Face access for the selected local model after your confirmation.",
+      "check-access": "This checks Hugging Face access for the selected runtime model after your confirmation.",
       test: "This checks saved hosted setup fields without sending frames.",
       "prepare-model": "This runs the guided local setup: checks runtime, caches the model when needed, records the path server-side, and runs a bounded smoke test.",
-      install: "This runs the allowlisted optional dependency install for the selected local provider.",
-      "cache-model": "This resolves or downloads the selected model into the local Hugging Face cache or validates a local model directory.",
+      install: "This runs the allowlisted optional dependency install for the selected runtime provider.",
+      "cache-model": "This resolves or downloads the selected model into the runtime Hugging Face cache or validates a model directory.",
       smoke: hosted
         ? "This can contact the hosted provider and may incur cost after your confirmation."
-        : "This imports local model runtimes and checks the selected local setup.",
+        : "This imports model runtimes and checks the selected setup.",
     };
     return {
       action: normalized,
@@ -3935,15 +3957,15 @@ const MotionJSONUI = (() => {
     const configured = Boolean(readiness.configured || settingsReadiness.configured);
     const runnable = readiness.runnable === true;
     const status = readiness.status || settingsReadiness.status || (hosted ? "not_configured" : "ready");
-    const cost = provider.estimatedCost?.label || settingsProvider?.cost?.label || (hosted ? "Provider billed" : "Free local");
+    const cost = provider.estimatedCost?.label || settingsProvider?.cost?.label || (hosted ? "Provider billed" : "No hosted cost");
     const privacy =
       provider.privacy?.summary ||
       settingsProvider?.privacy ||
-      (hosted ? "Hosted provider can receive redacted planning context only after confirmation." : "Frames and prompts stay on this machine.");
+      (hosted ? "Hosted provider can receive redacted planning context only after confirmation." : "Frames and prompts stay inside the selected runtime.");
 
     if (!hosted) {
       return {
-        label: "Mock/local",
+        label: "Mock/runtime",
         status: "ready",
         tone: "ready",
         message: "Ready now. No API key, hosted call, or model install is required for planning checks.",
@@ -4239,7 +4261,7 @@ const MotionJSONUI = (() => {
         const polygon = normalizePolygonPoints(frame.polygon || frame.contour || frame.points);
         const width = state.video.width || 1920;
         const height = state.video.height || 1080;
-        const rawBox = frame.bbox || frame.box || null;
+        const rawBox = frame.sourceBbox || frame.source_bbox || frame.bbox || frame.box || null;
         const bbox = Array.isArray(rawBox)
           ? { x: rawBox[0], y: rawBox[1], w: rawBox[2], h: rawBox[3] }
           : rawBox && typeof rawBox === "object"
@@ -4247,9 +4269,22 @@ const MotionJSONUI = (() => {
             : null;
         return {
           frame: toInteger(frame.frame ?? frame.frameIndex ?? frame.out_index, 0),
+          sampleIndex: toInteger(frame.sampleIndex ?? frame.sample_index ?? frame.outIndex ?? frame.out_index, 0),
+          sourceFrameIndex: toInteger(frame.sourceFrameIndex ?? frame.source_frame_index, 0),
+          outIndex: toInteger(frame.outIndex ?? frame.out_index, 0),
+          sampleFps: toNumber(frame.sampleFps ?? frame.sample_fps, 0),
           bbox: bbox ? clampBox(bbox, width, height) : polygon ? polygonBounds(polygon, width, height) : null,
+          sourceBbox: bbox ? clampBox(bbox, width, height) : null,
           polygon,
           visible: frame.visible !== false,
+          t: toNumber(frame.t, 0),
+          mask: frame.mask || null,
+          asset: frame.asset || null,
+          maskArea: toNumber(frame.maskArea ?? frame.mask_area, 0),
+          maskShape: frame.maskShape || frame.mask_shape || null,
+          contourPoints: toInteger(frame.contourPoints ?? frame.contour_points, polygon ? polygon.length : 0),
+          outlineStatus: frame.outlineStatus || frame.outline_status || (polygon ? "mask_outline" : "outline_missing"),
+          outlineSource: frame.outlineSource || frame.outline_source || (polygon ? "segmentation_contour" : "bbox_fallback"),
         };
       }),
       reviewSource: "api-result",
@@ -4365,18 +4400,33 @@ const MotionJSONUI = (() => {
     return canUseSyntheticTracks ? configReviewTracks(config, job, artifacts) : [];
   }
 
+  function frameKeyCandidates(frame) {
+    return [frame?.frame, frame?.sampleIndex, frame?.outIndex, frame?.sourceFrameIndex, frame?.frameIndex, frame?.out_index, frame?.source_frame_index]
+      .map((value) => toInteger(value, Number.NaN))
+      .filter((value) => Number.isFinite(value));
+  }
+
   function trackFrameForDisplay(track, frameIndex) {
     const frames = asArray(track.frames).filter((frame) => frame.visible !== false && (frame.bbox || asArray(frame.polygon).length >= 3));
     if (!frames.length) return null;
-    const sorted = frames.slice().sort((a, b) => toInteger(a.frame, 0) - toInteger(b.frame, 0));
-    const first = toInteger(sorted[0].frame, 0);
-    const last = toInteger(sorted[sorted.length - 1].frame, first);
     const requested = toInteger(frameIndex, 0);
-    if (requested < first || requested > last) return null;
-    return sorted.find((frame) => toInteger(frame.frame, 0) === requested) || sorted.reduce((nearest, frame) => {
-      if (!nearest) return frame;
-      return Math.abs(toInteger(frame.frame, 0) - requested) < Math.abs(toInteger(nearest.frame, 0) - requested) ? frame : nearest;
+    const keyed = frames
+      .map((frame) => ({ frame, keys: frameKeyCandidates(frame) }))
+      .filter((item) => item.keys.length);
+    if (!keyed.length) return frames[0] || null;
+    if (keyed.some((item) => item.keys.includes(requested))) {
+      return keyed.find((item) => item.keys.includes(requested))?.frame || null;
+    }
+    const minKey = Math.min(...keyed.flatMap((item) => item.keys));
+    const maxKey = Math.max(...keyed.flatMap((item) => item.keys));
+    if (requested < minKey || requested > maxKey) return null;
+    const nearest = keyed.reduce((currentNearest, item) => {
+      if (!currentNearest) return item;
+      const itemDistance = Math.min(...item.keys.map((key) => Math.abs(key - requested)));
+      const nearestDistance = Math.min(...currentNearest.keys.map((key) => Math.abs(key - requested)));
+      return itemDistance < nearestDistance ? item : currentNearest;
     }, null);
+    return nearest?.frame || null;
   }
 
   function trackCoverageLabel(track) {
@@ -4595,7 +4645,7 @@ const MotionJSONUI = (() => {
       mergeSuggestions: asArray(raw.mergeSuggestions || raw.merge_suggestions || payload?.mergeSuggestions || payload?.review?.mergeSuggestions),
       loaded: true,
       persistenceStatus: "loaded",
-      persistenceMessage: "Correction history loaded from the local backend.",
+      persistenceMessage: "Correction history loaded from the Runtime API.",
     };
   }
 
@@ -5449,7 +5499,7 @@ const MotionJSONUI = (() => {
       messages.push(`${code}${provider}${message ? `: ${message}` : ""}`);
     }
     if (partial.available === false || partial.status === "not_enqueued") {
-      messages.push(`partial rerun unavailable: ${partial.reason || partial.status || "not available in this local backend"}`);
+      messages.push(`partial rerun unavailable: ${partial.reason || partial.status || "not available in this runtime backend"}`);
     }
     return messages.filter(Boolean);
   }
@@ -5538,7 +5588,7 @@ const MotionJSONUI = (() => {
         push("failure_diagnostics", "Failure diagnostics were written for this run. The log stream above includes the user-facing failure message.", "bad");
       }
       if (artifact.kind === "track_summary") {
-        push("track_summary", "Track summary artifact is available; the local UI API currently exposes its metadata for review.", "ready");
+        push("track_summary", "Track summary artifact is available; the Runtime API exposes its metadata for review.", "ready");
       }
       if (artifact.kind === "review_state_manifest") {
         push("review_state_manifest", "Saved correction and export decisions are recorded in review_state_manifest.json.", "ready");
@@ -5587,6 +5637,7 @@ const MotionJSONUI = (() => {
     let pollTimer = null;
     let pollInFlight = false;
     let overlayFrame = 0;
+    const preloadedReviewAssets = new Set();
     const shell = $(".app-shell");
     const sidebarToggle = $("#sidebarToggle");
     const projectDrawerToggle = $("#projectDrawerToggle");
@@ -5737,8 +5788,8 @@ const MotionJSONUI = (() => {
           activeStep === "choose_goal"
             ? "Pick a goal-first workflow. Continue changes this workspace to the next step."
             : state.selectedPreset === "review_existing"
-            ? "Open a local MotionJSON result for review. Guided mode creates the local workspace automatically."
-            : "Choose a local video file. MotionJSON creates the local workspace and prepares a browser-safe preview automatically.",
+            ? "Open a MotionJSON result for review. Guided mode creates the workspace automatically."
+            : "Choose a video file. MotionJSON creates the workspace and prepares a browser-safe preview automatically.",
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
@@ -5772,7 +5823,7 @@ const MotionJSONUI = (() => {
           : {
               title: goalRequiresModel(state.selectedPreset) ? "Choose and install models" : "No model is needed",
               note: goalRequiresModel(state.selectedPreset)
-                ? "Choose one compatible SAM engine for this workflow. Install, access checks, smoke tests, API keys, and local paths stay inside this flow."
+                ? "Choose one compatible SAM engine for this workflow. Install, access checks, smoke tests, API keys, and runtime paths stay inside this flow."
                 : "This workflow runs without SAM model setup.",
             };
       const configCopy = {
@@ -6520,7 +6571,7 @@ const MotionJSONUI = (() => {
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed"),
           selectedProject: project,
         });
-        const compactProjectLabel = window.matchMedia?.("(max-width: 480px)")?.matches && shellState.projectButtonLabel !== "Local Project";
+        const compactProjectLabel = window.matchMedia?.("(max-width: 480px)")?.matches && shellState.projectButtonLabel !== "Project";
         projectDrawerToggle.textContent = compactProjectLabel ? "Project" : shellState.projectButtonLabel;
         projectDrawerToggle.title = shellState.projectButtonLabel;
         projectDrawerToggle.setAttribute("aria-label", shellState.projectButtonAriaLabel);
@@ -6584,7 +6635,7 @@ const MotionJSONUI = (() => {
     function renderApiStatus(kind, label) {
       const chip = $("#apiStatus");
       chip.className = `status-chip ${kind}`;
-      chip.textContent = label === "API ready" ? "Local API ready" : label === "API unavailable" ? "Local API unavailable" : label;
+      chip.textContent = label === "API ready" ? "Runtime API ready" : label === "API unavailable" ? "Runtime API unavailable" : label;
       renderShellIndicators();
     }
 
@@ -6608,7 +6659,7 @@ const MotionJSONUI = (() => {
 
       $("#routeList").innerHTML = (routes.length ? routes : API_ROUTES)
         .map((route) => {
-          const routeState = routes.length ? "reported by local API" : "expected local API route";
+          const routeState = routes.length ? "reported by Runtime API" : "expected Runtime API route";
           return `<div class="route-row"><strong>${escapeHtml(route)}</strong><span class="row-meta">${routeState}</span></div>`;
         })
         .join("");
@@ -6625,7 +6676,7 @@ const MotionJSONUI = (() => {
           projects: "not reported",
           providers: "not reported",
         });
-        if (projectRailTitle) projectRailTitle.textContent = "Local project";
+        if (projectRailTitle) projectRailTitle.textContent = "Project";
         if (projectRailMeta) projectRailMeta.textContent = state.errors.workspace || "Choose a goal, then add a video.";
         recent.innerHTML = `<div class="${state.errors.workspace ? "error-state" : "empty-state"}">${escapeHtml(state.errors.workspace || "Workspace summary has not loaded yet.")}</div>`;
         return;
@@ -6644,7 +6695,7 @@ const MotionJSONUI = (() => {
       const videos = asArray(state.workspace.recentVideos).slice(0, 3);
       const jobs = asArray(state.workspace.recentJobs).slice(0, 3);
       const selectedProject = state.projects.find((item) => item.id === state.selectedProjectId) || state.projects[0] || null;
-      if (projectRailTitle) projectRailTitle.textContent = selectedProject?.name || "Local project";
+      if (projectRailTitle) projectRailTitle.textContent = selectedProject?.name || "Project";
       if (projectRailMeta) projectRailMeta.textContent = state.selectedVideoId ? "Video selected" : "Add a video in step 2.";
       recent.innerHTML = `
         <div class="workspace-block">
@@ -6668,7 +6719,7 @@ const MotionJSONUI = (() => {
       if (provider.device) details.push(`device: ${provider.device}`);
       if (provider.optionalExtra) details.push(`extra: ${provider.optionalExtra}`);
       if (provider.noModelSafe === true) details.push("no-model safe");
-      if (provider.estimatedCost?.status?.startsWith("zero_local") && !provider.networkRequired) details.push("local/free");
+      if (provider.estimatedCost?.status?.startsWith("zero_local") && !provider.networkRequired) details.push("runtime/free");
       if (provider.networkRequired === true) details.push("network");
       if (provider.needsCredentials === true) details.push("credentials");
       if (provider.needsGpu === true) details.push("GPU required");
@@ -6710,7 +6761,7 @@ const MotionJSONUI = (() => {
               `;
             })
             .join("")
-        : `<div class="empty-state">The local API returned no provider records.</div>`;
+        : `<div class="empty-state">The Runtime API returned no provider records.</div>`;
     }
 
     function renderProviderSettings() {
@@ -6828,7 +6879,7 @@ const MotionJSONUI = (() => {
         ? asArray(settingsProvider?.hostedProfiles).find((item) => item.id === connection.profileId)?.setupGuide || {}
         : settingsProvider?.setupGuide || {};
       const readinessDetails = [
-        hosted ? "hosted API" : "local model",
+        hosted ? "hosted API" : "runtime model",
         readiness.status || summary.status,
         providerEffectiveModel(settingsProvider),
         connection.profileId || "",
@@ -6888,7 +6939,7 @@ const MotionJSONUI = (() => {
         ? `<label class="model-setup-readonly-path">
             <span>Cached SAM3 Scene Sweep model directory</span>
             <div class="readonly-path-control">
-              <input type="text" readonly value="${escapeAttribute(cachedSceneSweepPath || (settingsProvider?.modelCache?.localPathKnown ? "[LOCAL_PATH_REDACTED]" : ""))}" placeholder="Cache facebook/sam3 to record the local runtime directory" aria-label="Cached SAM3 Scene Sweep model directory" />
+              <input type="text" readonly value="${escapeAttribute(cachedSceneSweepPath || (settingsProvider?.modelCache?.localPathKnown ? "[LOCAL_PATH_REDACTED]" : ""))}" placeholder="Cache facebook/sam3 to record the runtime model directory" aria-label="Cached SAM3 Scene Sweep model directory" />
               <button type="button" data-copy-advanced-model-path="${escapeAttribute(connection.providerId)}" ${cachedSceneSweepPath ? "" : "disabled"}>${state.copiedAdvancedPathProviderId === connection.providerId ? "Copied" : "Copy path"}</button>
             </div>
             <span class="field-helper">${cachedSceneSweepPath ? "Used automatically for Scene Sweep. Do not paste this into the checkpoint path." : "This appears after Cache model records the server-side Scene Sweep directory."}</span>
@@ -6920,7 +6971,7 @@ const MotionJSONUI = (() => {
               : "Paste key";
         const helper =
           name === "hf_token"
-            ? `<span class="field-helper">Stored locally, redacted in the browser, and used only by allowlisted Hugging Face access/cache jobs.</span>`
+            ? `<span class="field-helper">Stored server-side, redacted in the browser, and used only by allowlisted Hugging Face access/cache jobs.</span>`
             : "";
         return `<label class="${options.normal ? "model-setup-access-token" : ""}">
           <span>${escapeHtml(label)}</span>
@@ -6983,7 +7034,7 @@ const MotionJSONUI = (() => {
             </div>
             <div class="provider-detail">
               ${cacheSummary.model ? detailChip(cacheSummary.model) : ""}
-              ${cacheSummary.pathKnown ? detailChip(cacheSummary.recorded ? "path recorded server-side" : "path known locally") : detailChip("path not recorded yet")}
+              ${cacheSummary.pathKnown ? detailChip(cacheSummary.recorded ? "path recorded server-side" : "path known in runtime") : detailChip("path not recorded yet")}
               ${cacheSummary.updatedAt ? detailChip(`updated ${cacheSummary.updatedAt}`) : ""}
             </div>
           </div>`
@@ -7333,7 +7384,7 @@ const MotionJSONUI = (() => {
             <input data-provider-field="customModelId" type="text" value="${escapeAttribute(settings.customModelId || "")}" />
           </label>`
         : "";
-      const cost = provider.cost?.label || (hosted ? "Provider billed" : "Free local");
+      const cost = provider.cost?.label || (hosted ? "Provider billed" : "No hosted cost");
       const capabilityStatus = capability?.status || (provider.implemented ? "registered" : "planned");
       const credentialSummary = credentials.length
         ? credentials
@@ -7412,7 +7463,7 @@ const MotionJSONUI = (() => {
           </div>
           <div class="provider-detail">
             ${detailChip(cost)}
-            ${detailChip(provider.runsInLocalWorker ? "local worker" : "settings only")}
+            ${detailChip(provider.runsInLocalWorker ? "runtime worker" : "settings only")}
             ${detailChip(provider.hardware || "hardware varies")}
             ${detailChip(capabilityStatus)}
           </div>
@@ -7494,7 +7545,7 @@ const MotionJSONUI = (() => {
           detail: baseReady ? "Core Python dependencies imported." : "Install base package dependencies, then refresh diagnostics.",
         },
         {
-          label: "Local UI",
+          label: "Workspace",
           status: state.health && !state.errors.health ? "ready" : "check",
           available: Boolean(state.health && !state.errors.health),
           detail: state.health?.mockMode ? "Debug mock mode is on for contributor checks." : "Use motionjson ui or module launch.",
@@ -7506,7 +7557,7 @@ const MotionJSONUI = (() => {
           detail: summary.canRunNoModelSmoke
             ? debugMockMode
               ? `Contributor smoke providers are importable: ${(readyNoModel.length ? readyNoModel : readyNoModelProviders.map((provider) => provider.name)).slice(0, 6).join(", ")}.`
-              : "The local worker can use CPU-safe providers while you finish SAM setup."
+              : "The runtime worker can use CPU-safe providers while you finish SAM setup."
             : debugMockMode
               ? "Install base CPU dependencies before using debug smoke providers."
               : "Install base CPU dependencies before starting local runs.",
@@ -7516,7 +7567,7 @@ const MotionJSONUI = (() => {
           status: missingOptional.length ? "optional" : optionalMissing.length ? "optional" : "ready",
           available: !(missingOptional.length || optionalMissing.length),
           detail: missingOptional.length
-            ? `Setup needed for real extraction: ${missingOptional.slice(0, 6).join(", ")}. Open Model setup for local paths or hosted keys.`
+            ? `Setup needed for real extraction: ${missingOptional.slice(0, 6).join(", ")}. Open Model setup for runtime paths or hosted keys.`
             : optionalMissing.length
               ? `Provider setup: ${optionalMissing.join("; ")}. Install only the SAM extras you plan to use.`
             : "Configured optional providers reported ready.",
@@ -7554,7 +7605,7 @@ const MotionJSONUI = (() => {
       const chip = $("#guidedModeChip");
       if (chip) {
         const debugMockMode = Boolean(state.health?.mockMode);
-        chip.textContent = debugMockMode ? "Debug mock mode" : "Local first";
+        chip.textContent = debugMockMode ? "Debug mock mode" : "Runtime first";
         chip.className = `status-chip ${debugMockMode ? "is-warn" : "is-neutral"}`;
       }
       const projectSummaryNote = $("#guidedProjectSummaryNote");
@@ -7754,7 +7805,7 @@ const MotionJSONUI = (() => {
       const railList = $("#projectRailList");
       $("#projectCount").textContent = `${state.projects.length} project${state.projects.length === 1 ? "" : "s"}`;
       if (!state.projects.length) {
-        if (select) select.innerHTML = `<option value="">${escapeHtml(state.errors.projects || "No local projects yet")}</option>`;
+        if (select) select.innerHTML = `<option value="">${escapeHtml(state.errors.projects || "No projects yet")}</option>`;
         if (railList) {
           railList.innerHTML = `<div class="project-rail-empty">No projects yet.</div>`;
         }
@@ -7778,7 +7829,7 @@ const MotionJSONUI = (() => {
           .map((project, index) => {
             const active = project.id === state.selectedProjectId;
             const created = project.created_at || project.createdAt || "";
-            const meta = active ? "Current project" : created ? created.split("T")[0] : index === 0 ? "Recent project" : "Local project";
+            const meta = active ? "Current project" : created ? created.split("T")[0] : index === 0 ? "Recent project" : "Project";
             return `
               <button class="project-rail-item ${active ? "is-active" : ""}" type="button" data-project-rail-id="${escapeAttribute(project.id)}" aria-pressed="${active}">
                 <span class="project-rail-folder" aria-hidden="true"></span>
@@ -8756,6 +8807,7 @@ const MotionJSONUI = (() => {
       }
       const frames = asArray(track.frames);
       const polygonFrames = frames.filter((frame) => asArray(frame.polygon).length >= 3).length;
+      const missingOutlineFrames = frames.filter((frame) => frame.outlineStatus === "outline_missing" || !asArray(frame.polygon).length).length;
       const motion = trackMotionMetrics(track);
       const motionSummary = trackUsesStaticKeyframeFallback(track)
         ? "static keyframe fallback blocked"
@@ -8782,7 +8834,7 @@ const MotionJSONUI = (() => {
           <dt>Object ID</dt><dd>${escapeHtml(track.objectId || track.id)}</dd>
           <dt>Source</dt><dd>${escapeHtml(track.source || track.providerName || "not reported")}</dd>
           <dt>Coverage</dt><dd>${escapeHtml(trackCoverageLabel(track))}</dd>
-          <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} polygon frame${polygonFrames === 1 ? "" : "s"}` : "box overlay")}</dd>
+          <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} real outline frame${polygonFrames === 1 ? "" : "s"}` : `outline missing (${missingOutlineFrames || frames.length} bbox diagnostic${(missingOutlineFrames || frames.length) === 1 ? "" : "s"})`)}</dd>
           <dt>Motion</dt><dd>${escapeHtml(motionSummary)}</dd>
           <dt>Preview</dt><dd>${escapeHtml(isTrackVisibleInReview(track) ? "visible" : "hidden")}</dd>
           <dt>Export</dt><dd>${escapeHtml(isTrackExportIncluded(track) ? "included" : "excluded")}</dd>
@@ -8811,7 +8863,7 @@ const MotionJSONUI = (() => {
       const statusLabel = status === "loaded" ? "Loaded" : status === "saved" ? "Saved" : status === "saving" ? "Saving" : status === "failed" ? "Save failed" : status === "unavailable" ? "Route unavailable" : "Not loaded";
       $("#correctionStatus").textContent = statusLabel;
       $("#correctionStatus").className = `status-chip ${statusClass(statusLabel, status === "loaded" || status === "saved")}`;
-      $("#correctionPersistenceMessage").textContent = state.correctionState.persistenceMessage || "Correction edits will be saved through the local backend correction API.";
+      $("#correctionPersistenceMessage").textContent = state.correctionState.persistenceMessage || "Correction edits will be saved through the Runtime API correction endpoint.";
 
       const selectableTracks = state.reviewTracks.filter((track) => !track.deleted);
       if (!state.selectedCorrectionTrackId || !selectableTracks.some((track) => track.id === state.selectedCorrectionTrackId)) {
@@ -9566,12 +9618,68 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Review markers come from the API review timeline; local keyframes are only config input.</div>`;
     }
 
+    function reviewFrameMap() {
+      return asArray(state.jobReview?.source?.frameMap)
+        .map((item) => ({
+          frame: toInteger(item?.frame, Number.NaN),
+          sampleIndex: toInteger(item?.sampleIndex, Number.NaN),
+          outIndex: toInteger(item?.outIndex, Number.NaN),
+          sourceFrameIndex: toInteger(item?.sourceFrameIndex, Number.NaN),
+          t: toNumber(item?.t, Number.NaN),
+          sampleFps: toNumber(item?.sampleFps, Number.NaN),
+        }))
+        .filter((item) => Number.isFinite(item.frame) && Number.isFinite(item.t));
+    }
+
+    function reviewPlaybackFps() {
+      const source = state.jobReview?.source || {};
+      const mapped = reviewFrameMap().find((item) => Number.isFinite(item.sampleFps))?.sampleFps;
+      return Math.max(0.1, toNumber(source.sampleFps ?? source.fps ?? mapped ?? $("#sampleFps").value, 12));
+    }
+
+    function reviewFrameForTime(timeSec) {
+      const frameMap = reviewFrameMap();
+      if (!frameMap.length || !Number.isFinite(timeSec)) return null;
+      return frameMap.reduce((nearest, item) => {
+        if (!nearest) return item;
+        return Math.abs(item.t - timeSec) < Math.abs(nearest.t - timeSec) ? item : nearest;
+      }, null);
+    }
+
+    function reviewTimeForFrame(frameNumber, fps) {
+      const requested = toInteger(frameNumber, 0);
+      const frameMap = reviewFrameMap();
+      const exact = frameMap.find((item) => [item.frame, item.sampleIndex, item.outIndex, item.sourceFrameIndex].includes(requested));
+      if (exact && Number.isFinite(exact.t)) return exact.t;
+      return requested / Math.max(0.1, fps);
+    }
+
+    function preloadReviewFrameAssets(track, currentFrame) {
+      const jobId = state.selectedJobId || jobIdentifier(selectedJob());
+      if (!jobId) return;
+      for (const frameNumber of [currentFrame - 1, currentFrame, currentFrame + 1]) {
+        const frame = trackFrameForDisplay(track, frameNumber);
+        for (const relPath of [frame?.mask, frame?.asset]) {
+          if (!relPath || /^https?:\/\//i.test(String(relPath))) continue;
+          const url = previewFileUrl(jobId, relPath);
+          if (!url || preloadedReviewAssets.has(url)) continue;
+          preloadedReviewAssets.add(url);
+          const image = new Image();
+          image.decoding = "async";
+          image.src = url;
+        }
+      }
+    }
+
     function renderVideoMetrics() {
       const video = elements.video;
-      const fps = Math.max(0.1, toNumber($("#sampleFps").value, 12));
-      const frame = video.duration ? Math.round(video.currentTime * fps) : state.video.currentFrame;
+      const fps = reviewPlaybackFps();
+      const mappedFrame = video.duration ? reviewFrameForTime(video.currentTime) : null;
+      const frame = mappedFrame ? mappedFrame.frame : video.duration ? Math.round(video.currentTime * fps) : state.video.currentFrame;
       state.video.currentFrame = Math.max(0, frame);
-      const frameCount = video.duration ? Math.max(0, Math.round(video.duration * fps)) : Math.max(state.video.currentFrame, 0);
+      const frameMap = reviewFrameMap();
+      const mappedMax = frameMap.length ? Math.max(...frameMap.map((item) => item.frame)) : 0;
+      const frameCount = Math.max(mappedMax, video.duration ? Math.round(video.duration * fps) : Math.max(state.video.currentFrame, 0));
       $("#frameSlider").max = String(frameCount);
       $("#frameSlider").value = String(clamp(state.video.currentFrame, 0, frameCount));
       $("#frameReadout").textContent = `frame ${state.video.currentFrame}`;
@@ -9721,8 +9829,19 @@ const MotionJSONUI = (() => {
         ctx.fill();
         ctx.stroke();
       } else {
-        ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
-        ctx.fillRect(start.x, start.y, end.x - start.x, end.y - start.y);
+        ctx.save();
+        ctx.strokeStyle = "#e3483d";
+        ctx.fillStyle = "rgba(227, 72, 61, 0.92)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(center.x - 12, center.y - 12);
+        ctx.lineTo(center.x + 12, center.y + 12);
+        ctx.moveTo(center.x + 12, center.y - 12);
+        ctx.lineTo(center.x - 12, center.y + 12);
+        ctx.stroke();
+        ctx.font = "700 12px ui-sans-serif, system-ui, sans-serif";
+        ctx.fillText("outline missing", center.x + 16, center.y + 4);
+        ctx.restore();
       }
       if (resultMode) {
         ctx.fillStyle = "#ffffff";
@@ -9797,6 +9916,7 @@ const MotionJSONUI = (() => {
 
       state.reviewTracks.forEach((track, index) => {
         if (!isTrackVisibleInReview(track)) return;
+        preloadReviewFrameAssets(track, state.video.currentFrame);
         drawTrackBox(track, trackFrameForDisplay(track, state.video.currentFrame), view, index);
       });
 
@@ -9817,6 +9937,16 @@ const MotionJSONUI = (() => {
 
     function scheduleDrawOverlay() {
       if (overlayFrame) return;
+      const video = elements.video;
+      if (video?.requestVideoFrameCallback && !video.paused && !video.ended) {
+        overlayFrame = 1;
+        video.requestVideoFrameCallback(() => {
+          overlayFrame = 0;
+          drawOverlay();
+          if (!video.paused && !video.ended) scheduleDrawOverlay();
+        });
+        return;
+      }
       overlayFrame = window.requestAnimationFrame(() => {
         overlayFrame = 0;
         drawOverlay();
@@ -10107,7 +10237,7 @@ const MotionJSONUI = (() => {
         config.provider.fallback_mask_provider = null;
       }
       if (!LOCAL_JOB_PROVIDERS.has(config.provider.name)) {
-        throw new Error(`${config.provider.name} cannot run in the local UI worker yet. Choose a compatible SAM2 or SAM3 engine, motion, threshold, mock, or external masks.`);
+        throw new Error(`${config.provider.name} cannot run in the workspace worker yet. Choose a compatible SAM2 or SAM3 engine, motion, threshold, mock, or external masks.`);
       }
       return config;
     }
@@ -10450,13 +10580,15 @@ const MotionJSONUI = (() => {
     }
 
     function seekToFrame(frame) {
-      const fps = Math.max(0.1, toNumber($("#sampleFps").value, 12));
+      const fps = reviewPlaybackFps();
       const sliderMax = toInteger($("#frameSlider").max, 0);
       const durationMax = Number.isFinite(elements.video.duration) && elements.video.duration > 0 ? Math.round(elements.video.duration * fps) : sliderMax;
-      const maxFrame = Math.max(0, sliderMax, durationMax);
+      const frameMap = reviewFrameMap();
+      const mappedMax = frameMap.length ? Math.max(...frameMap.map((item) => item.frame)) : 0;
+      const maxFrame = Math.max(0, sliderMax, durationMax, mappedMax);
       const nextFrame = clamp(Math.round(toNumber(frame, state.video.currentFrame)), 0, maxFrame);
       if (Number.isFinite(elements.video.duration) && elements.video.duration > 0) {
-        elements.video.currentTime = clamp(nextFrame / fps, 0, elements.video.duration);
+        elements.video.currentTime = clamp(reviewTimeForFrame(nextFrame, fps), 0, elements.video.duration);
       }
       state.video.currentFrame = nextFrame;
       $("#frameSlider").max = String(maxFrame);
@@ -11328,7 +11460,7 @@ const MotionJSONUI = (() => {
         persistenceStatus: "loaded",
         persistenceMessage: hardFailedCapture
           ? "No correction state is available because the run did not produce object tracks."
-          : "Correction state loaded from the local backend. Edits are saved locally before export.",
+          : "Correction state loaded from the Runtime API. Edits are saved before export.",
         mergeSuggestions: hardFailedCapture ? [] : [{ keepObjectId: "red_ball", mergeObjectId: "moving_object", meanIou: 0.42 }],
         history: hardFailedCapture
           ? []
@@ -11554,7 +11686,7 @@ const MotionJSONUI = (() => {
         }
         const captureState = {
           "model-setup": ["sam2-local", "", "neutral"],
-          "model-setup-local": ["sam2-local", "Local SAM2 is selected. Save checkpoint and model config paths, then diagnose setup.", "warn"],
+          "model-setup-local": ["sam2-local", "SAM2 runtime is selected. Save checkpoint and model config paths, then diagnose setup.", "warn"],
           "model-setup-hosted-warning": ["sam2-hosted:replicate-sam2-video", "Replicate SAM2 is selected. Save a token and confirm hosted cost/privacy before smoke tests or extraction.", "warn"],
           "model-setup-sam3-local": ["sam3-local", "SAM3 Scene Sweep is selected. Install the sam3-transformers extra, check Hugging Face access if needed, then diagnose setup before running.", "warn", "trace_all_objects"],
           "model-setup-sam3-roboflow": ["sam3-hosted:roboflow-sam3-pcs", "Roboflow SAM3 is selected. Paste an API key, save, then test setup before discovery.", "warn", "text_detector"],
@@ -11568,7 +11700,7 @@ const MotionJSONUI = (() => {
           "model-setup-cache-success": ["sam3-local", "facebook/sam3 is cached and ready for scene sweep.", "ready", "trace_all_objects"],
           "model-setup-sam3-missing-runtime": ["sam3-local", "Install the SAM3 Scene Sweep runtime before caching facebook/sam3.", "bad", "trace_all_objects"],
           "model-setup-sam3-missing-cache": ["sam3-local", "SAM3 Scene Sweep runtime is installed. Cache facebook/sam3 before running.", "warn", "trace_all_objects"],
-          "model-setup-success": ["sam2-local", "Diagnose found the local SAM2 paths and package imports needed for extraction.", "ready"],
+          "model-setup-success": ["sam2-local", "Diagnose found the SAM2 runtime paths and package imports needed for extraction.", "ready"],
         }[capture];
         if (captureState) {
           if (captureState[3]) applyPreset(captureState[3], { keepProvider: true });
@@ -12082,7 +12214,7 @@ const MotionJSONUI = (() => {
           state.selectedJob = job;
           state.jobEvents = [
             { event_type: "model_plan_attached", message: "model-generated plan attached for user review", metadata: { modelRunId: state.modelPlanRun.id } },
-            { event_type: "worker_start_requested", message: "local UI worker start requested after model-plan confirmation", metadata: { progress: { overallRatio: progress / 100 } } },
+            { event_type: "worker_start_requested", message: "workspace worker start requested after model-plan confirmation", metadata: { progress: { overallRatio: progress / 100 } } },
           ];
           state.jobArtifacts = [];
           state.reviewTracks = buildReviewTracks({ job, config: runConfig, artifacts: [] });
@@ -12244,7 +12376,7 @@ const MotionJSONUI = (() => {
 
       if (!forceMock && !LOCAL_JOB_PROVIDERS.has(requestedProvider)) {
         setRunAlert(
-          `Local UI job execution currently accepts SAM2 local/hosted, threshold, motion, or external providers. ${requestedProvider} remains capability-gated.`,
+          `Workspace job execution currently accepts SAM2 runtime/hosted, threshold, motion, or external providers. ${requestedProvider} remains capability-gated.`,
           "warning-box is-bad",
         );
         $("#runStatus").textContent = "Provider gated";
@@ -12439,7 +12571,7 @@ const MotionJSONUI = (() => {
         trackEdits,
         history: [...asArray(state.correctionState.history), entry],
         persistenceStatus: "saving",
-        persistenceMessage: "Saving correction edit through the local backend correction API.",
+        persistenceMessage: "Saving correction edit through the Runtime API correction endpoint.",
       };
       rebuildTracksFromCorrectionState();
       renderJobReview();
@@ -12455,7 +12587,7 @@ const MotionJSONUI = (() => {
       normalized.persistenceStatus = "saved";
       normalized.persistenceMessage = diagnosticMessage
         ? `Correction edit saved; ${diagnosticMessage}`
-        : "Correction edit saved in the local backend project state.";
+        : "Correction edit saved in the Runtime API project state.";
       normalized.history = normalized.history.map((entry) => ({ ...entry, persistenceStatus: "saved" }));
       if (response?.review) state.jobReview = response.review;
       state.correctionState = normalized;
@@ -12775,7 +12907,7 @@ const MotionJSONUI = (() => {
             assetId: artifactId,
             type: "motion_sticker",
             title: $("#libraryAssetTitle").value.trim() || "Reusable motion layer",
-            description: "Saved from the local UI asset library panel.",
+            description: "Saved from the workspace asset library panel.",
             tags: libraryTagsFromInput(),
             metadata: { source: "local_ui_asset_library" },
           }),
@@ -13890,6 +14022,8 @@ const MotionJSONUI = (() => {
     reviewGateFromSnapshot,
     reviewCandidates,
     reviewFlowStateFromSnapshot,
+    reviewToolUrl,
+    runtimeProofBadge,
     safeLocalContentUrl,
     runMonitorStageFromSnapshot,
     screenContractFromSnapshot,

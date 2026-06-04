@@ -110,7 +110,9 @@ def test_point_box_prompt_state_and_cli_command_are_generated_only():
 def test_cached_asset_defaults_and_transform_policy_are_explicit():
     _, js = read_files()
 
-    assert "window.location.pathname.includes('/preview/') ? '..' : '/out/demo'" in js
+    assert "const demoMode" in js
+    assert "Actual run artifacts are missing" in js
+    assert "demoMode ? '/out/demo'" in js
     assert "web_asset_manifest.json" in js
     assert "scene_graph.json" in js
     assert "layerFromManifest" in js
@@ -118,4 +120,4 @@ def test_cached_asset_defaults_and_transform_policy_are_explicit():
     assert "spriteSheet" in js
     assert "drawAssetPreview" in js
     assert "cached assets + JSON transforms; no AI rerun" in js
-    assert "Local deterministic correction only; no provider, network, or model-router call." in js
+    assert "Runtime deterministic correction only; no provider, network, or model-router call." in js

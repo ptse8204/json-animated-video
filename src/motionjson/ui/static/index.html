@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MotionJSON Local UI</title>
-    <!-- Build check labels retained for shell contract: Local release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
+    <title>MotionJSON Workspace</title>
+    <!-- Build check labels retained for shell contract: Platform release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
     <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
@@ -16,7 +16,7 @@
           <span class="brand-mark" aria-hidden="true"></span>
           <div>
             <strong>MotionJSON</strong>
-            <span>Local object tracing</span>
+            <span>Object tracing workspace</span>
           </div>
           <span id="collapsedGoalLabel" class="collapsed-goal-label">Cut out one object</span>
           <button
@@ -35,7 +35,7 @@
               <button id="projectRailNewButton" type="button" data-create-project>+ New</button>
             </div>
             <div class="project-rail-card">
-              <strong id="projectRailTitle">Local project</strong>
+              <strong id="projectRailTitle">Project</strong>
               <span id="projectRailMeta" class="row-meta">Choose a goal, then add a video.</span>
             </div>
             <div id="projectRailList" class="project-rail-list" aria-label="Recent projects"></div>
@@ -80,7 +80,7 @@
           </details>
 
           <details class="compact-panel disclosure-panel">
-            <summary>Local API</summary>
+            <summary>Runtime API</summary>
             <dl id="healthStatus" class="facts"></dl>
           </details>
 
@@ -101,7 +101,7 @@
               type="button"
               aria-controls="workspaceSidebar"
               aria-expanded="false"
-            >Local Project</button>
+            >Project</button>
           </div>
           <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
             <li class="is-active" data-studio-step="choose_goal">
@@ -143,7 +143,7 @@
               <h2>What do you want to do?</h2>
               <p class="panel-note">Choose the task. The rest of the flow only shows what that task needs.</p>
             </div>
-            <span id="guidedModeChip" class="status-chip is-neutral">Local first</span>
+            <span id="guidedModeChip" class="status-chip is-neutral">Runtime first</span>
           </div>
           <div class="goal-card-grid" aria-label="Object tracing goals">
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
@@ -168,7 +168,7 @@
             <div class="advanced-goal-list">
               <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
                 <span class="goal-card-title">Find moving things</span>
-                <span class="goal-card-copy">Use local motion cues without a model.</span>
+                <span class="goal-card-copy">Use runtime motion cues without a model.</span>
               </button>
               <button class="goal-card" type="button" data-preset="auto_object_proposals" aria-pressed="false">
                 <span class="goal-card-title">Discover objects</span>
@@ -204,7 +204,7 @@
           <ol
             id="workflowStepper"
             class="workflow-steps workflow-steps-accessible"
-            aria-label="Local workflow"
+            aria-label="Workspace workflow"
             aria-keyshortcuts="ArrowRight ArrowDown ArrowLeft ArrowUp Home End"
             hidden
           >
@@ -289,7 +289,7 @@
             <div>
               <p class="section-kicker">Model setup</p>
               <h2>Choose and install models</h2>
-              <p class="panel-note">Use the recommended local model first, install missing runtime pieces here, or choose a hosted provider after cost and privacy opt-in.</p>
+              <p class="panel-note">Use the recommended runtime model first, install missing runtime pieces here, or choose a hosted provider after cost and privacy opt-in.</p>
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
@@ -422,8 +422,8 @@
             </div>
             <div id="guidedProjectSummary" class="step-action-card" data-workflow-fragment="source_video">
               <div>
-                <strong>Local workspace</strong>
-                <p id="guidedProjectSummaryNote" class="form-hint">A local project is created automatically when you upload a video or open an existing result.</p>
+                <strong>Workspace project</strong>
+                <p id="guidedProjectSummaryNote" class="form-hint">A project is created automatically when you upload a video or open an existing result.</p>
               </div>
             </div>
             <div class="workflow-fragment" data-workflow-fragment="project_video">
@@ -444,7 +444,7 @@
                 <form id="projectForm" class="inline-form">
                   <label>
                     <span>New project name</span>
-                    <input id="projectName" type="text" value="MotionJSON local project" required />
+                    <input id="projectName" type="text" value="MotionJSON project" required />
                   </label>
                   <button type="submit">Create project</button>
                 </form>
@@ -456,11 +456,11 @@
                 <h3>Source Video</h3>
                 <span id="videoCount" class="subtle-chip">0 videos</span>
               </div>
-              <p class="form-hint step-leading-note">The source file stays local. MotionJSON prepares a browser-safe preview automatically when needed.</p>
+              <p class="form-hint step-leading-note">The source file stays in the selected runtime unless you explicitly choose a hosted provider. MotionJSON prepares a browser-safe preview automatically when needed.</p>
               <div id="directUploadCard" class="upload-dropzone">
                 <div>
                   <strong>Upload a video</strong>
-                  <p class="form-hint">Choose an MP4, MOV, WebM, or other local video file. This creates the local project and registers the source in one step.</p>
+                  <p class="form-hint">Choose an MP4, MOV, WebM, or other video file. This creates the project and registers the source in one step.</p>
                   <p id="videoUploadStatus" class="row-meta">No upload selected.</p>
                 </div>
                 <label class="file-control upload-file-control">
@@ -484,11 +484,11 @@
               </div>
               <select id="videoSelect" aria-label="Registered video"></select>
               <details id="localVideoPathDisclosure" class="advanced-panel">
-                <summary>Use a local file path instead</summary>
+                <summary>Use a runtime file path instead</summary>
                 <div class="advanced-stack">
                   <form id="videoForm" class="inline-form primary-form">
                     <label>
-                      <span>Local video path</span>
+                      <span>Runtime video path</span>
                       <input id="videoPath" type="text" placeholder="/Users/me/video.mp4 or examples/demo_red_ball.mp4" required />
                     </label>
                     <button type="submit">Register path</button>
@@ -580,7 +580,7 @@
                 <select id="maskProviderSelect"></select>
               </label>
               <label id="deviceField" data-workflow-fragment="provider_settings prompt_preview">
-                <span class="help-label" tabindex="0" data-tooltip="Auto is conservative for local SAM runs. Choose GPU to explicitly request CUDA when diagnostics show it is available.">Device</span>
+                <span class="help-label" tabindex="0" data-tooltip="Auto is conservative for SAM runtimes. Choose GPU to explicitly request CUDA when diagnostics show it is available.">Device</span>
                 <select id="deviceSelect">
                   <option value="auto">auto</option>
                   <option value="cpu">cpu</option>
@@ -607,12 +607,12 @@
               </div>
               <div class="guided-control-group">
                 <div>
-                  <span class="help-label" tabindex="0" data-tooltip="GPU maps to CUDA for SAM3 local scene sweep. Auto may fall back to CPU if provider diagnostics do not confirm CUDA.">Runtime speed</span>
+                  <span class="help-label" tabindex="0" data-tooltip="GPU maps to CUDA for SAM3 Scene Sweep. Auto may fall back to CPU if runtime diagnostics do not confirm CUDA.">Runtime speed</span>
                   <small id="runtimeDeviceNote">Auto device</small>
                 </div>
                 <div class="segmented-control" role="group" aria-label="Runtime speed">
                   <button type="button" data-device-preset="auto" data-tooltip="Let the backend choose from current diagnostics.">Auto</button>
-                  <button type="button" data-device-preset="cuda" data-tooltip="Request CUDA GPU for local SAM3 scene sweep.">GPU</button>
+                  <button type="button" data-device-preset="cuda" data-tooltip="Request CUDA GPU for SAM3 Scene Sweep.">GPU</button>
                   <button type="button" data-device-preset="cpu" data-tooltip="Use CPU. Slower, but useful when CUDA setup is unstable.">CPU</button>
                 </div>
               </div>
@@ -998,7 +998,7 @@
               <h2>Corrections</h2>
               <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
             </div>
-            <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the local backend.</p>
+            <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the Runtime API.</p>
             <div id="correctionStatusSummary" class="status-summary-grid" aria-live="polite"></div>
             <div id="correctionGuidance" class="correction-guidance" aria-live="polite"></div>
             <div class="correction-editor">

@@ -12,8 +12,26 @@ assert.ok(ui, "MotionJSONUI helper API should be exposed for JS checks");
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appSource = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/app.js"), "utf8");
 const selectorSource = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/ui_selectors.js"), "utf8");
+const shellHtml = readFileSync(resolve(repoRoot, "src/motionjson/ui/static/index.html"), "utf8");
 assert.ok(appSource.includes("from \"./ui_selectors.js\""), "app.js should import extracted UI selectors");
 assert.ok(selectorSource.includes("export function adaptiveRunDefaultsFromSnapshot"), "ui_selectors.js should export adaptive defaults");
+for (const forbiddenVisibleCopy of [
+  "MotionJSON Local UI",
+  "Local API",
+  "Local Project",
+  "Local object tracing",
+  "local object tracing",
+  "Local first",
+  "Free local",
+  "Prepare local model",
+  "Cached locally",
+]) {
+  assert.equal(
+    shellHtml.includes(forbiddenVisibleCopy),
+    false,
+    `static workspace shell should not expose local-only product copy: ${forbiddenVisibleCopy}`,
+  );
+}
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
@@ -506,7 +524,7 @@ const localModelSummary = ui.modelSetupProviderSummary({
   name: "Mock local planner",
   hostedCallsRequired: false,
   readiness: { status: "ready", runnable: true, networkAttempted: false },
-  estimatedCost: { label: "Free local" },
+  estimatedCost: { label: "No hosted cost" },
 });
 assert.equal(localModelSummary.tone, "ready");
 assert.match(localModelSummary.message, /No API key/);
@@ -560,7 +578,7 @@ const sam3NeedsAccessState = ui.modelSetupStateForConnection(
 );
 assert.equal(sam3NeedsAccessState.status, "needs_access");
 assert.notEqual(sam3NeedsAccessState.message, "Ready for this workflow.");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Prepare local model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Prepare runtime model");
 
 const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -585,7 +603,7 @@ const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3BlockedAccessJobState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Prepare local model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Prepare runtime model");
 
 const sam3ActiveAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -624,7 +642,7 @@ const sam3CacheAccessBlockedState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3CacheAccessBlockedState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Prepare local model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Prepare runtime model");
 
 const sam2CacheState = ui.modelSetupStateForConnection(
   { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
@@ -643,7 +661,7 @@ const sam2CacheState = ui.modelSetupStateForConnection(
   null,
 );
 assert.equal(sam2CacheState.status, "needs_download_confirmation");
-assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Prepare local model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Prepare runtime model");
 
 const staleNotConfiguredState = ui.modelSetupStateForConnection(
   { id: "sam2-local", providerId: "sam2-local", locality: "local" },
@@ -736,24 +754,43 @@ const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
       serverPathRecorded: true,
       localPathKnown: true,
       model: "facebook/sam3",
-      message: "Previously cached local model directory is available.",
+      message: "Previously cached runtime model directory is available.",
     },
     runtimeVerification: {
       verified: true,
+      acceleratorKind: "cuda",
+      runtimeProofStatus: "verified",
       loadedOnCuda: true,
+      loadedOnMps: false,
+      cudaAvailable: true,
+      mpsAvailable: false,
       deviceActual: "cuda:0",
+      gpuMemoryBefore: { usedMiB: 128 },
+      gpuMemoryAfter: { usedMiB: 980 },
       warmupStatus: "succeeded",
-      message: "Cached model loaded and warmed up successfully.",
+      message: "Cached model loaded and warmed up successfully on CUDA.",
     },
   },
   { status: "ready", message: "Model setup is ready." },
   null,
 );
-assert.deepEqual(cachedPlaybookSteps.map((step) => step.label), ["Environment", "Download", "Load on GPU", "Warm up", "Ready to run"]);
+assert.deepEqual(cachedPlaybookSteps.map((step) => step.label), ["Environment", "Download", "Prove accelerator", "Warm up", "Ready to run"]);
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "download").status, "done");
 assert.match(cachedPlaybookSteps.find((step) => step.id === "download").detail, /server-side/);
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "load_gpu").status, "done");
+assert.match(cachedPlaybookSteps.find((step) => step.id === "load_gpu").detail, /CUDA active/);
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "warmup").status, "done");
+assert.equal(ui.runtimeProofBadge({ acceleratorKind: "cuda", loadedOnCuda: true, deviceActual: "cuda:0" }).label, "CUDA active");
+assert.equal(ui.runtimeProofBadge({ acceleratorKind: "mps", loadedOnMps: true, deviceActual: "mps" }).label, "MPS active");
+assert.equal(ui.runtimeProofBadge({ acceleratorKind: "cpu", deviceActual: "cpu" }).label, "CPU fallback");
+assert.equal(ui.runtimeProofBadge({}, { locality: "hosted" }).label, "Hosted runtime");
+
+const runReviewToolUrl = ui.reviewToolUrl("job_123", { relPath: "preview/object_selection_workflow.html" });
+assert.match(runReviewToolUrl, /jobId=job_123/);
+assert.match(runReviewToolUrl, /scene=.*%2Fapi%2Fjobs%2Fjob_123%2Fpreview-files%2Fscene_graph\.json/);
+assert.match(runReviewToolUrl, /manifest=.*%2Fapi%2Fjobs%2Fjob_123%2Fpreview-files%2Fweb_asset_manifest\.json/);
+assert.match(runReviewToolUrl, /export=.*%2Fapi%2Fjobs%2Fjob_123%2Fexports%2Fmotionjson/);
+assert.equal(runReviewToolUrl.includes("/out/demo"), false);
 
 const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -761,7 +798,7 @@ const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
     id: "sam3-local",
     readiness: { configured: true, status: "ready", message: "SAM3 Scene Sweep runtime is ready." },
     credentials: [{ name: "hf_token", configured: true }],
-    setupState: { status: "ready", label: "Ready", message: "Previously cached local model directory is available." },
+    setupState: { status: "ready", label: "Ready", message: "Previously cached runtime model directory is available." },
     modelCache: {
       required: true,
       cached: true,
@@ -769,7 +806,7 @@ const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
       localPathKnown: true,
       runtimeModelSource: "saved_cache",
       model: "facebook/sam3",
-      message: "Previously cached local model directory is available.",
+      message: "Previously cached runtime model directory is available.",
     },
   },
   null,
@@ -782,7 +819,7 @@ const localPrepareState = ui.modelSetupPrimaryActionForState(
   { providerId: "sam2-hf-auto-masks", locality: "local" },
 );
 assert.equal(localPrepareState.id, "prepare-model");
-assert.equal(localPrepareState.label, "Prepare local model");
+assert.equal(localPrepareState.label, "Prepare runtime model");
 assert.match(appSource, /useSubprocessSmoke:\s*providerId === "sam3-local"/);
 
 const eventMarkup = ui.eventRowsMarkup([

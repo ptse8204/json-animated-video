@@ -2,12 +2,15 @@
   'use strict';
 
   const params = new URLSearchParams(window.location.search);
-  const defaultBase = window.location.pathname.includes('/preview/') ? '..' : '/out/demo';
-  const manifestUrl = params.get('manifest') || params.get('asset') || `${defaultBase}/web_asset_manifest.json`;
-  const sceneUrl = params.get('scene') || `${defaultBase}/scene_graph.json`;
+  const jobId = params.get('jobId') || '';
+  const previewPackageMode = window.location.pathname.includes('/preview/');
+  const explicitArtifactMode = params.has('manifest') || params.has('asset') || params.has('scene') || params.has('review') || params.has('export');
+  const demoMode = !jobId && !previewPackageMode && !explicitArtifactMode;
+  const defaultBase = previewPackageMode ? '..' : demoMode ? '/out/demo' : '';
+  const manifestUrl = params.get('manifest') || params.get('asset') || (defaultBase ? `${defaultBase}/web_asset_manifest.json` : '');
+  const sceneUrl = params.get('scene') || (defaultBase ? `${defaultBase}/scene_graph.json` : '');
   const reviewUrl = params.get('review') || '';
   const exportUrl = params.get('export') || '';
-  const jobId = params.get('jobId') || '';
 
   const $ = (id) => document.getElementById(id);
   const els = {
@@ -271,13 +274,13 @@
 
     const note = exportUrl
       ? [
-          `# Reviewing Local UI job ${jobId || '(current run)'}.`,
+          `# Reviewing Workspace job ${jobId || '(current run)'}.`,
           '# Use Export MotionJSON below to write the actual reviewed result.',
           '# This command is a reproducible CLI equivalent for a new extraction run.',
           parts.join(' ')
         ]
       : [
-          '# Standalone example mode; not connected to a Local UI job API.',
+          '# Standalone example mode; not connected to a Workspace job API.',
           '# Normal preview edits below use cached assets plus JSON transforms only.',
           parts.join(' ')
         ];
@@ -327,7 +330,7 @@
       'correction_request.json'
     ];
     els.correctionCommand.textContent = [
-      '# Local deterministic correction only; no provider, network, or model-router call.',
+      '# Runtime deterministic correction only; no provider, network, or model-router call.',
       '# Normal drag/scale/rotate preview continues to use cached assets + JSON transforms.',
       els.correctionPropagate.checked ? `# Propagation: ${els.correctionPropagationMode.value || 'same_coordinates'}, window ${Math.max(0, Number(els.correctionPropagateWindow.value) || 0)}` : '# Propagation: off',
       parts.join(' ')
@@ -361,7 +364,7 @@
     if (els.correctionPropagate.checked) operation.propagate = true;
     appState.corrections.push(operation);
     buildCorrectionCommand();
-    setHeaderStatus('Correction request updated. Run the generated local command to regenerate cached assets.', 'warn');
+    setHeaderStatus('Correction request updated. Run the generated command to regenerate cached assets.', 'warn');
   }
 
   function drawSelectionOverlay() {
@@ -472,7 +475,7 @@
     els.sourceVideo.src = appState.objectUrl;
     els.sourceVideo.load();
     els.videoEmpty.style.display = 'none';
-    setHeaderStatus(`Loaded ${appState.videoName}. Prompt selection is local to this page.`, 'warn');
+    setHeaderStatus(`Loaded ${appState.videoName}. Prompt selection is scoped to this page.`, 'warn');
     buildCliCommand();
     buildCorrectionCommand();
   }
@@ -557,6 +560,7 @@
   }
 
   async function loadJson(url) {
+    if (!url) throw new Error('Actual run artifacts are missing. Open this tool from a completed run or pass scene= and manifest= query parameters.');
     const response = await fetch(url);
     if (!response.ok) throw new Error(`${url} returned ${response.status}`);
     return response.json();
@@ -589,7 +593,7 @@
       const tracks = Array.isArray(appState.review.tracks) ? appState.review.tracks.length : 0;
       const objects = Array.isArray(appState.review.objects) ? appState.review.objects.length : 0;
       const reviewCount = tracks || objects;
-      els.exportStatusLine.textContent = `Connected to Local UI job ${jobId || ''}. ${reviewCount} reviewed object${reviewCount === 1 ? '' : 's'} available for export.`;
+      els.exportStatusLine.textContent = `Connected to Runtime API job ${jobId || ''}. ${reviewCount} reviewed object${reviewCount === 1 ? '' : 's'} available for export.`;
       els.exportMotionJson.disabled = false;
     } catch (error) {
       els.exportStatusLine.textContent = `Review API unavailable: ${error.message}`;
@@ -599,7 +603,7 @@
 
   async function exportMotionJson() {
     if (!exportUrl) {
-      els.exportStatusLine.textContent = 'This standalone example is not connected to a Local UI export endpoint.';
+      els.exportStatusLine.textContent = 'This standalone example is not connected to a Runtime API export endpoint.';
       return;
     }
     els.exportMotionJson.disabled = true;
@@ -631,7 +635,7 @@
           window.location.origin
         );
       }
-      setHeaderStatus('Actual MotionJSON export finished for this Local UI run.', 'ready');
+      setHeaderStatus('Actual MotionJSON export finished for this Workspace run.', 'ready');
     } catch (error) {
       els.exportStatusLine.textContent = `Export failed: ${error.message}`;
       setHeaderStatus('MotionJSON export failed.', 'error');
@@ -641,6 +645,9 @@
   }
 
   async function loadAssetDocuments() {
+    if (!manifestUrl || !sceneUrl) {
+      throw new Error('Actual run artifacts are missing. Workspace review tools require scene= and manifest= query parameters for the selected run.');
+    }
     els.assetSource.textContent = manifestUrl;
     const [manifestResult, sceneResult] = await Promise.allSettled([
       loadJson(manifestUrl),
@@ -888,12 +895,12 @@
     try {
       await loadAssetDocuments();
       await loadReviewState();
-      setHeaderStatus(`Loaded cached assets from ${manifestUrl}`, 'ready');
+      setHeaderStatus(`${demoMode ? 'Loaded demo assets' : 'Loaded run artifacts'} from ${manifestUrl}`, 'ready');
     } catch (error) {
       els.assetStatus.textContent = 'asset load failed';
       els.assetEmpty.style.display = 'grid';
       els.sceneGraphPre.textContent = error.stack || error.message;
-      setHeaderStatus('Demo assets not loaded. Generate out/demo or pass query params.', 'error');
+      setHeaderStatus(demoMode ? 'Demo assets not loaded. Generate out/demo or pass query params.' : 'Run artifacts missing. Reopen this tool from a completed run.', 'error');
     }
     appState.animationRequest = window.requestAnimationFrame(animationTick);
   }

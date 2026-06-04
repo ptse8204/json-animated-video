@@ -137,6 +137,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/run" in health["routes"]
     assert "/api/jobs/{jobId}/review" in health["routes"]
     assert "/api/jobs/{jobId}/exports" in health["routes"]
+    assert "/api/jobs/{jobId}/exports/motionjson" in health["routes"]
     assert "/api/jobs/{jobId}/cancel" in health["routes"]
     assert "/api/jobs/{jobId}/preview-files/{relPath}" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
@@ -1439,7 +1440,7 @@ def test_local_ui_track_selected_validates_candidates_and_gates_export(tmp_path)
 
     status, _headers, body = app.handle(
         "POST",
-        f"/api/jobs/{job['id']}/exports",
+        f"/api/jobs/{job['id']}/exports/motionjson",
         body=json.dumps({"preset": "compact", "includePreview": False}).encode("utf-8"),
     )
     exported = decode(body)
