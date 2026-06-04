@@ -186,6 +186,77 @@ assert.deepEqual(ui.failedRunRecoveryLabels({ failure: { reasonCode: "provider_u
   changeSetup: "Change setup",
   chooseModel: "Choose different model",
 });
+assert.deepEqual(ui.workflowJobStatusFromSnapshot({ selectedJobId: "job_running", selectedJobStatus: "running" }), {
+  hasJob: true,
+  id: "job_running",
+  lifecycle: null,
+  status: "running",
+  rawStatus: "running",
+  failureReason: "",
+  running: true,
+  failed: false,
+  succeeded: false,
+});
+assert.deepEqual(ui.workflowModelSetupStatusFromSnapshot({ selectedPreset: "trace_all_objects", providerSummaryTone: "ready" }), {
+  requiresModel: true,
+  status: "ready",
+  ready: true,
+  message: "Choose one compatible model connection before continuing.",
+  action: { id: "continue-to-run", label: "Continue to run", primary: true },
+  hasForm: true,
+  hasConnection: false,
+});
+assert.deepEqual(ui.workflowRecoveryActionsFromSnapshot({ selectedJobFailureReason: "worker_heartbeat_stale" }), {
+  reasonCode: "worker_heartbeat_stale",
+  labels: {
+    runAgain: "Retry asset prep",
+    changeSetup: "Retry from Model setup",
+    chooseModel: "Choose different model",
+  },
+  primaryLabel: "Retry asset prep",
+  primaryAction: "retry_asset_preparation",
+  successAdvanceTo: "provider_settings",
+});
+const exportAvailability = ui.workflowExportAvailabilityFromSnapshot({
+  selectedJobId: "job_export",
+  selectedJobStatus: "succeeded",
+  trackCount: 2,
+  exportIncludedCount: 1,
+  exportValidated: true,
+  exportOk: true,
+});
+assert.equal(exportAvailability.canExport, true);
+assert.equal(exportAvailability.action.label, "Export MotionJSON");
+assert.equal(ui.workflowPrimaryActionFromSnapshot({ selectedJobStatus: "failed" }, "run_monitor"), "prepare_new_run");
+assert.equal(
+  ui.workflowBlockedReasonFromSnapshot({ selectedPreset: "trace_one_object", selectedVideoId: "video_1", providerName: "SAM3 local", hasPointPrompt: true, hasBoxPrompt: false }, "prompt_preview"),
+  "Draw one box around the object for SAM3 tracing.",
+);
+const originalDocumentDescriptor = Object.getOwnPropertyDescriptor(globalThis, "document");
+Object.defineProperty(globalThis, "document", {
+  value: {
+    querySelector() {
+      throw new Error("selectors must not read the DOM");
+    },
+  },
+  configurable: true,
+});
+try {
+  assert.equal(
+    ui.workflowStepContractFromSnapshot({ selectedPreset: "review_existing", motionJsonImportPathValue: "/tmp/result.json" }, "source_video").enabled,
+    true,
+  );
+  assert.equal(
+    ui.screenContractFromSnapshot({ selectedPreset: "review_existing", motionJsonImportPathValue: "/tmp/result.json" }, "source_video").enabled,
+    true,
+  );
+} finally {
+  if (originalDocumentDescriptor) {
+    Object.defineProperty(globalThis, "document", originalDocumentDescriptor);
+  } else {
+    delete globalThis.document;
+  }
+}
 assert.equal(ui.jobProgressText({ status: "failed", progress: { known: true, percent: 100, label: "Failed" } }), "Failed");
 assert.equal(ui.jobProgressText({ status: "running", progress: { known: true, percent: 31 } }), "31% complete");
 assert.equal(ui.objectDiscoveryConfig({ preset: "trace_all_objects" }).qualityPreset, "balanced");
@@ -2074,6 +2145,7 @@ console.log(
         "provider-state-fixtures",
         "lifecycle-state-fixtures",
         "job-center-regression-gates",
+        "ui-product-state-selectors",
         "export-handoff-minimal-copy",
         "python-config-validation",
       ],

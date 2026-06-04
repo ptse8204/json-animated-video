@@ -899,62 +899,186 @@ const MotionJSONUI = (() => {
     return /failed|error|canceled|cancelled/.test(String(status || "").toLowerCase());
   }
 
+  function workflowJobStatusFromSnapshot(snapshot = {}) {
+    const lifecycle = snapshot.job ? normalizeJobLifecycle(snapshot.job) : null;
+    const status = String(snapshot.selectedJobStatus || lifecycle?.status || "").toLowerCase();
+    const rawStatus = String(snapshot.selectedJobRawStatus || lifecycle?.rawStatus || status).toLowerCase();
+    const failureReason = String(snapshot.selectedJobFailureReason || lifecycle?.failure?.reasonCode || "").toLowerCase();
+    const hasJob = Boolean(snapshot.selectedJobId || snapshot.hasSelectedJob || lifecycle?.id || status);
+    return {
+      hasJob,
+      id: snapshot.selectedJobId || lifecycle?.id || "",
+      lifecycle,
+      status,
+      rawStatus,
+      failureReason,
+      running: isActiveJobStatus(status) || isActiveJobStatus(rawStatus),
+      failed: isFailedJobStatus(status) || isFailedJobStatus(rawStatus),
+      succeeded: /succeeded|completed|complete/.test(status),
+    };
+  }
+
+  function workflowModelSetupStatusFromSnapshot(snapshot = {}) {
+    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
+    const requiresModel = goalRequiresModel(selectedPreset);
+    const modelSetupState = snapshot.modelSetupState || {};
+    const fallbackStatus = !requiresModel
+      ? "ready"
+      : snapshot.providerSummaryTone === "ready"
+        ? "ready"
+        : snapshot.providerBlocked
+          ? "blocked"
+          : "not_configured";
+    const status = String(snapshot.modelSetupStatus || modelSetupState.status || fallbackStatus);
+    const action = snapshot.modelSetupAction || {};
+    const ready = !requiresModel || status === "ready";
+    return {
+      requiresModel,
+      status,
+      ready,
+      message:
+        modelSetupState.message ||
+        snapshot.modelSetupMessage ||
+        snapshot.providerSummaryMessage ||
+        snapshot.providerWarning ||
+        (requiresModel ? "Choose one compatible model connection before continuing." : "No model setup is needed for this workflow."),
+      action: {
+        id: action.id || (ready ? "continue-to-run" : snapshot.modelSetupActionId || "install"),
+        label: action.label || (ready ? "Continue to run" : snapshot.modelSetupActionLabel || "Save setup"),
+        primary: action.primary !== false,
+      },
+      hasForm: snapshot.hasModelSetupForm !== false,
+      hasConnection: Boolean(snapshot.modelSetupConnectionId || snapshot.providerConnectionId || snapshot.providerId),
+    };
+  }
+
+  function workflowRecoveryActionsFromSnapshot(snapshot = {}) {
+    const jobStatus = workflowJobStatusFromSnapshot(snapshot);
+    const reasonCode = jobStatus.failureReason || String(snapshot.reasonCode || "").toLowerCase();
+    const labels = failedRunRecoveryLabels({ failure: { reasonCode } });
+    const assetPrepRetry = labels.runAgain === "Retry asset prep";
+    return {
+      reasonCode,
+      labels,
+      primaryLabel: assetPrepRetry ? labels.runAgain : "Change setup",
+      primaryAction: assetPrepRetry ? "retry_asset_preparation" : "prepare_new_run",
+      successAdvanceTo: "provider_settings",
+    };
+  }
+
+  function idsFromSnapshotCount(ids, count, prefix) {
+    const explicit = asArray(ids).map((id) => String(id || "").trim()).filter(Boolean);
+    if (explicit.length) return explicit;
+    return Array.from({ length: Math.max(0, toInteger(count, 0)) }, (_item, index) => `${prefix}_${index + 1}`);
+  }
+
+  function workflowExportAvailabilityFromSnapshot(snapshot = {}) {
+    const jobStatus = workflowJobStatusFromSnapshot(snapshot);
+    const job =
+      snapshot.job ||
+      (jobStatus.hasJob
+        ? {
+            id: jobStatus.id || "selected_job",
+            status: jobStatus.status || "succeeded",
+            lifecycle: {
+              status: jobStatus.status || "succeeded",
+              rawStatus: jobStatus.rawStatus || jobStatus.status || "succeeded",
+              actions: { canExport: Boolean(snapshot.canExport) },
+            },
+          }
+        : null);
+    const includedIds = idsFromSnapshotCount(snapshot.exportIncludedIds, snapshot.exportIncludedCount ?? snapshot.exportableTrackCount, "included");
+    const pendingIds = idsFromSnapshotCount(snapshot.exportPendingIds || snapshot.pendingExportIds, snapshot.exportPendingCount, "pending");
+    const status =
+      snapshot.exportStatus ||
+      snapshot.exportValidation ||
+      (snapshot.exportValidated ? { ok: snapshot.exportOk === true, issues: snapshot.exportIssueText ? [{ message: snapshot.exportIssueText }] : [] } : null);
+    const trackCount = toInteger(snapshot.trackCount, 0);
+    const staticFallbackCount = toInteger(snapshot.staticFallbackCount, 0);
+    const action =
+      snapshot.exportAction ||
+      exportActionState({
+        job,
+        includedIds,
+        pendingIds,
+        trackCount,
+        status,
+        staticFallbackCount,
+      });
+    const validationBlocked =
+      snapshot.validationBlocked === true ||
+      (status && status.ok !== true && includedIds.length > 0 && staticFallbackCount === 0);
+    return {
+      job,
+      includedIds,
+      pendingIds,
+      includedCount: includedIds.length,
+      pendingCount: pendingIds.length,
+      trackCount,
+      status,
+      staticFallbackCount,
+      validationBlocked,
+      action,
+      canValidate: Boolean(jobStatus.hasJob && trackCount),
+      canExport: !action.disabled,
+      blockedReason: validationBlocked ? exportValidationIssueText(status) : action.reason || "",
+    };
+  }
+
+  function workflowPrimaryActionFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
+    return workflowStepContractFromSnapshot(snapshot, activeStep).primaryAction;
+  }
+
+  function workflowBlockedReasonFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
+    return workflowStepContractFromSnapshot(snapshot, activeStep).blockedReason;
+  }
+
   function workflowStepContractFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
     const readiness = workflowReadinessFromSnapshot(snapshot);
     const activeReadiness = readiness[activeStep] || {};
-    const requiresModel = goalRequiresModel(snapshot.selectedPreset || state.selectedPreset);
+    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
+    const requiresModel = goalRequiresModel(selectedPreset);
     const hasVideo = Boolean(snapshot.selectedVideoId);
-    const hasResult = Boolean(snapshot.selectedJobId) && (snapshot.selectedPreset || state.selectedPreset) === "review_existing";
+    const hasResult = Boolean(snapshot.selectedJobId) && selectedPreset === "review_existing";
     const previewStatus = String(snapshot.videoPreviewStatus || "");
     const previewReason = snapshot.videoPreviewReason || "";
-    const videoPathValue = typeof document !== "undefined" ? document.querySelector("#videoPath")?.value.trim() || "" : "";
-    const importPathValue = typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() || "" : "";
-    const hasModelSetupForm = typeof document !== "undefined" ? Boolean(document.querySelector("#modelSetupForm")) : snapshot.providerSummaryTone === "ready" || snapshot.providerSummaryTone === "warn";
-    const selectedJobStatus = String(snapshot.selectedJobStatus || selectedJob()?.status || "").toLowerCase();
-    const jobRunning = isActiveJobStatus(selectedJobStatus);
-    const jobFailed = isFailedJobStatus(selectedJobStatus);
-    const exportIncludedIds = state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean);
-    const exportStatus = state.exportValidation?.validation || state.exportResult?.validation || null;
-    const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
-    const exportAction = exportActionState({
-      job: selectedJob(),
-      includedIds: exportIncludedIds,
-      status: exportStatus,
-      trackCount: state.reviewTracks.length,
-      pendingIds: buildExportPanelSummary({
-        exportState: state.exportResult || state.exportValidation || {},
-        reviewExport: state.jobReview?.export || {},
-        reviewTracks: state.reviewTracks,
-        reviewObjects: state.jobReview?.objects,
-      }).pendingIds,
-      staticFallbackCount,
-    });
+    const videoPathValue = String(snapshot.videoPathValue || "").trim();
+    const importPathValue = String(snapshot.motionJsonImportPathValue || snapshot.importPathValue || "").trim();
+    const modelSetup = workflowModelSetupStatusFromSnapshot(snapshot);
+    const jobStatus = workflowJobStatusFromSnapshot(snapshot);
+    const jobRunning = jobStatus.running;
+    const jobFailed = jobStatus.failed;
+    const exportAvailability = workflowExportAvailabilityFromSnapshot(snapshot);
     const reviewFlow = reviewFlowStateFromSnapshot({
       ...snapshot,
-      job: selectedJob(),
-      trackCount: state.reviewTracks.length,
-      exportIncludedCount: exportIncludedIds.length,
-      exportValidated: Boolean(exportStatus),
-      exportOk: exportStatus?.ok === true,
+      job: exportAvailability.job,
+      trackCount: exportAvailability.trackCount,
+      exportIncludedCount: exportAvailability.includedCount,
+      exportValidated: Boolean(exportAvailability.status),
+      exportOk: exportAvailability.status?.ok === true,
     });
     const reviewGate = reviewFlow.gate;
-    const validationBlocked = reviewGate.primaryAction === "export_reviewed" && exportStatus && exportStatus.ok !== true && exportIncludedIds.length > 0 && staticFallbackCount === 0;
+    const validationBlocked = reviewGate.primaryAction === "export_reviewed" && exportAvailability.validationBlocked;
     const reviewPrimaryAction = validationBlocked ? "validate_export" : reviewGate.primaryAction;
     const reviewPrimaryLabel = validationBlocked
       ? "Validate again"
-      : reviewPrimaryAction === "export_reviewed" && !exportAction.disabled
+      : reviewPrimaryAction === "export_reviewed" && !exportAvailability.action.disabled
         ? "Export reviewed objects"
         : reviewPrimaryAction === "export_reviewed"
-          ? exportAction.label
+          ? exportAvailability.action.label
           : reviewGate.primaryLabel;
-    const reviewPrimaryBlockedReason = validationBlocked ? exportValidationIssueText(exportStatus) : reviewPrimaryAction === "export_reviewed" ? exportAction.reason : reviewGate.reason;
+    const reviewPrimaryBlockedReason = validationBlocked
+      ? exportAvailability.blockedReason
+      : reviewPrimaryAction === "export_reviewed"
+        ? exportAvailability.action.reason
+        : reviewGate.reason;
     const reviewPrimaryEnabled =
       reviewPrimaryAction === "validate_export"
         ? true
         : reviewPrimaryAction === "export_reviewed"
-        ? !exportAction.disabled
+        ? !exportAvailability.action.disabled
         : reviewPrimaryAction === "track_selected"
-          ? state.candidateTrackingStatus !== "tracking" && reviewFlow.selectedCandidateCount > 0
+          ? snapshot.candidateTrackingStatus !== "tracking" && reviewFlow.selectedCandidateCount > 0
           : reviewPrimaryAction !== "start_run";
     const reviewStep = {
       id: "review_export",
@@ -979,7 +1103,7 @@ const MotionJSONUI = (() => {
     }
 
     if (activeStep === "source_video") {
-      if ((snapshot.selectedPreset || state.selectedPreset) === "review_existing") {
+      if (selectedPreset === "review_existing") {
         return {
           id: activeStep,
           primaryLabel: hasResult ? "Continue to review" : "Open result",
@@ -1024,18 +1148,13 @@ const MotionJSONUI = (() => {
     }
 
     if (activeStep === "provider_settings") {
-      const connection = modelConnectionById(state.selectedModelSetupProviderId || recommendedConnectionIdForPreset(snapshot.selectedPreset || state.selectedPreset));
-      const provider = providerSettingsById(connection?.providerId || "");
-      const setupState = modelSetupStateForConnection(connection, provider, connection ? setupJobForProvider(connection.providerId) : null);
-      const setupAction = modelSetupPrimaryActionForState(setupState, connection);
-      const ready = setupState.status === "ready";
       return {
         id: activeStep,
-        primaryLabel: ready ? "Continue to run" : setupAction.label,
-        primaryAction: ready ? "continue_to_prepare" : "run_model_setup_action",
-        modelSetupAction: setupAction.id,
-        enabled: ready || Boolean(hasModelSetupForm || connection),
-        blockedReason: ready ? "" : setupState.message || "Choose one compatible model connection before continuing.",
+        primaryLabel: modelSetup.ready ? "Continue to run" : modelSetup.action.label,
+        primaryAction: modelSetup.ready ? "continue_to_prepare" : "run_model_setup_action",
+        modelSetupAction: modelSetup.action.id,
+        enabled: modelSetup.ready || Boolean(modelSetup.hasForm || modelSetup.hasConnection),
+        blockedReason: modelSetup.ready ? "" : modelSetup.message || "Choose one compatible model connection before continuing.",
         successAdvanceTo: "prompt_preview",
         backTarget: "source_video",
       };
@@ -1045,7 +1164,7 @@ const MotionJSONUI = (() => {
       const blocksNewRun = jobRunning;
       return {
         id: activeStep,
-        primaryLabel: primaryRunLabelForPreset(snapshot.selectedPreset || state.selectedPreset),
+        primaryLabel: primaryRunLabelForPreset(selectedPreset),
         primaryAction: "run_prepared_workflow",
         enabled: Boolean(activeReadiness.complete) && !blocksNewRun,
         blockedReason: blocksNewRun
@@ -1070,14 +1189,14 @@ const MotionJSONUI = (() => {
         };
       }
       if (jobFailed) {
-        const recoveryLabels = failedRunRecoveryLabels({ failure: { reasonCode: snapshot.selectedJobFailureReason || "" } });
+        const recoveryActions = workflowRecoveryActionsFromSnapshot(snapshot);
         return {
           id: activeStep,
-          primaryLabel: recoveryLabels.runAgain === "Retry asset prep" ? recoveryLabels.runAgain : "Change setup",
-          primaryAction: recoveryLabels.runAgain === "Retry asset prep" ? "retry_asset_preparation" : "prepare_new_run",
+          primaryLabel: recoveryActions.primaryLabel,
+          primaryAction: recoveryActions.primaryAction,
           enabled: true,
           blockedReason: "",
-          successAdvanceTo: "provider_settings",
+          successAdvanceTo: recoveryActions.successAdvanceTo,
           backTarget: "prompt_preview",
         };
       }
@@ -1094,7 +1213,7 @@ const MotionJSONUI = (() => {
       }
       return {
         id: activeStep,
-        primaryLabel: primaryRunLabelForPreset(snapshot.selectedPreset || state.selectedPreset),
+        primaryLabel: primaryRunLabelForPreset(selectedPreset),
         primaryAction: "run_prepared_workflow",
         enabled: Boolean(readiness.prompt_preview?.complete),
         blockedReason: readiness.prompt_preview?.message || "Prepare the run before starting extraction.",
@@ -1108,16 +1227,17 @@ const MotionJSONUI = (() => {
 
   function screenContractFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
     const screenId = workflowScreenForStep(activeStep);
-    const selectedPreset = snapshot.selectedPreset || state.selectedPreset;
+    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
     const requiresModel = goalRequiresModel(selectedPreset);
     const previewStatus = String(snapshot.videoPreviewStatus || "");
     const previewReason = snapshot.videoPreviewReason || "";
-    const providerReady = snapshot.providerSummaryTone === "ready";
+    const modelSetup = workflowModelSetupStatusFromSnapshot(snapshot);
+    const providerReady = modelSetup.ready;
     const hasVideo = Boolean(snapshot.selectedVideoId);
     const hasResult = selectedPreset === "review_existing" && Boolean(snapshot.selectedJobId);
-    const selectedJobStatus = String(snapshot.selectedJobStatus || selectedJob()?.status || "").toLowerCase();
-    const jobRunning = isActiveJobStatus(selectedJobStatus);
-    const jobFailed = isFailedJobStatus(selectedJobStatus);
+    const jobStatus = workflowJobStatusFromSnapshot(snapshot);
+    const jobRunning = jobStatus.running;
+    const jobFailed = jobStatus.failed;
     if (screenId === "start") {
       return {
         title: "Start",
@@ -1145,8 +1265,8 @@ const MotionJSONUI = (() => {
           backTarget: "choose_goal",
         };
       }
-      const videoPathValue = typeof document !== "undefined" ? document.querySelector("#videoPath")?.value.trim() || "" : "";
-      const importPathValue = typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() || "" : "";
+      const videoPathValue = String(snapshot.videoPathValue || "").trim();
+      const importPathValue = String(snapshot.motionJsonImportPathValue || snapshot.importPathValue || "").trim();
       if (!hasVideo) {
         return {
           title: "Video",
@@ -1154,7 +1274,7 @@ const MotionJSONUI = (() => {
           statusLabel: selectedPreset === "review_existing" ? (importPathValue ? "Ready to open" : "Needs result") : videoPathValue ? "Ready to register" : "Ready for upload",
           statusTone: selectedPreset === "review_existing" ? (importPathValue ? "is-ready" : "is-warn") : "is-ready",
           primaryLabel: selectedPreset === "review_existing" ? "Open result" : videoPathValue ? "Register path" : "Choose video file",
-          enabled: selectedPreset === "review_existing" ? Boolean(typeof document !== "undefined" ? document.querySelector("#motionJsonImportPath")?.value.trim() : false) : true,
+          enabled: selectedPreset === "review_existing" ? Boolean(importPathValue) : true,
           blockedReason: selectedPreset === "review_existing" ? "Enter a MotionJSON path to open an existing result." : "",
           primaryAction: selectedPreset === "review_existing" ? "open_result" : videoPathValue ? "add_video" : "choose_video_file",
           backTarget: "choose_goal",
@@ -1205,7 +1325,7 @@ const MotionJSONUI = (() => {
         statusLabel: !requiresModel ? "Not needed" : providerReady ? "Ready" : "Needs setup",
         statusTone: !requiresModel || providerReady ? "is-ready" : "is-warn",
         primaryLabel: !requiresModel || providerReady ? "Continue to prepare" : "Save and continue",
-        enabled: !requiresModel || Boolean(typeof document !== "undefined" ? document.querySelector("#modelSetupForm") : true),
+        enabled: !requiresModel || Boolean(modelSetup.hasForm || modelSetup.hasConnection),
         blockedReason: requiresModel ? "Choose one compatible model connection." : "",
         primaryAction: !requiresModel || providerReady ? "continue_to_prepare" : "save_model_setup",
         backTarget: "source_video",
@@ -5459,15 +5579,28 @@ const MotionJSONUI = (() => {
       const browserPreview = selectedVideoBrowserPreview(video);
       const enginePlan = guidedEnginePlan(collectFormState($));
       const connection = selectedConnectionForInput({ modelConnectionId: state.selectedModelSetupProviderId, preset: state.selectedPreset });
+      const provider = providerSettingsById(connection?.providerId || "");
+      const setupJob = connection ? setupJobForProvider(connection.providerId) : null;
+      const modelSetupState = modelSetupStateForConnection(connection, provider, setupJob);
+      const modelSetupAction = modelSetupPrimaryActionForState(modelSetupState, connection);
       const connectionSummary = connection ? connectionReadiness(connection) : { tone: "bad", status: "needs_setup", label: "Setup needed", message: "" };
       const candidates = reviewCandidates();
-      const selectedLifecycle = selectedJob() ? normalizeJobLifecycle(selectedJob()) : null;
+      const job = selectedJob();
+      const selectedLifecycle = job ? normalizeJobLifecycle(job) : null;
       const selectedCount = candidates.filter((candidate) => {
         const id = candidateId(candidate);
         return id && state.candidateSelection[id] === true;
       }).length;
       const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
-      const exportIncludedCount = state.reviewTracks.filter(isTrackExportIncluded).length;
+      const exportState = state.exportResult || state.exportValidation || {};
+      const exportSummary = buildExportPanelSummary({
+        exportState,
+        reviewExport: state.jobReview?.export || {},
+        reviewTracks: state.reviewTracks,
+        reviewObjects: state.jobReview?.objects,
+      });
+      const exportIncludedIds = state.reviewTracks.filter(isTrackExportIncluded).map(trackObjectId).filter(Boolean);
+      const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
       return {
         selectedPreset: state.selectedPreset,
         presetLabel: currentPresetLabel(),
@@ -5489,6 +5622,11 @@ const MotionJSONUI = (() => {
         providerStatus: connectionSummary.status || "",
         providerSummaryTone: connectionSummary.tone || "",
         providerSummaryLabel: connectionSummary.label || "",
+        providerSummaryMessage: connectionSummary.message || "",
+        modelSetupConnectionId: connection?.connectionId || "",
+        modelSetupState,
+        modelSetupAction,
+        hasModelSetupForm: Boolean($("#modelSetupForm")),
         providerWarning: providerWarning?.textContent?.trim() || "",
         providerTone: providerWarning?.classList.contains("is-bad")
           ? "is-bad"
@@ -5501,16 +5639,26 @@ const MotionJSONUI = (() => {
         configValid: configStatus?.classList.contains("is-ready") || false,
         backendValidated: state.configValidation?.valid === true,
         selectedJobId: state.selectedJobId,
-        selectedJobStatus: selectedLifecycle?.status || selectedJob()?.status || "",
+        selectedJobStatus: selectedLifecycle?.status || job?.status || "",
+        selectedJobRawStatus: selectedLifecycle?.rawStatus || job?.status || "",
         selectedJobFailureReason: selectedLifecycle?.failure?.reasonCode || "",
+        job,
         candidateCount: candidates.length,
         selectedCandidateCount: selectedCount,
         trackCount: state.reviewTracks.length,
-        exportIncludedCount,
+        exportIncludedCount: exportIncludedIds.length,
+        exportIncludedIds,
+        exportPendingIds: exportSummary.pendingIds,
+        exportPendingCount: exportSummary.pendingIds.length,
+        staticFallbackCount,
         correctionCount: asArray(state.correctionState?.history).length,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
+        exportStatus: exportValidation,
         exportIssueText: exportValidationIssueText(exportValidation),
+        candidateTrackingStatus: state.candidateTrackingStatus,
+        videoPathValue: $("#videoPath")?.value.trim() || "",
+        motionJsonImportPathValue: $("#motionJsonImportPath")?.value.trim() || "",
         promptCount: state.prompts.length,
         strokeCount: state.strokes.length,
         hasBoxPrompt: state.prompts.some((prompt) => prompt.kind === "box"),
@@ -13349,6 +13497,7 @@ const MotionJSONUI = (() => {
     reviewFlowStateFromSnapshot,
     safeLocalContentUrl,
     runMonitorStageFromSnapshot,
+    screenContractFromSnapshot,
     slugObjectId,
     timelineMarkersForDisplay,
     trackFrameForDisplay,
@@ -13356,6 +13505,12 @@ const MotionJSONUI = (() => {
     trackSelectedPayload,
     trackUsesStaticKeyframeFallback,
     workflowNextStepId,
+    workflowBlockedReasonFromSnapshot,
+    workflowExportAvailabilityFromSnapshot,
+    workflowJobStatusFromSnapshot,
+    workflowModelSetupStatusFromSnapshot,
+    workflowPrimaryActionFromSnapshot,
+    workflowRecoveryActionsFromSnapshot,
     workflowStepContractFromSnapshot,
     workflowReadinessFromSnapshot,
     workflowRestoredStepFromSnapshot,
