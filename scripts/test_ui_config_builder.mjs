@@ -1012,6 +1012,26 @@ assert.equal(sam3HighQualityTraceAllConfig.discovery.config.requireRealTracking,
 assert.equal(sam3HighQualityTraceAllConfig.sampling.sample_fps, 12);
 assert.equal(sam3HighQualityTraceAllConfig.sampling.max_frames, 96);
 
+const sam3AdaptiveRetryConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  presetId: "trace_all_objects",
+  modelConnectionId: "sam3-local",
+  objectLabel: "all objects",
+  effortPreset: "high_quality",
+  sampleFps: adaptiveRetry.values.sampleFps,
+  maxFrames: adaptiveRetry.values.maxFrames,
+  maxObjects: adaptiveRetry.values.maxObjects,
+  qualityPreset: adaptiveRetry.values.qualityPreset,
+  adaptiveParameters: adaptiveRetry,
+});
+assert.equal(sam3AdaptiveRetryConfig.sampling.sample_fps, 6);
+assert.equal(sam3AdaptiveRetryConfig.sampling.max_frames, 32);
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.effortPreset, "high_quality");
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.failureReason, "worker_heartbeat_stale");
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.values.sampleFps, 6);
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.sources.sampleFps, "auto");
+assert.match(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.chips.find((chip) => chip.id === "maxFrames").detail, /previous asset-prep failure/);
+
 const sam2HfTraceAllConfig = ui.buildRunConfig({
   preset: "trace_all_objects",
   modelConnectionId: "sam2-hf-auto-masks",
@@ -2131,8 +2151,15 @@ const staleDebugReport = ui.buildRunDebugReport(
     video: { id: "video_1", filename: "sample-10s.mp4" },
     runConfig: {
       provider: { name: "sam3-local", hfToken: "hf_1234567890abcdefTOKEN" },
-      discovery: { mode: "sam3_auto_masks" },
-      sampling: { max_frames: 240, sample_fps: 12 },
+      discovery: {
+        mode: "sam3_auto_masks",
+        config: {
+          effortPreset: "high_quality",
+          maskRefinementPreset: "precise",
+          adaptiveParameters: sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters,
+        },
+      },
+      sampling: { max_frames: 32, sample_fps: 6 },
     },
     route: "/ui/",
   },
@@ -2143,6 +2170,9 @@ assert.equal(staleDebugReport.summary.jobId, "job_stale");
 assert.match(staleDebugReport.text, /No progress update/);
 assert.match(staleDebugReport.text, /Suggested Next Step/);
 assert.match(staleDebugReport.text, /sam3-local/);
+assert.match(staleDebugReport.text, /adaptiveParameters/);
+assert.match(staleDebugReport.text, /worker_heartbeat_stale/);
+assert.match(staleDebugReport.text, /previous asset-prep failure/);
 assert.doesNotMatch(staleDebugReport.text, /hf_1234567890abcdefTOKEN/);
 assert.match(staleDebugReport.text, /REDACTED/);
 

@@ -313,6 +313,50 @@ function sam3TrackerModelForInput(input = {}, advanced = {}) {
   return value;
 }
 
+function adaptiveParametersForRunConfig(input = {}) {
+  const adaptive = input.adaptiveParameters && typeof input.adaptiveParameters === "object" ? input.adaptiveParameters : null;
+  if (!adaptive) return null;
+  const values = adaptive.values && typeof adaptive.values === "object" ? adaptive.values : {};
+  const sources = adaptive.sources && typeof adaptive.sources === "object" ? adaptive.sources : {};
+  const chips = Array.isArray(adaptive.chips)
+    ? adaptive.chips.slice(0, 12).map((chip) => ({
+        id: String(chip.id || ""),
+        label: String(chip.label || ""),
+        value: String(chip.value ?? ""),
+        detail: String(chip.detail || ""),
+        source: String(chip.source || "auto"),
+        tone: String(chip.tone || "neutral"),
+      }))
+    : [];
+  return {
+    format: "motionjson.local_ui_adaptive_parameters.v0.1",
+    presetId: String(adaptive.presetId || input.presetId || ""),
+    providerId: String(adaptive.providerId || input.providerName || ""),
+    failureReason: String(adaptive.failureReason || ""),
+    values: {
+      sampleFps: values.sampleFps,
+      maxFrames: values.maxFrames,
+      maxObjects: values.maxObjects,
+      qualityPreset: values.qualityPreset,
+      effortPreset: values.effortPreset,
+      maskRefinementPreset: values.maskRefinementPreset,
+      device: values.device,
+      materializationRisk: values.materializationRisk,
+      materializationEstimatedPixels: values.materializationEstimatedPixels,
+      materializationBudgetPixels: values.materializationBudgetPixels,
+      requireRealTracking: values.requireRealTracking,
+    },
+    sources: {
+      sampleFps: sources.sampleFps || "auto",
+      maxFrames: sources.maxFrames || "auto",
+      maxObjects: sources.maxObjects || "auto",
+      qualityPreset: sources.qualityPreset || "auto",
+      device: sources.device || "auto",
+    },
+    chips,
+  };
+}
+
 export function buildRunConfig(input) {
   const preset = WIZARD_PRESETS.find((item) => item.id === input.presetId) || WIZARD_PRESETS[0];
   const providedAdvanced = input.advanced || {};
@@ -444,6 +488,10 @@ export function buildRunConfig(input) {
   }
   if (preset.id === "external_masks" && advanced.externalMaskDir) {
     discoveryConfig.mask_dirs = { [objectId]: advanced.externalMaskDir };
+  }
+  const adaptiveParameters = adaptiveParametersForRunConfig(input);
+  if (adaptiveParameters) {
+    discoveryConfig.adaptiveParameters = adaptiveParameters;
   }
   return {
     schema: RUN_CONFIG_SCHEMA,

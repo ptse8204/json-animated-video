@@ -1837,7 +1837,7 @@ const MotionJSONUI = (() => {
     const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || defaultQualityPreset;
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
-    return {
+    const config = {
       mock: Boolean(input.debugMockMode),
       effortPreset: effort.effortPreset,
       maskRefinementPreset: input.maskRefinementPreset || effort.maskRefinementPreset,
@@ -1868,6 +1868,52 @@ const MotionJSONUI = (() => {
       writeRejectedCandidates: true,
       requireExplicitCostWarning: defaults.requireExplicitCostWarning,
       ...(qualityPreset === "trace_everything" ? { costWarningAcknowledged: input.traceEverythingAcknowledged === true } : {}),
+    };
+    const adaptiveParameters = adaptiveParametersForConfig(input);
+    if (adaptiveParameters) config.adaptiveParameters = adaptiveParameters;
+    return config;
+  }
+
+  function adaptiveParametersForConfig(input = {}) {
+    const adaptive = input.adaptiveParameters && typeof input.adaptiveParameters === "object" ? input.adaptiveParameters : null;
+    if (!adaptive) return null;
+    const values = adaptive.values && typeof adaptive.values === "object" ? adaptive.values : {};
+    const sources = adaptive.sources && typeof adaptive.sources === "object" ? adaptive.sources : {};
+    return {
+      format: "motionjson.local_ui_adaptive_parameters.v0.1",
+      presetId: String(adaptive.presetId || input.preset || ""),
+      providerId: String(adaptive.providerId || input.providerName || ""),
+      failureReason: String(adaptive.failureReason || ""),
+      values: {
+        sampleFps: values.sampleFps,
+        maxFrames: values.maxFrames,
+        maxObjects: values.maxObjects,
+        qualityPreset: values.qualityPreset,
+        effortPreset: values.effortPreset,
+        maskRefinementPreset: values.maskRefinementPreset,
+        device: values.device,
+        materializationRisk: values.materializationRisk,
+        materializationEstimatedPixels: values.materializationEstimatedPixels,
+        materializationBudgetPixels: values.materializationBudgetPixels,
+        requireRealTracking: values.requireRealTracking,
+      },
+      sources: {
+        sampleFps: sources.sampleFps || "auto",
+        maxFrames: sources.maxFrames || "auto",
+        maxObjects: sources.maxObjects || "auto",
+        qualityPreset: sources.qualityPreset || "auto",
+        device: sources.device || "auto",
+      },
+      chips: asArray(adaptive.chips)
+        .slice(0, 12)
+        .map((chip) => ({
+          id: String(chip.id || ""),
+          label: String(chip.label || ""),
+          value: String(chip.value ?? ""),
+          detail: String(chip.detail || ""),
+          source: String(chip.source || "auto"),
+          tone: String(chip.tone || "neutral"),
+        })),
     };
   }
 
@@ -1997,6 +2043,8 @@ const MotionJSONUI = (() => {
       } else {
         config.sam3TrackerModel = sam3TrackerModelForInput(input);
       }
+      const adaptiveParameters = adaptiveParametersForConfig(input);
+      if (adaptiveParameters) config.adaptiveParameters = adaptiveParameters;
       return config;
     }
     if (input.discoveryMode === "sam_auto_masks") {
@@ -2794,6 +2842,22 @@ const MotionJSONUI = (() => {
 
   function runConfigDebugSummary(config = null) {
     if (!config || typeof config !== "object") return {};
+    const adaptive = config.discovery?.config?.adaptiveParameters;
+    const adaptiveSummary =
+      adaptive && typeof adaptive === "object"
+        ? {
+            failureReason: adaptive.failureReason || "",
+            materializationRisk: adaptive.values?.materializationRisk || "",
+            values: adaptive.values || {},
+            sources: adaptive.sources || {},
+            chips: asArray(adaptive.chips).map((chip) => ({
+              id: chip.id || "",
+              value: chip.value ?? "",
+              source: chip.source || "",
+              detail: chip.detail || "",
+            })),
+          }
+        : {};
     return redactDebugReportValue({
       provider: config.provider?.name || config.mask_provider || "",
       discovery: config.discovery?.mode || config.discovery_provider || "",
@@ -2803,8 +2867,15 @@ const MotionJSONUI = (() => {
       maxFrames: config.sampling?.max_frames || config.max_frames || "",
       effortPreset: config.discovery?.config?.effortPreset || "",
       maskRefinementPreset: config.discovery?.config?.maskRefinementPreset || "",
+      adaptiveParameters: adaptiveSummary,
       outputMode: config.output?.mode || config.output_mode || "",
     });
+  }
+
+  function debugReportLineValue(value) {
+    if (value === "" || value == null) return "not reported";
+    if (typeof value === "object") return JSON.stringify(value);
+    return String(value);
   }
 
   function buildRunDebugReport(snapshot = {}, options = {}) {
@@ -2870,7 +2941,7 @@ const MotionJSONUI = (() => {
       ...Object.entries(video).map(([key, value]) => `${key}: ${value || "not reported"}`),
       "",
       "## Run Config Summary",
-      ...Object.entries(runConfig).map(([key, value]) => `${key}: ${value || "not reported"}`),
+      ...Object.entries(runConfig).map(([key, value]) => `${key}: ${debugReportLineValue(value)}`),
       "",
       "## Recent Events",
       latestEvents.length

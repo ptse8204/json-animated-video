@@ -504,6 +504,14 @@ advanced disclosure and requires explicit acknowledgement before its config can
 validate. Trace Everything output is intentionally review-pending and blocked
 from export until the user reviews selected objects.
 
+Guided run config also carries `discovery.config.adaptiveParameters` when the
+UI auto-tunes scene sweep settings. This block records the requested effort,
+resolved values, source labels such as `auto` or `user_override`, prior failure
+reason, materialization risk, and chip explanations. Debug reports include the
+same block so a run can show, for example, `effortPreset: high_quality` while
+also explaining that sample FPS, frame count, or object count were reduced
+after `worker_heartbeat_stale` or another asset-prep failure.
+
 The browser cards show thumbnails and mask previews when the API resolves them
 to local artifact links. When previews are missing, the card keeps the same
 space and labels the empty thumbnail/mask slots instead of collapsing the
