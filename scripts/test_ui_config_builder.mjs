@@ -317,11 +317,13 @@ const adaptiveSceneSweep = ui.adaptiveRunDefaultsFromSnapshot({
   video: { width: 1280, height: 720, duration: 10 },
 });
 assert.equal(adaptiveSceneSweep.values.sampleFps, 8);
-assert.equal(adaptiveSceneSweep.values.maxFrames, 48);
+assert.equal(adaptiveSceneSweep.values.maxFrames, 80);
 assert.equal(adaptiveSceneSweep.values.maxObjects, 24);
 assert.equal(adaptiveSceneSweep.values.qualityPreset, "balanced");
 assert.equal(adaptiveSceneSweep.values.effortPreset, "balanced");
 assert.equal(adaptiveSceneSweep.values.maskRefinementPreset, "balanced");
+assert.equal(adaptiveSceneSweep.values.coverageStatus, "full");
+assert.equal(adaptiveSceneSweep.values.coverageRatio, 1);
 assert.equal(adaptiveSceneSweep.sources.sampleFps, "auto");
 assert.ok(adaptiveSceneSweep.chips.length >= 6);
 const adaptiveHighQuality = ui.adaptiveRunDefaultsFromSnapshot({
@@ -331,11 +333,20 @@ const adaptiveHighQuality = ui.adaptiveRunDefaultsFromSnapshot({
   video: { width: 1280, height: 720, duration: 10 },
 });
 assert.equal(adaptiveHighQuality.values.sampleFps, 12);
-assert.equal(adaptiveHighQuality.values.maxFrames, 96);
+assert.equal(adaptiveHighQuality.values.maxFrames, 120);
 assert.equal(adaptiveHighQuality.values.maxObjects, 32);
 assert.equal(adaptiveHighQuality.values.qualityPreset, "maximum_recall");
 assert.equal(adaptiveHighQuality.values.maskRefinementPreset, "precise");
 assert.equal(adaptiveHighQuality.values.requireRealTracking, true);
+assert.equal(adaptiveHighQuality.values.coverageStatus, "full");
+const adaptiveHighQualitySourceFps = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  effortPreset: "high_quality",
+  video: { width: 1280, height: 720, duration: 10, sourceFps: 10, frameCount: 100 },
+});
+assert.equal(adaptiveHighQualitySourceFps.values.sampleFps, 10);
+assert.equal(adaptiveHighQualitySourceFps.values.maxFrames, 100);
 const adaptiveSceneSweepCuda = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
@@ -360,10 +371,10 @@ const adaptiveRetry = ui.adaptiveRunDefaultsFromSnapshot({
   video: { width: 1280, height: 720, duration: 10 },
 });
 assert.equal(adaptiveRetry.values.sampleFps, 6);
-assert.equal(adaptiveRetry.values.maxFrames, 32);
+assert.equal(adaptiveRetry.values.maxFrames, 60);
 assert.equal(adaptiveRetry.values.maxObjects, 12);
 assert.equal(adaptiveRetry.values.qualityPreset, "clean");
-assert.equal(adaptiveRetry.chips.find((chip) => chip.id === "maxFrames").detail, "Reduced after the previous asset-prep failure.");
+assert.match(adaptiveRetry.chips.find((chip) => chip.id === "maxFrames").detail, /previous asset-prep failure/);
 const adaptiveOverride = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
@@ -381,9 +392,22 @@ const adaptiveLargeVideo = ui.adaptiveRunDefaultsFromSnapshot({
   providerId: "sam3-local",
   video: { width: 3840, height: 2160, duration: 12 },
 });
-assert.equal(adaptiveLargeVideo.values.sampleFps, 6);
-assert.equal(adaptiveLargeVideo.values.maxObjects, 18);
+assert.equal(adaptiveLargeVideo.values.sampleFps, 5.4);
+assert.equal(adaptiveLargeVideo.values.maxFrames, 65);
+assert.equal(adaptiveLargeVideo.values.maxObjects, 12);
 assert.equal(adaptiveLargeVideo.values.materializationRisk, "high");
+assert.equal(adaptiveLargeVideo.values.videoQualityTier, "uhd");
+const adaptiveLongHighQuality = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  effortPreset: "high_quality",
+  preferredDevice: "cuda",
+  video: { width: 1920, height: 1080, duration: 90, sourceFps: 30, frameCount: 2700 },
+});
+assert.equal(adaptiveLongHighQuality.values.maxFrames, 420);
+assert.equal(adaptiveLongHighQuality.values.coverageStatus, "full_lower_density");
+assert.ok(adaptiveLongHighQuality.values.sampleFps < 12);
+assert.ok(adaptiveLongHighQuality.values.recommendationReasons.includes("sourceFps:30"));
 assert.equal(ui.jobProgressText({ status: "running", progress: { known: true, percent: 31 } }), "31% complete");
 assert.equal(ui.objectDiscoveryConfig({ preset: "trace_all_objects" }).qualityPreset, "balanced");
 const completedRunContract = ui.workflowStepContractFromSnapshot(
@@ -1025,10 +1049,12 @@ const sam3AdaptiveRetryConfig = ui.buildRunConfig({
   adaptiveParameters: adaptiveRetry,
 });
 assert.equal(sam3AdaptiveRetryConfig.sampling.sample_fps, 6);
-assert.equal(sam3AdaptiveRetryConfig.sampling.max_frames, 32);
+assert.equal(sam3AdaptiveRetryConfig.sampling.max_frames, 60);
 assert.equal(sam3AdaptiveRetryConfig.discovery.config.effortPreset, "high_quality");
 assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.failureReason, "worker_heartbeat_stale");
 assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.values.sampleFps, 6);
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.values.maxFrames, 60);
+assert.equal(sam3AdaptiveRetryConfig.discovery.config.maxObjects, 12);
 assert.equal(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.sources.sampleFps, "auto");
 assert.match(sam3AdaptiveRetryConfig.discovery.config.adaptiveParameters.chips.find((chip) => chip.id === "maxFrames").detail, /previous asset-prep failure/);
 
@@ -1449,7 +1475,7 @@ const maximumRecallConfig = ui.buildRunConfig({
 });
 assert.equal(maximumRecallConfig.discovery.config.qualityPreset, "maximum_recall");
 assert.equal(maximumRecallConfig.discovery.config.maxKeyframes, 8);
-assert.equal(maximumRecallConfig.discovery.config.maxObjects, 64);
+assert.equal(maximumRecallConfig.discovery.config.maxObjects, 5);
 assert.equal(maximumRecallConfig.discovery.config.trackSelectedOnly, true);
 
 const traceEverythingConfig = ui.buildRunConfig({

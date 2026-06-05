@@ -273,6 +273,7 @@ export function objectDiscoveryConfig(input, advanced) {
     },
   };
   const preset = presets[qualityPreset] || presets.clean;
+  const explicitMaxObjects = input.maxObjects ?? input.advanced?.maxObjects;
   return {
     mock: Boolean(input.debugMockMode),
     effortPreset,
@@ -288,7 +289,7 @@ export function objectDiscoveryConfig(input, advanced) {
     maxKeyframes: preset.maxKeyframes,
     frameInterval: preset.frameInterval,
     maxCandidatesPerKeyframe: preset.maxCandidatesPerKeyframe,
-    maxObjects: qualityPreset === "maximum_recall" && effortPreset === "high_quality" ? effortDefaults.maxObjects : preset.maxObjects,
+    maxObjects: Number(explicitMaxObjects ?? (qualityPreset === "maximum_recall" && effortPreset === "high_quality" ? effortDefaults.maxObjects : preset.maxObjects)),
     minMaskArea: preset.minMaskArea,
     maxMaskAreaRatio: preset.maxMaskAreaRatio,
     dedupeIou: preset.dedupeIou,
@@ -344,7 +345,22 @@ function adaptiveParametersForRunConfig(input = {}) {
       materializationRisk: values.materializationRisk,
       materializationEstimatedPixels: values.materializationEstimatedPixels,
       materializationBudgetPixels: values.materializationBudgetPixels,
+      totalWorkEstimatedPixels: values.totalWorkEstimatedPixels,
+      workloadRisk: values.workloadRisk,
+      pointsPerBatch: values.pointsPerBatch,
       requireRealTracking: values.requireRealTracking,
+      videoDurationSeconds: values.videoDurationSeconds,
+      videoWidth: values.videoWidth,
+      videoHeight: values.videoHeight,
+      sourceFps: values.sourceFps,
+      sourceFrameCount: values.sourceFrameCount,
+      targetFullCoverageFrames: values.targetFullCoverageFrames,
+      coverageRatio: values.coverageRatio,
+      coverageSeconds: values.coverageSeconds,
+      coverageStatus: values.coverageStatus,
+      videoQualityTier: values.videoQualityTier,
+      durationTier: values.durationTier,
+      recommendationReasons: Array.isArray(values.recommendationReasons) ? values.recommendationReasons.slice(0, 12) : [],
     },
     sources: {
       sampleFps: sources.sampleFps || "auto",
@@ -352,6 +368,7 @@ function adaptiveParametersForRunConfig(input = {}) {
       maxObjects: sources.maxObjects || "auto",
       qualityPreset: sources.qualityPreset || "auto",
       device: sources.device || "auto",
+      pointsPerBatch: sources.pointsPerBatch || "auto",
     },
     chips,
   };
@@ -368,8 +385,12 @@ export function buildRunConfig(input) {
     high_quality: { sampleFps: 12, maxFrames: 96 },
   }[effortPreset] || { sampleFps: 8, maxFrames: 48 };
   const useEffortSampling = preset.id === "trace_all_objects" || Boolean(input.effortPreset || providedAdvanced.effortPreset);
-  const sampleFps = Number(input.sampleFps ?? providedAdvanced.sampleFps ?? (useEffortSampling ? effortSampling.sampleFps : advanced.sampleFps));
-  const maxFrames = Number(input.maxFrames ?? providedAdvanced.maxFrames ?? (useEffortSampling ? effortSampling.maxFrames : advanced.maxFrames));
+  const adaptiveValues =
+    input.adaptiveParameters && typeof input.adaptiveParameters === "object" && input.adaptiveParameters.values && typeof input.adaptiveParameters.values === "object"
+      ? input.adaptiveParameters.values
+      : {};
+  const sampleFps = Number(input.sampleFps ?? adaptiveValues.sampleFps ?? providedAdvanced.sampleFps ?? (useEffortSampling ? effortSampling.sampleFps : advanced.sampleFps));
+  const maxFrames = Number(input.maxFrames ?? adaptiveValues.maxFrames ?? providedAdvanced.maxFrames ?? (useEffortSampling ? effortSampling.maxFrames : advanced.maxFrames));
   const objectId = input.objectId || "object_0";
   const label = input.label || "selected_object";
   const video = input.video || {};
@@ -443,7 +464,8 @@ export function buildRunConfig(input) {
     discoveryConfig.sceneSweep = true;
     discoveryConfig.useTransformersTracker = !hosted && Boolean(input.useTransformersTracker ?? advanced.useTransformersTracker ?? discoveryConfig.useTransformersTracker);
     discoveryConfig.requireRealTracking = Boolean(input.requireRealTracking ?? advanced.requireRealTracking ?? discoveryConfig.requireRealTracking);
-    discoveryConfig.pointsPerBatch = Number(advanced.pointsPerBatch || input.pointsPerBatch || 64);
+    discoveryConfig.pointsPerBatch = Number(input.pointsPerBatch || adaptiveValues.pointsPerBatch || advanced.pointsPerBatch || 64);
+    discoveryConfig.maxObjects = Number(input.maxObjects || adaptiveValues.maxObjects || discoveryConfig.maxObjects || 24);
     discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
     discoveryConfig.hosted = hosted;
     discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;

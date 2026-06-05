@@ -1852,7 +1852,10 @@ const MotionJSONUI = (() => {
       maxKeyframes: defaults.maxKeyframes,
       frameInterval: defaults.frameInterval,
       maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
-      maxObjects: qualityPreset === "maximum_recall" && effort.effortPreset === "high_quality" ? effort.maxObjects : qualityPreset === "clean" ? toInteger(input.maxObjects, defaults.maxObjects) : defaults.maxObjects,
+      maxObjects: toInteger(
+        input.maxObjects,
+        qualityPreset === "maximum_recall" && effort.effortPreset === "high_quality" ? effort.maxObjects : defaults.maxObjects,
+      ),
       minMaskArea: defaults.minMaskArea,
       maxMaskAreaRatio: defaults.maxMaskAreaRatio,
       dedupeIou: defaults.dedupeIou,
@@ -1895,7 +1898,22 @@ const MotionJSONUI = (() => {
         materializationRisk: values.materializationRisk,
         materializationEstimatedPixels: values.materializationEstimatedPixels,
         materializationBudgetPixels: values.materializationBudgetPixels,
+        totalWorkEstimatedPixels: values.totalWorkEstimatedPixels,
+        workloadRisk: values.workloadRisk,
+        pointsPerBatch: values.pointsPerBatch,
         requireRealTracking: values.requireRealTracking,
+        videoDurationSeconds: values.videoDurationSeconds,
+        videoWidth: values.videoWidth,
+        videoHeight: values.videoHeight,
+        sourceFps: values.sourceFps,
+        sourceFrameCount: values.sourceFrameCount,
+        targetFullCoverageFrames: values.targetFullCoverageFrames,
+        coverageRatio: values.coverageRatio,
+        coverageSeconds: values.coverageSeconds,
+        coverageStatus: values.coverageStatus,
+        videoQualityTier: values.videoQualityTier,
+        durationTier: values.durationTier,
+        recommendationReasons: asArray(values.recommendationReasons).slice(0, 12),
       },
       sources: {
         sampleFps: sources.sampleFps || "auto",
@@ -1903,6 +1921,7 @@ const MotionJSONUI = (() => {
         maxObjects: sources.maxObjects || "auto",
         qualityPreset: sources.qualityPreset || "auto",
         device: sources.device || "auto",
+        pointsPerBatch: sources.pointsPerBatch || "auto",
       },
       chips: asArray(adaptive.chips)
         .slice(0, 12)
@@ -2028,7 +2047,7 @@ const MotionJSONUI = (() => {
         sam3Device: input.localSam3Device || input.device || "cuda",
         keyframes,
         maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
-        maxObjects: defaults.maxObjects,
+        maxObjects: toInteger(input.maxObjects, defaults.maxObjects),
         minMaskArea: defaults.minMaskArea,
         maxMaskAreaRatio: defaults.maxMaskAreaRatio,
         dedupeIou: defaults.dedupeIou,
@@ -3284,6 +3303,10 @@ const MotionJSONUI = (() => {
       width: state.video.width || preview.width || metadata.width || 0,
       height: state.video.height || preview.height || metadata.height || 0,
       duration: state.video.duration || preview.duration || metadata.duration || 0,
+      sourceFps: preview.sourceFps || preview.fps || metadata.sourceFps || metadata.fps || 0,
+      frameCount: preview.frameCount || metadata.frameCount || metadata.totalFrames || 0,
+      bitrate: preview.bitrate || metadata.bitrate || 0,
+      byteSize: preview.byteSize || metadata.byteSize || 0,
       name: video?.name || video?.filename || state.video.loadedName || "",
     };
   }
@@ -3326,6 +3349,7 @@ const MotionJSONUI = (() => {
       requireRealTracking: adaptive.values.requireRealTracking,
       qualityPreset: adaptive.values.qualityPreset === "trace_everything" ? raw.qualityPreset : adaptive.values.qualityPreset,
       device: adaptive.values.device,
+      pointsPerBatch: adaptive.values.pointsPerBatch,
       adaptiveParameters: adaptive,
     };
   }

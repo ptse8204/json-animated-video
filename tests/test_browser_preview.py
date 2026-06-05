@@ -24,6 +24,9 @@ def test_probe_demo_video_reports_mp4v_as_not_browser_safe():
     assert probe["codec"] == "mpeg4"
     assert probe["browserSafe"] is False
     assert "browser-safe" in probe["reason"]
+    assert probe["sourceFps"] > 0
+    assert probe["frameCount"] > 0
+    assert probe["byteSize"] > 0
 
 
 def test_prepare_browser_preview_transcodes_demo_video(tmp_path):
@@ -51,4 +54,6 @@ def test_prepare_browser_preview_transcodes_demo_video(tmp_path):
     assert metadata["browser_preview"]["status"] == "ready"
     assert metadata["browser_preview"]["contentAssetId"] == preview["contentAssetId"]
     assert preview["posterAssetId"]
-
+    assert preview["sourceFps"] > 0
+    assert preview["frameCount"] > 0
+    assert preview["qualitySource"] == "ffprobe"

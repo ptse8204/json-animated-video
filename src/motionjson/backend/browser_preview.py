@@ -42,6 +42,32 @@ def _safe_name(name: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {".", "_", "-"} else "_" for ch in name).strip("._-") or "asset"
 
 
+def _parse_rational(value: Any) -> float:
+    text = str(value or "").strip()
+    if not text or text in {"0/0", "N/A"}:
+        return 0.0
+    if "/" in text:
+        numerator, denominator = text.split("/", 1)
+        try:
+            denominator_value = float(denominator)
+            if denominator_value == 0:
+                return 0.0
+            return float(numerator) / denominator_value
+        except (TypeError, ValueError, ZeroDivisionError):
+            return 0.0
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _parse_int(value: Any) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _register_preview_asset(
     conn: sqlite3.Connection,
     *,
@@ -98,6 +124,11 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
         "width": 0,
         "height": 0,
         "duration": 0.0,
+        "fps": 0.0,
+        "sourceFps": 0.0,
+        "frameCount": 0,
+        "bitrate": 0,
+        "byteSize": video_path.stat().st_size if video_path.exists() else 0,
         "browserSafe": False,
         "reason": "",
     }
@@ -137,6 +168,12 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
             content_type = "video/ogg"
         else:
             content_type = "video/mp4"
+    fps = _parse_rational(video_stream.get("avg_frame_rate")) or _parse_rational(video_stream.get("r_frame_rate"))
+    duration = float(format_info.get("duration") or video_stream.get("duration") or 0.0)
+    frame_count = _parse_int(video_stream.get("nb_frames"))
+    if frame_count <= 0 and duration > 0 and fps > 0:
+        frame_count = max(1, round(duration * fps))
+    bitrate = _parse_int(format_info.get("bit_rate") or video_stream.get("bit_rate"))
     browser_safe = False
     if content_type == "video/mp4":
         browser_safe = codec in SAFE_MP4_CODECS
@@ -153,9 +190,26 @@ def probe_video_file(path: str | Path) -> dict[str, Any]:
         "container": str(format_info.get("format_name") or ""),
         "width": int(video_stream.get("width") or 0),
         "height": int(video_stream.get("height") or 0),
-        "duration": float(format_info.get("duration") or video_stream.get("duration") or 0.0),
+        "duration": duration,
+        "fps": fps,
+        "sourceFps": fps,
+        "frameCount": frame_count,
+        "bitrate": bitrate,
+        "byteSize": video_path.stat().st_size if video_path.exists() else 0,
         "browserSafe": browser_safe,
         "reason": "" if browser_safe else f"{codec or 'unknown codec'} is not a browser-safe preview codec",
+    }
+
+
+def _preview_quality_fields(probe: dict[str, Any], *, source_probe: dict[str, Any] | None = None) -> dict[str, Any]:
+    source = source_probe or probe
+    return {
+        "fps": probe.get("fps") or probe.get("sourceFps") or 0.0,
+        "sourceFps": source.get("sourceFps") or source.get("fps") or probe.get("sourceFps") or probe.get("fps") or 0.0,
+        "frameCount": source.get("frameCount") or probe.get("frameCount") or 0,
+        "bitrate": source.get("bitrate") or probe.get("bitrate") or 0,
+        "byteSize": source.get("byteSize") or probe.get("byteSize") or 0,
+        "qualitySource": "ffprobe",
     }
 
 
@@ -285,6 +339,7 @@ def prepare_browser_preview(
                 "height": 0,
                 "duration": 0.0,
                 "codec": "",
+                **_preview_quality_fields(probe),
                 "reason": probe["reason"] or "video probe failed",
                 "errorMessage": probe["reason"] or "video probe failed",
                 "contentType": source_asset.get("content_type") or probe["contentType"],
@@ -302,6 +357,7 @@ def prepare_browser_preview(
                 "height": probe["height"],
                 "duration": probe["duration"],
                 "codec": probe["codec"],
+                **_preview_quality_fields(probe),
                 "reason": "" if poster_ok else poster_reason,
                 "errorMessage": "" if poster_ok else poster_reason,
                 "contentType": probe["contentType"],
@@ -321,6 +377,7 @@ def prepare_browser_preview(
                 "height": probe["height"],
                 "duration": probe["duration"],
                 "codec": probe["codec"],
+                **_preview_quality_fields(probe),
                 "reason": transcode_reason,
                 "errorMessage": transcode_reason,
                 "contentType": "video/mp4",
@@ -344,6 +401,7 @@ def prepare_browser_preview(
                 "width": preview_probe["width"],
                 "height": preview_probe["height"],
                 "duration": preview_probe["duration"],
+                **_preview_quality_fields(preview_probe, source_probe=probe),
             },
         )
         payload = {
@@ -355,6 +413,7 @@ def prepare_browser_preview(
             "height": preview_probe["height"] or probe["height"],
             "duration": preview_probe["duration"] or probe["duration"],
             "codec": preview_probe["codec"] or "h264",
+            **_preview_quality_fields(preview_probe, source_probe=probe),
             "reason": "",
             "errorMessage": "" if poster_ok else poster_reason,
             "contentType": "video/mp4",

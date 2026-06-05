@@ -507,10 +507,22 @@ from export until the user reviews selected objects.
 Guided run config also carries `discovery.config.adaptiveParameters` when the
 UI auto-tunes scene sweep settings. This block records the requested effort,
 resolved values, source labels such as `auto` or `user_override`, prior failure
-reason, materialization risk, and chip explanations. Debug reports include the
-same block so a run can show, for example, `effortPreset: high_quality` while
-also explaining that sample FPS, frame count, or object count were reduced
-after `worker_heartbeat_stale` or another asset-prep failure.
+reason, materialization risk, workload risk, video dimensions, duration, source
+FPS/frame count when ffprobe can read them, coverage status, and chip
+explanations. Debug reports include the same block so a run can show, for
+example, `effortPreset: high_quality` while also explaining that sample FPS,
+frame count, object count, or SAM3 batch size were reduced after
+`worker_heartbeat_stale` or another asset-prep failure.
+
+Auto tuning is now coverage-first for SAM3 Scene Sweep. The UI estimates the
+frames needed to cover the whole clip at the selected effort, then sets
+`sampleFps` and `maxFrames` together. Short high-quality clips can therefore
+increase `maxFrames` above the old fixed preset cap instead of sampling only the
+front of the video. Long or high-resolution clips may lower sampling density so
+the run still spans the full video; the chip labels this as `Full clip, lower
+density` or `Sparse full clip` instead of presenting it as uncompromised high
+quality. User overrides remain explicit and are recorded in the same metadata
+block.
 
 The browser cards show thumbnails and mask previews when the API resolves them
 to local artifact links. When previews are missing, the card keeps the same

@@ -20,12 +20,18 @@ can change the interface without rereading the full `app.js`.
 
 - `adaptiveRunDefaultsFromSnapshot()` computes guided defaults from goal,
   provider, video metadata, prior failure reason, and user overrides.
+- Video metadata includes duration, resolution, source FPS, and source frame
+  count when available. Scene sweep tuning should target whole-video coverage
+  first, then lower sampling density or object count when the workload budget is
+  too high.
 - Guided mode should show readable chips before raw fields: sample FPS, max
-  frames, max objects, scene sweep quality, device, and materialization risk.
+  frames, max objects, scene sweep quality, video fit, workload, device, and
+  materialization risk.
 - Advanced controls remain editable. Every field should show `Auto tuned` or
   `User override`, and user overrides can be reset to auto.
 - Asset-prep and heartbeat failures on scene sweep should bias retries toward
-  lower sample FPS, fewer frames, fewer objects, and clean scene sweep quality.
+  lower sampling density, fewer objects, smaller SAM3 batches, and safer scene
+  sweep quality without silently sampling only the beginning of the video.
 
 ## Help Text
 

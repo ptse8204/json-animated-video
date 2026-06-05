@@ -10,6 +10,14 @@ const toInteger = (value, fallback = 0) => {
   return Number.isFinite(number) ? number : fallback;
 };
 
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+const roundOne = (value) => {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.round(number * 10) / 10;
+};
+
 export const OPTION_HELP_TEXT = {
   sceneSweepQuality: "Balances object recall against speed, memory, and noisy background fragments.",
   sampleFps: "How many source frames per second are sampled before tracking. Lower values improve stability on long or high-resolution videos.",
@@ -19,6 +27,9 @@ export const OPTION_HELP_TEXT = {
   device: "Auto is conservative for SAM runtimes. Choose GPU to explicitly request CUDA when diagnostics show it is available.",
   exportPreset: "Controls package size and debug detail. Compact is the normal handoff; debug keeps extra inspection artifacts.",
   partialResultRecovery: "Completed objects can remain reviewable even when a later object or frame fails.",
+  videoCoverage: "Shows whether the sampled-frame budget covers the whole clip or only a sparse/partial pass.",
+  workload: "Estimated extraction load from duration, resolution, sampled frames, object count, and prior failures.",
+  materialization: "Worst-case per-object cutout work before writing preview PNGs and spritesheets.",
 };
 
 export function objectDiscoveryDefaults(qualityPreset) {
@@ -161,11 +172,28 @@ function videoFactsFromSnapshot(snapshot = {}) {
   const metadata = video.metadata || snapshot.videoMetadata || {};
   const width = toInteger(snapshot.width ?? snapshot.videoWidth ?? video.width ?? metadata.width, 0);
   const height = toInteger(snapshot.height ?? snapshot.videoHeight ?? video.height ?? metadata.height, 0);
-  const duration = toNumber(snapshot.duration ?? snapshot.videoDuration ?? video.duration ?? metadata.duration, 0);
+  let duration = toNumber(snapshot.duration ?? snapshot.videoDuration ?? video.duration ?? metadata.duration, 0);
+  const sourceFps = toNumber(
+    snapshot.sourceFps ?? snapshot.fps ?? snapshot.frameRate ?? video.sourceFps ?? video.fps ?? video.frameRate ?? metadata.sourceFps ?? metadata.fps,
+    0,
+  );
+  const sourceFrameCount = toInteger(
+    snapshot.sourceFrameCount ?? snapshot.frameCount ?? snapshot.totalFrames ?? video.sourceFrameCount ?? video.frameCount ?? video.totalFrames ?? metadata.frameCount,
+    0,
+  );
+  if (duration <= 0 && sourceFps > 0 && sourceFrameCount > 0) {
+    duration = sourceFrameCount / sourceFps;
+  }
+  const byteSize = toInteger(snapshot.byteSize ?? snapshot.fileSize ?? video.byteSize ?? video.fileSize ?? metadata.byteSize, 0);
+  const bitrate = toInteger(snapshot.bitrate ?? video.bitrate ?? metadata.bitrate, 0);
   return {
     width,
     height,
     duration,
+    sourceFps,
+    sourceFrameCount,
+    byteSize,
+    bitrate,
     framePixels: width > 0 && height > 0 ? width * height : 0,
   };
 }
@@ -198,6 +226,138 @@ function adaptiveSourceValue(key, automaticValue, snapshot, overrideFlags) {
   };
 }
 
+function videoQualityTier(video) {
+  if (!video.framePixels) return "unknown";
+  if (video.framePixels >= 3840 * 2160) return "uhd";
+  if (video.framePixels >= 2560 * 1440) return "qhd";
+  if (video.framePixels >= 1920 * 1080) return "full_hd";
+  if (video.framePixels >= 1280 * 720) return "hd";
+  return "small";
+}
+
+function durationTier(duration) {
+  if (!duration) return "unknown";
+  if (duration <= 15) return "short";
+  if (duration <= 45) return "medium";
+  if (duration <= 120) return "long";
+  return "very_long";
+}
+
+function effortSamplingPolicy(effortPreset, { retryingHeavyAssetPrep = false, videoTier = "unknown", preferredDevice = "" } = {}) {
+  const base = {
+    fast: {
+      targetFps: 6,
+      retryFps: 4,
+      frameBudget: 120,
+      retryFrameBudget: 90,
+      maxObjects: 12,
+      retryMaxObjects: 8,
+      pointsPerBatch: 48,
+      minUsefulFps: 2,
+    },
+    balanced: {
+      targetFps: 8,
+      retryFps: 6,
+      frameBudget: 180,
+      retryFrameBudget: 120,
+      maxObjects: 24,
+      retryMaxObjects: 12,
+      pointsPerBatch: 64,
+      minUsefulFps: 3,
+    },
+    high_quality: {
+      targetFps: 12,
+      retryFps: 8,
+      frameBudget: preferredDevice === "cuda" ? 420 : 360,
+      retryFrameBudget: preferredDevice === "cuda" ? 260 : 220,
+      maxObjects: 32,
+      retryMaxObjects: 16,
+      pointsPerBatch: 64,
+      minUsefulFps: 4,
+    },
+  }[effortPreset] || {};
+  const policy = { ...base };
+  if (retryingHeavyAssetPrep) {
+    policy.targetFps = policy.retryFps || policy.targetFps;
+    policy.frameBudget = policy.retryFrameBudget || policy.frameBudget;
+    policy.maxObjects = policy.retryMaxObjects || policy.maxObjects;
+    policy.pointsPerBatch = Math.min(policy.pointsPerBatch || 64, 32);
+  }
+  if (videoTier === "uhd") {
+    policy.targetFps = roundOne((policy.targetFps || 8) * 0.67);
+    policy.frameBudget = Math.min(policy.frameBudget || 120, effortPreset === "high_quality" ? 300 : 180);
+    policy.maxObjects = Math.min(policy.maxObjects || 12, effortPreset === "high_quality" ? 20 : 12);
+    policy.pointsPerBatch = Math.min(policy.pointsPerBatch || 64, 32);
+  } else if (videoTier === "qhd") {
+    policy.targetFps = roundOne((policy.targetFps || 8) * 0.8);
+    policy.frameBudget = Math.min(policy.frameBudget || 120, effortPreset === "high_quality" ? 320 : 180);
+    policy.maxObjects = Math.min(policy.maxObjects || 12, effortPreset === "high_quality" ? 24 : 16);
+    policy.pointsPerBatch = Math.min(policy.pointsPerBatch || 64, 48);
+  }
+  return policy;
+}
+
+function sampledFramePlan({ effort, presetId, video, retryingHeavyAssetPrep, preferredDevice }) {
+  const tier = videoQualityTier(video);
+  const policy = effortSamplingPolicy(effort.effortPreset, { retryingHeavyAssetPrep, videoTier: tier, preferredDevice });
+  let targetFps = presetId === "trace_all_objects" ? policy.targetFps : presetId === "text_detector" ? 8 : 12;
+  if (video.sourceFps > 0) targetFps = Math.min(targetFps, video.sourceFps);
+  targetFps = Math.max(0.1, roundOne(targetFps));
+  let maxFrames =
+    presetId === "trace_all_objects"
+      ? effort.maxFrames
+      : presetId === "trace_one_object"
+        ? 48
+        : presetId === "text_detector"
+          ? 32
+          : 48;
+  let coverageStatus = "unknown";
+  let coverageRatio = 0;
+  let coverageSeconds = 0;
+  const targetFullCoverageFrames =
+    video.duration > 0
+      ? Math.max(1, Math.ceil(video.duration * targetFps))
+      : video.sourceFps > 0 && video.sourceFrameCount > 0
+        ? Math.max(1, Math.ceil(video.sourceFrameCount * Math.min(1, targetFps / video.sourceFps)))
+        : 0;
+
+  if (presetId === "trace_all_objects" && targetFullCoverageFrames > 0) {
+    const frameBudget = Math.max(effort.maxFrames, toInteger(policy.frameBudget, effort.maxFrames));
+    if (targetFullCoverageFrames <= frameBudget) {
+      maxFrames = targetFullCoverageFrames;
+      coverageStatus = "full";
+    } else if (video.duration > 0) {
+      targetFps = Math.max(0.1, roundOne(frameBudget / video.duration));
+      maxFrames = frameBudget;
+      coverageStatus = targetFps >= (policy.minUsefulFps || 2) ? "full_lower_density" : "sparse_full";
+    } else {
+      maxFrames = frameBudget;
+      coverageStatus = "capped_unknown_duration";
+    }
+  } else if (video.duration > 0) {
+    maxFrames = Math.max(1, Math.min(maxFrames, Math.ceil(video.duration * targetFps)));
+    coverageStatus = "full";
+  }
+
+  if (video.duration > 0 && targetFps > 0) {
+    coverageSeconds = maxFrames / targetFps;
+    coverageRatio = clamp(coverageSeconds / video.duration, 0, 1);
+  } else if (targetFullCoverageFrames > 0) {
+    coverageRatio = clamp(maxFrames / targetFullCoverageFrames, 0, 1);
+  }
+  return {
+    sampleFps: targetFps,
+    maxFrames: Math.max(1, Math.ceil(maxFrames)),
+    targetFullCoverageFrames,
+    coverageStatus,
+    coverageRatio,
+    coverageSeconds,
+    videoQualityTier: tier,
+    durationTier: durationTier(video.duration),
+    policy,
+  };
+}
+
 export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
   const presetId = snapshot.selectedPreset || snapshot.preset || snapshot.goal || "trace_one_object";
   const providerId = String(snapshot.providerId || snapshot.providerName || snapshot.maskProvider || "");
@@ -206,13 +366,14 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
   const failureReason = priorFailureReasonFromSnapshot(snapshot);
   const retryingHeavyAssetPrep = ["asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"].includes(failureReason);
   const video = videoFactsFromSnapshot(snapshot);
-  const largeVideo = video.framePixels >= 1920 * 1080;
   const traceEverythingMode = Boolean(snapshot.traceEverythingMode);
+  const preferredDevice = String(snapshot.preferredDevice || snapshot.accelerator || "").toLowerCase();
+  const samplingPlan = sampledFramePlan({ effort, presetId, video, retryingHeavyAssetPrep, preferredDevice });
   let qualityPreset = traceEverythingMode
     ? "trace_everything"
     : String(snapshot.qualityPreset || (presetId === "trace_all_objects" ? effort.qualityPreset : "clean"));
-  let sampleFps = presetId === "trace_all_objects" ? effort.sampleFps : presetId === "text_detector" ? 8 : 12;
-  let maxFrames = presetId === "trace_all_objects" ? effort.maxFrames : presetId === "trace_one_object" ? 48 : presetId === "text_detector" ? 32 : 48;
+  let sampleFps = samplingPlan.sampleFps;
+  let maxFrames = samplingPlan.maxFrames;
   let maxObjects =
     presetId === "trace_one_object"
       ? 1
@@ -221,9 +382,8 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
         : presetId === "class_detector" || presetId === "motion_foreground"
           ? 8
           : presetId === "trace_all_objects"
-            ? effort.maxObjects
+            ? samplingPlan.policy.maxObjects || effort.maxObjects
             : objectDiscoveryDefaults(qualityPreset).maxObjects;
-  const preferredDevice = String(snapshot.preferredDevice || snapshot.accelerator || "").toLowerCase();
   let device =
     presetId === "trace_all_objects" && providerId === "sam3-local" && preferredDevice === "cuda"
       ? "cuda"
@@ -231,20 +391,14 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
   const budgetPixels = Math.max(1, toInteger(snapshot.materializationBudgetPixels, MATERIALIZATION_BUDGET_PIXELS));
 
   if (retryingHeavyAssetPrep && presetId === "trace_all_objects") {
-    qualityPreset = "clean";
-    sampleFps = 6;
-    maxFrames = 32;
-    maxObjects = 12;
+    qualityPreset = effort.effortPreset === "high_quality" ? "balanced" : "clean";
+    sampleFps = samplingPlan.sampleFps;
+    maxFrames = samplingPlan.maxFrames;
+    maxObjects = samplingPlan.policy.maxObjects || maxObjects;
     device = providerId === "sam3-local" && preferredDevice === "cuda" ? "cuda" : "auto";
-  } else if (largeVideo && presetId === "trace_all_objects") {
+  } else if (samplingPlan.videoQualityTier === "uhd" && presetId === "trace_all_objects") {
     qualityPreset = qualityPreset === "maximum_recall" ? "balanced" : qualityPreset;
-    sampleFps = Math.min(sampleFps, 6);
-    maxFrames = Math.min(maxFrames, 36);
-    maxObjects = Math.min(maxObjects, 18);
-  }
-
-  if (video.duration > 0) {
-    maxFrames = Math.max(1, Math.min(maxFrames, Math.ceil(video.duration * sampleFps)));
+    maxObjects = samplingPlan.policy.maxObjects || maxObjects;
   }
 
   const overrideFlags = overrideFlagsFromSnapshot(snapshot);
@@ -256,11 +410,21 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
     device: adaptiveSourceValue("device", device, snapshot, overrideFlags),
     effortPreset: { value: effort.effortPreset, source: "auto" },
     maskRefinementPreset: { value: effort.maskRefinementPreset, source: "auto" },
+    pointsPerBatch: { value: samplingPlan.policy.pointsPerBatch || 64, source: "auto" },
   };
   const values = Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.value]));
-  const estimatedPixels = video.framePixels > 0 ? video.framePixels * Math.max(1, values.maxFrames) * Math.max(1, Math.min(values.maxObjects, 4)) : 0;
+  const estimatedPixels = video.framePixels > 0 ? video.framePixels * Math.max(1, values.maxFrames) : 0;
+  const totalWorkPixels = estimatedPixels * Math.max(1, values.maxObjects);
   const materializationRisk =
     !estimatedPixels ? "unknown" : estimatedPixels > budgetPixels ? "high" : estimatedPixels > budgetPixels * 0.55 ? "watch" : "normal";
+  const workloadRisk =
+    !totalWorkPixels
+      ? "unknown"
+      : totalWorkPixels > budgetPixels * 16 || samplingPlan.coverageStatus === "sparse_full"
+        ? "high"
+        : totalWorkPixels > budgetPixels * 8 || samplingPlan.coverageStatus === "full_lower_density"
+          ? "watch"
+          : "normal";
   const qualityLabel = {
     clean: "Clean",
     balanced: "Balanced",
@@ -276,6 +440,27 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
     tone,
     help: OPTION_HELP_TEXT[id] || "",
   });
+  const resolutionLabel = video.width && video.height ? `${video.width}x${video.height}` : "unknown size";
+  const durationLabel = video.duration ? `${Math.round(video.duration)}s` : "unknown length";
+  const sourceFpsLabel = video.sourceFps ? `${roundOne(video.sourceFps)} source fps` : "source fps unknown";
+  const coverageLabel =
+    samplingPlan.coverageStatus === "full"
+      ? "Full clip"
+      : samplingPlan.coverageStatus === "full_lower_density"
+        ? "Full clip, lower density"
+        : samplingPlan.coverageStatus === "sparse_full"
+          ? "Sparse full clip"
+          : samplingPlan.coverageStatus === "capped_unknown_duration"
+            ? "Capped, duration unknown"
+            : "Unknown";
+  const recommendationReasons = [
+    video.duration ? `duration:${roundOne(video.duration)}s` : "duration:unknown",
+    video.framePixels ? `resolution:${resolutionLabel}` : "resolution:unknown",
+    video.sourceFps ? `sourceFps:${roundOne(video.sourceFps)}` : "sourceFps:unknown",
+    `effort:${effort.effortPreset}`,
+    retryingHeavyAssetPrep ? `priorFailure:${failureReason}` : "",
+    samplingPlan.videoQualityTier === "uhd" || samplingPlan.videoQualityTier === "qhd" ? `resolutionTier:${samplingPlan.videoQualityTier}` : "",
+  ].filter(Boolean);
   return {
     format: "motionjson.local_ui_adaptive_parameters.v0.1",
     presetId,
@@ -288,22 +473,65 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
       requireRealTracking: effort.requireRealTracking,
       materializationBudgetPixels: budgetPixels,
       materializationEstimatedPixels: estimatedPixels,
+      totalWorkEstimatedPixels: totalWorkPixels,
       materializationRisk,
+      workloadRisk,
+      pointsPerBatch: values.pointsPerBatch,
+      videoDurationSeconds: video.duration,
+      videoWidth: video.width,
+      videoHeight: video.height,
+      sourceFps: video.sourceFps,
+      sourceFrameCount: video.sourceFrameCount,
+      targetFullCoverageFrames: samplingPlan.targetFullCoverageFrames,
+      coverageRatio: samplingPlan.coverageRatio,
+      coverageSeconds: samplingPlan.coverageSeconds,
+      coverageStatus: samplingPlan.coverageStatus,
+      videoQualityTier: samplingPlan.videoQualityTier,
+      durationTier: samplingPlan.durationTier,
+      recommendationReasons,
     },
     sources: Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.source])),
     chips: [
-      chip("sampleFps", "Sample FPS", `${values.sampleFps} fps`, "Sampling load tuned for this goal."),
-      chip("maxFrames", "Max frames", String(values.maxFrames), retryingHeavyAssetPrep ? "Reduced after the previous asset-prep failure." : "Capped before tracking starts."),
+      chip(
+        "sampleFps",
+        "Sample FPS",
+        `${values.sampleFps} fps`,
+        `${durationLabel}, ${sourceFpsLabel}; tuned to avoid front-only sampling.`,
+      ),
+      chip(
+        "maxFrames",
+        "Max frames",
+        String(values.maxFrames),
+        retryingHeavyAssetPrep
+          ? `Retry keeps ${coverageLabel.toLowerCase()} coverage after the previous asset-prep failure.`
+          : `${coverageLabel}; ${samplingPlan.targetFullCoverageFrames || values.maxFrames} frames would cover the target density.`,
+      ),
       chip("maxObjects", "Max objects", String(values.maxObjects), "Keeps review and memory bounded."),
       chip("effortPreset", "Effort", effort.label, effort.detail, "auto", effort.effortPreset === "high_quality" ? "warn" : "neutral"),
       chip("qualityPreset", "Scene sweep", qualityLabel, retryingHeavyAssetPrep ? "Safer retry profile." : "Recall balanced against cleanup cost."),
       chip("maskRefinementPreset", "Mask refinement", values.maskRefinementPreset, effort.requireRealTracking ? "Requires real tracking when available." : "Fallback remains diagnostic only.", "auto", effort.requireRealTracking ? "warn" : "neutral"),
+      chip(
+        "videoCoverage",
+        "Video fit",
+        coverageLabel,
+        `${resolutionLabel}, ${durationLabel}; ${Math.round((samplingPlan.coverageRatio || 0) * 100)}% estimated coverage.`,
+        "auto",
+        samplingPlan.coverageStatus === "sparse_full" ? "bad" : samplingPlan.coverageStatus === "full_lower_density" ? "warn" : "ready",
+      ),
+      chip(
+        "workload",
+        "Workload",
+        workloadRisk === "high" ? "High" : workloadRisk === "watch" ? "Watch" : workloadRisk === "unknown" ? "Unknown" : "Normal",
+        totalWorkPixels ? `${Math.round(totalWorkPixels / 1_000_000)}M px total estimate across ${values.maxObjects} objects.` : "Video size unknown; inspect the preview metadata.",
+        "auto",
+        workloadRisk === "high" ? "bad" : workloadRisk === "watch" ? "warn" : "ready",
+      ),
       chip("device", "Device", String(values.device || "auto"), providerLabelText, resolved.device.source),
       chip(
         "materialization",
         "Materialization",
         materializationRisk === "high" ? "High risk" : materializationRisk === "watch" ? "Watch" : materializationRisk === "unknown" ? "Unknown" : "Within budget",
-        estimatedPixels ? `${Math.round(estimatedPixels / 1_000_000)}M px worst-case / ${Math.round(budgetPixels / 1_000_000)}M budget.` : `${Math.round(budgetPixels / 1_000_000)}M px budget; video size unknown.`,
+        estimatedPixels ? `${Math.round(estimatedPixels / 1_000_000)}M px per object / ${Math.round(budgetPixels / 1_000_000)}M budget.` : `${Math.round(budgetPixels / 1_000_000)}M px budget; video size unknown.`,
         "auto",
         materializationRisk === "high" ? "bad" : materializationRisk === "watch" ? "warn" : "ready",
       ),
