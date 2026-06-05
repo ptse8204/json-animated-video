@@ -24,11 +24,13 @@ from motionjson.providers.sam3 import (
     HostedSAM3DiscoveryBackend,
     LocalSAM3DiscoveryBackend,
     SAM3_TRACKER_CUDA_PROGRESS_MIN_DELTA_MIB,
+    SAM3TrackerPointGridMaskGenerator,
     describe_sam3_model_path,
     describe_sam3_tracker_model,
     find_sam3_checkpoint_candidates,
     normalize_sam3_output,
     _run_with_progress_heartbeat,
+    scene_sweep_runtime_proof_from_generator,
     sam3_tracker_video_runtime_status,
 )
 from motionjson.tracks import RunContext, VideoSource
@@ -56,6 +58,45 @@ def mask_at(x: int, *, width: int = 16, height: int = 12) -> np.ndarray:
     mask = np.zeros((height, width), dtype=np.uint8)
     mask[2:7, x : x + 5] = 255
     return mask
+
+
+def test_scene_sweep_runtime_proof_reports_loaded_cuda_from_generator():
+    class FakeCuda:
+        @staticmethod
+        def is_available() -> bool:
+            return True
+
+        @staticmethod
+        def mem_get_info(_index: int) -> tuple[int, int]:
+            return 512, 1024
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+    class FakeDevice:
+        type = "cuda"
+
+        def __str__(self) -> str:
+            return "cuda:0"
+
+    class FakeTensor:
+        device = FakeDevice()
+
+    class FakeModel:
+        @staticmethod
+        def parameters():
+            return iter([FakeTensor()])
+
+    generator = SAM3TrackerPointGridMaskGenerator(model=FakeModel(), processor=object(), torch=FakeTorch(), device="cuda")
+
+    proof = scene_sweep_runtime_proof_from_generator(generator, requested_device="cuda")
+
+    assert proof["runtimeProofStatus"] == "verified"
+    assert proof["acceleratorKind"] == "cuda"
+    assert proof["deviceActual"] == "cuda:0"
+    assert proof["loadedOnCuda"] is True
+    assert proof["cudaAvailable"] is True
+    assert proof["gpuMemoryAfter"]["totalBytes"] == 1024
 
 
 class FakeSAM3Processor:

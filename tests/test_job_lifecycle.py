@@ -83,6 +83,16 @@ def test_job_lifecycle_recovers_runtime_proof_from_events():
         "project_id": "project_1",
         "type": "extract",
         "status": "running",
+        "result": {
+            "runtimeProof": {
+                "providerId": "sam3-local",
+                "acceleratorKind": "cuda",
+                "runtimeProofStatus": "environment_verified",
+                "deviceRequested": "cuda",
+                "deviceActual": "cuda:0",
+                "loadedOnCuda": False,
+            }
+        },
         "payload": {
             "run_config": {
                 "provider": {"name": "sam3-local"},

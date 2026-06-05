@@ -372,10 +372,6 @@ def _runtime_proof_summary(job: Mapping[str, Any], events: Sequence[Mapping[str,
     direct = _mapping(job.get("runtimeProof"))
     if direct:
         return direct
-    result = _mapping(job.get("result"))
-    result_proof = _mapping(result.get("runtimeProof"))
-    if result_proof:
-        return result_proof
     for event in reversed(events):
         event_type = _text(event.get("event_type") or event.get("type")).lower()
         metadata = _mapping(event.get("metadata"))
@@ -390,6 +386,10 @@ def _runtime_proof_summary(job: Mapping[str, Any], events: Sequence[Mapping[str,
                 return candidate
         if event_type == "runtime_proof_recorded" and nested:
             return nested
+    result = _mapping(job.get("result"))
+    result_proof = _mapping(result.get("runtimeProof"))
+    if result_proof:
+        return result_proof
     return {}
 
 

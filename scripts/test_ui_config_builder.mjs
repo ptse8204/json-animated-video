@@ -796,7 +796,9 @@ assert.equal(cachedPlaybookSteps.find((step) => step.id === "load_gpu").status, 
 assert.match(cachedPlaybookSteps.find((step) => step.id === "load_gpu").detail, /CUDA active/);
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "warmup").status, "done");
 assert.equal(ui.runtimeProofBadge({ acceleratorKind: "cuda", loadedOnCuda: true, deviceActual: "cuda:0" }).label, "CUDA active");
+assert.equal(ui.runtimeProofBadge({ acceleratorKind: "cuda", cudaAvailable: true, deviceActual: "cuda:0", runtimeProofStatus: "environment_verified" }).label, "CUDA available");
 assert.equal(ui.runtimeProofBadge({ acceleratorKind: "mps", loadedOnMps: true, deviceActual: "mps" }).label, "MPS active");
+assert.equal(ui.runtimeProofBadge({ acceleratorKind: "mps", mpsAvailable: true, deviceActual: "mps", runtimeProofStatus: "environment_verified" }).label, "MPS available");
 assert.equal(ui.runtimeProofBadge({ acceleratorKind: "cpu", deviceActual: "cpu" }).label, "CPU fallback");
 assert.equal(ui.runtimeProofBadge({}, { locality: "hosted" }).label, "Hosted runtime");
 

@@ -114,6 +114,67 @@ def test_sam3_cuda_requested_requires_cuda_runtime_proof():
     _raise_if_requested_cuda_not_loaded("sam3-local", {"loadedOnMps": True, "deviceActual": "mps"}, device_requested="mps")
 
 
+def test_worker_runtime_environment_proof_reports_cuda_without_model_claim(monkeypatch):
+    monkeypatch.setattr(
+        worker_module,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": True,
+            "torchVersion": "2.test",
+            "available": True,
+            "device": "cuda",
+            "devices": [{"name": "cpu", "available": True}, {"name": "cuda", "available": True}],
+            "reasons": [],
+        },
+    )
+    monkeypatch.setattr(worker_module, "_worker_cuda_memory_snapshot", lambda _device: {"totalBytes": 1024, "usedBytes": 128})
+
+    proof = worker_module._runtime_environment_proof_for_job(
+        "sam3-local",
+        discovery_mode="sam3_auto_masks",
+        discovery_config={"sam3Device": "cuda"},
+        run_config=None,
+    )
+
+    assert proof["providerId"] == "sam3-local"
+    assert proof["displayProvider"] == "SAM3 Scene Sweep runtime"
+    assert proof["runtimeProofStatus"] == "environment_verified"
+    assert proof["acceleratorKind"] == "cuda"
+    assert proof["deviceRequested"] == "cuda"
+    assert proof["deviceActual"] == "cuda:0"
+    assert proof["cudaAvailable"] is True
+    assert proof["loadedOnCuda"] is False
+    assert proof["gpuMemoryBefore"]["totalBytes"] == 1024
+
+
+def test_worker_runtime_environment_cuda_mismatch_blocks_real_sam3(monkeypatch):
+    monkeypatch.setattr(
+        worker_module,
+        "cuda_status",
+        lambda: {
+            "torchInstalled": True,
+            "torchVersion": "2.test",
+            "available": False,
+            "device": "cpu",
+            "devices": [{"name": "cpu", "available": True}, {"name": "cuda", "available": False}],
+            "reasons": ["torch.cuda.is_available() returned false."],
+        },
+    )
+
+    proof = worker_module._runtime_environment_proof_for_job(
+        "sam3-local",
+        discovery_mode="sam3_auto_masks",
+        discovery_config={"sam3Device": "cuda"},
+        run_config=None,
+    )
+
+    assert proof["runtimeProofStatus"] == "gpu_device_mismatch"
+    assert proof["cudaAvailable"] is False
+    with pytest.raises(ProviderConfigError, match="gpu_device_mismatch"):
+        worker_module._raise_if_environment_device_mismatch(proof, discovery_config={"sam3Device": "cuda"})
+    worker_module._raise_if_environment_device_mismatch(proof, discovery_config={"sam3Device": "cuda", "mock": True})
+
+
 def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):
     conn, storage, user, project = backend(tmp_path)
     upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")

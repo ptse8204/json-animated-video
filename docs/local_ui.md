@@ -237,6 +237,16 @@ export. The UI should show the completed objects in Review, show the failed
 object/frame as a diagnostic row, and keep export blocked until the user
 explicitly keeps and includes at least one recovered track.
 
+Runtime proof is also a job-level contract. For SAM jobs, the extraction worker
+records an environment proof before model work starts, including
+`acceleratorKind`, `runtimeProofStatus`, requested/actual device,
+CUDA/MPS availability, and memory snapshot fields when available. A status of
+`environment_verified` means the worker process can see the accelerator, but it
+does not yet prove the model loaded there. When the SAM3 scene-sweep subprocess
+loads the model, it emits a stronger `runtimeProofStatus: verified` proof with
+`loadedOnCuda` or `loadedOnMps`. The UI may show `CUDA available` for the first
+case and `CUDA active` only after model placement is verified.
+
 Model setup jobs use the same event renderer. Install, access-check, cache, and
 smoke-test logs remain visible with progress, cancellation, blocked state, and
 redacted debug metadata, so users can see whether setup is installing runtime

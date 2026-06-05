@@ -123,6 +123,15 @@ model-sized CUDA allocation yet, treat that as a real blocker instead of
 progress: restart the Colab runtime, reinstall `.[sam3-transformers]`, verify
 `accelerate` is installed, and rerun Prepare local model.
 
+Extraction jobs now record two levels of runtime proof. The parent worker first
+records whether PyTorch in the active runtime can see CUDA or MPS. This may
+show as `runtimeProofStatus: environment_verified`, `cudaAvailable: true`, and
+`loadedOnCuda: false`; that means the Colab/Python worker can see CUDA, not
+that the SAM model has loaded on CUDA yet. After the isolated SAM3 scene-sweep
+worker loads and runs the model, it emits the stronger placement proof with
+`runtimeProofStatus: verified` and `loadedOnCuda: true`. Treat
+`gpu_device_mismatch` as a real setup/runtime blocker, not as a UI state bug.
+
 Local UI SAM3 smoke/warmup runs in an isolated worker process for normal setup
 jobs. Progress events still stream into Model setup, but if Transformers or
 PyTorch blocks inside model load/warmup, MotionJSON terminates the worker and

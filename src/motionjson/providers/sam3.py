@@ -541,6 +541,49 @@ class SAM3TrackerPointGridMaskGenerator:
     __call__ = generate
 
 
+def scene_sweep_runtime_proof_from_generator(generator: Any, *, requested_device: str = "cuda") -> dict[str, Any]:
+    torch = getattr(generator, "torch", None)
+    inspected_device = _pipeline_model_device(generator)
+    device_actual = inspected_device.get("device") or _device_actual_from_request(requested_device)
+    requested_lower = str(requested_device or "").strip().lower()
+    cuda_requested = requested_lower.startswith("cuda")
+    mps_requested = requested_lower.startswith("mps")
+    cuda_available = False
+    mps_available = False
+    if torch is not None:
+        try:
+            cuda_available = bool(getattr(getattr(torch, "cuda", None), "is_available", lambda: False)())
+        except Exception:
+            cuda_available = False
+        try:
+            mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+            mps_available = bool(mps_backend and mps_backend.is_available())
+        except Exception:
+            mps_available = False
+    loaded_on_cuda = bool(inspected_device.get("deviceType") == "cuda" or (cuda_requested and str(device_actual).startswith("cuda")))
+    loaded_on_mps = bool(inspected_device.get("deviceType") == "mps" or (mps_requested and str(device_actual).startswith("mps")))
+    accelerator_kind = "cuda" if loaded_on_cuda else "mps" if loaded_on_mps else "cpu" if str(device_actual).startswith("cpu") else "unknown"
+    mismatch = bool((cuda_requested and not loaded_on_cuda) or (mps_requested and not loaded_on_mps))
+    cuda_index = _cuda_device_index(str(device_actual))
+    return {
+        "providerId": "sam3-local",
+        "displayProvider": "SAM3 Scene Sweep runtime",
+        "runtimeKind": "transformers_sam3_tracker_direct",
+        "acceleratorKind": accelerator_kind,
+        "runtimeProofStatus": "gpu_device_mismatch" if mismatch else "verified",
+        "deviceRequested": str(requested_device or ""),
+        "deviceActual": str(device_actual or ""),
+        "deviceInspection": inspected_device,
+        "loadedOnCuda": loaded_on_cuda,
+        "loadedOnMps": loaded_on_mps,
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
+        "gpuMemoryAfter": _cuda_memory_snapshot(torch, cuda_index) if torch is not None and str(device_actual).startswith("cuda") else {},
+        "warmupStatus": "extraction_loaded",
+        "reasonCode": "gpu_device_mismatch" if mismatch else "",
+    }
+
+
 def _load_sam3_tracker_grid_generator(
     model_value: str,
     *,
@@ -1057,6 +1100,11 @@ class LocalSAM3DiscoveryBackend:
         output = self._set_text_prompt(processor, state, prompt)
         records = normalize_sam3_output(output)
         return {"status": "ok", "providerName": self.provider_name, "recordCount": len(records)}
+
+    def runtime_proof(self) -> dict[str, Any]:
+        if self._tracker_mask_generator is None:
+            return {}
+        return scene_sweep_runtime_proof_from_generator(self._tracker_mask_generator, requested_device=self.device)
 
     def discover_concept(self, video: Any, config: Mapping[str, Any], ctx: Any | None = None) -> list[dict[str, Any]]:
         prompt = str(config.get("concept") or config.get("text") or config.get("prompt") or "").strip()

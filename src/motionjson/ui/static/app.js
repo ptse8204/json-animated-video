@@ -3546,13 +3546,20 @@ const MotionJSONUI = (() => {
     }
     const deviceActual = String(runtimeVerification.deviceActual || smoke.deviceActual || "").toLowerCase();
     const kind = String(runtimeVerification.acceleratorKind || smoke.acceleratorKind || "").toLowerCase();
+    const proofStatus = String(runtimeVerification.runtimeProofStatus || smoke.runtimeProofStatus || "").toLowerCase();
     const loadedOnCuda = runtimeVerification.loadedOnCuda === true || smoke.loadedOnCuda === true;
     const loadedOnMps = runtimeVerification.loadedOnMps === true || smoke.loadedOnMps === true;
-    if (loadedOnCuda || kind === "cuda" || deviceActual.startsWith("cuda")) {
+    if (loadedOnCuda || (kind === "cuda" && proofStatus === "verified")) {
       return { label: "CUDA active", tone: "is-ready", acceleratorKind: "cuda" };
     }
-    if (loadedOnMps || kind === "mps" || deviceActual.startsWith("mps")) {
+    if (kind === "cuda" || deviceActual.startsWith("cuda") || runtimeVerification.cudaAvailable === true || smoke.cudaAvailable === true) {
+      return { label: "CUDA available", tone: "is-warn", acceleratorKind: "cuda" };
+    }
+    if (loadedOnMps || (kind === "mps" && proofStatus === "verified")) {
       return { label: "MPS active", tone: "is-warn", acceleratorKind: "mps" };
+    }
+    if (kind === "mps" || deviceActual.startsWith("mps") || runtimeVerification.mpsAvailable === true || smoke.mpsAvailable === true) {
+      return { label: "MPS available", tone: "is-warn", acceleratorKind: "mps" };
     }
     if (kind === "cpu" || deviceActual.startsWith("cpu") || deviceActual === "-1") {
       return { label: "CPU fallback", tone: "is-muted", acceleratorKind: "cpu" };

@@ -52,6 +52,21 @@ def main() -> int:
         backend = LocalSAM3DiscoveryBackend(model_path=model_path, device=str(request.get("device") or "cuda"))
         provider = SAM3AutoMasksDiscoveryProvider(backend=backend)
         candidates = provider.propose(video, config, ctx)
+        runtime_proof = backend.runtime_proof()
+        if runtime_proof:
+            bridge.emit(
+                "provider_preflight",
+                "succeeded" if runtime_proof.get("runtimeProofStatus") == "verified" else "failed",
+                "runtime proof recorded",
+                progress={"overallRatio": 0.319},
+                metadata={
+                    "provider": "sam3-local",
+                    "discoveryMode": "sam3_auto_masks",
+                    "eventType": "runtime_proof_recorded",
+                    "runtimeProof": runtime_proof,
+                    "runtimeContract": runtime_proof,
+                },
+            )
         result_path = Path(str(request.get("resultPath") or "")).expanduser()
         result_path.write_text(
             json.dumps({"candidates": [candidate.to_dict() for candidate in candidates]}, sort_keys=True),

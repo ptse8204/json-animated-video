@@ -19,6 +19,7 @@ from motionjson.config import (
     ThresholdProviderConfig,
     VideoInputConfig,
 )
+from motionjson.capabilities import cuda_status
 from motionjson.exporters.final_render import export_mp4, final_export_entry, load_scene, write_final_export_manifest
 from motionjson.exporters.production_assets import export_transparent_webm_object
 from motionjson.exporters.remotion import write_remotion_plan
@@ -629,6 +630,201 @@ def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any],
     }
 
 
+def _runtime_environment_proof_for_job(
+    provider_name: str,
+    *,
+    discovery_mode: str | None,
+    discovery_config: dict[str, Any],
+    run_config: ExtractionRunConfig | None,
+) -> dict[str, Any]:
+    provider_id = str(provider_name or "")
+    if discovery_config.get("mock"):
+        return {}
+    if provider_id.endswith("-hosted"):
+        return {
+            "providerId": provider_id,
+            "displayProvider": _runtime_display_provider(provider_id, discovery_mode),
+            "acceleratorKind": "hosted",
+            "runtimeProofStatus": "hosted",
+            "deviceRequested": "hosted",
+            "deviceActual": "hosted",
+            "loadedOnCuda": False,
+            "loadedOnMps": False,
+            "cudaAvailable": False,
+            "mpsAvailable": False,
+            "gpuMemoryBefore": {},
+            "gpuMemoryAfter": {},
+            "reasonCode": "",
+            "runtimeKind": "hosted_provider",
+        }
+    if not _should_probe_runtime(provider_id, discovery_mode):
+        return {}
+
+    device_requested = _requested_device_for_runtime(provider_id, discovery_mode, discovery_config, run_config)
+    torch_status = cuda_status()
+    devices = [device for device in torch_status.get("devices", []) if isinstance(device, dict)]
+    cuda_available = bool(torch_status.get("available"))
+    mps_available = any(str(device.get("name") or "").lower() == "mps" and bool(device.get("available")) for device in devices)
+    requested_lower = device_requested.lower()
+    cuda_requested = requested_lower.startswith("cuda")
+    mps_requested = requested_lower.startswith("mps")
+    device_actual = _environment_device_actual(device_requested, cuda_available=cuda_available, mps_available=mps_available)
+    accelerator_kind = _accelerator_kind_from_device(device_actual)
+    if cuda_requested and not cuda_available:
+        runtime_status = "gpu_device_mismatch"
+        reason_code = "gpu_device_mismatch"
+        message = "CUDA was requested, but PyTorch in the extraction worker cannot see CUDA."
+    elif mps_requested and not mps_available:
+        runtime_status = "gpu_device_mismatch"
+        reason_code = "gpu_device_mismatch"
+        message = "MPS was requested, but PyTorch in the extraction worker cannot see MPS."
+    elif bool(torch_status.get("torchInstalled")):
+        runtime_status = "environment_verified"
+        reason_code = ""
+        message = f"Extraction worker runtime can see {accelerator_kind.upper() if accelerator_kind in {'cuda', 'mps'} else accelerator_kind}."
+    else:
+        runtime_status = "not_verified"
+        reason_code = "torch_unavailable"
+        message = "PyTorch is not importable in the extraction worker, so accelerator proof is unavailable."
+    return {
+        "providerId": provider_id,
+        "displayProvider": _runtime_display_provider(provider_id, discovery_mode),
+        "acceleratorKind": accelerator_kind,
+        "runtimeProofStatus": runtime_status,
+        "deviceRequested": device_requested,
+        "deviceActual": device_actual,
+        "loadedOnCuda": False,
+        "loadedOnMps": False,
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
+        "gpuMemoryBefore": _worker_cuda_memory_snapshot(device_actual) if device_actual.startswith("cuda") and cuda_available else {},
+        "gpuMemoryAfter": {},
+        "reasonCode": reason_code,
+        "runtimeKind": "worker_environment_probe",
+        "message": message,
+        "torchInstalled": bool(torch_status.get("torchInstalled")),
+        "torchVersion": torch_status.get("torchVersion"),
+    }
+
+
+def _merge_runtime_proof(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    if not base:
+        return dict(candidate)
+    if not candidate:
+        return dict(base)
+    merged = dict(base)
+    for key, value in candidate.items():
+        if value not in (None, "", {}, []):
+            merged[key] = value
+    for key in ("cudaAvailable", "mpsAvailable"):
+        if key in base and key not in candidate:
+            merged[key] = base[key]
+    return merged
+
+
+def _should_probe_runtime(provider_id: str, discovery_mode: str | None) -> bool:
+    mode = str(discovery_mode or "")
+    if provider_id in {"sam3-local", "sam2-local", "sam2-hf-auto-masks"}:
+        return True
+    return mode.startswith("sam3") or mode in {"sam_auto_masks"}
+
+
+def _requested_device_for_runtime(
+    provider_id: str,
+    discovery_mode: str | None,
+    discovery_config: dict[str, Any],
+    run_config: ExtractionRunConfig | None,
+) -> str:
+    if provider_id == "sam3-local" or str(discovery_mode or "").startswith("sam3"):
+        return str(
+            discovery_config.get("sam3Device")
+            or discovery_config.get("sam3_device")
+            or (run_config.provider.sam3.device if run_config is not None else None)
+            or os.environ.get("SAM3_LOCAL_DEVICE")
+            or "cuda"
+        )
+    if provider_id == "sam2-hf-auto-masks":
+        return str(
+            discovery_config.get("sam2HfDevice")
+            or discovery_config.get("sam2_hf_device")
+            or os.environ.get("SAM2_HF_DEVICE")
+            or "cpu"
+        )
+    if provider_id == "sam2-local":
+        return str((run_config.provider.sam2.device if run_config is not None else None) or os.environ.get("SAM2_DEVICE") or "cpu")
+    return "cpu"
+
+
+def _environment_device_actual(device_requested: str, *, cuda_available: bool, mps_available: bool) -> str:
+    requested = str(device_requested or "").strip().lower()
+    if requested.startswith("cuda"):
+        return requested if ":" in requested else "cuda:0" if cuda_available else "cpu"
+    if requested.startswith("mps"):
+        return "mps" if mps_available else "cpu"
+    if requested.startswith("cpu") or requested == "-1":
+        return "cpu"
+    if cuda_available:
+        return "cuda:0"
+    if mps_available:
+        return "mps"
+    return "cpu"
+
+
+def _runtime_display_provider(provider_id: str, discovery_mode: str | None) -> str:
+    mode = str(discovery_mode or "")
+    if provider_id == "sam3-local" or mode.startswith("sam3"):
+        return "SAM3 Scene Sweep runtime"
+    if provider_id == "sam2-hf-auto-masks":
+        return "SAM2 HF automatic-mask runtime"
+    if provider_id == "sam2-local":
+        return "SAM2 prompt tracking runtime"
+    if provider_id.endswith("-hosted"):
+        return "Hosted SAM runtime"
+    return provider_id or "SAM runtime"
+
+
+def _worker_cuda_memory_snapshot(device_actual: str) -> dict[str, Any]:
+    if not str(device_actual or "").startswith("cuda"):
+        return {}
+    try:
+        import torch  # type: ignore
+    except Exception:
+        return {}
+    cuda = getattr(torch, "cuda", None)
+    if cuda is None:
+        return {}
+    try:
+        index = int(str(device_actual).split(":", 1)[1]) if ":" in str(device_actual) else 0
+    except (TypeError, ValueError):
+        index = 0
+    snapshot: dict[str, Any] = {}
+    try:
+        free_bytes, total_bytes = cuda.mem_get_info(index)
+        snapshot["freeBytes"] = int(free_bytes)
+        snapshot["totalBytes"] = int(total_bytes)
+        snapshot["usedBytes"] = int(total_bytes) - int(free_bytes)
+    except Exception:
+        pass
+    try:
+        snapshot["allocatedBytes"] = int(cuda.memory_allocated(index))
+        snapshot["reservedBytes"] = int(cuda.memory_reserved(index))
+    except Exception:
+        pass
+    return snapshot
+
+
+def _raise_if_environment_device_mismatch(proof: dict[str, Any], *, discovery_config: dict[str, Any]) -> None:
+    if not proof or discovery_config.get("mock"):
+        return
+    if str(proof.get("providerId") or "") != "sam3-local":
+        return
+    if str(proof.get("deviceRequested") or "").lower().startswith("cuda") and proof.get("cudaAvailable") is not True:
+        raise ProviderConfigError(
+            "gpu_device_mismatch: SAM3 Scene Sweep requested CUDA, but PyTorch in this extraction worker cannot see CUDA. "
+            "In Colab, switch to a GPU runtime, reinstall a CUDA-enabled torch build if needed, restart the runtime, then rerun setup."
+        )
+
+
 def _accelerator_kind_from_device(device: str) -> str:
     text = str(device or "").strip().lower()
     if text.startswith("cuda"):
@@ -787,6 +983,22 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                 if sam2_config.device and not any(key in discovery_config for key in ("sam2Device", "sam2_device", "device")):
                     discovery_config["sam2Device"] = sam2_config.device
                 discovery_config = _apply_sam3_provider_runtime(run_config, discovery_config)
+                runtime_proof = _runtime_environment_proof_for_job(
+                    provider_name,
+                    discovery_mode=discovery_mode,
+                    discovery_config=discovery_config,
+                    run_config=run_config,
+                )
+                if runtime_proof:
+                    job_run.emit(
+                        "provider_preflight",
+                        "succeeded" if runtime_proof.get("runtimeProofStatus") != "gpu_device_mismatch" else "failed",
+                        runtime_proof.get("message") or "runtime environment proof recorded",
+                        event_type="runtime_environment_proof_recorded",
+                        progress={"overallRatio": 0.055},
+                        metadata={"provider": provider_name, "discoveryMode": discovery_mode, "runtimeProof": runtime_proof},
+                    )
+                    _raise_if_environment_device_mismatch(runtime_proof, discovery_config=discovery_config)
                 if discovery_mode in {"sam3_concept", "sam3_exemplar", "sam3_auto_masks"}:
                     discovery_config, hosted_sam3_backend = _hosted_sam3_discovery_runtime(
                         conn,
@@ -825,7 +1037,10 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             if discovery_provider is not None:
                 provider, message, requires_mock = discovery_provider[:3]
                 provider_metadata = dict(discovery_provider[3]) if len(discovery_provider) > 3 and isinstance(discovery_provider[3], dict) else {}
-                runtime_proof = dict(provider_metadata.get("runtimeContract") or discovery_config.get("runtimeContractPublic") or {})
+                runtime_proof = _merge_runtime_proof(
+                    runtime_proof,
+                    dict(provider_metadata.get("runtimeContract") or discovery_config.get("runtimeContractPublic") or {}),
+                )
                 if runtime_proof and provider_name == "sam3-local":
                     runtime_proof.setdefault("displayProvider", "SAM3 Scene Sweep runtime")
                 if requires_mock and not discovery_config.get("mock"):
