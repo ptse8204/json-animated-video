@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from pathlib import Path
 
 import pytest
@@ -402,3 +403,35 @@ def test_job_stage_ratio_is_monotonic_per_stage_and_object(tmp_path):
     assert progress_events[0]["progress"]["stageRatio"] == 0.8
     assert progress_events[1]["progress"]["stageRatio"] == 0.8
     assert progress_events[2]["progress"]["stageRatio"] == 0.1
+
+
+def test_local_job_run_emits_independent_worker_heartbeat(tmp_path):
+    run = LocalJobRun(
+        run_dir=tmp_path / "heartbeat",
+        run_config={
+            "schema": "motionjson.extraction_run_config.v0.1",
+            "input": {"path": str(demo_video())},
+            "output": {"directory": str(tmp_path / "heartbeat")},
+        },
+        heartbeat_interval_seconds=0.05,
+    )
+    run.initialize(video_path=demo_video(), output_dir=tmp_path / "heartbeat")
+    run.start()
+    run.emit(
+        "asset_preparation",
+        "running",
+        "started raster asset frame 12/36 for sam3_grid_027",
+        event_type="asset_preparation_frame_started",
+        metadata={"objectId": "sam3_grid_027", "position": 12, "totalFrames": 36},
+    )
+    time.sleep(0.12)
+    run.stop_heartbeat()
+
+    events = read_events(tmp_path / "heartbeat" / "events.jsonl")
+    heartbeat = next(event for event in events if event["type"] == "worker_heartbeat")
+
+    assert heartbeat["stage"] == "asset_preparation"
+    assert heartbeat["metadata"]["objectId"] == "sam3_grid_027"
+    assert heartbeat["metadata"]["position"] == 12
+    assert heartbeat["metadata"]["totalFrames"] == 36
+    assert heartbeat["metadata"]["activeStage"] == "asset_preparation"

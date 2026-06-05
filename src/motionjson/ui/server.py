@@ -61,7 +61,7 @@ from motionjson.backend.provider_setup_jobs import (
 from motionjson.backend.queue import request_cancel_job
 from motionjson.backend.readiness import job_readiness, review_tool_statuses
 from motionjson.backend.selected_tracking import track_selected_candidates
-from motionjson.backend.stale_jobs import reconcile_stale_asset_preparation_job
+from motionjson.backend.stale_jobs import asset_preparation_stall_diagnostic
 from motionjson.backend.workspace import (
     commercial_readiness_response,
     get_workspace_preferences,
@@ -395,6 +395,7 @@ def _public_job_snapshot(
 ) -> dict[str, Any]:
     data = _public_job(row)
     public_events = [_public_event(event) for event in events or []]
+    watchdog = asset_preparation_stall_diagnostic(row, events or [])
     ratio = _latest_progress_ratio(public_events)
     status = str(data.get("status") or "")
     if ratio is None:
@@ -417,6 +418,8 @@ def _public_job_snapshot(
         data["events"] = public_events
     if readiness is not None:
         data["readiness"] = _public_review_value(readiness)
+    if watchdog is not None:
+        data["watchdog"] = _public_review_value({"stale": True, **watchdog})
     data["lifecycle"] = job_lifecycle_summary(data, events=public_events, review=review or {})
     return data
 
@@ -2371,9 +2374,6 @@ class LocalUIApp:
         include_events: bool = False,
         include_review: bool = True,
     ) -> dict[str, Any]:
-        reconciled = reconcile_stale_asset_preparation_job(conn, job_id=job["id"])
-        if reconciled is not None:
-            job = reconciled
         events = list_job_events(conn, job_id=job["id"])
         if include_review:
             assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])

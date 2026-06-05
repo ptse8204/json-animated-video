@@ -6,11 +6,10 @@ import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 
 from .exporters.lottie import write_silhouette_lottie
 from .exporters.production_assets import export_production_assets
@@ -37,6 +36,17 @@ from .providers.base import ObjectCandidateProvider, PhaseTiming, ProviderConfig
 SAFE_OBJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 DEFAULT_MAX_OBJECT_CUTOUT_PIXELS = 64_000_000
 ASSET_MATERIALIZATION_BUDGET_REASON = "asset_materialization_budget_exceeded"
+
+
+def _iter_with_optional_tqdm(items: Sequence[Any], *, desc: str) -> Iterable[Any]:
+    value = os.environ.get("MOTIONJSON_TQDM", "").strip().lower()
+    if value not in {"1", "true", "yes", "on"}:
+        return items
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        return items
+    return tqdm(items, desc=desc)
 
 
 @dataclass(frozen=True)
@@ -783,7 +793,7 @@ def _extract_object(
 
     total_track_frames = len(track.frames)
     progress_stride = max(1, total_track_frames // 4)
-    for position, track_frame in enumerate(tqdm(track.frames, desc=f"processing {object_id}"), start=1):
+    for position, track_frame in enumerate(_iter_with_optional_tqdm(track.frames, desc=f"processing {object_id}"), start=1):
         _job_check_cancel(job_context, "export")
         frame_start = time.perf_counter()
         frame_number = track_frame.frame

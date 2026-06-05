@@ -454,6 +454,100 @@ def test_reconcile_asset_preparation_keeps_fresh_running_job(tmp_path):
     assert not any(event["event_type"] in {"asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"} for event in list_job_events(conn, job_id=job["id"]))
 
 
+def test_asset_preparation_heartbeat_prevents_false_worker_stale(tmp_path):
+    from motionjson.backend.stale_jobs import asset_preparation_stall_diagnostic
+
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", ("2026-06-05T07:31:00+00:00", job["id"]))
+    conn.commit()
+    finished = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="asset_preparation_frame_finished",
+        message="finished raster asset frame 11/36 for sam3_grid_027",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "progress": {"overallRatio": 0.73, "current": 11, "total": 36},
+            "metadata": {"objectId": "sam3_grid_027", "position": 11, "totalFrames": 36},
+        },
+    )
+    heartbeat = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="worker_heartbeat",
+        message="worker heartbeat during asset_preparation",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "metadata": {
+                "objectId": "sam3_grid_027",
+                "position": 11,
+                "totalFrames": 36,
+                "activeStage": "asset_preparation",
+            },
+        },
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", ("2026-06-05T07:31:25+00:00", finished["id"]))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", ("2026-06-05T07:35:00+00:00", heartbeat["id"]))
+    conn.commit()
+
+    diagnostic = asset_preparation_stall_diagnostic(
+        {"status": "running"},
+        [dict(event) for event in list_job_events(conn, job_id=job["id"])],
+        now="2026-06-05T07:35:32+00:00",
+        threshold_seconds=240,
+    )
+
+    assert diagnostic is None
+
+
+def test_fresh_heartbeat_does_not_hide_inflight_frame_timeout(tmp_path):
+    from motionjson.backend.stale_jobs import asset_preparation_stall_diagnostic
+
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(conn, user_id=user["id"], project_id=project["id"], asset_id=upload["id"], mask_provider="sam3-local", max_frames=48)
+    conn.execute("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?", ("2026-06-05T07:31:00+00:00", job["id"]))
+    conn.commit()
+    started = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="asset_preparation_frame_started",
+        message="started raster asset frame 12/36 for sam3_grid_027",
+        metadata={
+            "stage": "asset_preparation",
+            "status": "running",
+            "progress": {"overallRatio": 0.73, "current": 12, "total": 36},
+            "metadata": {"objectId": "sam3_grid_027", "frame": 11, "position": 12, "totalFrames": 36},
+        },
+    )
+    heartbeat = record_job_event(
+        conn,
+        job_id=job["id"],
+        event_type="worker_heartbeat",
+        message="worker heartbeat during asset_preparation",
+        metadata={"stage": "asset_preparation", "status": "running", "metadata": {"objectId": "sam3_grid_027"}},
+    )
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", ("2026-06-05T07:31:25+00:00", started["id"]))
+    conn.execute("UPDATE job_events SET created_at = ? WHERE id = ?", ("2026-06-05T07:35:00+00:00", heartbeat["id"]))
+    conn.commit()
+
+    diagnostic = asset_preparation_stall_diagnostic(
+        {"status": "running"},
+        [dict(event) for event in list_job_events(conn, job_id=job["id"])],
+        now="2026-06-05T07:35:32+00:00",
+        threshold_seconds=240,
+    )
+
+    assert diagnostic is not None
+    assert diagnostic["reasonCode"] == "asset_preparation_frame_timeout"
+    assert diagnostic["objectId"] == "sam3_grid_027"
+    assert diagnostic["position"] == 12
+
+
 def test_provider_policy_rejects_openrouter_as_segmentation(tmp_path):
     with pytest.raises(ProviderPolicyError):
         validate_extract_provider_policy("openrouter")

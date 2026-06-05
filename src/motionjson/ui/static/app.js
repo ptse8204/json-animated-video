@@ -2667,7 +2667,8 @@ const MotionJSONUI = (() => {
         /queued|pending|running|working|started|cancel_requested/.test(rawStatus));
     const actions = lifecycle.actions || job.actions || {};
     const review = lifecycle.review || job.review || {};
-    const stale = jobStaleNotice(
+    const serverWatchdog = lifecycle.watchdog || job.watchdog || {};
+    const computedStale = jobStaleNotice(
       {
         ...job,
         lifecycle: {
@@ -2680,6 +2681,16 @@ const MotionJSONUI = (() => {
       },
       { events, status, rawStatus, active, terminal, now: options.now, thresholdMs: options.staleMs },
     );
+    const stale = serverWatchdog?.stale
+      ? {
+          stale: true,
+          ageMs: Number(serverWatchdog.ageSeconds || 0) * 1000,
+          activityAt: parseTimestampMs(serverWatchdog.lastEventAt),
+          label: serverWatchdog.reasonCode || "watchdog diagnostic",
+          detail: serverWatchdog.message || computedStale.detail,
+          diagnostic: serverWatchdog,
+        }
+      : computedStale;
     return {
       format: "motionjson.local_ui_job_lifecycle_view.v0.1",
       id: lifecycle.jobId || jobIdentifier(job),

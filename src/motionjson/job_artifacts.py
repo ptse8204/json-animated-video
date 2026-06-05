@@ -4,6 +4,8 @@ import json
 import mimetypes
 import os
 import shutil
+import threading
+import time
 import traceback
 import uuid
 from dataclasses import dataclass, field
@@ -29,6 +31,19 @@ class JobCanceled(RuntimeError):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def worker_heartbeat_interval_seconds() -> float:
+    raw = os.environ.get("MOTIONJSON_WORKER_HEARTBEAT_INTERVAL_SECONDS", "").strip()
+    if not raw:
+        return 15.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 15.0
+    if value <= 0:
+        return 0.0
+    return max(1.0, value)
 
 
 def _write_json(path: Path, data: Mapping[str, Any]) -> None:
@@ -140,6 +155,8 @@ class LocalJobRun:
     run_config: Mapping[str, Any]
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     event_callback: JobEventCallback | None = None
+    heartbeat_callback: JobEventCallback | None = None
+    heartbeat_interval_seconds: float | None = None
     cancel_check: CancelCheck | None = None
     created_at: str = field(default_factory=utc_now)
     started_at: str | None = None
@@ -149,6 +166,13 @@ class LocalJobRun:
     failure: dict[str, Any] | None = None
     _last_overall_ratio: float = field(default=0.0, init=False, repr=False)
     _last_stage_ratios: dict[tuple[str, str], float] = field(default_factory=dict, init=False, repr=False)
+    _event_write_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _heartbeat_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _heartbeat_stop: threading.Event = field(default_factory=threading.Event, init=False, repr=False)
+    _heartbeat_thread: threading.Thread | None = field(default=None, init=False, repr=False)
+    _heartbeat_state: dict[str, Any] = field(default_factory=dict, init=False, repr=False)
+    _heartbeat_started_at_monotonic: float = field(default=0.0, init=False, repr=False)
+    _worker_thread_ident: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.run_dir = Path(self.run_dir)
@@ -217,9 +241,11 @@ class LocalJobRun:
     def start(self) -> None:
         self.started_at = utc_now()
         self.status = "running"
+        self._worker_thread_ident = threading.get_ident()
         self.log("job started")
         self._write_state()
         self.emit("running", "running", "job started", event_type="job", progress={"overallRatio": 0.0})
+        self.start_heartbeat()
 
     def emit(
         self,
@@ -260,12 +286,99 @@ class LocalJobRun:
             "progress": progress_payload,
             "metadata": metadata_payload,
         }
-        self.events_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.events_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(event, sort_keys=True) + "\n")
-        if self.event_callback is not None:
-            self.event_callback(event)
+        if event_type != "worker_heartbeat":
+            self._update_heartbeat_state(stage=stage, status=status, message=message, metadata=metadata_payload)
+        self._append_event(event)
+        self._dispatch_event(event, self.event_callback)
         return event
+
+    def start_heartbeat(self) -> None:
+        interval = self.heartbeat_interval_seconds
+        if interval is None:
+            interval = worker_heartbeat_interval_seconds()
+        if interval <= 0:
+            return
+        if self._heartbeat_thread is not None and self._heartbeat_thread.is_alive():
+            return
+        self._heartbeat_started_at_monotonic = time.monotonic()
+        self._heartbeat_stop.clear()
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name=f"motionjson-heartbeat-{self.job_id[:8]}",
+            args=(float(interval),),
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def stop_heartbeat(self) -> None:
+        self._heartbeat_stop.set()
+        thread = self._heartbeat_thread
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=2.0)
+
+    def _heartbeat_loop(self, interval: float) -> None:
+        while not self._heartbeat_stop.wait(interval):
+            try:
+                self._emit_heartbeat(interval)
+            except Exception as exc:
+                try:
+                    self.log(f"worker heartbeat failed: {type(exc).__name__}: {exc}")
+                except Exception:
+                    pass
+
+    def _emit_heartbeat(self, interval: float) -> dict[str, Any]:
+        with self._heartbeat_lock:
+            state = dict(self._heartbeat_state)
+        stage = str(state.get("stage") or "running")
+        status = str(state.get("status") or self.status or "running")
+        metadata = dict(state.get("metadata") or {})
+        metadata.update(
+            {
+                "heartbeatIntervalSeconds": interval,
+                "elapsedSeconds": round(max(0.0, time.monotonic() - self._heartbeat_started_at_monotonic), 3),
+                "pid": os.getpid(),
+                "workerThreadIdent": self._worker_thread_ident,
+                "heartbeatThreadName": threading.current_thread().name,
+                "activeStage": stage,
+                "activeStatus": status,
+                "activeMessage": state.get("message") or "",
+            }
+        )
+        event = {
+            "format": JOB_EVENT_FORMAT,
+            "id": uuid.uuid4().hex,
+            "jobId": self.job_id,
+            "timestamp": utc_now(),
+            "type": "worker_heartbeat",
+            "stage": stage,
+            "status": status,
+            "message": f"worker heartbeat during {stage}",
+            "progress": {},
+            "metadata": metadata,
+        }
+        self._append_event(event)
+        self._dispatch_event(event, self.heartbeat_callback or self.event_callback)
+        return event
+
+    def _update_heartbeat_state(self, *, stage: str, status: str, message: str, metadata: Mapping[str, Any]) -> None:
+        with self._heartbeat_lock:
+            self._heartbeat_state = {
+                "stage": stage,
+                "status": status,
+                "message": message,
+                "metadata": dict(metadata),
+                "updatedAt": utc_now(),
+            }
+
+    def _append_event(self, event: Mapping[str, Any]) -> None:
+        self.events_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._event_write_lock:
+            with self.events_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(dict(event), sort_keys=True) + "\n")
+
+    def _dispatch_event(self, event: dict[str, Any], callback: JobEventCallback | None) -> None:
+        if callback is not None:
+            callback(event)
 
     def log(self, message: str) -> None:
         _append_text(self.logs_path, f"[{utc_now()}] {message}\n")
@@ -283,6 +396,7 @@ class LocalJobRun:
     ) -> None:
         self.status = "succeeded"
         self.finished_at = utc_now()
+        self.stop_heartbeat()
         self.result = result or {}
         self.log("job succeeded")
         self.write_metrics(scene=scene)
@@ -302,6 +416,7 @@ class LocalJobRun:
     def fail(self, exc: BaseException, *, reason_code: str | None = None, user_message: str | None = None) -> None:
         self.status = "failed"
         self.finished_at = utc_now()
+        self.stop_heartbeat()
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         message = user_message or str(exc) or type(exc).__name__
         self.log(f"job failed: {message}")
@@ -326,6 +441,7 @@ class LocalJobRun:
     def cancel(self, message: str = "job canceled") -> None:
         self.status = "canceled"
         self.finished_at = utc_now()
+        self.stop_heartbeat()
         self.log(message)
         self.failure = {
             "format": f"{JOB_ARTIFACT_FORMAT}.cancellation",

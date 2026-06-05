@@ -42,6 +42,7 @@ def job_lifecycle_summary(
         "type": _text(job.get("type") or "extract"),
         "workflow": _workflow(job),
         "provider": _provider_summary(job),
+        "runtimeProof": _runtime_proof_summary(job, event_list),
         "status": status,
         "rawStatus": raw_status,
         "phase": phase,
@@ -50,6 +51,7 @@ def job_lifecycle_summary(
         "failure": failure,
         "review": review_summary,
         "readiness": dict(readiness),
+        "watchdog": _mapping(job.get("watchdog")),
         "actions": actions,
         "nextAction": _next_action(status, review_summary, failure, actions, readiness),
     }
@@ -364,6 +366,31 @@ def _provider_summary(job: Mapping[str, Any]) -> dict[str, Any]:
         "locality": _provider_locality(provider_id),
         "hostedCallsAllowed": _hosted_calls_allowed(provider, discovery_config),
     }
+
+
+def _runtime_proof_summary(job: Mapping[str, Any], events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    direct = _mapping(job.get("runtimeProof"))
+    if direct:
+        return direct
+    result = _mapping(job.get("result"))
+    result_proof = _mapping(result.get("runtimeProof"))
+    if result_proof:
+        return result_proof
+    for event in reversed(events):
+        event_type = _text(event.get("event_type") or event.get("type")).lower()
+        metadata = _mapping(event.get("metadata"))
+        nested = _mapping(metadata.get("metadata"))
+        for candidate in (
+            _mapping(metadata.get("runtimeProof")),
+            _mapping(metadata.get("runtimeContract")),
+            _mapping(nested.get("runtimeProof")),
+            _mapping(nested.get("runtimeContract")),
+        ):
+            if candidate:
+                return candidate
+        if event_type == "runtime_proof_recorded" and nested:
+            return nested
+    return {}
 
 
 def _workflow(job: Mapping[str, Any]) -> str:

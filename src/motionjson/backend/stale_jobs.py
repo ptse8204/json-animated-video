@@ -68,9 +68,10 @@ def reconcile_stale_asset_preparation_job(
     if job is None or str(job["status"] or "").lower() != "running":
         return dict(job) if job is not None else None
     events = conn.execute("SELECT * FROM job_events WHERE job_id = ? ORDER BY created_at, id", (job_id,)).fetchall()
+    event_dicts = [dict(event) for event in events]
     diagnostic = asset_preparation_stall_diagnostic(
         dict(job),
-        [dict(event) for event in events],
+        event_dicts,
         now=now,
         threshold_seconds=threshold_seconds,
     )
@@ -78,6 +79,7 @@ def reconcile_stale_asset_preparation_job(
         return dict(job)
 
     partial_summary = _partial_artifact_summary(conn, job=dict(job), diagnostic=diagnostic)
+    runtime_proof = _runtime_proof_from_events(event_dicts)
     if partial_summary["reviewableObjectCount"] > 0:
         recovery_diagnostic = {
             **diagnostic,
@@ -87,6 +89,7 @@ def reconcile_stale_asset_preparation_job(
             "artifactCount": partial_summary["artifactCount"],
             "assetKindCounts": partial_summary["assetKindCounts"],
             "reviewableObjectIds": partial_summary["reviewableObjectIds"],
+            "runtimeProof": runtime_proof,
             "message": _partial_success_message(diagnostic, partial_summary),
             "suggestedAction": "Review the completed objects, then rerun with a lower sampling rate or stricter object filters for the missing object.",
         }
@@ -119,6 +122,7 @@ def reconcile_stale_asset_preparation_job(
             "progress": {"overallRatio": 1.0, "ratio": 1.0},
             "message": recovery_diagnostic["message"],
             "assetPreparationDiagnostic": recovery_diagnostic,
+            "runtimeProof": runtime_proof,
             "reviewableObjectCount": partial_summary["reviewableObjectCount"],
             "artifactCount": partial_summary["artifactCount"],
             "reviewableObjectIds": partial_summary["reviewableObjectIds"],
@@ -152,6 +156,21 @@ def reconcile_stale_asset_preparation_job(
         metadata=diagnostic,
     )
     return mark_failed(conn, job_id=job_id, error=diagnostic["message"], max_attempts=1)
+
+
+def _runtime_proof_from_events(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    for event in reversed(events):
+        metadata = _event_metadata(event)
+        nested = metadata.get("metadata") if isinstance(metadata.get("metadata"), Mapping) else {}
+        for candidate in (
+            metadata.get("runtimeProof"),
+            metadata.get("runtimeContract"),
+            nested.get("runtimeProof") if isinstance(nested, Mapping) else None,
+            nested.get("runtimeContract") if isinstance(nested, Mapping) else None,
+        ):
+            if isinstance(candidate, Mapping) and candidate:
+                return dict(candidate)
+    return {}
 
 
 def _partial_artifact_summary(
@@ -215,6 +234,27 @@ def asset_preparation_stall_diagnostic(
 ) -> dict[str, Any] | None:
     if str(job.get("status") or "").lower() != "running":
         return None
+    current_time = _parse_dt(now or utc_now())
+    if current_time is None:
+        return None
+    inflight_frame = _inflight_asset_preparation_frame(events)
+    if inflight_frame is not None:
+        frame_started_at = _parse_dt(
+            inflight_frame.get("created_at")
+            or inflight_frame.get("createdAt")
+            or inflight_frame.get("timestamp")
+        )
+        threshold = threshold_seconds if threshold_seconds is not None else asset_preparation_frame_timeout_seconds()
+        if frame_started_at is not None and current_time > frame_started_at:
+            age_seconds = (current_time - frame_started_at).total_seconds()
+            if age_seconds >= threshold:
+                return _stall_diagnostic_from_event(
+                    inflight_frame,
+                    reason_code=ASSET_PREPARATION_FRAME_TIMEOUT_REASON,
+                    detected_at=current_time,
+                    age_seconds=age_seconds,
+                    threshold_seconds=threshold,
+                )
     latest = _latest_event(events)
     if latest is None:
         return None
@@ -224,8 +264,7 @@ def asset_preparation_stall_diagnostic(
     if stage != "asset_preparation":
         return None
     latest_at = _parse_dt(latest.get("created_at") or latest.get("createdAt") or latest.get("timestamp"))
-    current_time = _parse_dt(now or utc_now())
-    if latest_at is None or current_time is None or current_time <= latest_at:
+    if latest_at is None or current_time <= latest_at:
         return None
     event_type = _event_type(latest)
     reason_code = ASSET_PREPARATION_FRAME_TIMEOUT_REASON if event_type == ASSET_PREPARATION_FRAME_TIMEOUT_REASON or event_type == "asset_preparation_frame_started" else WORKER_HEARTBEAT_STALE_REASON
@@ -235,12 +274,32 @@ def asset_preparation_stall_diagnostic(
     age_seconds = (current_time - latest_at).total_seconds()
     if age_seconds < threshold:
         return None
+    return _stall_diagnostic_from_event(
+        latest,
+        reason_code=reason_code,
+        detected_at=current_time,
+        age_seconds=age_seconds,
+        threshold_seconds=threshold,
+    )
 
-    metadata = _event_metadata(latest)
+
+def _stall_diagnostic_from_event(
+    event: Mapping[str, Any],
+    *,
+    reason_code: str,
+    detected_at: datetime,
+    age_seconds: float,
+    threshold_seconds: float,
+) -> dict[str, Any]:
+    event_at = _parse_dt(event.get("created_at") or event.get("createdAt") or event.get("timestamp"))
+    if event_at is None:
+        event_at = detected_at
+
+    metadata = _event_metadata(event)
     nested_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), Mapping) else {}
     progress = metadata.get("progress") if isinstance(metadata.get("progress"), Mapping) else {}
     object_id = str(nested_metadata.get("objectId") or metadata.get("objectId") or "").strip()
-    frame_current, frame_total = _frame_progress(latest, progress, nested_metadata)
+    frame_current, frame_total = _frame_progress(event, progress, nested_metadata)
     message = _stall_message(reason_code=reason_code, object_id=object_id, frame_current=frame_current, frame_total=frame_total)
     return {
         "format": "motionjson.asset_preparation_stall.v0.1",
@@ -253,15 +312,39 @@ def asset_preparation_stall_diagnostic(
         "position": _int_or_none(nested_metadata.get("position")) or frame_current,
         "preparedFrames": frame_current,
         "totalFrames": frame_total,
-        "lastEventAt": latest_at.isoformat(),
-        "detectedAt": current_time.isoformat(),
+        "lastEventAt": event_at.isoformat(),
+        "detectedAt": detected_at.isoformat(),
         "ageSeconds": int(age_seconds),
-        "thresholdSeconds": int(threshold),
-        "latestEventMessage": str(latest.get("message") or ""),
+        "thresholdSeconds": int(threshold_seconds),
+        "latestEventMessage": str(event.get("message") or ""),
         "message": message,
         "suggestedAction": "Cancel is no longer needed; retry asset preparation from the same setup or return to Model setup before starting a new run.",
         "artifactsAvailable": False,
     }
+
+
+def _inflight_asset_preparation_frame(events: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
+    starts: dict[tuple[str, int | None, int | None], Mapping[str, Any]] = {}
+    for event in events:
+        if _event_stage(event) != "asset_preparation":
+            continue
+        event_type = _event_type(event)
+        if event_type not in {"asset_preparation_frame_started", "asset_preparation_frame_finished"}:
+            continue
+        metadata = _event_metadata(event)
+        nested_metadata = metadata.get("metadata") if isinstance(metadata.get("metadata"), Mapping) else {}
+        progress = metadata.get("progress") if isinstance(metadata.get("progress"), Mapping) else {}
+        object_id = str(nested_metadata.get("objectId") or metadata.get("objectId") or "").strip()
+        position, _total = _frame_progress(event, progress, nested_metadata)
+        frame = _int_or_none(nested_metadata.get("frame"))
+        key = (object_id, position, frame)
+        if event_type == "asset_preparation_frame_started":
+            starts[key] = event
+        elif event_type == "asset_preparation_frame_finished":
+            starts.pop(key, None)
+    if not starts:
+        return None
+    return list(starts.values())[-1]
 
 
 def _latest_event(events: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:

@@ -46,6 +46,7 @@ from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2H
 from motionjson.providers.segmentation import SegmentationMaskProvider
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset, register_generated_asset_once
+from .db import connect
 from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
@@ -108,6 +109,7 @@ def _register_output_tree(
     out_dir: Path,
     source_asset_id: str | None = None,
     object_id_filter: str | None = None,
+    rel_path_filter: set[str] | None = None,
     replace_existing: bool = False,
 ) -> list[dict]:
     assets: list[dict] = []
@@ -120,6 +122,8 @@ def _register_output_tree(
         if not path.is_file():
             continue
         rel_path = str(path.relative_to(out_dir)).replace("\\", "/")
+        if rel_path_filter is not None and rel_path not in rel_path_filter:
+            continue
         object_id = _object_id_for_rel_path(rel_path)
         if object_id_filter is not None and object_id != object_id_filter:
             continue
@@ -208,6 +212,30 @@ def _event_mirror(conn: sqlite3.Connection, job_id: str):
             message=str(event.get("message") or event.get("stage") or "job event"),
             metadata=event,
         )
+
+    return mirror
+
+
+def _connection_database_path(conn: sqlite3.Connection) -> str | None:
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+    except sqlite3.DatabaseError:
+        return None
+    for row in rows:
+        name = row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        path = row["file"] if isinstance(row, sqlite3.Row) else row[2]
+        if name == "main" and isinstance(path, str) and path:
+            return path
+    return None
+
+
+def _event_mirror_for_db_path(db_path: str, job_id: str):
+    def mirror(event: dict[str, Any]) -> None:
+        event_conn = connect(db_path)
+        try:
+            _event_mirror(event_conn, job_id)(event)
+        finally:
+            event_conn.close()
 
     return mirror
 
@@ -599,6 +627,11 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             run_config=run_config_payload,
             job_id=job["id"],
             event_callback=_event_mirror(conn, job["id"]),
+            heartbeat_callback=(
+                _event_mirror_for_db_path(db_path, job["id"])
+                if (db_path := _connection_database_path(conn))
+                else None
+            ),
             cancel_check=lambda: _backend_cancel_requested(conn, job["id"]),
         )
         def checkpoint_object_outputs(object_id: str, *, status: str = "finished") -> dict[str, Any]:
@@ -692,6 +725,15 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     progress={"overallRatio": 0.06},
                     metadata={"provider": provider_name, "discoveryMode": discovery_mode, **provider_metadata},
                 )
+                if runtime_proof:
+                    job_run.emit(
+                        "provider_preflight",
+                        "succeeded",
+                        "runtime proof recorded",
+                        event_type="runtime_proof_recorded",
+                        progress={"overallRatio": 0.061},
+                        metadata={"provider": provider_name, "discoveryMode": discovery_mode, "runtimeProof": runtime_proof},
+                    )
                 scene = run_multi_object_pipeline(
                     video_path=video_path,
                     out_dir=out_dir,
@@ -910,6 +952,25 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             },
             progress_ratio=1.0 if readiness.get("readyForReview") else 0.99,
         )
+        _register_output_tree(
+            conn,
+            storage=storage,
+            project_id=job["project_id"],
+            job_id=job["id"],
+            out_dir=out_dir,
+            source_asset_id=source_asset["id"],
+            rel_path_filter={
+                "run_config.json",
+                "provider_diagnostics.json",
+                "job.json",
+                "events.jsonl",
+                "logs.txt",
+                "metrics.json",
+                "artifacts.json",
+            },
+            replace_existing=True,
+        )
+        assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
 
     frames = int(scene.get("source", {}).get("sampledFrameCount") or 0)
     objects = len(scene.get("objects", []))

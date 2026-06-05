@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from motionjson.backend.job_lifecycle import job_lifecycle_summary
-from motionjson.backend.jobs import record_job_event
+from motionjson.backend.jobs import list_job_events, record_job_event
 from motionjson.ui.server import LocalUIApp
 
 
@@ -75,6 +75,48 @@ def test_job_lifecycle_uses_event_progress_when_known():
     assert lifecycle["provider"]["connectionId"] == "sam3-hosted:roboflow-sam3-pcs"
     assert lifecycle["provider"]["label"] == "Roboflow SAM3"
     assert lifecycle["provider"]["engine"] == "sam3"
+
+
+def test_job_lifecycle_recovers_runtime_proof_from_events():
+    job = {
+        "id": "job_cuda_proof",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "running",
+        "payload": {
+            "run_config": {
+                "provider": {"name": "sam3-local"},
+                "discovery": {"mode": "sam3_auto_masks"},
+            }
+        },
+    }
+    events = [
+        {
+            "event_type": "runtime_proof_recorded",
+            "message": "runtime proof recorded",
+            "metadata": {
+                "stage": "provider_preflight",
+                "metadata": {
+                    "runtimeProof": {
+                        "providerId": "sam3-local",
+                        "displayProvider": "SAM3 Scene Sweep runtime",
+                        "acceleratorKind": "cuda",
+                        "runtimeProofStatus": "verified",
+                        "deviceRequested": "cuda",
+                        "deviceActual": "cuda:0",
+                        "loadedOnCuda": True,
+                    }
+                },
+            },
+            "created_at": "2026-06-05T07:30:00+00:00",
+        }
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["runtimeProof"]["acceleratorKind"] == "cuda"
+    assert lifecycle["runtimeProof"]["runtimeProofStatus"] == "verified"
+    assert lifecycle["runtimeProof"]["loadedOnCuda"] is True
 
 
 def test_job_lifecycle_provider_matrix_keeps_ids_labels_and_locality():
@@ -521,7 +563,7 @@ def test_local_ui_job_lifecycle_redacts_failure_paths(tmp_path):
     assert str(tmp_path) not in public_text
 
 
-def test_local_ui_job_poll_reconciles_stale_asset_preparation(tmp_path):
+def test_local_ui_job_poll_reports_stale_asset_preparation_without_mutating_job(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Stale Asset Prep"}).encode("utf-8"))
     project = decode(body)["project"]
@@ -562,13 +604,26 @@ def test_local_ui_job_poll_reconciles_stale_asset_preparation(tmp_path):
 
     status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}")
     payload = decode(body)
+    conn = app.connection()
+    try:
+        stored = conn.execute("SELECT status, attempts, error FROM jobs WHERE id = ?", (job["id"],)).fetchone()
+        queue_row = conn.execute("SELECT status FROM queue_items WHERE job_id = ?", (job["id"],)).fetchone()
+        stored_events = list_job_events(conn, job_id=job["id"])
+    finally:
+        conn.close()
 
     assert status == 200
-    assert payload["job"]["status"] == "failed"
-    assert payload["job"]["lifecycle"]["failure"]["reasonCode"] == "worker_heartbeat_stale"
-    assert payload["job"]["lifecycle"]["nextAction"]["label"] == "Retry asset prep"
-    assert payload["job"]["lifecycle"]["actions"]["canRetryAssetPreparation"] is True
-    assert any(event["event_type"] == "worker_heartbeat_stale" for event in payload["job"]["events"])
+    assert payload["job"]["status"] == "running"
+    assert payload["job"]["lifecycle"]["status"] == "running"
+    assert payload["job"]["lifecycle"]["failure"] is None
+    assert payload["job"]["watchdog"]["reasonCode"] == "worker_heartbeat_stale"
+    assert payload["job"]["watchdog"]["objectId"] == "sam3_grid_024"
+    assert payload["job"]["lifecycle"]["watchdog"]["reasonCode"] == "worker_heartbeat_stale"
+    assert stored["status"] == "running"
+    assert stored["attempts"] == 0
+    assert stored["error"] is None
+    assert queue_row["status"] == "running"
+    assert not any(event["event_type"] in {"worker_heartbeat_stale", "failed", "succeeded"} for event in stored_events)
 
 
 def test_completed_mock_job_lifecycle_reports_review_export_gate(tmp_path):
