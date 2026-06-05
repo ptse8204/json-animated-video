@@ -4904,6 +4904,9 @@ const MotionJSONUI = (() => {
   function isTrackExportIncluded(track) {
     if (track.exportable === false || track.demoMode === true) return false;
     if (track.deleted || track.exportIncluded === false) return false;
+    if (String(track.exportEligibility || "").toLowerCase() === "blocked") return false;
+    if (["static_fallback", "diagnostic_only", "rejected_candidate"].includes(String(track.trackClass || "").toLowerCase())) return false;
+    if (trackUsesStaticKeyframeFallback(track)) return false;
     if (track.exportIncluded === true) return true;
     return !/deleted|excluded|rejected|failed|fallback_raster|review_pending/.test(String(track.exportStatus || ""));
   }
@@ -4918,6 +4921,9 @@ const MotionJSONUI = (() => {
       track?.providerName,
       track?.trackingProvider,
       track?.reviewSource,
+      track?.trackClass,
+      track?.exportEligibility,
+      track?.exportBlockReason,
       track?.exportStatus,
       ...asArray(track?.warnings),
       ...asArray(track?.metadata?.warnings),
@@ -4938,7 +4944,18 @@ const MotionJSONUI = (() => {
   }
 
   function trackUsesStaticKeyframeFallback(track) {
+    if (String(track?.trackClass || "").toLowerCase() === "static_fallback") return true;
+    if (String(track?.exportBlockReason || "").toLowerCase() === "static_keyframe_mask_sequence") return true;
     return /keyframe_seed_sequence|static_keyframe|keyframe proposal mask sequence/.test(trackSourceText(track));
+  }
+
+  function trackQualityChip(track) {
+    const status = String(track?.maskQuality?.qualityStatus || "").toLowerCase();
+    if (trackUsesStaticKeyframeFallback(track)) return { label: "Static fallback", status: "failed" };
+    if (status === "good") return { label: "Good outline", status: "ready" };
+    if (status === "needs_refinement") return { label: "Needs refinement", status: "warning" };
+    if (status === "rejected") return { label: "Rejected", status: "failed" };
+    return { label: "Quality unknown", status: "optional" };
   }
 
   function trackMotionMetrics(track, dimensions = {}) {
@@ -5279,6 +5296,7 @@ const MotionJSONUI = (() => {
       const objectId = trackObjectId(track);
       return !includedSet.size || includedSet.has(objectId);
     });
+    const allStaticFallbackTracks = asArray(reviewTracks).filter(trackUsesStaticKeyframeFallback);
     const staticFallbackTracks = reviewedTracks.filter(trackUsesStaticKeyframeFallback);
     const movingTracks = materializedReviewedTracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && trackMotionMetrics(track).moving);
     const includedCount = asArray(includedIds).length;
@@ -5297,11 +5315,11 @@ const MotionJSONUI = (() => {
 
     rows.push({
       key: "moving_track_verified",
-      status: staticFallbackTracks.length ? "blocked" : movingTracks.length ? "ready" : "needs-action",
-      title: movingTracks.length ? "Moving track verified" : staticFallbackTracks.length ? "Static fallback blocked" : "Moving track not verified",
+      status: movingTracks.length ? "ready" : allStaticFallbackTracks.length ? "blocked" : "needs-action",
+      title: movingTracks.length ? "Moving track verified" : allStaticFallbackTracks.length ? "Static fallback blocked" : "Moving track not verified",
       detail: movingTracks.length
         ? `${movingTracks.length} reviewed track${movingTracks.length === 1 ? "" : "s"} use per-frame motion shown in preview.`
-        : staticFallbackTracks.length
+        : allStaticFallbackTracks.length
           ? "Static keyframe mask sequences stay blocked until tracking is repaired or rerun."
           : "Use Review to confirm the selected object follows frame-by-frame motion.",
     });
@@ -5325,10 +5343,12 @@ const MotionJSONUI = (() => {
     });
     rows.push({
       key: "static_keyframe_fallback",
-      status: staticFallbackTracks.length ? "blocked" : "ready",
-      title: staticFallbackTracks.length ? "Static keyframe fallback not exportable" : "Static keyframe fallback not used",
-      detail: staticFallbackTracks.length
-        ? "The selected export contains a static keyframe sequence; repair tracking before export."
+      status: allStaticFallbackTracks.length ? (movingTracks.length ? "needs-action" : "blocked") : "ready",
+      title: allStaticFallbackTracks.length ? "Static keyframe fallback not exportable" : "Static keyframe fallback not used",
+      detail: allStaticFallbackTracks.length
+        ? movingTracks.length
+          ? "Static fallback tracks are kept as diagnostics and will not block the valid moving track export."
+          : "The selected output contains only a static keyframe sequence; repair tracking before export."
         : "Export will use moving object tracks, not a frozen keyframe mask.",
     });
     return rows;
@@ -5364,6 +5384,7 @@ const MotionJSONUI = (() => {
     const pendingCount = asArray(pendingIds).length;
     const selectedTrackCount = toInteger(trackCount, asArray(reviewTracks).length);
     const reviewedTracks = asArray(reviewTracks).filter(isTrackExportIncluded);
+    const allStaticFallbackCount = asArray(reviewTracks).filter(trackUsesStaticKeyframeFallback).length;
     const movingCount = reviewedTracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && trackMotionMetrics(track).moving).length;
 
     if (!lifecycle) {
@@ -5418,6 +5439,15 @@ const MotionJSONUI = (() => {
         title: "Choose at least one reviewed object",
         detail: "Tick export on a reviewed moving track so the package does not include background or rejected candidates.",
         nextAction: "Mark reviewed",
+      };
+    }
+    if (!movingCount && allStaticFallbackCount >= selectedTrackCount) {
+      return {
+        tone: "bad",
+        badge: "Repair",
+        title: "Repair tracking before export",
+        detail: "Only static keyframe fallback tracks are available. Add a repair prompt or rerun with higher effort before export.",
+        nextAction: "Repair or rerun tracking",
       };
     }
     if (toInteger(staticFallbackCount, 0) > 0) {
@@ -8523,6 +8553,7 @@ const MotionJSONUI = (() => {
               const selected = state.selectedCorrectionTrackId === track.id;
               const confidence = typeof track.confidence === "number" ? `${Math.round(track.confidence * 100)}%` : "not reported";
               const warnings = asArray(track.warnings);
+              const quality = trackQualityChip(track);
               return `
                 <div class="track-row ${visible ? "" : "is-muted"} ${track.deleted ? "is-deleted" : ""} ${selected ? "is-selected" : ""}" data-track-row="${escapeAttribute(track.id)}" style="--track-color: ${escapeAttribute(track.color)}">
                   <div class="track-topline">
@@ -8549,6 +8580,7 @@ const MotionJSONUI = (() => {
                     </label>
                     <button class="mini-action" type="button" data-track-edit="${escapeAttribute(track.id)}">Edit</button>
                     <button class="mini-action danger-action" type="button" data-track-delete="${escapeAttribute(track.id)}" ${track.deleted ? "disabled" : ""}>Delete</button>
+                    ${statusChip(quality.label, quality.status)}
                     ${detailChip(track.reviewSource || "review")}
                     ${warnings.map((warning) => detailChip(warning)).join("")}
                   </div>
@@ -14143,6 +14175,7 @@ const MotionJSONUI = (() => {
     timelineMarkersForDisplay,
     trackFrameForDisplay,
     trackMotionMetrics,
+    trackQualityChip,
     trackSelectedPayload,
     trackUsesStaticKeyframeFallback,
     workflowNextStepId,

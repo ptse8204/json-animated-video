@@ -15,7 +15,7 @@ from motionjson.backend.jobs import record_job_event
 from motionjson.capabilities import gpu_model_recommendation, local_environment_profile
 from motionjson.ui import server as ui_server
 from motionjson.ui.server import LOCAL_UI_EMAIL
-from motionjson.ui.server import LocalUIApp
+from motionjson.ui.server import LocalUIApp, _track_review_summary
 from motionjson.validation import validate_document
 
 
@@ -109,6 +109,62 @@ def scene_asset_for_job(app: LocalUIApp, job: dict) -> dict:
     finally:
         conn.close()
     return next(asset for asset in assets if asset["kind"] == "scene_graph")
+
+
+def test_track_review_summary_classifies_static_fallback_and_mask_quality():
+    moving = _track_review_summary(
+        {
+            "objectId": "ball",
+            "label": "ball",
+            "source": "track_summary",
+            "providerName": "sam3_tracker_video",
+            "exportStatus": "accepted",
+            "frames": [
+                {
+                    "frame": 0,
+                    "visible": True,
+                    "bbox": {"x": 10, "y": 10, "w": 20, "h": 20},
+                    "maskArea": 240,
+                    "maskShape": [100, 100],
+                    "contourPoints": 18,
+                    "polygon": [[10, 10], [28, 12], [30, 28], [12, 30]],
+                },
+                {
+                    "frame": 1,
+                    "visible": True,
+                    "bbox": {"x": 18, "y": 10, "w": 20, "h": 20},
+                    "maskArea": 230,
+                    "maskShape": [100, 100],
+                    "contourPoints": 16,
+                    "polygon": [[18, 10], [36, 12], [38, 28], [20, 30]],
+                },
+            ],
+        }
+    )
+    static = _track_review_summary(
+        {
+            "objectId": "static_ball",
+            "label": "static ball",
+            "source": "track_summary",
+            "providerName": "keyframe_seed_sequence",
+            "exportStatus": "accepted",
+            "metadata": {"discovery": {"trackingProvider": "keyframe_seed_sequence"}},
+            "frames": [
+                {"frame": 0, "visible": True, "bbox": {"x": 10, "y": 10, "w": 20, "h": 20}, "maskArea": 400},
+                {"frame": 1, "visible": True, "bbox": {"x": 10, "y": 10, "w": 20, "h": 20}, "maskArea": 400},
+            ],
+        }
+    )
+
+    assert moving["trackClass"] == "moving_track"
+    assert moving["exportEligibility"] == "eligible"
+    assert moving["maskQuality"]["qualityStatus"] == "good"
+    assert moving["maskQuality"]["trackingMotionPx"] > 0
+    assert static["trackClass"] == "static_fallback"
+    assert static["exportEligibility"] == "blocked"
+    assert static["exportBlockReason"] == "static_keyframe_mask_sequence"
+    assert static["exportIncluded"] is False
+    assert static["maskQuality"]["qualityStatus"] == "needs_refinement"
 
 
 def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):

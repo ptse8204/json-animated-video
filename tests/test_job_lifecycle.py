@@ -392,6 +392,50 @@ def test_job_lifecycle_gates_candidates_tracks_and_exports():
     assert export_ready["actions"]["canExport"] is True
     assert export_ready["nextAction"]["label"] == "Export reviewed objects"
 
+    mixed_static_and_moving = job_lifecycle_summary(
+        job,
+        review={
+            "tracks": [
+                {
+                    "objectId": "static_object",
+                    "exportStatus": "accepted",
+                    "exportIncluded": False,
+                    "trackClass": "static_fallback",
+                    "exportEligibility": "blocked",
+                    "exportBlockReason": "static_keyframe_mask_sequence",
+                },
+                {
+                    "objectId": "moving_object",
+                    "exportStatus": "accepted",
+                    "exportIncluded": True,
+                    "trackClass": "moving_track",
+                    "exportEligibility": "eligible",
+                },
+            ]
+        },
+    )
+    assert mixed_static_and_moving["review"]["trackCount"] == 2
+    assert mixed_static_and_moving["review"]["exportableTrackCount"] == 1
+    assert mixed_static_and_moving["actions"]["canExport"] is True
+
+    static_only = job_lifecycle_summary(
+        job,
+        review={
+            "tracks": [
+                {
+                    "objectId": "static_object",
+                    "exportStatus": "accepted",
+                    "exportIncluded": False,
+                    "trackClass": "static_fallback",
+                    "exportEligibility": "blocked",
+                    "exportBlockReason": "static_keyframe_mask_sequence",
+                }
+            ]
+        },
+    )
+    assert static_only["review"]["exportableTrackCount"] == 0
+    assert static_only["actions"]["canExport"] is False
+
 
 def test_local_ui_progress_and_workspace_include_job_center_lifecycle(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)

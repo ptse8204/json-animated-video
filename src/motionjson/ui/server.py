@@ -456,9 +456,178 @@ def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
     return start, min(end, size - 1)
 
 
+def _number(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _bbox_values(value: Any) -> tuple[float, float, float, float] | None:
+    if isinstance(value, dict):
+        return (
+            _number(value.get("x")),
+            _number(value.get("y")),
+            _number(value.get("w") or value.get("width")),
+            _number(value.get("h") or value.get("height")),
+        )
+    if isinstance(value, list) and len(value) >= 4:
+        return (_number(value[0]), _number(value[1]), _number(value[2]), _number(value[3]))
+    return None
+
+
+def _track_source_text(track: dict[str, Any]) -> str:
+    metadata = track.get("metadata") if isinstance(track.get("metadata"), dict) else {}
+    discovery = track.get("discovery") if isinstance(track.get("discovery"), dict) else {}
+    metadata_discovery = metadata.get("discovery") if isinstance(metadata.get("discovery"), dict) else {}
+    values = [
+        track.get("trackClass"),
+        track.get("exportStatus"),
+        track.get("exportBlockReason"),
+        track.get("fallbackReason"),
+        track.get("reasonCode"),
+        metadata.get("fallbackReason"),
+        metadata.get("fallback_reason"),
+        metadata.get("reasonCode"),
+        metadata.get("reason_code"),
+        discovery.get("trackingProvider"),
+        discovery.get("tracking_provider"),
+        discovery.get("reason"),
+        metadata_discovery.get("trackingProvider"),
+        metadata_discovery.get("tracking_provider"),
+        metadata_discovery.get("reason"),
+    ]
+    warnings = track.get("warnings") if isinstance(track.get("warnings"), list) else []
+    metadata_warnings = metadata.get("warnings") if isinstance(metadata.get("warnings"), list) else []
+    return " ".join(str(value) for value in [*values, *warnings, *metadata_warnings] if value).lower()
+
+
+def _track_uses_static_keyframe_fallback(track: dict[str, Any]) -> bool:
+    return bool(re.search(r"keyframe_seed_sequence|static_keyframe|keyframe proposal mask sequence", _track_source_text(track)))
+
+
+def _track_motion_metrics(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    centers: list[tuple[float, float, int]] = []
+    for frame in frames:
+        if not isinstance(frame, dict) or frame.get("visible") is False:
+            continue
+        bbox = _bbox_values(frame.get("bbox"))
+        if bbox is None:
+            continue
+        x, y, w, h = bbox
+        centers.append((x + w / 2.0, y + h / 2.0, int(_number(frame.get("frame") or frame.get("outIndex")))))
+    max_center_shift = 0.0
+    path_length = 0.0
+    if centers:
+        first_x, first_y, _first_frame = centers[0]
+        max_center_shift = max(((x - first_x) ** 2 + (y - first_y) ** 2) ** 0.5 for x, y, _frame in centers)
+        path_length = sum(
+            ((right[0] - left[0]) ** 2 + (right[1] - left[1]) ** 2) ** 0.5
+            for left, right in zip(centers, centers[1:])
+        )
+    frame_span = centers[-1][2] - centers[0][2] if len(centers) >= 2 else 0
+    return {
+        "visibleCenterCount": len(centers),
+        "trackingMotionPx": round(max_center_shift, 3),
+        "centerPathLengthPx": round(path_length, 3),
+        "frameSpan": frame_span,
+    }
+
+
+def _mask_quality_for_track(track: dict[str, Any]) -> dict[str, Any]:
+    frames = track.get("frames") if isinstance(track.get("frames"), list) else []
+    visible = [frame for frame in frames if isinstance(frame, dict) and frame.get("visible") is not False]
+    bbox_fill_ratios: list[float] = []
+    mask_area_ratios: list[float] = []
+    contour_frames = 0
+    outline_frames = 0
+    for frame in visible:
+        mask_area = _number(frame.get("maskArea") or frame.get("area"))
+        bbox = _bbox_values(frame.get("bbox"))
+        if bbox is not None:
+            _x, _y, w, h = bbox
+            bbox_area = max(1.0, w * h)
+            if mask_area > 0:
+                bbox_fill_ratios.append(max(0.0, min(mask_area / bbox_area, 1.0)))
+        shape = frame.get("maskShape")
+        if isinstance(shape, list) and len(shape) >= 2:
+            frame_area = max(1.0, _number(shape[0]) * _number(shape[1]))
+            if mask_area > 0:
+                mask_area_ratios.append(max(0.0, min(mask_area / frame_area, 1.0)))
+        contour_points = int(_number(frame.get("contourPoints")))
+        polygon = frame.get("polygon") if isinstance(frame.get("polygon"), list) else []
+        if contour_points > 0 or polygon:
+            outline_frames += 1
+        if contour_points > 8 or len(polygon) > 4:
+            contour_frames += 1
+    frame_count = max(1, len(frames))
+    visible_ratio = len(visible) / frame_count
+    bbox_fill_ratio = sum(bbox_fill_ratios) / len(bbox_fill_ratios) if bbox_fill_ratios else 0.0
+    mask_area_ratio = sum(mask_area_ratios) / len(mask_area_ratios) if mask_area_ratios else 0.0
+    outline_tightness = 0.0 if not visible else outline_frames / len(visible)
+    motion = _track_motion_metrics([frame for frame in frames if isinstance(frame, dict)])
+    status = "good"
+    if _track_uses_static_keyframe_fallback(track):
+        status = "needs_refinement"
+    elif not outline_frames:
+        status = "needs_refinement"
+    elif mask_area_ratio >= 0.45 or bbox_fill_ratio >= 0.96:
+        status = "needs_refinement"
+    elif track.get("confidence") is not None and _number(track.get("confidence"), 1.0) < 0.45:
+        status = "needs_refinement"
+    return {
+        "outlineTightness": round(outline_tightness, 4),
+        "bboxFillRatio": round(bbox_fill_ratio, 4),
+        "maskAreaRatio": round(mask_area_ratio, 4),
+        "temporalStability": round(visible_ratio, 4),
+        "trackingMotionPx": motion["trackingMotionPx"],
+        "centerPathLengthPx": motion["centerPathLengthPx"],
+        "qualityStatus": status,
+        "outlineFrameCount": outline_frames,
+        "realContourFrameCount": contour_frames,
+    }
+
+
+def _enrich_track_review_summary(track: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(track)
+    metadata = enriched.get("metadata") if isinstance(enriched.get("metadata"), dict) else {}
+    status = str(enriched.get("exportStatus") or "accepted").lower()
+    static_fallback = _track_uses_static_keyframe_fallback(enriched)
+    mask_quality = _mask_quality_for_track(enriched)
+    if static_fallback:
+        track_class = "static_fallback"
+        export_eligibility = "blocked"
+        export_block_reason = "static_keyframe_mask_sequence"
+    elif re.search(r"deleted|rejected|failed|fallback_raster", status):
+        track_class = "rejected_candidate" if "rejected" in status else "diagnostic_only"
+        export_eligibility = "blocked"
+        export_block_reason = status
+    elif re.search(r"pending|needs_review|review_pending|awaiting_review", status):
+        track_class = "needs_refinement" if mask_quality["qualityStatus"] == "needs_refinement" else "moving_track"
+        export_eligibility = "needs_review"
+        export_block_reason = ""
+    else:
+        track_class = "needs_refinement" if mask_quality["qualityStatus"] == "needs_refinement" else "moving_track"
+        export_eligibility = "eligible"
+        export_block_reason = ""
+    enriched["trackClass"] = track_class
+    enriched["exportEligibility"] = export_eligibility
+    if export_block_reason:
+        enriched["exportBlockReason"] = export_block_reason
+    enriched["maskQuality"] = mask_quality
+    if static_fallback:
+        enriched["exportIncluded"] = False
+        enriched["metadata"] = {
+            **metadata,
+            "fallbackReason": "static_keyframe_mask_sequence",
+            "diagnosticOnly": True,
+        }
+    return enriched
+
+
 def _track_review_summary(track: dict[str, Any]) -> dict[str, Any]:
     frames = track.get("frames") if isinstance(track.get("frames"), list) else []
-    return {
+    return _enrich_track_review_summary({
         "objectId": track.get("objectId"),
         "label": track.get("label"),
         "source": track.get("source"),
@@ -495,7 +664,7 @@ def _track_review_summary(track: dict[str, Any]) -> dict[str, Any]:
             for frame in frames
             if isinstance(frame, dict)
         ],
-    }
+    })
 
 
 def _scene_object_review_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -538,7 +707,7 @@ def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
     motion = manifest_frames or (item.get("motion") if isinstance(item.get("motion"), list) else [])
     visible_motion = [frame for frame in motion if isinstance(frame, dict) and frame.get("visible")]
     discovery = item.get("discovery") if isinstance(item.get("discovery"), dict) else {}
-    return {
+    return _enrich_track_review_summary({
         "objectId": item.get("objectId"),
         "label": item.get("label"),
         "source": "object_manifest",
@@ -551,7 +720,9 @@ def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
             "partialObjectManifest": True,
             "recommendedOutput": item.get("recommendedOutput"),
             "frameMap": item.get("frameMap") if isinstance(item.get("frameMap"), list) else [],
+            "discovery": discovery,
         },
+        "discovery": discovery,
         "frames": [
             {
                 "frame": frame.get("frame"),
@@ -577,7 +748,7 @@ def _object_manifest_track_summary(item: dict[str, Any]) -> dict[str, Any]:
             for frame in motion
             if isinstance(frame, dict)
         ],
-    }
+    })
 
 
 def _append_unique_by_object_id(items: list[dict[str, Any]], item: dict[str, Any]) -> None:

@@ -450,12 +450,17 @@ def _hosted_calls_allowed(provider: Mapping[str, Any], discovery_config: Mapping
 def _track_exportable(track: Mapping[str, Any]) -> bool:
     status = _text(track.get("exportStatus") or track.get("export_status") or "accepted").lower()
     included = track.get("exportIncluded", track.get("export_included", True))
+    eligibility = _text(track.get("exportEligibility") or track.get("export_eligibility")).lower()
+    track_class = _text(track.get("trackClass") or track.get("track_class")).lower()
+    if eligibility == "blocked" or track_class in {"static_fallback", "diagnostic_only", "rejected_candidate"}:
+        return False
     return included is not False and status in EXPORT_READY_STATUSES and status not in EXPORT_BLOCKED_STATUSES
 
 
 def _track_needs_review(track: Mapping[str, Any]) -> bool:
     status = _text(track.get("exportStatus") or track.get("export_status")).lower()
-    return status in REVIEW_PENDING_STATUSES
+    eligibility = _text(track.get("exportEligibility") or track.get("export_eligibility")).lower()
+    return status in REVIEW_PENDING_STATUSES or eligibility in {"needs_review", "needs_refinement"}
 
 
 def _phase_label(phase: str) -> str:

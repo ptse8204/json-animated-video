@@ -1896,6 +1896,8 @@ const staticFallbackTrack = {
 assert.equal(ui.trackMotionMetrics(movingReviewedTrack).moving, true);
 assert.equal(ui.trackMotionMetrics(staticFallbackTrack).moving, false);
 assert.equal(ui.trackUsesStaticKeyframeFallback(staticFallbackTrack), true);
+assert.equal(ui.trackQualityChip({ maskQuality: { qualityStatus: "good" } }).label, "Good outline");
+assert.equal(ui.trackQualityChip(staticFallbackTrack).label, "Static fallback");
 assert.deepEqual(
   ui.exportReadinessSummary({
     job: { id: "job_1", status: "succeeded" },
@@ -1917,6 +1919,30 @@ assert.equal(
     reviewTracks: [staticFallbackTrack],
   })[0].status,
   "blocked",
+);
+assert.deepEqual(
+  ui.exportReadinessSummary({
+    job: { id: "job_1", status: "succeeded" },
+    includedIds: ["red_ball"],
+    reviewTracks: [movingReviewedTrack, staticFallbackTrack],
+    status: { ok: true, issueCount: 0, checked: 1 },
+  }).map((row) => [row.key, row.status]),
+  [
+    ["moving_track_verified", "ready"],
+    ["reviewed_for_export", "ready"],
+    ["motionjson_validation", "ready"],
+    ["static_keyframe_fallback", "needs-action"],
+  ],
+);
+assert.equal(
+  ui.exportDecisionState({
+    job: { id: "job_1", status: "succeeded" },
+    includedIds: ["static_ball"],
+    trackCount: 1,
+    reviewTracks: [staticFallbackTrack],
+    status: { ok: true, issueCount: 0, checked: 1 },
+  }).nextAction,
+  "Repair or rerun tracking",
 );
 const blockedDecision = ui.exportDecisionState({
   job: { id: "job_1", status: "succeeded" },
