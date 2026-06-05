@@ -1297,6 +1297,75 @@ def test_local_ui_review_returns_api_first_candidates_and_redacts_private_fields
     assert "1234567890" not in public_body
 
 
+def test_local_ui_review_exposes_partial_review_payload_and_redacts_diagnostics(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Partial Review Project"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/videos",
+        body=json.dumps({"projectId": project["id"], "path": str(demo_video())}).encode("utf-8"),
+    )
+    video = decode(body)["video"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "videoId": video["id"], "maskProvider": "mock", "maxFrames": 1}).encode("utf-8"),
+    )
+    job = decode(body)["job"]
+    partial_payload = {
+        "format": "motionjson.partial_review_payload.v0.1",
+        "status": "ready",
+        "partialSuccess": True,
+        "jobId": job["id"],
+        "reviewableObjectCount": 2,
+        "reviewableObjectIds": ["sam3_grid_001", "sam3_grid_002"],
+        "failedObjectId": "sam3_grid_027",
+        "diagnostic": {
+            "reasonCode": "worker_heartbeat_stale",
+            "objectId": "sam3_grid_027",
+            "frame": 11,
+            "totalFrames": 36,
+            "message": f"failed while reading file://{tmp_path}/private/source.mp4 with token=sk-1234567890",
+        },
+        "runtimeProof": {"acceleratorKind": "cuda", "runtimeProofStatus": "verified"},
+    }
+    conn = app.connection()
+    try:
+        register_generated_asset(
+            conn,
+            storage=app.storage(),
+            project_id=project["id"],
+            source_job_id=job["id"],
+            kind="partial_review",
+            data=json.dumps(partial_payload).encode("utf-8"),
+            rel_path="partial_review.json",
+            content_type="application/json",
+            metadata={"storage_key": "projects/private/partial_review.json"},
+        )
+    finally:
+        conn.close()
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review")
+    review = decode(body)["review"]
+    public_body = body.decode("utf-8")
+
+    assert status == 200
+    assert review["artifactCountsByKind"]["partial_review"] == 1
+    assert review["partialSuccess"] is True
+    assert review["reviewableObjectCount"] == 2
+    assert review["partialReview"]["failedObjectId"] == "sam3_grid_027"
+    assert review["partialReview"]["diagnostic"]["reasonCode"] == "worker_heartbeat_stale"
+    assert review["partialReview"]["diagnostic"]["frame"] == 11
+    assert review["partialReview"]["runtimeProof"]["acceleratorKind"] == "cuda"
+    assert "file://" not in public_body
+    assert str(tmp_path) not in public_body
+    assert "1234567890" not in public_body
+    assert "storage_key" not in public_body
+    assert "projects/private" not in public_body
+
+
 def test_local_ui_review_redacts_unavailable_candidate_artifact_diagnostics(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 

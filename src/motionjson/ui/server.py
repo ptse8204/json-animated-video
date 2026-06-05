@@ -132,6 +132,7 @@ REVIEW_JSON_ARTIFACT_KINDS = {
     "job_metrics",
     "job_state",
     "object_manifest",
+    "partial_review",
     "provider_diagnostics",
     "review_state_manifest",
     "scene_graph",
@@ -2536,6 +2537,11 @@ class LocalUIApp:
                 review["failure"] = _public_review_value(document)
             elif kind == "provider_diagnostics":
                 review["providerDiagnostics"] = _public_review_value(document.get("diagnostics", document))
+            elif kind == "partial_review":
+                review["partialReview"] = _public_review_value(document)
+                review["partialSuccess"] = bool(document.get("partialSuccess", True))
+                if isinstance(document.get("reviewableObjectIds"), list):
+                    review["reviewableObjectCount"] = len(document["reviewableObjectIds"])
             elif kind == "job_metrics":
                 review["metrics"] = _public_review_value(document)
             elif kind == "candidate_summary":

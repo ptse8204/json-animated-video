@@ -47,6 +47,7 @@ from motionjson.providers.segmentation import SegmentationMaskProvider
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset, register_generated_asset_once
 from .db import connect
+from .partial_review import synthesize_partial_review_payload
 from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
@@ -86,6 +87,8 @@ def _kind_for_rel_path(rel_path: str) -> str:
         return "web_manifest"
     if rel_path == "resource_profile.json":
         return "resource_profile"
+    if rel_path == "partial_review.json":
+        return "partial_review"
     if rel_path == "silhouette_lottie.json":
         return "lottie_silhouette"
     return "extraction_file"
@@ -238,6 +241,117 @@ def _event_mirror_for_db_path(db_path: str, job_id: str):
             event_conn.close()
 
     return mirror
+
+
+def _object_failure_diagnostic_from_output(out_dir: Path, exc: BaseException, *, reason_code: str) -> dict[str, Any]:
+    latest_failure: dict[str, Any] | None = None
+    latest_mtime = -1.0
+    for path in sorted((out_dir / "objects").glob("*/failure.json")):
+        try:
+            mtime = path.stat().st_mtime
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(document, dict) and mtime >= latest_mtime:
+            latest_failure = document
+            latest_mtime = mtime
+    message = str(exc) or type(exc).__name__
+    if latest_failure:
+        return {
+            **latest_failure,
+            "reasonCode": latest_failure.get("reasonCode") or reason_code,
+            "message": latest_failure.get("message") or message,
+        }
+    return {
+        "format": "motionjson.object_failure.v0.1",
+        "reasonCode": reason_code,
+        "exceptionType": type(exc).__name__,
+        "message": message,
+        "reviewRequired": True,
+    }
+
+
+def _synthesize_partial_review_for_failure(
+    job_run: LocalJobRun,
+    *,
+    out_dir: Path,
+    video_path: Path,
+    job_id: str,
+    exc: BaseException,
+    reason_code: str,
+    runtime_proof: dict[str, Any],
+) -> dict[str, Any]:
+    diagnostic = _object_failure_diagnostic_from_output(out_dir, exc, reason_code=reason_code)
+    result = synthesize_partial_review_payload(
+        out_dir,
+        video_path=video_path,
+        job_id=job_id,
+        diagnostic=diagnostic,
+        runtime_proof=runtime_proof,
+    )
+    if result.get("status") == "ready":
+        job_run.emit(
+            "partial_review",
+            "running",
+            "partial review payload synthesized from completed object checkpoints",
+            event_type="partial_review_payload_ready",
+            progress={"overallRatio": 0.965},
+            metadata=result,
+        )
+        job_run.emit(
+            "partial_review",
+            "succeeded",
+            "partial preview tools ready",
+            event_type="partial_preview_tools_ready",
+            progress={"overallRatio": 0.97},
+            metadata=result,
+        )
+    return result
+
+
+def _try_synthesize_partial_review_for_failure(
+    job_run: LocalJobRun,
+    *,
+    out_dir: Path,
+    video_path: Path,
+    job_id: str,
+    exc: BaseException,
+    reason_code: str,
+    runtime_proof: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        return _synthesize_partial_review_for_failure(
+            job_run,
+            out_dir=out_dir,
+            video_path=video_path,
+            job_id=job_id,
+            exc=exc,
+            reason_code=reason_code,
+            runtime_proof=runtime_proof,
+        )
+    except Exception as synthesis_exc:
+        job_run.log(f"partial review synthesis failed: {type(synthesis_exc).__name__}: {synthesis_exc}")
+        try:
+            job_run.emit(
+                "partial_review",
+                "failed",
+                str(synthesis_exc) or type(synthesis_exc).__name__,
+                event_type="partial_review_payload_failed",
+                metadata={
+                    "reasonCode": "partial_review_synthesis_failed",
+                    "errorType": type(synthesis_exc).__name__,
+                    "originalReasonCode": reason_code,
+                    "originalErrorType": type(exc).__name__,
+                },
+            )
+        except Exception:
+            pass
+        return {
+            "format": "motionjson.partial_review_payload.v0.1",
+            "status": "failed",
+            "reasonCode": "partial_review_synthesis_failed",
+            "message": str(synthesis_exc) or type(synthesis_exc).__name__,
+        }
 
 
 def _backend_cancel_requested(conn: sqlite3.Connection, job_id: str) -> bool:
@@ -868,10 +982,28 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             raise
         except ProviderConfigError as exc:
             provider_reason = "gpu_device_mismatch" if "gpu_device_mismatch" in str(exc) else "provider_unavailable"
+            _try_synthesize_partial_review_for_failure(
+                job_run,
+                out_dir=out_dir,
+                video_path=video_path,
+                job_id=job["id"],
+                exc=exc,
+                reason_code=provider_reason,
+                runtime_proof=runtime_proof,
+            )
             job_run.fail(exc, reason_code=provider_reason, user_message=str(exc))
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise
         except Exception as exc:
+            _try_synthesize_partial_review_for_failure(
+                job_run,
+                out_dir=out_dir,
+                video_path=video_path,
+                job_id=job["id"],
+                exc=exc,
+                reason_code="extraction_failed",
+                runtime_proof=runtime_proof,
+            )
             job_run.fail(exc)
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise

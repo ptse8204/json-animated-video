@@ -13,12 +13,15 @@ from motionjson.backend.db import initialize_database
 from motionjson.backend.jobs import enqueue_export_job, enqueue_extract_job, list_job_events, record_job_event
 from motionjson.backend.projects import create_project
 from motionjson.backend.queue import mark_failed
+from motionjson.backend.readiness import job_readiness
 from motionjson.backend.stale_jobs import (
     asset_preparation_frame_timeout_seconds,
     reconcile_stale_asset_preparation_job,
     worker_heartbeat_stale_seconds,
 )
 from motionjson.backend.usage import summarize_usage
+import motionjson.backend.worker as worker_module
+from motionjson.backend.partial_review import synthesize_partial_review_payload
 from motionjson.backend.worker import (
     _raise_if_requested_cuda_not_loaded,
     _server_runtime_value,
@@ -49,6 +52,12 @@ def backend(tmp_path):
 
 def demo_video() -> Path:
     return Path(__file__).resolve().parents[1] / "examples" / "demo_red_ball.mp4"
+
+
+def asset_rel_path(asset: dict) -> str | None:
+    metadata = json.loads(asset.get("metadata_json") or "{}")
+    value = metadata.get("rel_path")
+    return value if isinstance(value, str) else None
 
 
 def test_worker_resolves_public_redacted_local_paths_from_server_runtime_settings():
@@ -161,6 +170,153 @@ def test_extract_worker_runs_mock_provider_without_network(tmp_path):
 
     assert result["status"] == "succeeded"
     assert any(asset["kind"] == "scene_graph" for asset in assets)
+
+
+def test_extract_worker_synthesizes_partial_review_payload_after_object_failure(tmp_path, monkeypatch):
+    conn, storage, user, project = backend(tmp_path)
+    upload = register_upload(conn, storage=storage, user_id=user["id"], project_id=project["id"], path=demo_video(), kind="source_video")
+    job = enqueue_extract_job(
+        conn,
+        user_id=user["id"],
+        project_id=project["id"],
+        asset_id=upload["id"],
+        mask_provider="mock",
+        max_frames=2,
+    )
+
+    def fake_run_pipeline(*, out_dir, **_kwargs):
+        out = Path(out_dir)
+        object_dir = out / "objects" / "object_done"
+        (object_dir / "cutouts").mkdir(parents=True, exist_ok=True)
+        (out / "masks" / "object_done").mkdir(parents=True, exist_ok=True)
+        (object_dir / "cutouts" / "cutout_000001.png").write_bytes(b"png")
+        (out / "masks" / "object_done" / "mask_000001.png").write_bytes(b"png")
+        manifest = {
+            "schema": "motionjson.object_manifest.v0.1",
+            "objectId": "object_done",
+            "label": "Completed object",
+            "renderMode": "raster_alpha_sequence",
+            "motion": [
+                {
+                    "frame": 1,
+                    "sampleIndex": 0,
+                    "sourceFrameIndex": 0,
+                    "outIndex": 0,
+                    "t": 0.0,
+                    "sampleFps": 6,
+                    "visible": True,
+                    "x": 4,
+                    "y": 5,
+                    "w": 20,
+                    "h": 21,
+                    "bbox": [4, 5, 20, 21],
+                    "sourceBbox": [4, 5, 20, 21],
+                    "maskShape": [64, 96],
+                    "maskArea": 420,
+                    "asset": "objects/object_done/cutouts/cutout_000001.png",
+                    "mask": "masks/object_done/mask_000001.png",
+                    "anchor": [0.5, 0.5],
+                    "opacity": 1.0,
+                    "scale": 1.0,
+                    "rotation": 0.0,
+                    "contourPoints": [[4, 5], [24, 5], [22, 26], [4, 25]],
+                    "outlineStatus": "real_outline",
+                    "outlineSource": "mask_contour",
+                }
+            ],
+            "frames": [],
+            "frameMap": [{"sampleIndex": 0, "sourceFrameIndex": 0, "t": 0.0, "frame": 1, "outIndex": 0, "sampleFps": 6}],
+            "quality": {"qualityStatus": "needs_review"},
+            "recommendedOutput": "raster_alpha_sequence",
+            "discovery": {"candidateProvider": "mock", "exportStatus": "review_pending"},
+            "rights": {"commercialUseStatus": "review_required"},
+        }
+        (object_dir / "object_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        failed_dir = out / "objects" / "object_failed"
+        failed_dir.mkdir(parents=True, exist_ok=True)
+        (failed_dir / "failure.json").write_text(
+            json.dumps(
+                {
+                    "format": "motionjson.object_failure.v0.1",
+                    "objectId": "object_failed",
+                    "reasonCode": "object_extraction_failed",
+                    "message": "object_failed exploded",
+                }
+            ),
+            encoding="utf-8",
+        )
+        raise RuntimeError("object_failed exploded")
+
+    monkeypatch.setattr(worker_module, "run_pipeline", fake_run_pipeline)
+
+    result = worker_once(conn, storage=storage, max_attempts=1)
+    assets = list_assets_for_job(conn, project_id=project["id"], source_job_id=job["id"])
+    rel_paths = {asset_rel_path(asset) for asset in assets}
+    kinds = {asset["kind"] for asset in assets}
+    events = list_job_events(conn, job_id=job["id"])
+    partial_asset = next(asset for asset in assets if asset["kind"] == "partial_review")
+    partial_payload = json.loads(storage.load_bytes(partial_asset["storage_key"]).decode("utf-8"))
+    scene_asset = next(asset for asset in assets if asset["kind"] == "scene_graph")
+    scene = json.loads(storage.load_bytes(scene_asset["storage_key"]).decode("utf-8"))
+    readiness = job_readiness(
+        rel_paths=[path for path in rel_paths if path],
+        worker_complete=True,
+        artifacts_registered=True,
+        job_active=False,
+        review_summary={"trackCount": 1, "pendingTrackCount": 1, "exportableTrackCount": 0},
+    )
+
+    assert result["status"] == "failed"
+    assert {"scene_graph", "web_manifest", "track_summary", "fallback_diagnostics", "partial_review"}.issubset(kinds)
+    assert {
+        "scene_graph.json",
+        "web_asset_manifest.json",
+        "tracks.json",
+        "fallback_diagnostics.json",
+        "partial_review.json",
+        "preview/canvas_player.html",
+        "preview/object_selection_workflow.html",
+        "preview/object_selection_workflow.js",
+        "preview/timeline_editor.html",
+        "preview/timeline_editor.js",
+    }.issubset(rel_paths)
+    assert scene["partialSuccess"] is True
+    assert scene["objects"][0]["id"] == "object_done"
+    assert scene["partialReview"]["failedObjectId"] == "object_failed"
+    assert partial_payload["reviewableObjectIds"] == ["object_done"]
+    assert readiness["reviewPayloadReady"] is True
+    assert readiness["previewToolsReady"] is True
+    assert readiness["readyForReview"] is True
+    assert any(event["event_type"] == "partial_review_payload_ready" for event in events)
+    assert any(event["event_type"] == "partial_preview_tools_ready" for event in events)
+
+
+def test_partial_review_synthesis_does_not_overwrite_complete_root_payload(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    scene_path = out / "scene_graph.json"
+    manifest_path = out / "web_asset_manifest.json"
+    tracks_path = out / "tracks.json"
+    scene_path.write_text(json.dumps({"schema": "motionjson.scene_graph.v0.1", "objects": [{"id": "complete"}]}), encoding="utf-8")
+    manifest_path.write_text(json.dumps({"schema": "motionjson.web_asset_manifest.v0.1"}), encoding="utf-8")
+    tracks_path.write_text(json.dumps({"tracks": [{"objectId": "complete"}]}), encoding="utf-8")
+    object_dir = out / "objects" / "partial"
+    object_dir.mkdir(parents=True)
+    (object_dir / "object_manifest.json").write_text(
+        json.dumps({"objectId": "partial", "motion": [{"frame": 0, "visible": True}]}),
+        encoding="utf-8",
+    )
+
+    result = synthesize_partial_review_payload(
+        out,
+        job_id="job_complete",
+        diagnostic={"reasonCode": "late_failure", "message": "late failure"},
+    )
+
+    assert result["status"] == "skipped"
+    assert result["reasonCode"] == "root_review_payload_exists"
+    assert json.loads(scene_path.read_text(encoding="utf-8"))["objects"][0]["id"] == "complete"
+    assert not (out / "partial_review.json").exists()
 
 
 def test_export_worker_packages_existing_extraction_with_no_ai_usage(tmp_path):

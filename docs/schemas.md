@@ -14,6 +14,7 @@ MotionJSON core artifacts use JSON Schema Draft 2020-12. Each core JSON document
 - `motionjson.rights_manifest.v0.1`: structured rights metadata, source attribution, license details, creator approval, commercial-use review status, asset lineage, and audit records.
 - `motionjson.correction_request.v0.1`: local mask correction request with add/remove points, box corrections, brush strokes, same-coordinate or centroid-delta propagation, and temporal smoothing settings.
 - `motionjson.correction_manifest.v0.1`: correction result metadata, changed frames, regenerated artifacts, quality, routing, and `aiUsage: none`.
+- `motionjson.partial_review_payload.v0.1`: auxiliary recovery payload written when completed per-object extraction checkpoints can be reviewed even though a later object failed before the global export finished.
 - `motionjson.evaluation_benchmark.v0.1`: Phase 12 CPU benchmark summary
   written by `motionjson benchmark`, with relative run paths, validation
   status, track counts, fallback reason counts, continuity, coverage, and
@@ -58,13 +59,42 @@ It also recursively checks other JSON files that declare a recognized MotionJSON
 
 Extraction job files such as `run_config.json`, `job.json`, `events.jsonl`,
 `metrics.json`, `artifacts.json`, `provider_diagnostics.json`, and
-`failure.json` are auxiliary artifacts. Directory validation skips the
+`failure.json` are auxiliary artifacts. `partial_review.json` is also an
+auxiliary artifact; it records partial-object recovery state for the Local UI
+and is not a standalone recursively validated core schema. Directory validation skips the
 extraction run config and provider diagnostics schemas because they are
 preflight/job metadata, not MotionJSON render payloads.
 
 Final export manifests are optional for directory validation, but any `final_export_manifest.json` that declares `motionjson.final_export_manifest.v0.1` is validated recursively. Phase 11 validated UI exports also validate the corrected `scene_graph.json` and manifest before registering export artifacts. `quality_routing.json` is an auxiliary export report and is embedded in the validated manifest under `qualityRouting`.
 
 Correction request and manifest files are optional for ordinary extraction outputs. When `motionjson correct` writes `correction_request.json` and `correction_manifest.json`, directory validation checks them recursively.
+
+## Partial Review Recovery
+
+Multi-object extraction checkpoints per-object manifests before the final
+global export. If one later object fails during asset preparation, the worker
+may synthesize review artifacts from the completed object directories instead
+of leaving the run with no reviewable payload. This recovery path writes the
+normal review files where possible:
+
+```text
+scene_graph.json
+tracks.json
+fallback_diagnostics.json
+rights_manifest.json
+web_asset_manifest.json
+objects/<object_id>/object_manifest.json
+objects/<object_id>/web_asset_manifest.json
+preview/*.html
+partial_review.json
+```
+
+`partial_review.json` includes `partialSuccess`, `reviewableObjectIds`,
+`reviewableObjectCount`, the failed `objectId` or frame when known, diagnostic
+reason/message fields, and runtime proof if the job captured it. The generated
+scene graph also carries `partialSuccess: true` and an embedded
+`partialReview` block. Recovered tracks default to review-required and are not
+export-included until the user explicitly reviews them.
 
 ## Rights Fields
 

@@ -221,6 +221,22 @@ debug metadata. Failures, raster fallback, whole-frame masks, CUDA/model/cache
 problems, and provider errors are visually promoted instead of being hidden in
 raw JSON.
 
+Partial object recovery is part of the review contract. During multi-object
+SAM runs, the worker checkpoints each completed object before the final global
+export. If a later object fails, the backend can synthesize the root review
+payload from those checkpoints so completed objects remain inspectable. The
+`/api/jobs/JOB_ID/review` response then includes:
+
+- `partialSuccess: true`
+- `partialReview`: redacted diagnostic details, failed object/frame when known,
+  and captured runtime proof when available
+- `reviewableObjectCount`: number of completed objects recovered for review
+
+Recovered objects are review-required and are not automatically marked for
+export. The UI should show the completed objects in Review, show the failed
+object/frame as a diagnostic row, and keep export blocked until the user
+explicitly keeps and includes at least one recovered track.
+
 Model setup jobs use the same event renderer. Install, access-check, cache, and
 smoke-test logs remain visible with progress, cancellation, blocked state, and
 redacted debug metadata, so users can see whether setup is installing runtime
