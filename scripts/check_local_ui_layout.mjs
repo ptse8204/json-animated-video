@@ -621,7 +621,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           const style = getComputedStyle(element);
           return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
         };
+        const elementBox = (selector) => {
+          const element = document.querySelector(selector);
+          if (!element || !visible(element)) return null;
+          const box = element.getBoundingClientRect();
+          return {
+            top: Math.round(box.top),
+            bottom: Math.round(box.bottom),
+            left: Math.round(box.left),
+            right: Math.round(box.right),
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+          };
+        };
         return {
+          viewportHeight: window.innerHeight,
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
           railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
           railVisible: visible(rightRail),
@@ -697,6 +711,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           studioPartialDiagnosticVisible: visible(document.querySelector("#studioPartialDiagnostic")),
           studioPartialDiagnosticText: document.querySelector("#studioPartialDiagnostic")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
+          studioInspectorVisible: visible(document.querySelector("#studioTrackInspector")),
+          studioInspectorText: document.querySelector("#studioTrackInspector")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioInspectorBox: elementBox("#studioTrackInspector"),
+          studioObjectListBox: elementBox("#studioObjectList"),
+          studioReviewHeadingBox: elementBox("#studioReviewPanel .studio-review-heading"),
+          viewerPanelBox: elementBox(".viewer-panel"),
+          reviewToolsVisible: visible(document.querySelector(".review-tools-panel")),
+          reviewToolsText: document.querySelector(".review-tools-panel")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          reviewToolsBox: elementBox(".review-tools-panel"),
+          studioExportCardBox: elementBox("#studioExportCard"),
           postRunStageCount: document.querySelectorAll("#postRunGuideList .post-run-stage").length,
           runMonitorSummaryCount: document.querySelectorAll("#runMonitorSummary .status-summary-card").length,
           runMonitorSummaryText: document.querySelector("#runMonitorSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -931,6 +955,28 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (stateValue.studioReviewTitle !== "Review all objects" || !stateValue.studioObjectListVisible || stateValue.studioExportCardVisible) {
         failures.push(`${viewport.name}/${state}: review screen should show object review content and hide export package content`);
       }
+      if (viewport.width >= 1366) {
+        const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
+        if (!stateValue.studioInspectorVisible || !/Selected object|Runtime|Accelerator|Geometry|Motion/.test(stateValue.studioInspectorText)) {
+          failures.push(`${viewport.name}/${state}: desktop review should expose selected-object diagnostics and runtime proof in the workbench`);
+        }
+        if (!stateValue.reviewToolsVisible || !/Canvas player|Object selection|Timeline/.test(stateValue.reviewToolsText)) {
+          failures.push(`${viewport.name}/${state}: desktop review should expose actual review tool readiness cards above the fold`);
+        }
+        for (const [label, box] of [
+          ["viewer", stateValue.viewerPanelBox],
+          ["object list", stateValue.studioObjectListBox],
+          ["inspector", stateValue.studioInspectorBox],
+          ["review tools", stateValue.reviewToolsBox],
+        ]) {
+          if (!box || box.bottom > bottomLimit || box.top < -2) {
+            failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible review workbench`);
+          }
+        }
+        if ((stateValue.studioObjectListBox?.height || 0) < 160) {
+          failures.push(`${viewport.name}/${state}: desktop review object list should keep enough vertical room for scanning tracks`);
+        }
+      }
     }
     if (state === "workflow-partial-success" && (!stateValue.studioPartialDiagnosticVisible || !/Partial result is reviewable|sam3_grid_023|frame 41/.test(stateValue.studioPartialDiagnosticText))) {
       failures.push(`${viewport.name}/${state}: partial success should keep completed objects reviewable and show the failed object/frame diagnostic`);
@@ -941,6 +987,17 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       }
       if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible || !/Included objects|Rights note/.test(stateValue.studioExportIncludedText)) {
         failures.push(`${viewport.name}/${state}: export screen should show package readiness, included objects, and rights notes instead of the review object list`);
+      }
+      if (viewport.width >= 1366) {
+        const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
+        for (const [label, box] of [
+          ["export checklist", stateValue.studioExportCardBox],
+          ["review tools", stateValue.reviewToolsBox],
+        ]) {
+          if (!box || box.bottom > bottomLimit || box.top < -2) {
+            failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible export workbench`);
+          }
+        }
       }
     }
     if (state === "workflow-goal" && stateValue.fixedFooterOcclusions.length) {

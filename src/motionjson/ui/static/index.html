@@ -370,6 +370,17 @@
               <button id="studioExportSelectedButton" type="button">Export selected</button>
             </div>
             <div id="studioPartialDiagnostic" class="studio-partial-diagnostic" hidden></div>
+            <section id="studioTrackInspector" class="studio-track-inspector" aria-label="Selected object diagnostics">
+              <div class="studio-inspector-heading">
+                <div>
+                  <strong>Selected object</strong>
+                  <p class="row-meta">Geometry, motion, runtime proof, and export eligibility for the current track.</p>
+                </div>
+                <span id="studioSelectedTrackStatus" class="status-chip is-muted">No track</span>
+              </div>
+              <div id="studioRuntimeProof" class="studio-runtime-proof" aria-live="polite"></div>
+              <div id="studioSelectedTrackDetail" class="track-detail"></div>
+            </section>
             <div class="studio-export-card" id="studioExportCard" aria-label="Export checklist">
               <div class="studio-export-heading">
                 <div>

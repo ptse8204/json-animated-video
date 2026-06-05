@@ -8904,14 +8904,55 @@ const MotionJSONUI = (() => {
       });
     }
 
+    function studioRuntimeProofMarkup(job) {
+      if (!job) return `<div class="empty-state">Select a completed run to see runtime proof.</div>`;
+      const lifecycle = normalizeJobLifecycle({ ...job, events: state.jobEvents });
+      const result = job.result || {};
+      const runtimeProof = lifecycle.runtimeProof || result.runtimeProof || {};
+      const proofBadge = runtimeProofBadge(runtimeProof, { locality: lifecycle.provider.locality });
+      const readiness = lifecycle.readiness || {};
+      const fields = {
+        Runtime: runtimeProof.displayProvider || lifecycle.provider.displayLabel || "SAM runtime",
+        Accelerator: proofBadge.label,
+        Device: runtimeProof.deviceActual || runtimeProof.deviceRequested || "not reported",
+        Readiness: readiness.readyForReview === false
+          ? readiness.blockedReason || "Finalizing review assets"
+          : readiness.readyForReview === true
+            ? "Ready for review"
+            : "not reported",
+        Artifacts: String(state.jobArtifacts.length),
+        Objects: String(result.scene?.objects ?? result.objects ?? state.reviewTracks.length),
+      };
+      return `
+        <div class="studio-runtime-card">
+          <span class="status-chip ${escapeAttribute(proofBadge.tone || "is-muted")}">${escapeHtml(proofBadge.label)}</span>
+          <dl class="track-detail-grid">
+            ${Object.entries(fields)
+              .map(([key, value]) => `<dt>${escapeHtml(key)}</dt><dd>${escapeHtml(String(value || "not reported"))}</dd>`)
+              .join("")}
+          </dl>
+        </div>
+      `;
+    }
+
     function renderSelectedTrackDetail() {
       const track = state.reviewTracks.find((item) => item.id === state.selectedCorrectionTrackId) || state.reviewTracks[0] || null;
       if (track && !state.selectedCorrectionTrackId) state.selectedCorrectionTrackId = track.id;
       const status = track ? track.exportStatus || "review" : "No track";
+      const statusClassName = track ? statusClass(status, isTrackExportIncluded(track)) : "is-muted";
       $("#selectedTrackStatus").textContent = status;
-      $("#selectedTrackStatus").className = `status-chip ${track ? statusClass(status, isTrackExportIncluded(track)) : "is-muted"}`;
+      $("#selectedTrackStatus").className = `status-chip ${statusClassName}`;
+      const studioStatus = $("#studioSelectedTrackStatus");
+      if (studioStatus) {
+        studioStatus.textContent = status;
+        studioStatus.className = `status-chip ${statusClassName}`;
+      }
+      const studioRuntime = $("#studioRuntimeProof");
+      if (studioRuntime) studioRuntime.innerHTML = studioRuntimeProofMarkup(selectedJob());
       if (!track) {
-        $("#selectedTrackDetail").innerHTML = `<div class="empty-state">Select a completed run and choose a track to inspect correction and export state.</div>`;
+        const emptyMarkup = `<div class="empty-state">Select a completed run and choose a track to inspect correction and export state.</div>`;
+        $("#selectedTrackDetail").innerHTML = emptyMarkup;
+        if ($("#studioSelectedTrackDetail")) $("#studioSelectedTrackDetail").innerHTML = emptyMarkup;
         renderWorkflowStepper();
         return;
       }
@@ -8939,7 +8980,7 @@ const MotionJSONUI = (() => {
             : `<span>${escapeHtml(relPath)}</span>`;
         })
         .join("");
-      $("#selectedTrackDetail").innerHTML = `
+      const detailMarkup = `
         <dl class="track-detail-grid">
           <dt>Object ID</dt><dd>${escapeHtml(track.objectId || track.id)}</dd>
           <dt>Source</dt><dd>${escapeHtml(track.source || track.providerName || "not reported")}</dd>
@@ -8965,6 +9006,8 @@ const MotionJSONUI = (() => {
             : `<div class="empty-state">No object-specific artifacts are linked to this track yet.</div>`
         }
       `;
+      $("#selectedTrackDetail").innerHTML = detailMarkup;
+      if ($("#studioSelectedTrackDetail")) $("#studioSelectedTrackDetail").innerHTML = detailMarkup;
       renderWorkflowStepper();
     }
 
@@ -12419,7 +12462,7 @@ const MotionJSONUI = (() => {
           details.open = details.querySelector("#providerSettingsPanel") !== null;
         });
       } else if (capture === "new-project") {
-        if (shell && window.innerWidth > 860) shell.style.gridTemplateColumns = "260px minmax(0, 1fr)";
+        if (shell) shell.style.gridTemplateColumns = "";
         if (rightRail) rightRail.style.display = "none";
         if (wizardPanel) wizardPanel.style.display = "none";
       } else if (capture === "advanced-config") {
