@@ -87,12 +87,54 @@ export function objectDiscoveryDefaults(qualityPreset) {
   return defaults[qualityPreset] || defaults.clean;
 }
 
+export function effortPresetDefaults(effortPreset = "balanced") {
+  const presets = {
+    fast: {
+      effortPreset: "fast",
+      sampleFps: 6,
+      maxFrames: 36,
+      qualityPreset: "clean",
+      maxObjects: 12,
+      maskRefinementPreset: "fast",
+      useTransformersTracker: false,
+      requireRealTracking: false,
+      label: "Fast",
+      detail: "Lower load; static fallback can remain diagnostic output.",
+    },
+    balanced: {
+      effortPreset: "balanced",
+      sampleFps: 8,
+      maxFrames: 48,
+      qualityPreset: "balanced",
+      maxObjects: 24,
+      maskRefinementPreset: "balanced",
+      useTransformersTracker: true,
+      requireRealTracking: false,
+      label: "Balanced",
+      detail: "Default reviewable quality without flooding the workspace.",
+    },
+    high_quality: {
+      effortPreset: "high_quality",
+      sampleFps: 12,
+      maxFrames: 96,
+      qualityPreset: "maximum_recall",
+      maxObjects: 32,
+      maskRefinementPreset: "precise",
+      useTransformersTracker: true,
+      requireRealTracking: true,
+      label: "High quality",
+      detail: "Slower and higher GPU memory use; blocks silent static fallback.",
+    },
+  };
+  return presets[effortPreset] || presets.balanced;
+}
+
 function providerLabel(providerId, profileId = "") {
   if (providerId === "sam2-local") return "SAM2 local";
   if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
   if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
   if (providerId === "sam2-hosted") return "Hosted SAM2";
-  if (providerId === "sam3-local") return "SAM3 local";
+  if (providerId === "sam3-local") return "SAM3 Scene Sweep runtime";
   if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
   if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
   if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";
@@ -160,6 +202,7 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
   const presetId = snapshot.selectedPreset || snapshot.preset || snapshot.goal || "trace_one_object";
   const providerId = String(snapshot.providerId || snapshot.providerName || snapshot.maskProvider || "");
   const providerLabelText = snapshot.providerLabel || snapshot.displayLabel || providerLabel(providerId) || "Auto provider";
+  const effort = effortPresetDefaults(String(snapshot.effortPreset || "balanced"));
   const failureReason = priorFailureReasonFromSnapshot(snapshot);
   const retryingHeavyAssetPrep = ["asset_preparation_stalled", "asset_preparation_frame_timeout", "worker_heartbeat_stale"].includes(failureReason);
   const video = videoFactsFromSnapshot(snapshot);
@@ -167,9 +210,9 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
   const traceEverythingMode = Boolean(snapshot.traceEverythingMode);
   let qualityPreset = traceEverythingMode
     ? "trace_everything"
-    : String(snapshot.qualityPreset || (presetId === "trace_all_objects" ? "balanced" : "clean"));
-  let sampleFps = presetId === "trace_all_objects" ? 8 : presetId === "text_detector" ? 8 : 12;
-  let maxFrames = presetId === "trace_one_object" ? 48 : presetId === "text_detector" ? 32 : 48;
+    : String(snapshot.qualityPreset || (presetId === "trace_all_objects" ? effort.qualityPreset : "clean"));
+  let sampleFps = presetId === "trace_all_objects" ? effort.sampleFps : presetId === "text_detector" ? 8 : 12;
+  let maxFrames = presetId === "trace_all_objects" ? effort.maxFrames : presetId === "trace_one_object" ? 48 : presetId === "text_detector" ? 32 : 48;
   let maxObjects =
     presetId === "trace_one_object"
       ? 1
@@ -177,7 +220,9 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
         ? 6
         : presetId === "class_detector" || presetId === "motion_foreground"
           ? 8
-          : objectDiscoveryDefaults(qualityPreset).maxObjects;
+          : presetId === "trace_all_objects"
+            ? effort.maxObjects
+            : objectDiscoveryDefaults(qualityPreset).maxObjects;
   const preferredDevice = String(snapshot.preferredDevice || snapshot.accelerator || "").toLowerCase();
   let device =
     presetId === "trace_all_objects" && providerId === "sam3-local" && preferredDevice === "cuda"
@@ -209,6 +254,8 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
     maxObjects: adaptiveSourceValue("maxObjects", maxObjects, snapshot, overrideFlags),
     qualityPreset: adaptiveSourceValue("qualityPreset", qualityPreset, snapshot, overrideFlags),
     device: adaptiveSourceValue("device", device, snapshot, overrideFlags),
+    effortPreset: { value: effort.effortPreset, source: "auto" },
+    maskRefinementPreset: { value: effort.maskRefinementPreset, source: "auto" },
   };
   const values = Object.fromEntries(Object.entries(resolved).map(([key, item]) => [key, item.value]));
   const estimatedPixels = video.framePixels > 0 ? video.framePixels * Math.max(1, values.maxFrames) * Math.max(1, Math.min(values.maxObjects, 4)) : 0;
@@ -237,6 +284,8 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
     values: {
       ...values,
       traceEverythingMode,
+      useTransformersTracker: effort.useTransformersTracker,
+      requireRealTracking: effort.requireRealTracking,
       materializationBudgetPixels: budgetPixels,
       materializationEstimatedPixels: estimatedPixels,
       materializationRisk,
@@ -246,7 +295,9 @@ export function adaptiveRunDefaultsFromSnapshot(snapshot = {}) {
       chip("sampleFps", "Sample FPS", `${values.sampleFps} fps`, "Sampling load tuned for this goal."),
       chip("maxFrames", "Max frames", String(values.maxFrames), retryingHeavyAssetPrep ? "Reduced after the previous asset-prep failure." : "Capped before tracking starts."),
       chip("maxObjects", "Max objects", String(values.maxObjects), "Keeps review and memory bounded."),
+      chip("effortPreset", "Effort", effort.label, effort.detail, "auto", effort.effortPreset === "high_quality" ? "warn" : "neutral"),
       chip("qualityPreset", "Scene sweep", qualityLabel, retryingHeavyAssetPrep ? "Safer retry profile." : "Recall balanced against cleanup cost."),
+      chip("maskRefinementPreset", "Mask refinement", values.maskRefinementPreset, effort.requireRealTracking ? "Requires real tracking when available." : "Fallback remains diagnostic only.", "auto", effort.requireRealTracking ? "warn" : "neutral"),
       chip("device", "Device", String(values.device || "auto"), providerLabelText, resolved.device.source),
       chip(
         "materialization",

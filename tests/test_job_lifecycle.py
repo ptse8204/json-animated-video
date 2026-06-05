@@ -146,6 +146,18 @@ def test_job_lifecycle_provider_matrix_keeps_ids_labels_and_locality():
                 "hostedCallsAllowed": False,
             },
         ),
+        (
+            "sam3 scene sweep runtime",
+            {"payload": {"run_config": {"provider": {"name": "sam3-local"}, "discovery": {"mode": "sam3_auto_masks"}}}},
+            {
+                "id": "sam3-local",
+                "connectionId": "sam3-local",
+                "label": "SAM3 Scene Sweep runtime",
+                "engine": "sam3",
+                "locality": "local",
+                "hostedCallsAllowed": False,
+            },
+        ),
     ]
 
     for name, partial_job, expected in cases:
@@ -215,6 +227,42 @@ def test_job_lifecycle_success_event_overrides_late_cancel_requested_status():
     assert lifecycle["phase"] == "complete"
     assert lifecycle["progress"]["percent"] == 100
     assert lifecycle["actions"]["canCancel"] is False
+
+
+def test_job_lifecycle_finalizes_review_assets_until_readiness_is_true():
+    job = {
+        "id": "job_finalizing",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "succeeded",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}, "discovery": {"mode": "sam3_auto_masks"}}},
+        "readiness": {
+            "workerComplete": True,
+            "artifactsRegistered": True,
+            "reviewPayloadReady": True,
+            "previewToolsReady": False,
+            "readyForReview": False,
+            "blockedReasonCode": "preview_tools_missing",
+            "blockedReason": "Preview tools are missing: preview/canvas_player.html.",
+        },
+        "result": {},
+    }
+    events = [
+        {
+            "event_type": "succeeded",
+            "message": "job completed",
+            "metadata": {"stage": "succeeded", "progress": {"overallRatio": 1.0}},
+            "created_at": "2026-06-04T04:14:08Z",
+        }
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["status"] == "finalizing_review"
+    assert lifecycle["phase"] == "finalizing_review_assets"
+    assert lifecycle["progress"]["percent"] == 99
+    assert lifecycle["nextAction"]["label"] == "Wait for review assets"
+    assert lifecycle["actions"]["canExport"] is False
 
 
 def test_job_lifecycle_summarizes_failure_and_recovery_action():

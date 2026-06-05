@@ -33,6 +33,7 @@ for (const forbiddenVisibleCopy of [
   );
 }
 assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/track-selected"));
+assert.ok(ui.API_ROUTES.includes("/api/jobs/{jobId}/review-tools"));
 assert.ok(ui.API_ROUTES.includes("/api/model-providers/{providerId}/test"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/diagnose"));
 assert.ok(ui.API_ROUTES.includes("/api/provider-settings/{providerId}/setup/start"));
@@ -312,15 +313,29 @@ assert.notEqual(reviewScreenState.guideTitle, exportScreenState.guideTitle);
 const adaptiveSceneSweep = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
-  providerLabel: "SAM3 local",
+  providerLabel: "SAM3 Scene Sweep runtime",
   video: { width: 1280, height: 720, duration: 10 },
 });
 assert.equal(adaptiveSceneSweep.values.sampleFps, 8);
 assert.equal(adaptiveSceneSweep.values.maxFrames, 48);
 assert.equal(adaptiveSceneSweep.values.maxObjects, 24);
 assert.equal(adaptiveSceneSweep.values.qualityPreset, "balanced");
+assert.equal(adaptiveSceneSweep.values.effortPreset, "balanced");
+assert.equal(adaptiveSceneSweep.values.maskRefinementPreset, "balanced");
 assert.equal(adaptiveSceneSweep.sources.sampleFps, "auto");
 assert.ok(adaptiveSceneSweep.chips.length >= 6);
+const adaptiveHighQuality = ui.adaptiveRunDefaultsFromSnapshot({
+  preset: "trace_all_objects",
+  providerId: "sam3-local",
+  effortPreset: "high_quality",
+  video: { width: 1280, height: 720, duration: 10 },
+});
+assert.equal(adaptiveHighQuality.values.sampleFps, 12);
+assert.equal(adaptiveHighQuality.values.maxFrames, 96);
+assert.equal(adaptiveHighQuality.values.maxObjects, 32);
+assert.equal(adaptiveHighQuality.values.qualityPreset, "maximum_recall");
+assert.equal(adaptiveHighQuality.values.maskRefinementPreset, "precise");
+assert.equal(adaptiveHighQuality.values.requireRealTracking, true);
 const adaptiveSceneSweepCuda = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
@@ -967,7 +982,10 @@ const sam3TraceAllConfig = ui.buildRunConfig({
 assert.equal(sam3TraceAllConfig.provider.name, "sam3-local");
 assert.equal(sam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
 assert.equal(sam3TraceAllConfig.discovery.config.sceneSweep, true);
-assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, false);
+assert.equal(sam3TraceAllConfig.discovery.config.effortPreset, "balanced");
+assert.equal(sam3TraceAllConfig.discovery.config.maskRefinementPreset, "balanced");
+assert.equal(sam3TraceAllConfig.discovery.config.useTransformersTracker, true);
+assert.equal(sam3TraceAllConfig.discovery.config.requireRealTracking, false);
 assert.equal(sam3TraceAllConfig.discovery.config.sam3TrackerModel, "facebook/sam3");
 assert.equal("sam3ModelPath" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("model" in sam3TraceAllConfig.discovery.config, false);
@@ -976,6 +994,21 @@ assert.equal("text" in sam3TraceAllConfig.discovery.config, false);
 assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig), ["sam3-auto-masks"]);
 assert.doesNotMatch(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig).join(" "), /sam3-local|SAM3_LOCAL_MODEL/);
 assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3SingleObjectConfig), ["sam3-local"]);
+
+const sam3HighQualityTraceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "sam3-local",
+  objectLabel: "all objects",
+  effortPreset: "high_quality",
+});
+assert.equal(sam3HighQualityTraceAllConfig.discovery.mode, "sam3_auto_masks");
+assert.equal(sam3HighQualityTraceAllConfig.discovery.config.effortPreset, "high_quality");
+assert.equal(sam3HighQualityTraceAllConfig.discovery.config.qualityPreset, "maximum_recall");
+assert.equal(sam3HighQualityTraceAllConfig.discovery.config.maskRefinementPreset, "precise");
+assert.equal(sam3HighQualityTraceAllConfig.discovery.config.useTransformersTracker, true);
+assert.equal(sam3HighQualityTraceAllConfig.discovery.config.requireRealTracking, true);
+assert.equal(sam3HighQualityTraceAllConfig.sampling.sample_fps, 12);
+assert.equal(sam3HighQualityTraceAllConfig.sampling.max_frames, 96);
 
 const sam2HfTraceAllConfig = ui.buildRunConfig({
   preset: "trace_all_objects",
@@ -2294,7 +2327,32 @@ assert.equal(
       },
     },
   }).primaryAction,
-  "mark_reviewed",
+  "select_reviewable_track",
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({
+    job: { id: "job_static", status: "succeeded" },
+    trackCount: 1,
+    exportIncludedCount: 0,
+    tracks: [{ id: "sam3_grid_001", exportStatus: "accepted", metadata: { fallbackReason: "static_keyframe_mask_sequence" } }],
+  }).primaryAction,
+  "repair_tracking",
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({
+    job: { id: "job_moving", status: "succeeded" },
+    trackCount: 1,
+    exportIncludedCount: 0,
+    tracks: [{ id: "sam3_grid_001", exportStatus: "accepted", metadata: { trackingProvider: "sam3_tracker_video" } }],
+  }).primaryAction,
+  "mark_selected_for_export",
+);
+assert.equal(
+  ui.reviewGateFromSnapshot({
+    job: { id: "job_finalizing", status: "succeeded", readiness: { readyForReview: false, blockedReason: "Finalizing review assets." } },
+    trackCount: 1,
+  }).primaryAction,
+  "wait_review_assets",
 );
 assert.equal(
   ui.reviewGateFromSnapshot({
@@ -2328,7 +2386,7 @@ assert.match(
 );
 assert.equal(
   ui.reviewGateFromSnapshot({ job: { id: "job_tracks", status: "succeeded" }, trackCount: 2, exportIncludedCount: 0 }).primaryAction,
-  "mark_reviewed",
+  "select_reviewable_track",
 );
 assert.equal(
   ui.reviewGateFromSnapshot({ job: { id: "job_export", status: "succeeded" }, trackCount: 2, exportIncludedCount: 1 }).primaryAction,

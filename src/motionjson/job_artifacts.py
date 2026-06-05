@@ -274,7 +274,13 @@ class LocalJobRun:
         if self.cancel_marker.exists() or (self.cancel_check is not None and self.cancel_check()):
             raise JobCanceled(f"job canceled during {stage}")
 
-    def succeed(self, *, scene: dict[str, Any] | None = None, result: dict[str, Any] | None = None) -> None:
+    def succeed(
+        self,
+        *,
+        scene: dict[str, Any] | None = None,
+        result: dict[str, Any] | None = None,
+        progress_ratio: float = 1.0,
+    ) -> None:
         self.status = "succeeded"
         self.finished_at = utc_now()
         self.result = result or {}
@@ -283,7 +289,14 @@ class LocalJobRun:
         artifacts = self.write_artifact_manifest()
         self.result.setdefault("artifactCount", len(artifacts))
         self.result.setdefault("artifactBytes", sum(int(artifact["byteSize"]) for artifact in artifacts))
-        self.emit("succeeded", "succeeded", "job completed", event_type="job", progress={"overallRatio": 1.0}, metadata=self.result)
+        self.emit(
+            "succeeded",
+            "succeeded",
+            "job completed",
+            event_type="job",
+            progress={"overallRatio": progress_ratio},
+            metadata=self.result,
+        )
         self._write_state()
 
     def fail(self, exc: BaseException, *, reason_code: str | None = None, user_message: str | None = None) -> None:

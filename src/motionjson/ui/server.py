@@ -37,7 +37,7 @@ from motionjson.backend.export_workflows import (
     validate_motionjson_export_job,
 )
 from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
-from motionjson.backend.job_lifecycle import job_lifecycle_summary
+from motionjson.backend.job_lifecycle import job_lifecycle_summary, review_lifecycle_summary
 from motionjson.backend.library import (
     add_asset_to_collection,
     create_collection,
@@ -59,6 +59,7 @@ from motionjson.backend.provider_setup_jobs import (
     run_provider_setup_job,
 )
 from motionjson.backend.queue import request_cancel_job
+from motionjson.backend.readiness import job_readiness, review_tool_statuses
 from motionjson.backend.selected_tracking import track_selected_candidates
 from motionjson.backend.stale_jobs import reconcile_stale_asset_preparation_job
 from motionjson.backend.workspace import (
@@ -380,12 +381,17 @@ def _latest_progress_ratio(events: list[dict[str, Any]]) -> float | None:
     return latest
 
 
+def _event_type_set(events: list[dict[str, Any]]) -> set[str]:
+    return {str(event.get("event_type") or event.get("type") or "").strip().lower() for event in events if isinstance(event, dict)}
+
+
 def _public_job_snapshot(
     row: dict[str, Any],
     *,
     events: list[dict[str, Any]] | None = None,
     include_events: bool = False,
     review: dict[str, Any] | None = None,
+    readiness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     data = _public_job(row)
     public_events = [_public_event(event) for event in events or []]
@@ -399,6 +405,8 @@ def _public_job_snapshot(
         else:
             ratio = 0.0
     percent = int(round(ratio * 100))
+    if readiness is not None and readiness.get("readyForReview") is not True and status in TERMINAL_JOB_STATUSES:
+        percent = min(percent, 99)
     data["progress"] = percent
     data["percent"] = percent
     if public_events:
@@ -407,6 +415,8 @@ def _public_job_snapshot(
         data["lastEventAt"] = public_events[-1].get("created_at") or public_events[-1].get("createdAt")
     if include_events:
         data["events"] = public_events
+    if readiness is not None:
+        data["readiness"] = _public_review_value(readiness)
     data["lifecycle"] = job_lifecycle_summary(data, events=public_events, review=review or {})
     return data
 
@@ -792,6 +802,7 @@ class LocalUIApp:
                     "/api/jobs/{jobId}/events",
                     "/api/jobs/{jobId}/artifacts",
                     "/api/jobs/{jobId}/preview-files/{relPath}",
+                    "/api/jobs/{jobId}/review-tools",
                     "/api/jobs/{jobId}/review",
                     "/api/jobs/{jobId}/corrections",
                     "/api/jobs/{jobId}/track-edits",
@@ -1223,6 +1234,23 @@ class LocalUIApp:
                     assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
                     corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
                     return self._artifacts_response(assets, corrections=corrections, job_id=parts[2])
+                if len(parts) == 4 and parts[3] == "review-tools":
+                    job = get_job(conn, user_id=user_id, job_id=parts[2])
+                    events = list_job_events(conn, job_id=parts[2])
+                    assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
+                    corrections = list_track_corrections(conn, user_id=user_id, job_id=parts[2])
+                    review = self._review_metadata(assets, corrections=corrections, job_id=parts[2])
+                    readiness = self._job_readiness_for_assets(job, assets=assets, events=events, review=review)
+                    active = str(job.get("status") or "").lower() in {"pending", "queued", "running", "cancel_requested"}
+                    return {
+                        "jobId": parts[2],
+                        "readiness": readiness,
+                        "tools": review_tool_statuses(
+                            job_id=parts[2],
+                            rel_paths=[_asset_rel_path(asset) for asset in assets],
+                            job_active=active,
+                        ),
+                    }
                 if len(parts) == 4 and parts[3] == "review":
                     job = get_job(conn, user_id=user_id, job_id=parts[2])
                     assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=parts[2])
@@ -2127,6 +2155,43 @@ class LocalUIApp:
         corrections = list_track_corrections(conn, user_id=job["created_by_user_id"], job_id=job["id"])
         return self._review_metadata(assets, corrections=corrections, job_id=job["id"])
 
+    def _job_readiness_for_assets(
+        self,
+        job: dict[str, Any],
+        *,
+        assets: list[dict[str, Any]],
+        events: list[dict[str, Any]],
+        review: dict[str, Any],
+    ) -> dict[str, Any]:
+        event_types = _event_type_set(events)
+        if "result_json" in job:
+            try:
+                result = json.loads(job.get("result_json") or "{}")
+            except (TypeError, json.JSONDecodeError):
+                result = {}
+        else:
+            result = job.get("result", {})
+        result_readiness = result.get("readiness") if isinstance(result, dict) and isinstance(result.get("readiness"), dict) else {}
+        raw_status = str(job.get("status") or "").lower()
+        active = raw_status in {"pending", "queued", "running", "cancel_requested"}
+        worker_complete = bool(
+            result_readiness.get("workerComplete")
+            or raw_status in TERMINAL_JOB_STATUSES
+            or event_types.intersection({"worker_complete", "job_succeeded", "succeeded"})
+        )
+        artifacts_registered = bool(
+            result_readiness.get("artifactsRegistered")
+            or event_types.intersection({"artifacts_registered"})
+            or (not active and len(assets) > 0)
+        )
+        return job_readiness(
+            rel_paths=[_asset_rel_path(asset) for asset in assets],
+            worker_complete=worker_complete,
+            artifacts_registered=artifacts_registered,
+            job_active=active,
+            review_summary=review_lifecycle_summary(review),
+        )
+
     def _public_job_snapshot_for_job(
         self,
         conn: sqlite3.Connection,
@@ -2139,8 +2204,15 @@ class LocalUIApp:
         if reconciled is not None:
             job = reconciled
         events = list_job_events(conn, job_id=job["id"])
-        review = self._job_review_for_lifecycle(conn, job) if include_review else {}
-        return _public_job_snapshot(job, events=events, include_events=include_events, review=review)
+        if include_review:
+            assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job["id"])
+            corrections = list_track_corrections(conn, user_id=job["created_by_user_id"], job_id=job["id"])
+            review = self._review_metadata(assets, corrections=corrections, job_id=job["id"])
+            readiness = self._job_readiness_for_assets(job, assets=assets, events=events, review=review)
+        else:
+            review = {}
+            readiness = None
+        return _public_job_snapshot(job, events=events, include_events=include_events, review=review, readiness=readiness)
 
     def _job_center_payload(
         self,

@@ -1,6 +1,7 @@
 import {
   OPTION_HELP_TEXT,
   adaptiveRunDefaultsFromSnapshot,
+  effortPresetDefaults,
   objectDiscoveryDefaults,
   projectShellStateFromSnapshot,
   reviewExportScreenStateFromSnapshot,
@@ -43,6 +44,7 @@ const MotionJSONUI = (() => {
     "/api/jobs/{jobId}/events",
     "/api/jobs/{jobId}/artifacts",
     "/api/jobs/{jobId}/preview-files/{relPath}",
+    "/api/jobs/{jobId}/review-tools",
     "/api/jobs/{jobId}/review",
     "/api/jobs/{jobId}/corrections",
     "/api/jobs/{jobId}/track-edits",
@@ -79,6 +81,7 @@ const MotionJSONUI = (() => {
     sampleFps: "sampleFps",
     maxFrames: "maxFrames",
     maxObjects: "maxObjects",
+    effortPreset: "effortPreset",
     discoveryQualityPreset: "qualityPreset",
     deviceSelect: "device",
   };
@@ -396,8 +399,8 @@ const MotionJSONUI = (() => {
       id: "source_video",
       title: "Add or select video",
       label: "Video",
-      description: "Add a local video or open an existing result. Guided mode creates a local workspace automatically.",
-      nextHint: "Add a local video or existing result to continue.",
+      description: "Add a video or open an existing result. Guided mode creates a workspace automatically.",
+      nextHint: "Add a video or existing result to continue.",
     },
     {
       id: "provider_settings",
@@ -496,6 +499,7 @@ const MotionJSONUI = (() => {
     selectedJobId: "",
     selectedJob: null,
     jobReview: null,
+    reviewTools: null,
     jobEvents: [],
     jobArtifacts: [],
     reviewTracks: [],
@@ -810,7 +814,7 @@ const MotionJSONUI = (() => {
               ? step("needs-action", "Preparing a browser-safe preview for this video.", { tone: "is-warn", complete: false })
         : hasPreview
             ? step("needs-action", "Browser preview is loaded; add a local video path before extraction.", { tone: "is-warn", complete: false })
-            : step("needs-action", selectedPreset === "review_existing" ? "Open an existing MotionJSON result to continue." : "Add a local video or use the demo video to continue.", { complete: false }),
+            : step("needs-action", selectedPreset === "review_existing" ? "Open an existing MotionJSON result to continue." : "Add a video or use the demo video to continue.", { complete: false }),
       provider_settings: !requiresModel
         ? step("done", "No model setup is needed for this workflow.")
         : providerBlocked
@@ -893,8 +897,8 @@ const MotionJSONUI = (() => {
 
   function defaultProjectSummaryText() {
     const project = state.projects.find((item) => item.id === state.selectedProjectId) || null;
-    if (project?.name) return `Using ${project.name}. Uploads and exports stay in this local workspace.`;
-    return "A local project is created automatically when you upload a video or open an existing result.";
+    if (project?.name) return `Using ${project.name}. Uploads and exports stay in this workspace.`;
+    return "A project is created automatically when you upload a video or open an existing result.";
   }
 
   function primaryRunLabelForPreset(presetId = "trace_one_object") {
@@ -1077,6 +1081,8 @@ const MotionJSONUI = (() => {
       job: exportAvailability.job,
       trackCount: exportAvailability.trackCount,
       exportIncludedCount: exportAvailability.includedCount,
+      tracks: snapshot.tracks || snapshot.reviewTracks,
+      reviewTracks: snapshot.reviewTracks || snapshot.tracks,
       exportValidated: Boolean(exportAvailability.status),
       exportOk: exportAvailability.status?.ok === true,
     });
@@ -1118,6 +1124,8 @@ const MotionJSONUI = (() => {
         ? true
         : reviewPrimaryAction === "export_reviewed"
         ? !exportAvailability.action.disabled
+        : reviewPrimaryAction === "wait_review_assets"
+          ? false
         : reviewPrimaryAction === "track_selected"
           ? snapshot.candidateTrackingStatus !== "tracking" && reviewFlow.selectedCandidateCount > 0
           : reviewPrimaryAction !== "start_run";
@@ -1664,7 +1672,7 @@ const MotionJSONUI = (() => {
     if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
     if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
     if (providerId === "sam2-hosted") return "Hosted SAM2";
-    if (providerId === "sam3-local") return "SAM3 local";
+    if (providerId === "sam3-local") return "SAM3 Scene Sweep runtime";
     if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
     if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
     if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";
@@ -1824,12 +1832,15 @@ const MotionJSONUI = (() => {
   }
 
   function objectDiscoveryConfig(input) {
+    const effort = effortPresetDefaults(input.effortPreset || "balanced");
     const defaultQualityPreset = input.preset === "trace_all_objects" ? "balanced" : "clean";
-    const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || defaultQualityPreset;
+    const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || defaultQualityPreset;
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
     return {
       mock: Boolean(input.debugMockMode),
+      effortPreset: effort.effortPreset,
+      maskRefinementPreset: input.maskRefinementPreset || effort.maskRefinementPreset,
       qualityPreset,
       intent: defaults.intent,
       providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
@@ -1841,7 +1852,7 @@ const MotionJSONUI = (() => {
       maxKeyframes: defaults.maxKeyframes,
       frameInterval: defaults.frameInterval,
       maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
-      maxObjects: qualityPreset === "clean" ? toInteger(input.maxObjects, defaults.maxObjects) : defaults.maxObjects,
+      maxObjects: qualityPreset === "maximum_recall" && effort.effortPreset === "high_quality" ? effort.maxObjects : qualityPreset === "clean" ? toInteger(input.maxObjects, defaults.maxObjects) : defaults.maxObjects,
       minMaskArea: defaults.minMaskArea,
       maxMaskAreaRatio: defaults.maxMaskAreaRatio,
       dedupeIou: defaults.dedupeIou,
@@ -1851,6 +1862,8 @@ const MotionJSONUI = (() => {
       rejectBackgroundLike: true,
       trackSelectedOnly: defaults.trackSelectedOnly,
       trackTopCandidates: defaults.trackTopCandidates,
+      useTransformersTracker: Boolean(input.useTransformersTracker ?? effort.useTransformersTracker),
+      requireRealTracking: Boolean(input.requireRealTracking ?? effort.requireRealTracking),
       requireReview: true,
       writeRejectedCandidates: true,
       requireExplicitCostWarning: defaults.requireExplicitCostWarning,
@@ -1887,7 +1900,7 @@ const MotionJSONUI = (() => {
       return objectDiscoveryConfig(input);
     }
     if (input.discoveryMode === "sam2_hf_auto_masks") {
-      const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
+      const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || "clean");
       return {
         ...objectDiscoveryConfig({ ...input, providerName: "sam2-hf-auto-masks" }),
         providerPreference: "sam2-hf-auto-masks",
@@ -1953,12 +1966,16 @@ const MotionJSONUI = (() => {
     }
     if (input.discoveryMode === "sam3_auto_masks") {
       const hosted = input.providerName === "sam3-hosted";
+      const effort = effortPresetDefaults(input.effortPreset || "balanced");
       const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
       const config = {
         sceneSweep: true,
-        useTransformersTracker: !hosted && Boolean(input.useTransformersTracker),
+        useTransformersTracker: !hosted && Boolean(input.useTransformersTracker ?? effort.useTransformersTracker),
+        requireRealTracking: Boolean(input.requireRealTracking ?? effort.requireRealTracking),
+        effortPreset: effort.effortPreset,
+        maskRefinementPreset: input.maskRefinementPreset || effort.maskRefinementPreset,
         pointsPerBatch: toInteger(input.pointsPerBatch, 64),
-        qualityPreset: input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean",
+        qualityPreset: input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || "clean",
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" : null,
@@ -2051,6 +2068,10 @@ const MotionJSONUI = (() => {
     const externalMaskDir = input.externalMaskDir || "masks/object_0";
     const outputDirectory = input.outputDirectory || `out/ui-runs/${input.projectId || "local"}`;
     const videoPath = input.videoPath || input.sourcePath || input.previewName || "examples/demo_red_ball.mp4";
+    const effort = effortPresetDefaults(input.effortPreset || "balanced");
+    const useEffortSampling = input.preset === "trace_all_objects" || Boolean(input.effortPreset);
+    const defaultSampleFps = useEffortSampling ? effort.sampleFps : 12;
+    const defaultMaxFrames = useEffortSampling ? effort.maxFrames : 48;
     const keyframes = parseKeyframes(input.keyframes);
     const device = input.device && input.device !== "auto" ? input.device : null;
     const modelName = input.modelName && input.modelName !== "auto" ? input.modelName : null;
@@ -2069,8 +2090,8 @@ const MotionJSONUI = (() => {
       output: { directory: outputDirectory },
       objects,
       sampling: {
-        sample_fps: toNumber(input.sampleFps, 12),
-        max_frames: toInteger(input.maxFrames, 48),
+        sample_fps: toNumber(input.sampleFps, defaultSampleFps),
+        max_frames: toInteger(input.maxFrames, defaultMaxFrames),
       },
       provider: {
         name: maskProvider,
@@ -2613,8 +2634,12 @@ const MotionJSONUI = (() => {
     const events = asArray(options.events || job.events);
     const reportedStatus = String(lifecycle.status || job.status || "queued").toLowerCase();
     const rawStatus = String(lifecycle.rawStatus || job.status || reportedStatus).toLowerCase();
+    const readiness = lifecycle.readiness || job.readiness || job.result?.readiness || {};
+    const readinessBlocksReview = readiness && readiness.readyForReview === false;
     const completedByEvent = hasJobSucceededEvent(events);
-    const status = completedByEvent && /queued|pending|running|working|started|cancel_requested/.test(`${reportedStatus} ${rawStatus}`) ? "succeeded" : reportedStatus;
+    const completedAndReady = completedByEvent && !readinessBlocksReview;
+    const eventCompletedStatus = completedByEvent && /queued|pending|running|working|started|cancel_requested/.test(`${reportedStatus} ${rawStatus}`) ? "succeeded" : reportedStatus;
+    const status = eventCompletedStatus === "succeeded" && readinessBlocksReview ? "finalizing_review" : eventCompletedStatus;
     const progress = lifecycle.progress || job.progress || {};
     const directPercent = Number(progress.percent);
     const percent = Number.isFinite(directPercent) ? clamp(Math.round(directPercent), 0, 100) : normalizeProgress({ ...job, events });
@@ -2649,7 +2674,7 @@ const MotionJSONUI = (() => {
           ...lifecycle,
           status,
           rawStatus,
-          phase: completedByEvent ? "complete" : lifecycle.phase || latestStageLabel({ ...job, events }),
+          phase: completedAndReady ? "complete" : status === "finalizing_review" ? "finalizing_review_assets" : lifecycle.phase || latestStageLabel({ ...job, events }),
           latestEvent,
         },
       },
@@ -2663,11 +2688,11 @@ const MotionJSONUI = (() => {
       workflow: lifecycle.workflow || job.workflow || "",
       status,
       rawStatus,
-      phase: completedByEvent ? "complete" : lifecycle.phase || latestStageLabel({ ...job, events }),
+      phase: completedAndReady ? "complete" : status === "finalizing_review" ? "finalizing_review_assets" : lifecycle.phase || latestStageLabel({ ...job, events }),
       progress: {
         known: progressKnown,
-        percent: completedByEvent ? 100 : percent,
-        label: completedByEvent ? "job completed" : progress.label || `${percent}% complete`,
+        percent: completedAndReady ? 100 : status === "finalizing_review" ? Math.min(percent || 99, 99) : percent,
+        label: completedAndReady ? "job completed" : status === "finalizing_review" ? readiness.blockedReason || "Finalizing review assets" : progress.label || `${percent}% complete`,
       },
       latestEvent: {
         type: latestEvent.type || "",
@@ -2676,6 +2701,8 @@ const MotionJSONUI = (() => {
       },
       failure,
       review,
+      readiness,
+      runtimeProof: job.runtimeProof || job.result?.runtimeProof || lifecycle.runtimeProof || {},
       provider: {
         connectionId: provider.connectionId || provider.connection_id || provider.id || "",
         providerId: provider.providerId || provider.provider_id || provider.id || job.payload?.mask_provider || configProvider || "",
@@ -2763,6 +2790,8 @@ const MotionJSONUI = (() => {
       label: config.label || "",
       sampleFps: config.sampling?.sample_fps || config.sample_fps || "",
       maxFrames: config.sampling?.max_frames || config.max_frames || "",
+      effortPreset: config.discovery?.config?.effortPreset || "",
+      maskRefinementPreset: config.discovery?.config?.maskRefinementPreset || "",
       outputMode: config.output?.mode || config.output_mode || "",
     });
   }
@@ -2795,6 +2824,15 @@ const MotionJSONUI = (() => {
       phase: lifecycle.phase,
       provider: lifecycle.provider.displayLabel,
       providerId: lifecycle.provider.providerId,
+      runtimeProofStatus: lifecycle.runtimeProof?.runtimeProofStatus || "not reported",
+      acceleratorKind: lifecycle.runtimeProof?.acceleratorKind || "not reported",
+      deviceRequested: lifecycle.runtimeProof?.deviceRequested || "not reported",
+      deviceActual: lifecycle.runtimeProof?.deviceActual || "not reported",
+      cudaAvailable: lifecycle.runtimeProof?.cudaAvailable ?? "not reported",
+      loadedOnCuda: lifecycle.runtimeProof?.loadedOnCuda ?? "not reported",
+      mpsAvailable: lifecycle.runtimeProof?.mpsAvailable ?? "not reported",
+      loadedOnMps: lifecycle.runtimeProof?.loadedOnMps ?? "not reported",
+      readiness: lifecycle.readiness?.readyForReview === false ? lifecycle.readiness.blockedReasonCode || "not_ready" : lifecycle.readiness?.readyForReview === true ? "ready_for_review" : "not reported",
       progress: lifecycle.progress.known ? `${lifecycle.progress.percent}%` : `${lifecycle.progress.percent}% estimated`,
       active: lifecycle.active,
       terminal: lifecycle.terminal,
@@ -2889,6 +2927,14 @@ const MotionJSONUI = (() => {
     const diagnosticCount = toInteger(snapshot.diagnosticCount ?? review.diagnosticCount, 0);
     const rasterReason = snapshot.vectorUnavailableReason || snapshot.rasterFallbackReason || review.vectorUnavailableReason || "";
     if (!job) return { status: "blocked", primaryAction: "start_run", primaryLabel: "Start a run", reason: "Run extraction before reviewing results." };
+    if (job.readiness?.readyForReview === false) {
+      return {
+        status: "running",
+        primaryAction: "wait_review_assets",
+        primaryLabel: "Wait for review assets",
+        reason: job.readiness.blockedReason || "Finalizing review assets before review tools are available.",
+      };
+    }
     const hasReviewablePartial = (job.status === "failed" || job.status === "canceled") && Boolean(snapshot.partialSuccess || snapshot.reviewableObjectCount || candidateCount || trackCount || exportIncludedCount);
     if ((job.status === "failed" || job.status === "canceled") && !hasReviewablePartial) {
       return { status: "blocked", primaryAction: "prepare_new_run", primaryLabel: "Change setup", reason: job.failure?.message || "The selected run did not produce reviewable output." };
@@ -2901,7 +2947,16 @@ const MotionJSONUI = (() => {
         : { status: "needs-action", primaryAction: "select_candidates", primaryLabel: "Keep candidates", reason: "Keep at least one candidate before tracking." };
     }
     if (trackCount > 0 && exportIncludedCount === 0) {
-      return { status: "needs-action", primaryAction: "mark_reviewed", primaryLabel: "Mark reviewed", reason: "Mark at least one track for export." };
+      const tracks = asArray(snapshot.tracks || snapshot.reviewTracks);
+      const staticFallbackTracks = tracks.filter((track) => trackUsesStaticKeyframeFallback(track));
+      const validTracks = tracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && track.exportable !== false && !track.deleted && !/deleted|rejected|failed|fallback_raster/.test(String(track.exportStatus || "").toLowerCase()));
+      if (tracks.length && staticFallbackTracks.length === tracks.length) {
+        return { status: "needs-action", primaryAction: "repair_tracking", primaryLabel: "Repair tracking", reason: "Only static fallback tracks are available; add a repair prompt or rerun with higher effort." };
+      }
+      if (validTracks.length > 0) {
+        return { status: "needs-action", primaryAction: "mark_selected_for_export", primaryLabel: "Mark selected track for export", reason: "Choose a moving track and include it in export." };
+      }
+      return { status: "needs-action", primaryAction: "select_reviewable_track", primaryLabel: "Select a reviewable track", reason: "Select a moving track before export." };
     }
     if (exportIncludedCount > 0 || job.actions?.canExport) {
       return { status: "ready", primaryAction: "export_reviewed", primaryLabel: "Export reviewed objects", reason: "" };
@@ -3089,7 +3144,7 @@ const MotionJSONUI = (() => {
       sourcePath: selectedVideoPath(),
       videoPath: selectedVideoPath(),
       previewName: state.video.loadedName,
-      outputDirectory: `out/ui-runs/${state.selectedProjectId || "local"}`,
+      outputDirectory: `out/ui-runs/${state.selectedProjectId || "workspace"}`,
       objectLabel: $("#objectLabel").value.trim(),
       objectId: $("#objectId").value.trim(),
       currentFrame: frameIndex,
@@ -3114,6 +3169,7 @@ const MotionJSONUI = (() => {
       maxObjects: $("#maxObjects").value,
       modelName: $("#modelName").value.trim(),
       outputMode: $("#outputMode").value,
+      effortPreset: $("#effortPreset")?.value || "balanced",
       qualityPreset: $("#discoveryQualityPreset").value,
       traceEverythingMode: $("#traceEverythingMode").checked,
       traceEverythingAcknowledged: $("#traceEverythingAck").checked,
@@ -3182,6 +3238,10 @@ const MotionJSONUI = (() => {
       sampleFps: adaptive.values.sampleFps,
       maxFrames: adaptive.values.maxFrames,
       maxObjects: adaptive.values.maxObjects,
+      effortPreset: adaptive.values.effortPreset,
+      maskRefinementPreset: adaptive.values.maskRefinementPreset,
+      useTransformersTracker: adaptive.values.useTransformersTracker,
+      requireRealTracking: adaptive.values.requireRealTracking,
       qualityPreset: adaptive.values.qualityPreset === "trace_everything" ? raw.qualityPreset : adaptive.values.qualityPreset,
       device: adaptive.values.device,
       adaptiveParameters: adaptive,
@@ -3801,7 +3861,7 @@ const MotionJSONUI = (() => {
       "prepare-model": "Prepare runtime model",
       install: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
       "cache-model": "Cache model",
-      smoke: hosted ? "Run hosted smoke test" : "Run local smoke test",
+      smoke: hosted ? "Run hosted smoke test" : "Run runtime smoke test",
     };
     const flags = [];
     if (["check-access", "cache-model", "prepare-model", "install"].includes(normalized) || hosted) flags.push("network");
@@ -4861,6 +4921,14 @@ const MotionJSONUI = (() => {
       track?.exportStatus,
       ...asArray(track?.warnings),
       ...asArray(track?.metadata?.warnings),
+      track?.fallbackReason,
+      track?.fallback_reason,
+      track?.reasonCode,
+      track?.reason_code,
+      track?.metadata?.fallbackReason,
+      track?.metadata?.fallback_reason,
+      track?.metadata?.reasonCode,
+      track?.metadata?.reason_code,
       track?.discovery?.trackingProvider,
       track?.discovery?.tracking_provider,
       track?.discovery?.reason,
@@ -5746,6 +5814,8 @@ const MotionJSONUI = (() => {
         candidateCount: candidates.length,
         selectedCandidateCount: selectedCount,
         trackCount: state.reviewTracks.length,
+        reviewTracks: state.reviewTracks,
+        tracks: state.reviewTracks,
         exportIncludedCount: exportIncludedIds.length,
         exportIncludedIds,
         exportPendingIds: exportSummary.pendingIds,
@@ -6343,6 +6413,7 @@ const MotionJSONUI = (() => {
       state.jobReview = null;
       state.jobEvents = [];
       state.jobArtifacts = [];
+      state.reviewTools = null;
       state.reviewTracks = [];
       state.candidateTrackingStatus = "";
       state.exportValidation = null;
@@ -6408,8 +6479,10 @@ const MotionJSONUI = (() => {
           focusReviewDetail("candidates");
         } else if (contract.primaryAction === "track_selected") {
           await trackSelectedCandidatesWithApi();
-        } else if (contract.primaryAction === "mark_reviewed") {
+        } else if (contract.primaryAction === "mark_reviewed" || contract.primaryAction === "mark_selected_for_export") {
           await markReviewedTracksForExport();
+        } else if (contract.primaryAction === "select_reviewable_track" || contract.primaryAction === "repair_tracking") {
+          focusReviewDetail("tracks");
         } else if (contract.primaryAction === "inspect_diagnostics") {
           focusReviewDetail("diagnostics");
         } else if (contract.primaryAction === "validate_export") {
@@ -7302,7 +7375,7 @@ const MotionJSONUI = (() => {
                   ? `Plan already started as ${state.modelPlanConfirmedJobId}. Watch progress in the run monitor.`
                 : state.modelPlanConfirming
                   ? "Confirmation is in progress."
-                : "Confirmation stays disabled until the generated config validates and a matching local project/video are selected.",
+                : "Confirmation stays disabled until the generated config validates and a matching project/video are selected.",
             )}</span>
             ${statusChip(alreadyConfirmed ? "Started" : canConfirm ? "Ready to start" : "Confirmation blocked", alreadyConfirmed || canConfirm ? "ready" : "blocked", alreadyConfirmed || canConfirm)}
           </div>
@@ -7450,7 +7523,7 @@ const MotionJSONUI = (() => {
         : "";
       const smokeButton =
         provider.id === "sam2-hosted" || provider.id === "sam3-hosted" || provider.id === "sam2-local" || provider.id === "sam3-local"
-          ? `<button type="button" data-provider-action="smoke-test">${hosted ? "Run hosted smoke" : "Run local smoke"}</button>`
+          ? `<button type="button" data-provider-action="smoke-test">${hosted ? "Run hosted smoke" : "Run runtime smoke"}</button>`
           : "";
       return `
         <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}">
@@ -7906,7 +7979,7 @@ const MotionJSONUI = (() => {
       }
       if (!state.videos.length) {
         state.selectedVideoId = "";
-        select.innerHTML = `<option value="">No local videos yet</option>`;
+        select.innerHTML = `<option value="">No videos yet</option>`;
       } else {
         if (!state.selectedVideoId || !state.videos.some((video) => video.id === state.selectedVideoId)) {
           state.selectedVideoId = state.videos[0].id;
@@ -7933,7 +8006,7 @@ const MotionJSONUI = (() => {
               `;
             })
             .join("")
-        : `<div class="empty-state">Add a local video path or use the demo video to create the guided workspace.</div>`;
+        : `<div class="empty-state">Add a video path or use the demo video to create the guided workspace.</div>`;
       loadSelectedVideoPreview();
       renderBrowserPreviewCard();
       renderVideoUploadStatus();
@@ -8074,12 +8147,17 @@ const MotionJSONUI = (() => {
       });
       const payload = job.payload || {};
       const result = job.result || {};
+      const runtimeProof = lifecycle.runtimeProof || result.runtimeProof || {};
+      const proofBadge = runtimeProofBadge(runtimeProof, { locality: lifecycle.provider.locality });
       const facts = {
         id: lifecycle.id,
         type: lifecycle.type || "job",
-        provider: lifecycle.provider.displayLabel || payload.mask_provider || jobConfig(job)?.provider?.name || "not reported",
+        provider: runtimeProof.displayProvider || lifecycle.provider.displayLabel || payload.mask_provider || jobConfig(job)?.provider?.name || "not reported",
+        runtime: proofBadge.label,
+        device: runtimeProof.deviceActual || runtimeProof.deviceRequested || "not reported",
         progress: lifecycle.progress.known ? `${lifecycle.progress.percent}%` : `${lifecycle.progress.percent}% estimated`,
         phase: lifecycle.phase || "not reported",
+        readiness: lifecycle.readiness?.readyForReview === false ? lifecycle.readiness.blockedReason || "Finalizing review assets" : lifecycle.readiness?.readyForReview === true ? "Ready for review" : "not reported",
         artifacts: state.jobArtifacts.length,
         objects: result.scene?.objects ?? result.objects ?? state.reviewTracks.length,
         "last event": lifecycle.latestEvent.createdAt || job.lastEventAt || job.last_event_at || "not reported",
@@ -9092,12 +9170,26 @@ const MotionJSONUI = (() => {
     function reviewToolsForSelectedJob() {
       const availablePaths = new Set(state.jobArtifacts.map(artifactRelPath).filter(Boolean));
       const jobId = state.selectedJobId || jobIdentifier(selectedJob());
+      const statuses = new Map(
+        asArray(state.reviewTools?.tools).map((tool) => [
+          String(tool.toolId || "")
+            .replace(/_/g, "-")
+            .replace(/^canvas-player$/, "canvas-player")
+            .replace(/^object-selection$/, "object-selection-workflow"),
+          tool,
+        ]),
+      );
       return REVIEW_TOOL_DEFS.map((tool) => {
-        const available = Boolean(jobId && availablePaths.has(tool.relPath));
+        const backend = statuses.get(tool.id);
+        const backendStatus = String(backend?.status || "").toLowerCase();
+        const available = backend ? backendStatus === "ready" : Boolean(jobId && availablePaths.has(tool.relPath));
+        const missingArtifacts = asArray(backend?.missingArtifacts);
         return {
           ...tool,
           available,
-          url: available ? reviewToolUrl(jobId, tool) : "",
+          status: backendStatus || (available ? "ready" : selectedJob()?.active ? "waiting" : "missing_artifacts"),
+          missingArtifacts,
+          url: available ? safeLocalContentUrl(backend?.url || reviewToolUrl(jobId, tool)) : "",
         };
       });
     }
@@ -9107,8 +9199,13 @@ const MotionJSONUI = (() => {
       return tools
         .map((tool) => {
           const selected = state.selectedReviewToolId === tool.id;
-          const status = tool.available ? "Ready" : "Missing";
-          const tone = tool.available ? "ready" : "warn";
+          const status = tool.available ? "Ready" : tool.status === "waiting" ? "Waiting" : tool.status === "stale" ? "Stale" : "Missing";
+          const tone = tool.available ? "ready" : tool.status === "waiting" ? "neutral" : "warn";
+          const missing = tool.missingArtifacts?.length
+            ? `Missing: ${tool.missingArtifacts.join(", ")}`
+            : tool.status === "waiting"
+              ? "Finalizing review assets."
+              : "Package tool file not found.";
           return `
             <div class="review-tool-card is-${escapeAttribute(tone)} ${selected ? "is-selected" : ""}">
               <button type="button" data-review-tool-id="${escapeAttribute(tool.id)}" ${tool.available ? "" : "disabled"}>
@@ -9119,7 +9216,7 @@ const MotionJSONUI = (() => {
               ${
                 tool.url
                   ? `<a href="${escapeAttribute(tool.url)}" target="_blank" rel="noopener noreferrer">Open full view</a>`
-                  : `<span class="row-meta">Package tool file not found.</span>`
+                  : `<span class="row-meta">${escapeHtml(missing)}</span>`
               }
             </div>
           `;
@@ -9392,6 +9489,7 @@ const MotionJSONUI = (() => {
         sampleFps: $("#sampleFpsAutoStatus"),
         maxFrames: $("#maxFramesAutoStatus"),
         maxObjects: $("#maxObjectsAutoStatus"),
+        effortPreset: $("#effortPresetAutoStatus"),
         qualityPreset: $("#qualityPresetAutoStatus"),
         device: $("#deviceAutoStatus"),
       };
@@ -9483,6 +9581,7 @@ const MotionJSONUI = (() => {
       $("#presetSummary").className = "status-chip is-neutral";
       const isObjectDiscovery = state.selectedPreset === "auto_object_proposals" || state.selectedPreset === "trace_all_objects";
       $("#qualityPresetField").classList.toggle("is-hidden", !isObjectDiscovery);
+      $("#effortPresetField")?.classList.toggle("is-hidden", !isObjectDiscovery);
       $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
       $("#textDiscoveryProviderField").classList.toggle("is-hidden", !showLegacyTextProvider);
@@ -10268,6 +10367,7 @@ const MotionJSONUI = (() => {
         state.jobReview = null;
         state.jobEvents = [];
         state.jobArtifacts = [];
+        state.reviewTools = null;
         state.reviewTracks = [];
         state.correctionState = emptyCorrectionState();
         state.candidateSelection = {};
@@ -10277,10 +10377,11 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const [jobBody, eventsBody, artifactsBody, correctionsBody] = await Promise.all([
+      const [jobBody, eventsBody, artifactsBody, reviewToolsBody, correctionsBody] = await Promise.all([
         api(`/api/jobs/${encodeURIComponent(jobId)}`),
         api(`/api/jobs/${encodeURIComponent(jobId)}/events`),
         api(`/api/jobs/${encodeURIComponent(jobId)}/artifacts`),
+        api(`/api/jobs/${encodeURIComponent(jobId)}/review-tools`).catch((error) => ({ reviewToolsError: error.message })),
         api(correctionRoute(jobId)).catch((error) => ({ correctionStateError: error.message })),
       ]);
 
@@ -10289,6 +10390,7 @@ const MotionJSONUI = (() => {
       state.jobEvents = asArray(eventsBody.events).length ? asArray(eventsBody.events) : asArray(jobBody.job?.events);
       state.jobArtifacts = asArray(artifactsBody.artifacts);
       state.jobReview = artifactsBody.review || null;
+      state.reviewTools = reviewToolsBody.reviewToolsError ? { error: reviewToolsBody.reviewToolsError, tools: [] } : reviewToolsBody;
       state.correctionState = correctionsBody.correctionStateError
         ? {
             ...emptyCorrectionState(jobId),
@@ -10647,6 +10749,7 @@ const MotionJSONUI = (() => {
       $("#maxFrames").value = config.sampling?.max_frames ?? 48;
       $("#minArea").value = config.filters?.min_area ?? 100;
       $("#outputMode").value = config.export?.output_mode || "authoring";
+      if ($("#effortPreset")) $("#effortPreset").value = config.discovery?.config?.effortPreset || "balanced";
       $("#maskProviderSelect").value = config.provider?.name || $("#maskProviderSelect").value;
       $("#externalMaskDir").value = config.provider?.external?.mask_dir || config.objects?.[0]?.mask_dir || "masks/object_0";
       $("#textPrompt").value = config.discovery?.config?.text || $("#textPrompt").value;
@@ -10761,6 +10864,7 @@ const MotionJSONUI = (() => {
         state.jobReview = null;
         state.jobEvents = [];
         state.jobArtifacts = [];
+        state.reviewTools = null;
         state.reviewTracks = [];
         state.correctionState = emptyCorrectionState();
         state.candidateSelection = {};
@@ -10771,12 +10875,13 @@ const MotionJSONUI = (() => {
       }
 
       const id = state.selectedJobId;
-      const [jobResult, eventsResult, artifactsResult, artifactsAliasResult, correctionsResult] = await Promise.all(
+      const [jobResult, eventsResult, artifactsResult, artifactsAliasResult, reviewToolsResult, correctionsResult] = await Promise.all(
         [
           ["job", `/api/jobs/${encodeURIComponent(id)}`],
           ["events", `/api/jobs/${encodeURIComponent(id)}/events`],
           ["artifacts", `/api/jobs/${encodeURIComponent(id)}/artifacts`],
           ["artifactsAlias", `/api/artifacts?jobId=${encodeURIComponent(id)}`],
+          ["reviewTools", `/api/jobs/${encodeURIComponent(id)}/review-tools`],
           ["corrections", correctionRoute(id)],
         ].map(async ([key, route]) => {
           try {
@@ -10794,7 +10899,8 @@ const MotionJSONUI = (() => {
       const artifacts = artifactsResult[1]?.artifacts || artifactsAliasResult[1]?.artifacts || [];
       state.jobArtifacts = artifacts;
       state.jobReview = artifactsResult[1]?.review || artifactsAliasResult[1]?.review || null;
-      state.errors.selectedJob = [jobResult[2], eventsResult[2], artifactsResult[2], artifactsAliasResult[2]].filter(Boolean).join(" ");
+      state.reviewTools = reviewToolsResult[2] ? { error: reviewToolsResult[2], tools: [] } : reviewToolsResult[1];
+      state.errors.selectedJob = [jobResult[2], eventsResult[2], artifactsResult[2], artifactsAliasResult[2], reviewToolsResult[2]].filter(Boolean).join(" ");
       state.correctionState = correctionsResult[2]
         ? {
             ...emptyCorrectionState(id),
@@ -10905,7 +11011,7 @@ const MotionJSONUI = (() => {
     }
 
     function starterProjectName() {
-      return $("#projectName")?.value?.trim() || "MotionJSON local project";
+      return $("#projectName")?.value?.trim() || "MotionJSON project";
     }
 
     function matchesBundledDemoVideo(video) {
@@ -10952,9 +11058,9 @@ const MotionJSONUI = (() => {
     function uploadProjectName(file) {
       if (state.selectedProjectId) return "";
       const typed = $("#projectName")?.value?.trim() || "";
-      if (typed && typed !== "MotionJSON local project") return typed;
-      const stem = String(file?.name || "MotionJSON local project").replace(/\.[^.]+$/, "").trim();
-      return stem ? `${stem} project` : "MotionJSON local project";
+      if (typed && typed !== "MotionJSON project") return typed;
+      const stem = String(file?.name || "MotionJSON project").replace(/\.[^.]+$/, "").trim();
+      return stem ? `${stem} project` : "MotionJSON project";
     }
 
     function renderVideoUploadStatus() {
@@ -11886,7 +11992,7 @@ const MotionJSONUI = (() => {
         state.selectedModelSetupProviderId = staleRunCapture ? "sam3-local" : "sam2-local";
         markCaptureProviderReady(staleRunCapture ? "sam3-local" : "sam2-local");
         state.selectedProjectId = "project_layout";
-        state.projects = [{ id: "project_layout", name: "MotionJSON local project" }];
+        state.projects = [{ id: "project_layout", name: "MotionJSON project" }];
         state.selectedVideoId = "video_layout";
         state.jobs = [];
         state.selectedJobId = "";
@@ -11998,7 +12104,7 @@ const MotionJSONUI = (() => {
                   status: "failed",
                   rawStatus: "failed",
                   phase: "failed",
-                  provider: { label: "SAM3 local", id: "sam3-local", engine: "sam3", locality: "local" },
+                  provider: { label: "SAM3 Scene Sweep runtime", id: "sam3-local", engine: "sam3", locality: "runtime" },
                   progress: { known: true, percent: 73, label: "Asset preparation" },
                   latestEvent: {
                     type: "failed",
@@ -12232,7 +12338,7 @@ const MotionJSONUI = (() => {
         if (capture === "preview-failed") {
           applyPreset("trace_one_object", { keepProvider: true, skipAutoAdvance: true });
           state.selectedProjectId = "project_layout";
-          state.projects = [{ id: "project_layout", name: "MotionJSON local project" }];
+          state.projects = [{ id: "project_layout", name: "MotionJSON project" }];
           state.videos = [
             {
               id: "video_preview_failed",
@@ -12345,17 +12451,17 @@ const MotionJSONUI = (() => {
 
     async function startJobFromConfig({ forceMock = false } = {}) {
       if (!state.selectedProjectId) {
-        setRunAlert("Create or select a local project before starting a run.", "warning-box is-bad");
+        setRunAlert("Create or select a project before starting a run.", "warning-box is-bad");
         $("#runStatus").textContent = "No project";
         $("#runStatus").className = "status-chip is-bad";
-        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>project required</strong><span class="row-meta">Create or select a local project before starting a run.</span></div>`;
+        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>project required</strong><span class="row-meta">Create or select a project before starting a run.</span></div>`;
         return;
       }
       if (!state.selectedVideoId) {
-        setRunAlert("Register and select a local source video before starting a run.", "warning-box is-bad");
+        setRunAlert("Register and select a source video before starting a run.", "warning-box is-bad");
         $("#runStatus").textContent = "No video";
         $("#runStatus").className = "status-chip is-bad";
-        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>video required</strong><span class="row-meta">Register and select a local source video before starting a run.</span></div>`;
+        $("#fallbackDiagnostics").innerHTML = `<div class="diagnostic-row is-bad"><strong>video required</strong><span class="row-meta">Register and select a source video before starting a run.</span></div>`;
         return;
       }
 
@@ -12384,7 +12490,7 @@ const MotionJSONUI = (() => {
         $("#fallbackDiagnostics").innerHTML = `
           <div class="diagnostic-row is-bad">
             <strong>${escapeHtml(requestedProvider)}</strong>
-            <span class="row-meta">Choose a configured SAM2 local/hosted provider, motion, threshold, or external masks before starting this job.</span>
+            <span class="row-meta">Choose a configured SAM2 runtime/hosted provider, motion, threshold, or external masks before starting this job.</span>
           </div>
         `;
         return;
@@ -12522,7 +12628,9 @@ const MotionJSONUI = (() => {
     }
 
     async function markReviewedTracksForExport() {
-      const eligibleTracks = state.reviewTracks.filter((track) => track.exportable !== false && track.demoMode !== true && !track.deleted);
+      const eligibleTracks = state.reviewTracks.filter(
+        (track) => track.exportable !== false && track.demoMode !== true && !track.deleted && !trackUsesStaticKeyframeFallback(track),
+      );
       if (!eligibleTracks.length) {
         setRunAlert("No materialized object tracks are available to mark for export.", "warning-box is-bad");
         focusReviewDetail("tracks");
@@ -13842,6 +13950,7 @@ const MotionJSONUI = (() => {
       "maxObjects",
       "modelName",
       "outputMode",
+      "effortPreset",
       "discoveryQualityPreset",
       "traceEverythingMode",
       "traceEverythingAck",
@@ -13856,7 +13965,8 @@ const MotionJSONUI = (() => {
         if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
-        if (id === "discoveryQualityPreset" || id === "deviceSelect") renderGuidedQualityControls();
+        if (id === "effortPreset") state.parameterOverrides.delete("effortPreset");
+        if (id === "discoveryQualityPreset" || id === "deviceSelect" || id === "effortPreset") renderGuidedQualityControls();
         if (id === "videoPath") renderWorkflowStepper();
       });
       $(`#${id}`).addEventListener("change", () => {
@@ -13864,7 +13974,8 @@ const MotionJSONUI = (() => {
         if (autoKey && !state.applyingAdaptiveParameters) state.parameterOverrides.add(autoKey);
         renderVideoMetrics();
         renderConfigPreview();
-        if (id === "discoveryQualityPreset" || id === "deviceSelect") renderGuidedQualityControls();
+        if (id === "effortPreset") state.parameterOverrides.delete("effortPreset");
+        if (id === "discoveryQualityPreset" || id === "deviceSelect" || id === "effortPreset") renderGuidedQualityControls();
         if (id === "videoPath") renderWorkflowStepper();
       });
     });
@@ -13954,6 +14065,7 @@ const MotionJSONUI = (() => {
     WORKFLOW_STEPS,
     OPTION_HELP_TEXT,
     adaptiveRunDefaultsFromSnapshot,
+    effortPresetDefaults,
     objectDiscoveryDefaults,
     applyCorrectionStateToTracks,
     buildCorrectionRequestFromPrompts,

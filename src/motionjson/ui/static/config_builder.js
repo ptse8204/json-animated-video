@@ -70,6 +70,8 @@ export const DEFAULT_ADVANCED = {
   textThreshold: 0.25,
   motionSensitivity: 32,
   maxObjects: 12,
+  effortPreset: "balanced",
+  maskRefinementPreset: "balanced",
   qualityPreset: "clean",
   traceEverythingMode: false,
   traceEverythingAcknowledged: false,
@@ -198,8 +200,15 @@ function guidedEnginePlan(input, preset) {
 }
 
 export function objectDiscoveryConfig(input, advanced) {
+  const effortPreset = String(input.effortPreset || advanced.effortPreset || "balanced");
+  const effortDefaults = {
+    fast: { qualityPreset: "clean", maxObjects: 12, maskRefinementPreset: "fast", useTransformersTracker: false, requireRealTracking: false },
+    balanced: { qualityPreset: "balanced", maxObjects: 24, maskRefinementPreset: "balanced", useTransformersTracker: true, requireRealTracking: false },
+    high_quality: { qualityPreset: "maximum_recall", maxObjects: 32, maskRefinementPreset: "precise", useTransformersTracker: true, requireRealTracking: true },
+  }[effortPreset] || { qualityPreset: "balanced", maxObjects: 24, maskRefinementPreset: "balanced", useTransformersTracker: true, requireRealTracking: false };
   const defaultQualityPreset = input.presetId === "trace_all_objects" || input.preset === "trace_all_objects" ? "balanced" : "clean";
-  const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : advanced.qualityPreset || input.qualityPreset || defaultQualityPreset;
+  const advancedQualityPreset = advanced.qualityPreset && advanced.qualityPreset !== DEFAULT_ADVANCED.qualityPreset ? advanced.qualityPreset : "";
+  const qualityPreset = advanced.traceEverythingMode ? "trace_everything" : input.qualityPreset || advancedQualityPreset || effortDefaults.qualityPreset || defaultQualityPreset;
   const keyframes = parseKeyframes(advanced.keyframe ?? advanced.keyframes ?? input.keyframes ?? 0);
   const presets = {
     clean: {
@@ -266,6 +275,8 @@ export function objectDiscoveryConfig(input, advanced) {
   const preset = presets[qualityPreset] || presets.clean;
   return {
     mock: Boolean(input.debugMockMode),
+    effortPreset,
+    maskRefinementPreset: input.maskRefinementPreset || advanced.maskRefinementPreset || effortDefaults.maskRefinementPreset,
     qualityPreset,
     intent: preset.intent,
     providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
@@ -277,7 +288,7 @@ export function objectDiscoveryConfig(input, advanced) {
     maxKeyframes: preset.maxKeyframes,
     frameInterval: preset.frameInterval,
     maxCandidatesPerKeyframe: preset.maxCandidatesPerKeyframe,
-    maxObjects: preset.maxObjects,
+    maxObjects: qualityPreset === "maximum_recall" && effortPreset === "high_quality" ? effortDefaults.maxObjects : preset.maxObjects,
     minMaskArea: preset.minMaskArea,
     maxMaskAreaRatio: preset.maxMaskAreaRatio,
     dedupeIou: preset.dedupeIou,
@@ -287,6 +298,8 @@ export function objectDiscoveryConfig(input, advanced) {
     rejectBackgroundLike: true,
     trackSelectedOnly: preset.trackSelectedOnly,
     trackTopCandidates: preset.trackTopCandidates,
+    useTransformersTracker: Boolean(input.useTransformersTracker ?? advanced.useTransformersTracker ?? effortDefaults.useTransformersTracker),
+    requireRealTracking: Boolean(input.requireRealTracking ?? advanced.requireRealTracking ?? effortDefaults.requireRealTracking),
     requireReview: true,
     writeRejectedCandidates: true,
     requireExplicitCostWarning: preset.requireExplicitCostWarning,
@@ -302,7 +315,17 @@ function sam3TrackerModelForInput(input = {}, advanced = {}) {
 
 export function buildRunConfig(input) {
   const preset = WIZARD_PRESETS.find((item) => item.id === input.presetId) || WIZARD_PRESETS[0];
-  const advanced = { ...DEFAULT_ADVANCED, ...(input.advanced || {}) };
+  const providedAdvanced = input.advanced || {};
+  const advanced = { ...DEFAULT_ADVANCED, ...providedAdvanced };
+  const effortPreset = String(input.effortPreset || providedAdvanced.effortPreset || advanced.effortPreset || "balanced");
+  const effortSampling = {
+    fast: { sampleFps: 6, maxFrames: 36 },
+    balanced: { sampleFps: 8, maxFrames: 48 },
+    high_quality: { sampleFps: 12, maxFrames: 96 },
+  }[effortPreset] || { sampleFps: 8, maxFrames: 48 };
+  const useEffortSampling = preset.id === "trace_all_objects" || Boolean(input.effortPreset || providedAdvanced.effortPreset);
+  const sampleFps = Number(input.sampleFps ?? providedAdvanced.sampleFps ?? (useEffortSampling ? effortSampling.sampleFps : advanced.sampleFps));
+  const maxFrames = Number(input.maxFrames ?? providedAdvanced.maxFrames ?? (useEffortSampling ? effortSampling.maxFrames : advanced.maxFrames));
   const objectId = input.objectId || "object_0";
   const label = input.label || "selected_object";
   const video = input.video || {};
@@ -374,7 +397,8 @@ export function buildRunConfig(input) {
   if (discoveryMode === "sam3_auto_masks") {
     const hosted = providerName === "sam3-hosted";
     discoveryConfig.sceneSweep = true;
-    discoveryConfig.useTransformersTracker = !hosted && Boolean(input.useTransformersTracker || advanced.useTransformersTracker);
+    discoveryConfig.useTransformersTracker = !hosted && Boolean(input.useTransformersTracker ?? advanced.useTransformersTracker ?? discoveryConfig.useTransformersTracker);
+    discoveryConfig.requireRealTracking = Boolean(input.requireRealTracking ?? advanced.requireRealTracking ?? discoveryConfig.requireRealTracking);
     discoveryConfig.pointsPerBatch = Number(advanced.pointsPerBatch || input.pointsPerBatch || 64);
     discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
     discoveryConfig.hosted = hosted;
@@ -433,8 +457,8 @@ export function buildRunConfig(input) {
       },
     ],
     sampling: {
-      sample_fps: Number(advanced.sampleFps),
-      max_frames: Number(advanced.maxFrames),
+      sample_fps: sampleFps,
+      max_frames: maxFrames,
     },
     provider: {
       name: providerName,

@@ -50,6 +50,7 @@ from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
 from .jobs import record_job_event
 from .models import validate_extract_provider_policy
 from .queue import claim_next, mark_canceled, mark_failed, mark_running, mark_succeeded
+from .readiness import job_readiness
 from .rights import record_asset_lineage, record_audit_event, record_rights_metadata
 from .usage import record_usage_event
 from .webhooks import WebhookTransport, deliver_event
@@ -180,6 +181,15 @@ def _materialize_job_assets(
         dest = out_dir / rel_path
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(storage.load_bytes(asset["storage_key"]))
+
+
+def _asset_rel_path(asset: dict[str, Any]) -> str:
+    try:
+        metadata = json.loads(asset.get("metadata_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        metadata = {}
+    rel_path = metadata.get("rel_path") if isinstance(metadata, dict) else ""
+    return rel_path.replace("\\", "/").lstrip("/") if isinstance(rel_path, str) else ""
 
 
 def _event_mirror(conn: sqlite3.Connection, job_id: str):
@@ -374,6 +384,7 @@ def _cached_local_runtime_discovery_provider(
             raise ProviderConfigError(
                 "SAM2 HF automatic masks are cached but not verified for extraction. Run Prepare local model or Run smoke test before starting extraction."
             )
+        sam2_device_requested = str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu")
         runtime_model = str(runtime.get("runtime_model") or "").strip()
         if runtime_model and model_cache.get("cached") is True:
             safe_config = _without_runtime_model_keys(
@@ -382,12 +393,12 @@ def _cached_local_runtime_discovery_provider(
             )
             backend = LocalSAM2HFAutomaticMaskProposalBackend(
                 model=runtime_model,
-                device=str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu"),
+                device=sam2_device_requested,
             )
             public_contract = _resolved_runtime_contract_public(
                 "sam2-hf-auto-masks",
                 runtime,
-                device_requested=str(config.get("sam2HfDevice") or config.get("sam2_hf_device") or runtime.get("sam2_hf_device") or "cpu"),
+                device_requested=sam2_device_requested,
             )
             safe_config["runtimeContractPublic"] = public_contract
             return (
@@ -400,17 +411,18 @@ def _cached_local_runtime_discovery_provider(
         runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam3-local")
         model_cache = runtime.get("model_cache") if isinstance(runtime.get("model_cache"), dict) else {}
         verification = runtime.get("runtime_verification") if isinstance(runtime.get("runtime_verification"), dict) else {}
+        sam3_device = str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda")
         if not _runtime_verified_for_extraction(verification):
             raise ProviderConfigError(
                 "SAM3 Scene Sweep is cached but not verified for extraction. Run Prepare local model or Run smoke test so the model loads on the selected device and completes warmup."
             )
+        _raise_if_requested_cuda_not_loaded("sam3-local", verification, device_requested=sam3_device)
         runtime_model = str(runtime.get("runtime_model") or "").strip()
         if runtime_model and model_cache.get("cached") is True:
             safe_config = _without_runtime_model_keys(
                 config,
                 ("sam3TrackerModel", "sam3_tracker_model", "sam3HfModel", "sam3_hf_model", "model"),
             )
-            sam3_device = str(config.get("sam3Device") or config.get("sam3_device") or runtime.get("sam3_device") or "cuda")
             backend = SubprocessSAM3AutoMasksDiscoveryProvider(
                 model_path=runtime_model,
                 device=sam3_device,
@@ -433,6 +445,18 @@ def _cached_local_runtime_discovery_provider(
 
 def _runtime_verified_for_extraction(verification: dict[str, Any]) -> bool:
     return bool(verification.get("verified") is True and str(verification.get("warmupStatus") or "") == "succeeded")
+
+
+def _raise_if_requested_cuda_not_loaded(provider_id: str, verification: dict[str, Any], *, device_requested: str) -> None:
+    if provider_id != "sam3-local":
+        return
+    if str(device_requested or "").strip().lower().startswith("cuda") and verification.get("loadedOnCuda") is not True:
+        actual = str(verification.get("deviceActual") or "unknown")
+        status = str(verification.get("runtimeProofStatus") or "not_verified")
+        raise ProviderConfigError(
+            "gpu_device_mismatch: SAM3 Scene Sweep requested CUDA but runtime proof did not load on CUDA "
+            f"(actual device: {actual}, proof status: {status}). Run setup smoke test on a CUDA runtime or choose CPU/MPS intentionally."
+        )
 
 
 def _resolved_runtime_contract_public(provider_id: str, runtime: dict[str, Any], *, device_requested: str) -> dict[str, Any]:
@@ -519,15 +543,15 @@ def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> t
     if mode == "sam3_concept":
         if discovery_config.get("mock"):
             return SAM3ConceptDiscoveryProvider(), "SAM3 concept mock discovery configured", True
-        return SAM3ConceptDiscoveryProvider(), "SAM3 local concept discovery configured", False
+        return SAM3ConceptDiscoveryProvider(), "SAM3 concept runtime configured", False
     if mode == "sam3_exemplar":
         if discovery_config.get("mock"):
             return SAM3ExemplarDiscoveryProvider(), "SAM3 exemplar mock discovery configured", True
-        return SAM3ExemplarDiscoveryProvider(), "SAM3 local exemplar discovery configured", False
+        return SAM3ExemplarDiscoveryProvider(), "SAM3 exemplar runtime configured", False
     if mode == "sam3_auto_masks":
         if discovery_config.get("mock"):
             return SAM3AutoMasksDiscoveryProvider(), "SAM3 auto-mask mock discovery configured", True
-        return SAM3AutoMasksDiscoveryProvider(), "SAM3 local auto-mask discovery configured", False
+        return SAM3AutoMasksDiscoveryProvider(), "SAM3 Scene Sweep runtime configured", False
     if mode == "class_detector":
         return ClassDetectorDiscoveryProvider(), "class detector mock discovery configured", True
     if mode == "motion_foreground":
@@ -601,6 +625,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         job_run.start()
         job_run.emit("validating_config", "succeeded", "backend extraction payload validated", progress={"overallRatio": 0.03}, metadata={"provider": provider_name})
 
+        runtime_proof: dict[str, Any] = {}
         try:
             discovery_mode = run_config.discovery.mode if run_config is not None else None
             discovery_config = dict(run_config.discovery.config) if run_config is not None else {}
@@ -653,9 +678,12 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             if discovery_provider is not None:
                 provider, message, requires_mock = discovery_provider[:3]
                 provider_metadata = dict(discovery_provider[3]) if len(discovery_provider) > 3 and isinstance(discovery_provider[3], dict) else {}
+                runtime_proof = dict(provider_metadata.get("runtimeContract") or discovery_config.get("runtimeContractPublic") or {})
+                if runtime_proof and provider_name == "sam3-local":
+                    runtime_proof.setdefault("displayProvider", "SAM3 Scene Sweep runtime")
                 if requires_mock and not discovery_config.get("mock"):
                     raise RuntimeError(
-                        f"local UI {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
+                        f"workspace {discovery_mode} jobs require discovery.config.mock=true; real discovery adapters remain capability-gated"
                     )
                 job_run.emit(
                     "provider_preflight",
@@ -685,7 +713,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                 )
             elif discovery_mode not in {None, "manual_prompt"}:
                 raise RuntimeError(
-                    f"local UI worker does not support discovery mode {discovery_mode!r} yet; use the CLI or a mock text-detector run"
+                    f"workspace worker does not support discovery mode {discovery_mode!r} yet; use the CLI or a mock text-detector run"
                 )
             elif provider_name == "external":
                 mask_dir = payload.get("mask_dir")
@@ -797,7 +825,8 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise
         except ProviderConfigError as exc:
-            job_run.fail(exc, reason_code="provider_unavailable", user_message=str(exc))
+            provider_reason = "gpu_device_mismatch" if "gpu_device_mismatch" in str(exc) else "provider_unavailable"
+            job_run.fail(exc, reason_code=provider_reason, user_message=str(exc))
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise
         except Exception as exc:
@@ -811,15 +840,76 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             job_run.cancel(str(exc))
             _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
             raise
+        job_run.emit(
+            "finalize",
+            "succeeded",
+            "worker extraction complete",
+            event_type="worker_complete",
+            progress={"overallRatio": 0.95},
+            metadata={"frames": int(scene.get("source", {}).get("sampledFrameCount") or 0), "objects": len(scene.get("objects", []))},
+        )
+        assets = _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
+        readiness = job_readiness(
+            rel_paths=[_asset_rel_path(asset) for asset in assets],
+            worker_complete=True,
+            artifacts_registered=True,
+            job_active=False,
+            review_summary={},
+        )
+        job_run.emit(
+            "finalize",
+            "succeeded",
+            "artifacts registered",
+            event_type="artifacts_registered",
+            progress={"overallRatio": 0.97},
+            metadata={"assetCount": len(assets), "readiness": readiness},
+        )
+        if readiness["reviewPayloadReady"]:
+            job_run.emit(
+                "finalize",
+                "succeeded",
+                "review payload ready",
+                event_type="review_payload_ready",
+                progress={"overallRatio": 0.98},
+                metadata={"readiness": readiness},
+            )
+        if readiness["previewToolsReady"]:
+            job_run.emit(
+                "finalize",
+                "succeeded",
+                "preview tools ready",
+                event_type="preview_tools_ready",
+                progress={"overallRatio": 0.99},
+                metadata={"readiness": readiness},
+            )
+            job_run.emit(
+                "finalize",
+                "succeeded",
+                "ready for review",
+                event_type="ready_for_review",
+                progress={"overallRatio": 1.0},
+                metadata={"readiness": readiness},
+            )
+        else:
+            job_run.emit(
+                "finalize",
+                "blocked",
+                readiness["blockedReason"] or "Review assets are incomplete.",
+                event_type="readiness_blocked",
+                progress={"overallRatio": 0.99},
+                metadata={"readiness": readiness},
+            )
         job_run.succeed(
             scene=scene,
             result={
                 "frames": int(scene.get("source", {}).get("sampledFrameCount") or 0),
                 "objects": len(scene.get("objects", [])),
                 "sceneGraph": "scene_graph.json",
+                "readiness": readiness,
+                "runtimeProof": runtime_proof,
             },
+            progress_ratio=1.0 if readiness.get("readyForReview") else 0.99,
         )
-        assets = _register_output_tree(conn, storage=storage, project_id=job["project_id"], job_id=job["id"], out_dir=out_dir, source_asset_id=source_asset["id"])
 
     frames = int(scene.get("source", {}).get("sampledFrameCount") or 0)
     objects = len(scene.get("objects", []))
@@ -891,7 +981,14 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
         event_type="extract_completed",
         metadata={"frames": frames, "objects": objects, "maskProvider": provider_name, "latencyMetrics": latency_metrics, "providerPerformance": provider_performance},
     )
-    return {"scene": {"frames": frames, "objects": objects}, "assetIds": [asset["id"] for asset in assets], "latencyMetrics": latency_metrics, "costDashboard": cost_dashboard}
+    return {
+        "scene": {"frames": frames, "objects": objects},
+        "assetIds": [asset["id"] for asset in assets],
+        "latencyMetrics": latency_metrics,
+        "costDashboard": cost_dashboard,
+        "readiness": readiness,
+        "runtimeProof": runtime_proof,
+    }
 
 
 def _source_asset_for_extraction(conn: sqlite3.Connection, *, source_job_id: str) -> str | None:

@@ -139,6 +139,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/jobs/{jobId}/exports" in health["routes"]
     assert "/api/jobs/{jobId}/exports/motionjson" in health["routes"]
     assert "/api/jobs/{jobId}/cancel" in health["routes"]
+    assert "/api/jobs/{jobId}/review-tools" in health["routes"]
     assert "/api/jobs/{jobId}/preview-files/{relPath}" in health["routes"]
     assert "/api/projects/{projectId}/imports/motionjson" in health["routes"]
     assert "/api/videos/{videoId}/prepare-browser-preview" in health["routes"]
@@ -872,6 +873,19 @@ def test_local_ui_video_content_endpoint_serves_bytes_without_storage_paths(tmp_
 def test_local_ui_preview_file_route_serves_review_tools_and_blocks_unsafe_paths(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     _project, _video, job = create_completed_mock_job(app, "Preview Tool Route Project")
+
+    status, _headers, body = app.handle("GET", f"/api/jobs/{job['id']}/review-tools")
+    tools_payload = decode(body)
+    assert status == 200
+    assert tools_payload["jobId"] == job["id"]
+    assert tools_payload["readiness"]["readyForReview"] is True
+    canvas = next(tool for tool in tools_payload["tools"] if tool["toolId"] == "canvas_player")
+    assert canvas["status"] == "ready"
+    assert canvas["missingArtifacts"] == []
+    assert f"/api/jobs/{job['id']}/preview-files/scene_graph.json" in canvas["url"]
+    assert f"/api/jobs/{job['id']}/preview-files/web_asset_manifest.json" in canvas["url"]
+    assert f"jobId={job['id']}" in canvas["url"]
+    assert "/out/demo" not in canvas["url"]
 
     status, headers, body = app.handle("GET", f"/api/jobs/{job['id']}/preview-files/preview/canvas_player.html")
     assert status == 200

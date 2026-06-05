@@ -19,8 +19,15 @@ from motionjson.backend.stale_jobs import (
     worker_heartbeat_stale_seconds,
 )
 from motionjson.backend.usage import summarize_usage
-from motionjson.backend.worker import _server_runtime_value, _ui_discovery_provider, validate_extract_provider_policy, worker_once
+from motionjson.backend.worker import (
+    _raise_if_requested_cuda_not_loaded,
+    _server_runtime_value,
+    _ui_discovery_provider,
+    validate_extract_provider_policy,
+    worker_once,
+)
 from motionjson.backend.models import ProviderPolicyError
+from motionjson.providers.base import ProviderConfigError
 from motionjson.providers.discovery import (
     MockObjectDiscoveryProvider,
     SAM2AutomaticProposalDiscoveryProvider,
@@ -76,10 +83,26 @@ def test_worker_routes_non_mock_sam3_discovery_to_local_adapter():
     mock_provider, _mock_message, mock_requires = _ui_discovery_provider("sam3_concept", {"mock": True, "concept": "red ball"})
 
     assert isinstance(provider, SAM3ConceptDiscoveryProvider)
-    assert "SAM3 local concept" in message
+    assert "SAM3 concept runtime" in message
     assert requires_mock is False
     assert isinstance(mock_provider, SAM3ConceptDiscoveryProvider)
     assert mock_requires is True
+
+
+def test_sam3_cuda_requested_requires_cuda_runtime_proof():
+    with pytest.raises(ProviderConfigError, match="gpu_device_mismatch"):
+        _raise_if_requested_cuda_not_loaded(
+            "sam3-local",
+            {"loadedOnCuda": False, "deviceActual": "cpu", "runtimeProofStatus": "verified"},
+            device_requested="cuda:0",
+        )
+
+    _raise_if_requested_cuda_not_loaded(
+        "sam3-local",
+        {"loadedOnCuda": True, "deviceActual": "cuda:0", "runtimeProofStatus": "verified"},
+        device_requested="cuda:0",
+    )
+    _raise_if_requested_cuda_not_loaded("sam3-local", {"loadedOnMps": True, "deviceActual": "mps"}, device_requested="mps")
 
 
 def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):
@@ -96,11 +119,25 @@ def test_extract_worker_runs_threshold_and_registers_manifest_assets(tmp_path):
 
     result = worker_once(conn, storage=storage)
     assets = list_assets_for_job(conn, project_id=project["id"], source_job_id=job["id"])
+    events = list_job_events(conn, job_id=job["id"])
+    result_payload = json.loads(result["result_json"])
     kinds = {asset["kind"] for asset in assets}
     usage = summarize_usage(conn, project_id=project["id"])
 
     assert result["status"] == "succeeded"
     assert {"scene_graph", "object_manifest", "web_manifest"}.issubset(kinds)
+    assert result_payload["readiness"]["workerComplete"] is True
+    assert result_payload["readiness"]["artifactsRegistered"] is True
+    assert result_payload["readiness"]["reviewPayloadReady"] is True
+    assert result_payload["readiness"]["previewToolsReady"] is True
+    assert result_payload["readiness"]["readyForReview"] is True
+    assert {
+        "worker_complete",
+        "artifacts_registered",
+        "review_payload_ready",
+        "preview_tools_ready",
+        "ready_for_review",
+    }.issubset({event["event_type"] for event in events})
     assert usage["totals"]["frames_processed"]["frame"] == 3.0
     assert usage["totals"]["objects_extracted"]["object"] == 1.0
     assert usage["totals"]["latency_ms"]["ms"] >= 0

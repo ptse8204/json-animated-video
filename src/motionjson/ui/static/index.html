@@ -519,7 +519,7 @@
             <div class="panel-heading">
               <div>
                 <h2 id="wizardPanelTitle">Choose extraction mode</h2>
-                <p id="wizardPanelNote" class="panel-note">Pick a workflow, then connect a SAM provider before running. Hosted or heavy local providers stay gated by diagnostics.</p>
+                <p id="wizardPanelNote" class="panel-note">Pick a workflow, then connect a SAM provider before running. Hosted or heavy runtime providers stay gated by diagnostics.</p>
               </div>
               <span id="presetSummary" class="status-chip is-neutral">Discover objects</span>
             </div>
@@ -544,6 +544,15 @@
                 </select>
                 <small id="qualityPresetAutoStatus" class="parameter-source">Auto</small>
               </label>
+              <label id="effortPresetField" data-workflow-fragment="provider_settings prompt_preview">
+                <span class="help-label" tabindex="0" data-tooltip="One control for speed versus artifact quality. High quality samples more frames and requires real tracking when available.">Effort</span>
+                <select id="effortPreset">
+                  <option value="fast">Fast</option>
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="high_quality">High quality</option>
+                </select>
+                <small id="effortPresetAutoStatus" class="parameter-source">Auto</small>
+              </label>
               <label id="textPromptField" data-workflow-fragment="prompt_preview">
                 <span>Text prompt</span>
                 <input id="textPrompt" type="text" value="red ball . hand . cup" />
@@ -551,7 +560,7 @@
               <label id="textDiscoveryProviderField" data-workflow-fragment="provider_settings">
                 <span>Text discovery provider</span>
                 <select id="textDiscoveryProviderSelect">
-                  <option value="sam3-local">Local SAM3</option>
+                  <option value="sam3-local">SAM3 Scene Sweep runtime</option>
                   <option value="sam3-hosted">Hosted SAM3</option>
                   <option value="detector">Configured detector</option>
                 </select>

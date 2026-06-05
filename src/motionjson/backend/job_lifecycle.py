@@ -27,13 +27,14 @@ def job_lifecycle_summary(
 
     event_list = [event for event in events or [] if isinstance(event, Mapping)]
     review_summary = review_lifecycle_summary(review or {})
+    readiness = _mapping(job.get("readiness"))
     latest_event = _latest_event(event_list)
     raw_status = _text(job.get("status")).lower()
     has_success_event = _has_success_event(event_list)
-    status = _lifecycle_status(raw_status, review_summary, has_success_event=has_success_event)
-    phase = _phase(raw_status, status, latest_event, review_summary)
+    status = _lifecycle_status(raw_status, review_summary, has_success_event=has_success_event, readiness=readiness)
+    phase = _phase(raw_status, status, latest_event, review_summary, readiness)
     failure = _failure_summary(job, event_list, review or {}, raw_status)
-    actions = _actions(job, raw_status, status, review_summary, failure)
+    actions = _actions(job, raw_status, status, review_summary, failure, readiness)
     return {
         "format": "motionjson.job_lifecycle.v0.1",
         "jobId": _text(job.get("id")),
@@ -48,8 +49,9 @@ def job_lifecycle_summary(
         "latestEvent": latest_event,
         "failure": failure,
         "review": review_summary,
+        "readiness": dict(readiness),
         "actions": actions,
-        "nextAction": _next_action(status, review_summary, failure, actions),
+        "nextAction": _next_action(status, review_summary, failure, actions, readiness),
     }
 
 
@@ -112,11 +114,16 @@ def _progress(events: Sequence[Mapping[str, Any]], raw_status: str, status: str,
         if stage:
             label = _stage_label(stage)
     if ratio is not None:
-        return {"known": True, "percent": int(round(ratio * 100)), "label": label}
+        percent = int(round(ratio * 100))
+        if status == "finalizing_review":
+            percent = min(percent, 99)
+        return {"known": True, "percent": percent, "label": label}
     if raw_status == "failed":
         percent = 0
     elif raw_status in TERMINAL_JOB_STATUSES or status in {"succeeded", "waiting_review"}:
         percent = 100
+    elif status == "finalizing_review":
+        percent = 99
     else:
         percent = 0
     return {"known": False, "percent": percent, "label": _status_label(status)}
@@ -130,7 +137,14 @@ def _has_success_event(events: Sequence[Mapping[str, Any]]) -> bool:
     return False
 
 
-def _lifecycle_status(raw_status: str, review: Mapping[str, Any], *, has_success_event: bool = False) -> str:
+def _lifecycle_status(
+    raw_status: str,
+    review: Mapping[str, Any],
+    *,
+    has_success_event: bool = False,
+    readiness: Mapping[str, Any] | None = None,
+) -> str:
+    readiness = readiness or {}
     if has_success_event and raw_status in ACTIVE_JOB_STATUSES:
         raw_status = "succeeded"
     if raw_status in {"failed"}:
@@ -141,6 +155,8 @@ def _lifecycle_status(raw_status: str, review: Mapping[str, Any], *, has_success
         return "queued"
     if raw_status in ACTIVE_JOB_STATUSES:
         return "running"
+    if raw_status == "succeeded" and readiness and readiness.get("readyForReview") is not True:
+        return "finalizing_review"
     if raw_status == "succeeded" and review.get("needsReview"):
         return "waiting_review"
     if raw_status == "succeeded":
@@ -148,7 +164,13 @@ def _lifecycle_status(raw_status: str, review: Mapping[str, Any], *, has_success
     return raw_status or "queued"
 
 
-def _phase(raw_status: str, status: str, latest_event: Mapping[str, Any] | None, review: Mapping[str, Any]) -> str:
+def _phase(
+    raw_status: str,
+    status: str,
+    latest_event: Mapping[str, Any] | None,
+    review: Mapping[str, Any],
+    readiness: Mapping[str, Any] | None = None,
+) -> str:
     if status == "failed":
         return "failed"
     if status == "canceled":
@@ -157,6 +179,8 @@ def _phase(raw_status: str, status: str, latest_event: Mapping[str, Any] | None,
         return "queued"
     if status == "waiting_review":
         return "review_ready"
+    if status == "finalizing_review":
+        return "finalizing_review_assets"
     if status == "succeeded":
         return "complete"
     event_type = _text((latest_event or {}).get("type")).lower()
@@ -217,6 +241,8 @@ def _failure_summary(
 
 def _failure_reason_code(message: str) -> str:
     normalized = message.lower()
+    if "gpu_device_mismatch" in normalized:
+        return "gpu_device_mismatch"
     if "frame-finished event" in normalized or "asset preparation timed out" in normalized:
         return "asset_preparation_frame_timeout"
     if "worker heartbeat stopped during asset preparation" in normalized:
@@ -245,6 +271,8 @@ def _failure_headline(message: str, reason_code: str) -> str:
         if "sam2" in message.lower():
             return "SAM2 is not ready"
         return "Provider is not ready"
+    if reason_code == "gpu_device_mismatch":
+        return "GPU device mismatch"
     if reason_code == "validation_failed":
         return "Run configuration needs changes"
     if reason_code == "input_unavailable":
@@ -258,6 +286,8 @@ def _suggested_action(reason_code: str) -> str:
         return "Retry asset preparation from the current setup, or return to Model setup before starting a new run."
     if reason_code == "provider_unavailable":
         return "Open Model Connections, fix the provider setup, or choose a no-model workflow."
+    if reason_code == "gpu_device_mismatch":
+        return "Run the setup smoke test on the requested accelerator, or choose an available device intentionally."
     if reason_code == "validation_failed":
         return "Review the run plan and fix the blocked fields before retrying."
     if reason_code == "input_unavailable":
@@ -271,11 +301,13 @@ def _actions(
     status: str,
     review: Mapping[str, Any],
     failure: Mapping[str, Any] | None,
+    readiness: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    readiness = readiness or {}
+    review_payload_ready = readiness.get("reviewPayloadReady") is not False
+    ready_for_review = readiness.get("readyForReview") is not False if readiness else True
     can_review = bool(
-        review.get("candidateCount")
-        or review.get("trackCount")
-        or review.get("diagnosticCount")
+        (review_payload_ready and (review.get("candidateCount") or review.get("trackCount") or review.get("diagnosticCount")))
         or failure
     )
     return {
@@ -283,8 +315,8 @@ def _actions(
         "canRetry": bool(failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS),
         "canRetryAssetPreparation": bool(failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS),
         "canReview": can_review,
-        "canTrackSelected": status == "waiting_review" and int(review.get("candidateCount") or 0) > 0 and int(review.get("trackCount") or 0) == 0,
-        "canExport": status in {"waiting_review", "succeeded"} and int(review.get("exportableTrackCount") or 0) > 0,
+        "canTrackSelected": ready_for_review and status == "waiting_review" and int(review.get("candidateCount") or 0) > 0 and int(review.get("trackCount") or 0) == 0,
+        "canExport": ready_for_review and status in {"waiting_review", "succeeded"} and int(review.get("exportableTrackCount") or 0) > 0,
     }
 
 
@@ -293,9 +325,12 @@ def _next_action(
     review: Mapping[str, Any],
     failure: Mapping[str, Any] | None,
     actions: Mapping[str, Any],
+    readiness: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     if status in {"queued", "running"}:
         return {"label": "Watch job", "reason": "The run is still in progress."}
+    if status == "finalizing_review":
+        return {"label": "Wait for review assets", "reason": _text((readiness or {}).get("blockedReason")) or "Finalizing review assets."}
     if failure and _text(failure.get("reasonCode")) in ASSET_PREPARATION_RECOVERY_REASONS:
         return {"label": "Retry asset prep", "reason": _text(failure.get("headline"))}
     if failure:
@@ -380,7 +415,7 @@ def _provider_label(provider_id: str, profile: str) -> str:
     if provider_id == "sam2-hosted":
         return "Hosted SAM2"
     if provider_id == "sam3-local":
-        return "SAM3 local"
+        return "SAM3 Scene Sweep runtime"
     if provider_id == "sam3-hosted" and profile == "roboflow-sam3-pcs":
         return "Roboflow SAM3"
     if provider_id == "sam3-hosted" and profile == "fal-sam3-image":
@@ -432,6 +467,7 @@ def _phase_label(phase: str) -> str:
         "discovering": "Finding candidates",
         "tracking": "Tracking objects",
         "writing_artifacts": "Writing artifacts",
+        "finalizing_review_assets": "Finalizing review assets",
         "review_ready": "Ready for review",
         "exporting": "Exporting",
         "complete": "Complete",
@@ -449,6 +485,7 @@ def _status_label(status: str) -> str:
         "queued": "Queued",
         "running": "Working",
         "waiting_review": "Ready for review",
+        "finalizing_review": "Finalizing review assets",
         "succeeded": "Complete",
         "failed": "Failed",
         "canceled": "Canceled",
