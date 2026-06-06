@@ -1887,6 +1887,7 @@ class LocalUIApp:
         response["valid"] = True
         response["runConfig"] = _public_value(config.to_dict())
         response["warnings"] = self._run_config_warnings(config)
+        self._append_sam3_local_concept_blocker(response, config)
         return response
 
     def _run_config_warnings(self, config: ExtractionRunConfig) -> list[dict[str, Any]]:
@@ -1906,7 +1907,7 @@ class LocalUIApp:
                 field="provider.name",
             )
         if config.discovery.mode:
-            discovery_name = "sam3-auto-masks" if config.discovery.mode == "sam3_auto_masks" else config.discovery.mode
+            discovery_name = self._capability_name_for_discovery_mode(config.discovery.mode)
             self._append_provider_warning(
                 warnings,
                 providers,
@@ -1929,6 +1930,55 @@ class LocalUIApp:
                 }
             )
         return warnings
+
+    @staticmethod
+    def _capability_name_for_discovery_mode(mode: str | None) -> str:
+        return {
+            "sam2_hf_auto_masks": "sam2-hf-auto-masks",
+            "sam3_auto_masks": "sam3-auto-masks",
+            "sam3_concept": "sam3-concept",
+            "sam3_exemplar": "sam3-exemplar",
+        }.get(str(mode or ""), str(mode or ""))
+
+    def _append_sam3_local_concept_blocker(self, response: dict[str, Any], config: ExtractionRunConfig) -> None:
+        if config.discovery.mode not in {"sam3_concept", "sam3_exemplar"}:
+            return
+        discovery_config = dict(config.discovery.config or {})
+        if discovery_config.get("mock") or discovery_config.get("hosted"):
+            return
+        preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or config.provider.name or "")
+        if config.provider.name != "sam3-local" and preference != "sam3-local":
+            return
+        provider_name = self._capability_name_for_discovery_mode(config.discovery.mode)
+        providers = {
+            (str(provider.get("kind") or ""), str(provider.get("name") or "")): provider
+            for provider in self._capability_report().get("providers", [])
+            if isinstance(provider, dict)
+        }
+        provider = providers.get(("discovery_provider", provider_name)) or providers.get(("discovery_provider", "sam3-local"))
+        if not provider or (provider.get("available") is not False and provider.get("runnable") is not False):
+            return
+        mode_label = "Find by description" if config.discovery.mode == "sam3_concept" else "SAM3 box/example tracing"
+        action = (
+            "Use a hosted SAM3 concept provider, switch to Trace all objects / SAM3 Scene Sweep, "
+            "or configure the advanced official SAM3 package plus a local sam3.pt checkpoint path."
+        )
+        response["valid"] = False
+        response.setdefault("errors", []).append(
+            {
+                "code": "sam3_local_concept_unavailable",
+                "field": "discovery.mode",
+                "provider": "sam3-local",
+                "discoveryProvider": provider_name,
+                "severity": "error",
+                "action": action,
+                "message": (
+                    f"{mode_label} cannot use the normal SAM3 Scene Sweep runtime as a local text/concept adapter. "
+                    "Scene Sweep can propose visible objects, but local text/concept SAM3 requires the advanced official SAM3 adapter."
+                ),
+                "reasons": _public_value(provider.get("reasons") or []),
+            }
+        )
 
     @staticmethod
     def _append_provider_warning(

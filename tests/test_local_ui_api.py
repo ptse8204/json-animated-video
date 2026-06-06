@@ -721,6 +721,82 @@ def test_local_ui_validation_uses_sam3_auto_masks_for_scene_sweep_warnings(tmp_p
     assert "Transformers does not expose" in json.dumps(warnings)
 
 
+def test_local_ui_validation_blocks_unconfigured_local_sam3_concept(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda **_kwargs: {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 1, "providersTotal": 3},
+            "environment": {},
+            "providers": [
+                {
+                    "name": "sam3-local",
+                    "kind": "discovery_provider",
+                    "available": False,
+                    "runnable": False,
+                    "status": "missing_dependency",
+                    "reasons": ["Python module 'sam3' is not importable."],
+                    "installHint": "Install official SAM3 only for advanced concept/exemplar workflows.",
+                },
+                {
+                    "name": "sam3-concept",
+                    "kind": "discovery_provider",
+                    "available": False,
+                    "runnable": False,
+                    "status": "missing_dependency",
+                    "reasons": ["SAM3 local concept adapter requires the official SAM3 package and a local sam3.pt checkpoint."],
+                    "installHint": "Use hosted SAM3 concept or configure the advanced local adapter.",
+                },
+                {
+                    "name": "sam3-auto-masks",
+                    "kind": "discovery_provider",
+                    "available": True,
+                    "runnable": True,
+                    "status": "ready",
+                    "reasons": [],
+                    "installHint": "Install the sam3-transformers extra.",
+                },
+            ],
+        },
+    )
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps(
+            {
+                "schema": "motionjson.extraction_run_config.v0.1",
+                "input": {"path": "local-ui://assets/asset_1"},
+                "output": {"directory": str(tmp_path / "out")},
+                "sampling": {"sample_fps": 12, "max_frames": 2},
+                "provider": {"name": "sam3-local"},
+                "discovery": {
+                    "mode": "sam3_concept",
+                    "config": {
+                        "concept": "red ball",
+                        "text": "red ball",
+                        "providerPreference": "sam3-local",
+                        "hosted": False,
+                    },
+                },
+                "prompts": [],
+            }
+        ).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    assert payload["valid"] is False
+    error = next(item for item in payload["errors"] if item["code"] == "sam3_local_concept_unavailable")
+    assert error["discoveryProvider"] == "sam3-concept"
+    assert "Scene Sweep can propose visible objects" in error["message"]
+    assert "hosted SAM3 concept" in error["action"]
+    warnings = [warning for warning in payload["warnings"] if warning["code"] == "provider_unavailable"]
+    assert {warning["provider"] for warning in warnings} >= {"sam3-local", "sam3-concept"}
+
+
 def test_local_ui_serves_static_shell(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")
 

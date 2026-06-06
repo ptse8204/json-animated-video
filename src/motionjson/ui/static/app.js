@@ -159,7 +159,7 @@ const MotionJSONUI = (() => {
       workflow: "Find everything in scene",
       title: "SAM3 Scene Sweep",
       capabilities: ["scene_sweep", "concept", "box", "tracking", "auto_masks"],
-      recommendation: "Recommended CUDA runtime path for finding everything in the scene with SAM3 Tracker masks and video tracking.",
+      recommendation: "Recommended CUDA runtime path for finding everything in the scene with SAM3 Tracker masks and video tracking. Text prompts require hosted SAM3 concept setup or the advanced official SAM3 concept adapter.",
       nextAction: "Install scene sweep, check Hugging Face access, then cache facebook/sam3",
       profileId: "",
     },
@@ -208,10 +208,11 @@ const MotionJSONUI = (() => {
     trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
     trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
     auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
-    text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+    text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
   };
   const ADVANCED_MODEL_CONNECTIONS = {
     trace_one_object: ["sam3-local", "sam3-hosted:custom-sam3-compatible"],
+    text_detector: ["sam3-local"],
   };
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
@@ -312,8 +313,8 @@ const MotionJSONUI = (() => {
     },
     text_detector: {
       label: "Find objects from text",
-      discoveryMode: "sam3_concept",
-      maskProvider: "sam3-local",
+      discoveryMode: "text_detector",
+      maskProvider: "sam3-hosted",
       outputMode: "authoring",
     },
     class_detector: {
@@ -1777,6 +1778,7 @@ const MotionJSONUI = (() => {
     let providerId = contract.providerId || "";
     const profileId = contract.profileId || "";
     const allowLegacyDetector =
+      input.textDiscoveryProvider === "detector" ||
       input.allowLegacyTextDetector === true ||
       (input.debugMockMode === true && (input.maskProvider === "mock" || input.textDiscoveryProvider === "mock" || requestedDiscoveryMode === "text_detector"));
     if (!goalRequiresModel(presetName)) {
@@ -1804,12 +1806,16 @@ const MotionJSONUI = (() => {
         const detectorProvider = input.maskProvider || "threshold";
         return enginePlanFromContract(contract, input, { providerId: detectorProvider, discoveryMode: "text_detector", connection: null, profileId: "" });
       }
-      providerId = providerId?.startsWith("sam3") ? providerId : "sam3-local";
+      providerId = providerId?.startsWith("sam3") ? providerId : "sam3-hosted";
+      const selectedProfileId = providerId === "sam3-hosted" ? profileId || input.hostedSam3ProfileId || "roboflow-sam3-pcs" : "";
       return enginePlanFromContract(contract, input, {
         providerId,
         discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode,
-        profileId: providerId === "sam3-hosted" ? profileId : "",
-        connection: providerId === contract.providerId ? connection : modelConnectionByConnectionId(providerId),
+        profileId: selectedProfileId,
+        connection:
+          providerId === contract.providerId
+            ? connection
+            : modelConnectionByConnectionId(providerId === "sam3-hosted" ? `sam3-hosted:${selectedProfileId}` : providerId),
       });
     }
     return enginePlanFromContract(contract, input, {
@@ -4346,9 +4352,13 @@ const MotionJSONUI = (() => {
     const discoveryName =
       config.discovery.mode === "sam3_auto_masks"
         ? "sam3-auto-masks"
-        : preference === "sam3-hosted" || preference === "sam3-local"
-          ? preference
-          : config.discovery.mode;
+        : config.discovery.mode === "sam3_concept" && preference !== "sam3-hosted"
+          ? "sam3-concept"
+          : config.discovery.mode === "sam3_exemplar" && preference !== "sam3-hosted"
+            ? "sam3-exemplar"
+            : preference === "sam3-hosted" || preference === "sam3-local"
+              ? preference
+              : config.discovery.mode;
     const lookups = [];
     if (discoveryName) {
       lookups.push({
@@ -4438,7 +4448,8 @@ const MotionJSONUI = (() => {
     }
 
     if (state.selectedPreset === "text_detector" && !String(config.discovery.config.text || "").trim()) {
-      warnings.push(`${config.discovery.mode === "sam3_concept" ? "sam3-hosted" : "text_detector"} needs at least one text label.`);
+      const textProvider = config.discovery.config?.providerPreference === "sam3-local" ? "sam3-local concept" : config.discovery.mode === "sam3_concept" ? "sam3-hosted" : "text_detector";
+      warnings.push(`${textProvider} needs at least one text label.`);
     }
 
     if (

@@ -813,10 +813,11 @@ the compatible model connection:
 - `Trace one object`: prefers SAM2 local/hosted, but can route through
   `sam3_exemplar` with `provider.name = sam3-local` or `sam3-hosted`. Guided
   SAM3 single-object tracing is box-first.
-- `Find by description`: defaults to `sam3_concept` with `provider.name =
-  sam3-local` or `sam3-hosted`. Roboflow SAM3 is the recommended hosted concept
-  provider, and Fal SAM3 image remains a sampled-frame fallback for text-led
-  segmentation.
+- `Find by description`: defaults to hosted `sam3_concept` providers such as
+  Roboflow SAM3, because the normal SAM3 Scene Sweep runtime does not understand
+  text prompts. Advanced users can intentionally choose local `sam3_concept`
+  only after installing the official SAM3 package and configuring a local
+  `sam3.pt` checkpoint through `sam3ModelPath` / `SAM3_LOCAL_MODEL`.
 - `Trace all objects`: defaults to `sam3_auto_masks` with SAM3 local/hosted and
   falls back to `auto_object_proposals` on local SAM2 when needed.
 - `Find moving things`: uses the CPU/no-model `motion_foreground` workflow.

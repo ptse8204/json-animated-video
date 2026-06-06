@@ -1019,7 +1019,7 @@ assert.equal("concept" in sam3TraceAllConfig.discovery.config, false);
 assert.equal("text" in sam3TraceAllConfig.discovery.config, false);
 assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig), ["sam3-auto-masks"]);
 assert.doesNotMatch(ui.capabilityWarningNamesForConfig(sam3TraceAllConfig).join(" "), /sam3-local|SAM3_LOCAL_MODEL/);
-assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3SingleObjectConfig), ["sam3-local"]);
+assert.deepEqual(ui.capabilityWarningNamesForConfig(sam3SingleObjectConfig), ["sam3-exemplar", "sam3-local"]);
 
 const sam3HighQualityTraceAllConfig = ui.buildRunConfig({
   preset: "trace_all_objects",
@@ -1071,14 +1071,20 @@ assert.equal(sam2HfTraceAllConfig.discovery.mode, "sam2_hf_auto_masks");
 assert.equal(sam2HfTraceAllConfig.discovery.config.providerPreference, "sam2-hf-auto-masks");
 assert.equal(sam2HfTraceAllConfig.discovery.config.sam2HfModel, "facebook/sam2.1-hiera-large");
 
-const textPromptDefaultsToSam3 = ui.guidedEnginePlan({
+const textPromptDetectorFallback = ui.guidedEnginePlan({
   preset: "text_detector",
   maskProvider: "sam2-local",
   textDiscoveryProvider: "detector",
 });
-assert.equal(textPromptDefaultsToSam3.providerId, "sam3-local");
-assert.equal(textPromptDefaultsToSam3.displayLabel, "SAM3 Scene Sweep");
-assert.equal(textPromptDefaultsToSam3.discoveryMode, "sam3_concept");
+assert.equal(textPromptDetectorFallback.providerId, "sam2-local");
+assert.equal(textPromptDetectorFallback.discoveryMode, "text_detector");
+
+const textPromptDefaultsToHostedSam3 = ui.guidedEnginePlan({
+  preset: "text_detector",
+});
+assert.equal(textPromptDefaultsToHostedSam3.providerId, "sam3-hosted");
+assert.equal(textPromptDefaultsToHostedSam3.displayLabel, "Roboflow SAM3");
+assert.equal(textPromptDefaultsToHostedSam3.discoveryMode, "sam3_concept");
 
 const advancedDetectorFallback = ui.guidedEnginePlan({
   preset: "text_detector",
@@ -1231,7 +1237,7 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 
 const compatibleConnectionExpectations = {
   trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
-  text_detector: ["sam3-local", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
   trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],

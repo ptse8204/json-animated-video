@@ -419,8 +419,8 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         ],
         "defaultModel": SAM3_HF_REPO_ID,
         "customModelAllowed": True,
-        "capabilities": ["scene sweep via HF tracker", "advanced concept discovery", "advanced exemplar discovery", "SAM3 Tracker video"],
-        "supportedGoals": ["trace_one_object", "trace_all_objects", "text_detector"],
+        "capabilities": ["scene sweep via HF tracker", "advanced concept discovery with official SAM3 adapter", "advanced exemplar discovery with official SAM3 adapter", "SAM3 Tracker video"],
+        "supportedGoals": ["trace_one_object", "trace_all_objects"],
         "supportedPromptTypes": ["box"],
         "supportsConcept": True,
         "supportsExemplar": True,
@@ -429,9 +429,9 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "hardware": "CUDA-capable SAM3 runtime",
         "cost": {"status": "zero_local", "label": "No hosted cost"},
         "privacy": "Frames stay inside the selected runtime unless a hosted SAM provider is chosen.",
-        "warning": "Normal scene sweep uses the independent sam3-transformers extra and facebook/sam3 access. Concept/exemplar workflows are advanced and require the official SAM3 package plus a sam3.pt checkpoint path.",
+        "warning": "Normal scene sweep uses the independent sam3-transformers extra and facebook/sam3 access. Find by description needs a hosted concept provider unless you intentionally configure the advanced official SAM3 package plus a sam3.pt checkpoint path.",
         "setupGuide": {
-            "recommendedFor": "Best runtime path for scene-wide discovery, concept prompts such as 'red ball', and one-object SAM3 tracking.",
+            "recommendedFor": "Best runtime path for scene-wide discovery and SAM3 Tracker video propagation.",
             "setupSummary": "For scene sweep, install the sam3-transformers extra, paste a Hugging Face token if the model is gated, and cache facebook/sam3 from the UI. For advanced concept/exemplar workflows, install the official SAM3 source package and save a sam3.pt checkpoint path.",
             "commands": [
                 "pip install 'motionjson[sam3-transformers]'",

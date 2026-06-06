@@ -25,8 +25,8 @@ export const WIZARD_PRESETS = [
   {
     id: "text_detector",
     label: "Find objects from text",
-    discoveryMode: "sam3_concept",
-    defaultMaskProvider: "sam3-local",
+    discoveryMode: "text_detector",
+    defaultMaskProvider: "sam3-hosted",
     requiredTools: ["label"],
   },
   {
@@ -191,7 +191,10 @@ function guidedEnginePlan(input, preset) {
     if (connectionProvider && !connectionProvider.startsWith("sam3")) {
       return { providerName: connectionProvider, discoveryMode: requestedDiscoveryMode };
     }
-    return { providerName: connectionProvider === "sam3-hosted" ? "sam3-hosted" : connectionProvider || "sam3-local", discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode };
+    return {
+      providerName: connectionProvider === "sam3-local" ? "sam3-local" : "sam3-hosted",
+      discoveryMode: requestedDiscoveryMode === "text_detector" ? "sam3_concept" : requestedDiscoveryMode,
+    };
   }
   return {
     providerName: input.maskProvider || preset.defaultMaskProvider || (input.debugMockMode ? "mock" : "sam2-local"),
@@ -428,7 +431,7 @@ export function buildRunConfig(input) {
       discoveryConfig.box_threshold = Number(advanced.boxThreshold);
       discoveryConfig.text_threshold = Number(advanced.textThreshold);
     }
-    if (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
+    if (discoveryMode === "sam3_concept" || ["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
       const hosted = providerName === "sam3-hosted";
       discoveryConfig.concept = input.discoveryText || "";
       discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";
@@ -642,7 +645,16 @@ export function providerWarnings(config, capabilities) {
   const discoveryMode = config.discovery?.mode;
   if (discoveryMode) {
     const preference = config.discovery?.config?.providerPreference;
-    const discoveryName = preference === "sam3-hosted" || preference === "sam3-local" ? preference : discoveryMode;
+    const discoveryName =
+      discoveryMode === "sam3_auto_masks"
+        ? "sam3-auto-masks"
+        : discoveryMode === "sam3_concept" && preference !== "sam3-hosted"
+          ? "sam3-concept"
+          : discoveryMode === "sam3_exemplar" && preference !== "sam3-hosted"
+            ? "sam3-exemplar"
+            : preference === "sam3-hosted" || preference === "sam3-local"
+              ? preference
+              : discoveryMode;
     const discovery = lookup.get(discoveryName) || lookup.get(String(discoveryMode).replaceAll("_", "-"));
     if (discovery && !discovery.available) {
       warnings.push(`${discovery.name}: ${discovery.reasons?.[0] || discovery.status || "discovery unavailable"}`);

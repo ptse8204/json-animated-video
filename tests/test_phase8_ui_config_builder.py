@@ -86,7 +86,7 @@ const cases = [
       discoveryMaxCandidates: 4,
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "sam3-local", discovery: "sam3_concept", prompts: 0 }},
+    expected: {{ provider: "sam3-hosted", discovery: "sam3_concept", prompts: 0 }},
   }},
   {{
     goal: "find_objects_from_text_hosted_sam3",
@@ -294,7 +294,7 @@ def test_phase8_frontend_config_builds_trace_all_objects_preset(frontend_contrac
     assert trace_all["discovery"]["mode"] == "sam3_auto_masks"
     assert trace_all["discovery"]["config"]["qualityPreset"] == "balanced"
     assert trace_all["discovery"]["config"]["sceneSweep"] is True
-    assert trace_all["discovery"]["config"]["useTransformersTracker"] is False
+    assert trace_all["discovery"]["config"]["useTransformersTracker"] is True
     assert "concept" not in trace_all["discovery"]["config"]
     assert "text" not in trace_all["discovery"]["config"]
     assert trace_all["discovery"]["config"]["requireReview"] is True
