@@ -482,6 +482,33 @@ def sam3_scene_sweep_warmup(
     }
 
 
+def _safe_progress_emit(progress: Any | None, event_type: str, label: str, **metadata: Any) -> None:
+    if not callable(progress):
+        return
+    try:
+        progress(event_type, label, metadata=metadata)
+    except TypeError:
+        try:
+            progress(event_type, label)
+        except Exception:
+            return
+    except Exception:
+        return
+
+
+def _callable_accepts_keyword(function: Any, keyword: str) -> bool:
+    try:
+        signature = inspect.signature(function)
+    except (TypeError, ValueError):
+        return False
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.kind in {inspect.Parameter.KEYWORD_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD} and parameter.name == keyword:
+            return True
+    return False
+
+
 class SAM3TrackerPointGridMaskGenerator:
     """Small direct SAM3 Tracker adapter that avoids the opaque pipeline constructor."""
 
@@ -492,10 +519,22 @@ class SAM3TrackerPointGridMaskGenerator:
         self.device = device
 
     def generate(self, image: Any, *, points_per_batch: int = 16, **_kwargs: Any) -> dict[str, Any]:
+        progress = _kwargs.get("progress")
         pil_image = image if isinstance(image, Image.Image) else Image.fromarray(np.asarray(image, dtype=np.uint8)).convert("RGB")
         points = _sam3_grid_points(pil_image.width, pil_image.height, max_points=max(1, min(int(points_per_batch or 1), 64)))
+        _safe_progress_emit(
+            progress,
+            "sam3_grid_points_prepared",
+            f"prepared {len(points)} SAM3 grid points",
+            pointCount=len(points),
+            imageWidth=pil_image.width,
+            imageHeight=pil_image.height,
+            pointsPerBatch=points_per_batch,
+        )
         input_points = [[[[float(x), float(y)]] for x, y in points]]
         input_labels = [[[1] for _ in points]]
+        input_started_at = time.perf_counter()
+        _safe_progress_emit(progress, "sam3_inputs_started", "preparing SAM3 tracker inputs", pointCount=len(points))
         try:
             inputs = self.processor(
                 images=pil_image,
@@ -511,12 +550,30 @@ class SAM3TrackerPointGridMaskGenerator:
                 return_tensors="pt",
             )
         inputs = _inputs_to_device(inputs, self.device)
+        _safe_progress_emit(
+            progress,
+            "sam3_inputs_finished",
+            "SAM3 tracker inputs prepared",
+            pointCount=len(points),
+            elapsedMs=round((time.perf_counter() - input_started_at) * 1000, 3),
+            device=str(self.device),
+        )
+        inference_started_at = time.perf_counter()
+        _safe_progress_emit(progress, "sam3_inference_started", "running SAM3 tracker inference", pointCount=len(points), device=str(self.device))
         try:
             with self.torch.no_grad():
                 outputs = self.model(**inputs, multimask_output=False)
         except TypeError:
             with self.torch.no_grad():
                 outputs = self.model(**inputs)
+        _safe_progress_emit(
+            progress,
+            "sam3_inference_finished",
+            "SAM3 tracker inference finished",
+            pointCount=len(points),
+            elapsedMs=round((time.perf_counter() - inference_started_at) * 1000, 3),
+            device=str(self.device),
+        )
         raw_masks = getattr(outputs, "pred_masks", None)
         if raw_masks is None and isinstance(outputs, Mapping):
             raw_masks = outputs.get("pred_masks")
@@ -525,11 +582,20 @@ class SAM3TrackerPointGridMaskGenerator:
         if raw_masks is None:
             return normalize_sam3_output(outputs)
         original_sizes = _input_value(inputs, "original_sizes")
+        postprocess_started_at = time.perf_counter()
+        _safe_progress_emit(progress, "sam3_postprocess_started", "postprocessing SAM3 masks", pointCount=len(points))
         masks_input = raw_masks.cpu() if hasattr(raw_masks, "cpu") else raw_masks
         try:
             processed_masks = self.processor.post_process_masks(masks_input, original_sizes)[0]
         except TypeError:
             processed_masks = self.processor.post_process_masks(masks_input, original_sizes=original_sizes)[0]
+        _safe_progress_emit(
+            progress,
+            "sam3_postprocess_finished",
+            "SAM3 masks postprocessed",
+            pointCount=len(points),
+            elapsedMs=round((time.perf_counter() - postprocess_started_at) * 1000, 3),
+        )
         scores = _first_output_value(outputs, ("iou_scores", "pred_iou_scores", "scores"))
         return {
             "masks": processed_masks,
@@ -989,17 +1055,25 @@ def _scene_sweep_load_progress(ctx: Any | None, runtime_public: Mapping[str, Any
     if ctx is None or not hasattr(ctx, "emit"):
         return None
 
-    def progress(event_type: str, label: str, percent: int | float | None = None, known: bool = False) -> None:
+    def progress(
+        event_type: str,
+        label: str,
+        percent: int | float | None = None,
+        known: bool = False,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> None:
         try:
             stage_ratio = max(0.0, min(float(percent if percent is not None else 0) / 100.0, 1.0))
         except (TypeError, ValueError):
             stage_ratio = 0.0
+        event_metadata = dict(metadata or {})
         ctx.emit(
             "candidate_discovery",
             "running",
             label,
             progress={"overallRatio": 0.30 + stage_ratio * 0.01, "stageRatio": stage_ratio},
             metadata={
+                **event_metadata,
                 "provider": "sam3-local",
                 "discoveryMode": "sam3_auto_masks",
                 "eventType": event_type,
@@ -1147,9 +1221,11 @@ class LocalSAM3DiscoveryBackend:
         max_per_keyframe = _int_config(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), 64)
         points_per_batch = _int_config(config, ("pointsPerBatch", "points_per_batch"), 64)
         total_keyframes = max(1, len(keyframes))
+        progress_callback = _scene_sweep_load_progress(ctx, runtime_public)
         for keyframe_ordinal, keyframe_index in enumerate(keyframes, start=1):
             if ctx is not None and hasattr(ctx, "check_cancel"):
                 ctx.check_cancel("sam3_scene_sweep")
+            keyframe_started_at = time.perf_counter()
             if ctx is not None and hasattr(ctx, "emit"):
                 ctx.emit(
                     "candidate_discovery",
@@ -1161,6 +1237,8 @@ class LocalSAM3DiscoveryBackend:
                         "keyframe": keyframe_index,
                         "keyframeOrdinal": keyframe_ordinal,
                         "keyframeCount": total_keyframes,
+                        "pointsPerBatch": points_per_batch,
+                        "eventType": "scene_sweep_keyframe_started",
                         "runtimeContract": dict(runtime_public),
                     },
                 )
@@ -1171,6 +1249,10 @@ class LocalSAM3DiscoveryBackend:
                 frame_index=keyframe_index,
                 points_per_batch=points_per_batch,
                 config=config,
+                ctx=ctx,
+                progress=progress_callback,
+                keyframe_ordinal=keyframe_ordinal,
+                keyframe_count=total_keyframes,
             )
             if ctx is not None and hasattr(ctx, "emit"):
                 ctx.emit(
@@ -1182,6 +1264,9 @@ class LocalSAM3DiscoveryBackend:
                         "provider": self.provider_name,
                         "keyframe": keyframe_index,
                         "proposalCount": len(frame_records),
+                        "pointsPerBatch": points_per_batch,
+                        "elapsedMs": round((time.perf_counter() - keyframe_started_at) * 1000, 3),
+                        "eventType": "scene_sweep_keyframe_finished",
                         "runtimeContract": dict(runtime_public),
                     },
                 )
@@ -1237,9 +1322,40 @@ class LocalSAM3DiscoveryBackend:
         frame_index: int,
         points_per_batch: int,
         config: Mapping[str, Any],
+        ctx: Any | None = None,
+        progress: Any | None = None,
+        keyframe_ordinal: int = 1,
+        keyframe_count: int = 1,
     ) -> list[dict[str, Any]]:
+        def emit_inner(event_type: str, message: str, **metadata: Any) -> None:
+            if ctx is None or not hasattr(ctx, "emit"):
+                return
+            ctx.emit(
+                "candidate_discovery",
+                "running",
+                message,
+                progress={"overallRatio": 0.312},
+                metadata={
+                    "provider": self.provider_name,
+                    "discoveryMode": "sam3_auto_masks",
+                    "eventType": event_type,
+                    "frameIndex": frame_index,
+                    "keyframe": frame_index,
+                    "keyframeOrdinal": keyframe_ordinal,
+                    "keyframeCount": keyframe_count,
+                    "pointsPerBatch": points_per_batch,
+                    **metadata,
+                },
+            )
+
+        call_started_at = time.perf_counter()
+        emit_inner("scene_sweep_generator_call_started", f"calling SAM3 scene-sweep generator for keyframe {keyframe_ordinal}/{keyframe_count}")
         if hasattr(generator, "generate"):
-            output = generator.generate(np.asarray(image), points_per_batch=points_per_batch)
+            generate = generator.generate
+            kwargs: dict[str, Any] = {"points_per_batch": points_per_batch}
+            if _callable_accepts_keyword(generate, "progress"):
+                kwargs["progress"] = progress
+            output = generate(np.asarray(image), **kwargs)
         elif hasattr(generator, "propose_masks"):
             output = generator.propose_masks(np.asarray(image), frame_index=frame_index, config=config)
         elif callable(generator):
@@ -1252,7 +1368,21 @@ class LocalSAM3DiscoveryBackend:
                     output = generator(image)
         else:
             raise ProviderExecutionError("SAM3 scene sweep mask generator must expose generate(), propose_masks(), or be callable.")
-        return normalize_sam3_output(output)
+        emit_inner(
+            "scene_sweep_generator_call_finished",
+            f"SAM3 scene-sweep generator returned for keyframe {keyframe_ordinal}/{keyframe_count}",
+            elapsedMs=round((time.perf_counter() - call_started_at) * 1000, 3),
+        )
+        normalize_started_at = time.perf_counter()
+        emit_inner("scene_sweep_normalize_started", f"normalizing SAM3 scene masks for keyframe {keyframe_ordinal}/{keyframe_count}")
+        records = normalize_sam3_output(output)
+        emit_inner(
+            "scene_sweep_normalize_finished",
+            f"normalized {len(records)} SAM3 scene masks for keyframe {keyframe_ordinal}/{keyframe_count}",
+            proposalCount=len(records),
+            elapsedMs=round((time.perf_counter() - normalize_started_at) * 1000, 3),
+        )
+        return records
 
     def _image_prompt_records(
         self,

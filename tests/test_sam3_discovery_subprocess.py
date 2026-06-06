@@ -154,6 +154,19 @@ def test_sam3_discovery_subprocess_times_out_and_marks_candidate_discovery_faile
         import time
 
         json.load(sys.stdin)
+        print(json.dumps({{
+            "type": "event",
+            "stage": "candidate_discovery",
+            "status": "running",
+            "message": "running SAM3 tracker inference",
+            "progress": {{"overallRatio": 0.312}},
+            "metadata": {{
+                "eventType": "sam3_inference_started",
+                "frameIndex": 0,
+                "keyframe": 0,
+                "pointsPerBatch": 64,
+            }},
+        }}), flush=True)
         time.sleep(5)
         pathlib.Path({str(marker)!r}).write_text("finished", encoding="utf-8")
         """,
@@ -167,12 +180,16 @@ def test_sam3_discovery_subprocess_times_out_and_marks_candidate_discovery_faile
             RunContext(out_dir=tmp_path / "out", job_context=recorder),
             model_path=str(model_dir),
             device="cuda",
-            timeout_seconds=0.2,
+            timeout_seconds=1.0,
             python_executable=fake_python,
             worker_module="ignored.by.fake.executable",
         )
 
-    assert any(event["metadata"].get("eventType") == "sam3_discovery_timeout" for event in recorder.events)
+    timeout_events = [event for event in recorder.events if event["metadata"].get("eventType") == "sam3_discovery_timeout"]
+    assert timeout_events
+    assert "sam3_inference_started" in timeout_events[0]["message"]
+    assert timeout_events[0]["metadata"]["lastChildEvent"]["eventType"] == "sam3_inference_started"
+    assert timeout_events[0]["metadata"]["lastChildEvent"]["keyframe"] == 0
     assert not marker.exists()
 
 

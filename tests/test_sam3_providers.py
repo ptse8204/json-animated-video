@@ -506,9 +506,16 @@ def test_local_sam3_auto_masks_reports_scene_sweep_progress_events():
     )
 
     messages = [event["message"] for event in recorder.events]
+    event_types = [event["metadata"].get("eventType") for event in recorder.events]
     assert "loading SAM3 Tracker scene-sweep model" in messages
     assert any("generating SAM3 scene masks for keyframe 1/2" in message for message in messages)
     assert any("SAM3 scene masks generated for keyframe 2/2" in message for message in messages)
+    assert "scene_sweep_keyframe_started" in event_types
+    assert "scene_sweep_generator_call_started" in event_types
+    assert "scene_sweep_generator_call_finished" in event_types
+    assert "scene_sweep_normalize_started" in event_types
+    assert "scene_sweep_normalize_finished" in event_types
+    assert "scene_sweep_keyframe_finished" in event_types
     assert all("facebook" not in event["message"].lower() for event in recorder.events)
     assert recorder.cancel_checks == ["sam3_scene_sweep", "sam3_scene_sweep"]
 

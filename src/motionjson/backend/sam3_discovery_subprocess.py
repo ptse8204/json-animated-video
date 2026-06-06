@@ -20,6 +20,7 @@ from motionjson.tracks import Box, ObjectCandidate, RunContext, VideoSource
 
 SAM3_DISCOVERY_WORKER_MODULE = "motionjson.backend.sam3_discovery_worker"
 DEFAULT_SAM3_DISCOVERY_TIMEOUT_SECONDS = 1800.0
+SAM3_DISCOVERY_WAIT_REPORT_SECONDS = 30.0
 LOCAL_PATH_REDACTION = "[LOCAL_PATH_REDACTED]"
 
 
@@ -136,21 +137,38 @@ def _run_worker_process(
     stderr_tail: list[str] = []
     stdout_tail: list[str] = []
     streams_closed: set[str] = set()
+    started_at = time.monotonic()
+    last_child_event: dict[str, Any] = {}
+    last_child_event_at = started_at
+    last_wait_report_at = started_at
 
     while True:
+        now = time.monotonic()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            inflight = _inflight_detail(last_child_event)
+            suffix = f" Last in-flight operation: {inflight}." if inflight else ""
             message = (
                 f"SAM3 scene sweep extraction timed out after {int(timeout_seconds)}s while loading or running the model. "
                 "The isolated process was terminated so the run can fail cleanly instead of staying active forever."
+                f"{suffix}"
             )
+            timeout_metadata = {
+                "provider": "sam3-local",
+                "discoveryMode": "sam3_auto_masks",
+                "eventType": "sam3_discovery_timeout",
+                "subprocessElapsedSeconds": round(time.monotonic() - started_at, 3),
+                "secondsSinceChildEvent": round(time.monotonic() - last_child_event_at, 3),
+            }
+            if last_child_event:
+                timeout_metadata["lastChildEvent"] = dict(last_child_event)
             _emit_ctx(
                 ctx,
                 "candidate_discovery",
                 "failed",
                 message,
                 progress={"overallRatio": 0.30},
-                metadata={"provider": "sam3-local", "discoveryMode": "sam3_auto_masks", "eventType": "sam3_discovery_timeout"},
+                metadata=timeout_metadata,
             )
             _terminate_process(process)
             raise ProviderExecutionError(_redact_runtime_text(message, model_path))
@@ -158,6 +176,27 @@ def _run_worker_process(
         try:
             stream_name, line = output_queue.get(timeout=min(0.2, max(0.01, remaining)))
         except queue.Empty:
+            now = time.monotonic()
+            if now - last_wait_report_at >= SAM3_DISCOVERY_WAIT_REPORT_SECONDS:
+                wait_metadata = {
+                    "provider": "sam3-local",
+                    "discoveryMode": "sam3_auto_masks",
+                    "eventType": "sam3_discovery_subprocess_waiting",
+                    "subprocessElapsedSeconds": round(now - started_at, 3),
+                    "secondsSinceChildEvent": round(now - last_child_event_at, 3),
+                    "pid": process.pid,
+                }
+                if last_child_event:
+                    wait_metadata["lastChildEvent"] = dict(last_child_event)
+                _emit_ctx(
+                    ctx,
+                    "candidate_discovery",
+                    "running",
+                    _waiting_message(last_child_event),
+                    progress={"overallRatio": 0.315},
+                    metadata=wait_metadata,
+                )
+                last_wait_report_at = now
             if process.poll() is not None and len(streams_closed) >= 2:
                 break
             continue
@@ -181,13 +220,16 @@ def _run_worker_process(
             continue
         message_type = str(parsed.get("type") or "")
         if message_type == "event":
+            child_metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), Mapping) else {}
+            last_child_event = _summarize_child_event(parsed, child_metadata)
+            last_child_event_at = time.monotonic()
             _emit_ctx(
                 ctx,
                 str(parsed.get("stage") or "candidate_discovery"),
                 str(parsed.get("status") or "running"),
                 _redact_runtime_text(str(parsed.get("message") or "SAM3 scene sweep progress"), model_path),
                 progress=parsed.get("progress") if isinstance(parsed.get("progress"), Mapping) else None,
-                metadata=_redact_runtime_payload(parsed.get("metadata") if isinstance(parsed.get("metadata"), Mapping) else {}, model_path),
+                metadata=_redact_runtime_payload(child_metadata, model_path),
             )
         elif message_type == "result":
             # The result is written to resultPath so large candidate metadata does not need to stream over stdout.
@@ -311,6 +353,63 @@ def _bounded_timeout(value: Any) -> float:
     except (TypeError, ValueError):
         timeout = DEFAULT_SAM3_DISCOVERY_TIMEOUT_SECONDS
     return min(max(timeout, 0.1), 7200.0)
+
+
+def _summarize_child_event(parsed: Mapping[str, Any], metadata: Mapping[str, Any]) -> dict[str, Any]:
+    summary: dict[str, Any] = {
+        "stage": str(parsed.get("stage") or "candidate_discovery"),
+        "status": str(parsed.get("status") or "running"),
+        "message": str(parsed.get("message") or ""),
+    }
+    for key in (
+        "eventType",
+        "objectId",
+        "frameIndex",
+        "keyframe",
+        "keyframeOrdinal",
+        "keyframeCount",
+        "recordIndex",
+        "recordOrdinal",
+        "recordCount",
+        "pointsPerBatch",
+        "elapsedMs",
+        "trackingProvider",
+        "rejectionReason",
+    ):
+        if key in metadata and metadata[key] not in (None, ""):
+            summary[key] = metadata[key]
+    return summary
+
+
+def _waiting_message(last_child_event: Mapping[str, Any]) -> str:
+    if not last_child_event:
+        return "SAM3 scene sweep subprocess is running; no child progress event has arrived yet"
+    event_type = str(last_child_event.get("eventType") or "")
+    message = str(last_child_event.get("message") or "SAM3 scene sweep operation")
+    object_id = str(last_child_event.get("objectId") or "")
+    keyframe = last_child_event.get("keyframe", last_child_event.get("frameIndex"))
+    detail = event_type or message
+    if object_id:
+        detail = f"{detail} for {object_id}"
+    if keyframe not in (None, ""):
+        detail = f"{detail} at keyframe {keyframe}"
+    return f"SAM3 scene sweep subprocess still waiting after {detail}"
+
+
+def _inflight_detail(last_child_event: Mapping[str, Any]) -> str:
+    if not last_child_event:
+        return ""
+    event_type = str(last_child_event.get("eventType") or "")
+    message = str(last_child_event.get("message") or "").strip()
+    object_id = str(last_child_event.get("objectId") or "").strip()
+    keyframe = last_child_event.get("keyframe", last_child_event.get("frameIndex"))
+    parts = [part for part in (event_type, message) if part]
+    detail = " / ".join(parts)
+    if object_id:
+        detail = f"{detail} for {object_id}" if detail else f"candidate {object_id}"
+    if keyframe not in (None, ""):
+        detail = f"{detail} at keyframe {keyframe}" if detail else f"keyframe {keyframe}"
+    return detail
 
 
 def _emit_ctx(

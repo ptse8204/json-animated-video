@@ -147,6 +147,39 @@ cleanly instead of staying active forever. The default extraction timeout is
 1800 seconds and can be adjusted with
 `MOTIONJSON_SAM3_EXTRACTION_TIMEOUT_SECONDS`.
 
+Scene Sweep extraction logs are expected to identify the in-flight inner
+operation, not just the outer `candidate_discovery` phase. Important event
+metadata values:
+
+- `scene_sweep_keyframe_started` / `scene_sweep_keyframe_finished`: a sampled
+  keyframe batch entered or left SAM3 mask generation.
+- `scene_sweep_generator_call_started` / `scene_sweep_generator_call_finished`:
+  MotionJSON called the SAM3 mask generator and the call returned.
+- `sam3_inputs_started` / `sam3_inputs_finished`: the direct SAM3 Tracker
+  adapter is preparing processor inputs and moving tensors to the requested
+  device.
+- `sam3_inference_started` / `sam3_inference_finished`: the model call itself
+  is in flight or has returned.
+- `sam3_postprocess_started` / `sam3_postprocess_finished`: mask postprocessing
+  is in flight or has returned.
+- `scene_sweep_normalize_started` / `scene_sweep_normalize_finished`: raw SAM3
+  output is being normalized into MotionJSON candidate records.
+- `sam3_candidate_started`, `sam3_candidate_filtered`,
+  `sam3_candidate_tracking_started`, `sam3_candidate_tracking_finished`,
+  `sam3_candidate_mask_write_started`, `sam3_candidate_preview_started`, and
+  `sam3_candidate_finished`: per-candidate filter, tracking, and artifact steps.
+- `sam3_discovery_subprocess_waiting`: the parent worker is alive and waiting
+  for the isolated SAM3 child process; metadata includes `lastChildEvent`.
+- `sam3_discovery_timeout`: the isolated child exceeded the timeout; metadata
+  and the message include the last known child operation.
+
+If a debug report shows silence after `sam3_inference_started`, the block is
+inside the model call. If it shows silence after `sam3_postprocess_started`, the
+block is postprocessing masks after the model returned. If it shows silence
+after `sam3_candidate_tracking_started`, the candidate returned from scene
+sweep but the tracking pass is blocking. These cases need different fixes, so
+preserve the copied debug report before retrying.
+
 ## Colab Checkpoint Path Flow
 
 For Colab, the expected local setup order is:
