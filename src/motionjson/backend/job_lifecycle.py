@@ -29,6 +29,7 @@ def job_lifecycle_summary(
     review_summary = review_lifecycle_summary(review or {})
     readiness = _mapping(job.get("readiness"))
     latest_event = _latest_event(event_list)
+    inflight_operation = _inflight_operation(event_list)
     raw_status = _text(job.get("status")).lower()
     has_success_event = _has_success_event(event_list)
     status = _lifecycle_status(raw_status, review_summary, has_success_event=has_success_event, readiness=readiness)
@@ -48,6 +49,7 @@ def job_lifecycle_summary(
         "phase": phase,
         "progress": _progress(event_list, raw_status, status, phase),
         "latestEvent": latest_event,
+        "inflightOperation": inflight_operation,
         "failure": failure,
         "review": review_summary,
         "readiness": dict(readiness),
@@ -95,12 +97,80 @@ def _latest_event(events: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
         return None
     metadata = _mapping(events[-1].get("metadata"))
     latest = events[-1]
-    return {
+    summary = {
         "type": _text(latest.get("type") or latest.get("event_type")),
         "message": _text(latest.get("message")),
         "stage": _text(latest.get("stage") or metadata.get("stage")),
         "createdAt": _text(latest.get("created_at") or latest.get("createdAt")),
     }
+    for key in (
+        "eventType",
+        "operationId",
+        "operationKind",
+        "operationStatus",
+        "operationStartedAt",
+        "operationElapsedMs",
+        "objectId",
+        "recordOrdinal",
+        "recordCount",
+        "keyframeIndex",
+        "sourceFrameIndex",
+        "frame",
+        "totalFrames",
+        "lastChildEvent",
+        "currentOperation",
+        "subprocessAlive",
+        "returnCode",
+        "gpuProbe",
+        "stackProbeStatus",
+        "pythonStackTop",
+    ):
+        if key in metadata and metadata[key] not in (None, ""):
+            summary[key] = metadata[key]
+    return summary
+
+
+def _inflight_operation(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    current: dict[str, Any] = {}
+    for event in events:
+        metadata = _mapping(event.get("metadata"))
+        operation = _mapping(metadata.get("currentOperation"))
+        if operation:
+            current = dict(operation)
+        operation_id = _text(metadata.get("operationId"))
+        if operation_id:
+            status = _text(metadata.get("operationStatus")).lower()
+            payload = {
+                key: metadata[key]
+                for key in (
+                    "operationId",
+                    "operationKind",
+                    "operationStatus",
+                    "operationStartedAt",
+                    "operationElapsedMs",
+                    "objectId",
+                    "recordOrdinal",
+                    "recordCount",
+                    "keyframeIndex",
+                    "sourceFrameIndex",
+                    "frame",
+                    "totalFrames",
+                    "pointCount",
+                    "pointsPerBatch",
+                    "batchOrdinal",
+                    "batchCount",
+                    "subprocessAlive",
+                    "gpuProbe",
+                    "stackProbeStatus",
+                    "pythonStackTop",
+                )
+                if key in metadata and metadata[key] not in (None, "")
+            }
+            if status in {"finished", "failed"}:
+                current = payload
+            else:
+                current = payload
+    return current
 
 
 def _progress(events: Sequence[Mapping[str, Any]], raw_status: str, status: str, phase: str) -> dict[str, Any]:

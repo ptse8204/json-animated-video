@@ -143,6 +143,14 @@ class FakeSAM3SceneSweepBackend:
         ]
 
 
+class RecordingJobContext:
+    def __init__(self) -> None:
+        self.events: list[dict] = []
+
+    def emit(self, stage, status, message, *, progress=None, metadata=None):
+        self.events.append({"stage": stage, "status": status, "message": message, "progress": progress or {}, "metadata": metadata or {}})
+
+
 class FakeSAM2ProposalOnlyBackend:
     provider_name = "sam2-local"
 
@@ -309,6 +317,32 @@ def test_mock_sam3_auto_masks_discovery_uses_review_artifact_shape(tmp_path):
     assert candidates[0].metadata["providerName"] == "sam3-mock"
     assert candidates[0].metadata["thumbnailArtifactPath"].startswith("discovery/sam3_auto_masks/")
     assert sum(1 for candidate in candidates if not candidate.metadata.get("rejectionReason")) == 2
+
+
+def test_sam3_auto_masks_reports_candidate_record_binding_and_mask_frame_io(tmp_path):
+    recorder = RecordingJobContext()
+
+    candidates = SAM3AutoMasksDiscoveryProvider(backend=FakeSAM3SceneSweepBackend()).propose(
+        video_source(),
+        {"minMaskArea": 1, "maxObjects": 1},
+        RunContext(out_dir=tmp_path, job_context=recorder),
+    )
+
+    event_types = [event["metadata"].get("eventType") for event in recorder.events]
+    assert [candidate.id for candidate in candidates] == ["sam3_scene_001"]
+    assert "sam3_candidate_record_started" in event_types
+    assert "sam3_candidate_object_bound" in event_types
+    assert "sam3_mask_frame_encode_started" in event_types
+    assert "sam3_mask_frame_write_finished" in event_types
+    record_event = next(event for event in recorder.events if event["metadata"].get("eventType") == "sam3_candidate_record_started")
+    assert record_event["metadata"]["recordId"] == "sam3_scene_001"
+    assert record_event["metadata"]["operationKind"] == "candidate_filtering"
+    write_event = next(event for event in recorder.events if event["metadata"].get("eventType") == "sam3_mask_frame_write_finished")
+    assert write_event["metadata"]["objectId"] == "sam3_scene_001"
+    assert write_event["metadata"]["frame"] == 1
+    assert write_event["metadata"]["totalFrames"] == 3
+    assert write_event["metadata"]["byteSize"] > 0
+    assert write_event["metadata"]["operationKind"] == "file_write"
 
 
 @pytest.mark.parametrize(

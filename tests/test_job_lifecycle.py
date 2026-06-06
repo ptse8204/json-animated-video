@@ -77,6 +77,49 @@ def test_job_lifecycle_uses_event_progress_when_known():
     assert lifecycle["provider"]["engine"] == "sam3"
 
 
+def test_job_lifecycle_preserves_sam3_inflight_diagnostics():
+    job = {
+        "id": "job_sam3_inflight",
+        "project_id": "project_1",
+        "type": "extract",
+        "status": "running",
+        "payload": {"run_config": {"provider": {"name": "sam3-local"}, "discovery": {"mode": "sam3_auto_masks"}}},
+        "result": {},
+    }
+    events = [
+        {
+            "event_type": "progress",
+            "message": "running SAM3 tracker inference",
+            "metadata": {
+                "stage": "candidate_discovery",
+                "progress": {"overallRatio": 0.32},
+                "eventType": "sam3_inference_started",
+                "operationId": "sam3-op-1",
+                "operationKind": "sam3_inference",
+                "operationStatus": "started",
+                "operationElapsedMs": 184000,
+                "objectId": "sam3_grid_023",
+                "recordOrdinal": 23,
+                "recordCount": 64,
+                "keyframeIndex": 0,
+                "subprocessAlive": True,
+                "gpuProbe": {"gpuProbeStatus": "ok", "gpuUtilizationPercent": 17},
+            },
+            "created_at": "2026-06-05T00:00:00+00:00",
+        }
+    ]
+
+    lifecycle = job_lifecycle_summary(job, events=events)
+
+    assert lifecycle["latestEvent"]["eventType"] == "sam3_inference_started"
+    assert lifecycle["latestEvent"]["operationKind"] == "sam3_inference"
+    assert lifecycle["latestEvent"]["objectId"] == "sam3_grid_023"
+    assert lifecycle["latestEvent"]["subprocessAlive"] is True
+    assert lifecycle["inflightOperation"]["operationKind"] == "sam3_inference"
+    assert lifecycle["inflightOperation"]["recordOrdinal"] == 23
+    assert lifecycle["inflightOperation"]["gpuProbe"]["gpuUtilizationPercent"] == 17
+
+
 def test_job_lifecycle_recovers_runtime_proof_from_events():
     job = {
         "id": "job_cuda_proof",

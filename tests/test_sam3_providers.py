@@ -520,6 +520,66 @@ def test_local_sam3_auto_masks_reports_scene_sweep_progress_events():
     assert recorder.cancel_checks == ["sam3_scene_sweep", "sam3_scene_sweep"]
 
 
+def test_sam3_tracker_generator_reports_inference_operation_metadata():
+    class FakeNoGrad:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeCuda:
+        @staticmethod
+        def mem_get_info(_index):
+            return 512, 1024
+
+        @staticmethod
+        def memory_allocated(_index):
+            return 128
+
+        @staticmethod
+        def memory_reserved(_index):
+            return 256
+
+    class FakeTorch:
+        cuda = FakeCuda()
+
+        @staticmethod
+        def no_grad():
+            return FakeNoGrad()
+
+    class FakeProcessor:
+        def __call__(self, *args, **kwargs):
+            return {"original_sizes": [(12, 16)]}
+
+        def post_process_masks(self, masks, original_sizes=None):
+            return [[mask_at(3)]]
+
+    class FakeModel:
+        def __call__(self, **_kwargs):
+            return {"pred_masks": np.asarray([mask_at(3)]), "scores": [0.91]}
+
+    events = []
+
+    def progress(event_type, label, metadata=None):
+        events.append({"eventType": event_type, "label": label, "metadata": metadata or {}})
+
+    generator = SAM3TrackerPointGridMaskGenerator(model=FakeModel(), processor=FakeProcessor(), torch=FakeTorch(), device="cuda:0")
+
+    generator.generate(np.asarray(frames()[0].rgb), points_per_batch=4, progress=progress)
+
+    started = next(event for event in events if event["eventType"] == "sam3_inference_started")
+    finished = next(event for event in events if event["eventType"] == "sam3_inference_finished")
+    assert started["metadata"]["operationKind"] == "sam3_inference"
+    assert started["metadata"]["operationStatus"] == "started"
+    assert started["metadata"]["pointCount"] == 4
+    assert started["metadata"]["device"] == "cuda:0"
+    assert started["metadata"]["cudaMemoryBefore"]["torchAllocatedBytes"] == 128
+    assert finished["metadata"]["operationStatus"] == "finished"
+    assert finished["metadata"]["operationId"] == started["metadata"]["operationId"]
+    assert finished["metadata"]["operationElapsedMs"] >= 0
+
+
 def test_local_sam3_scene_sweep_empty_result_is_actionable():
     backend = LocalSAM3DiscoveryBackend(tracker_mask_generator=FakeSceneMaskGenerator({"masks": []}))
 

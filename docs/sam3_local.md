@@ -164,12 +164,17 @@ metadata values:
   is in flight or has returned.
 - `scene_sweep_normalize_started` / `scene_sweep_normalize_finished`: raw SAM3
   output is being normalized into MotionJSON candidate records.
-- `sam3_candidate_started`, `sam3_candidate_filtered`,
+- `sam3_candidate_record_started`, `sam3_candidate_object_bound`,
+  `sam3_candidate_filtered`,
   `sam3_candidate_tracking_started`, `sam3_candidate_tracking_finished`,
-  `sam3_candidate_mask_write_started`, `sam3_candidate_preview_started`, and
-  `sam3_candidate_finished`: per-candidate filter, tracking, and artifact steps.
+  `sam3_candidate_mask_write_started`, `sam3_mask_frame_encode_started`,
+  `sam3_mask_frame_write_finished`, `sam3_candidate_preview_started`, and
+  `sam3_candidate_finished`: per-candidate filter, tracking, mask encoding, file
+  I/O, and artifact steps.
 - `sam3_discovery_subprocess_waiting`: the parent worker is alive and waiting
-  for the isolated SAM3 child process; metadata includes `lastChildEvent`.
+  for the isolated SAM3 child process; metadata includes `lastChildEvent`,
+  `currentOperation`, subprocess liveness, reader liveness, optional
+  `gpuProbe`, and stack-probe status.
 - `sam3_discovery_timeout`: the isolated child exceeded the timeout; metadata
   and the message include the last known child operation.
 
@@ -177,8 +182,19 @@ If a debug report shows silence after `sam3_inference_started`, the block is
 inside the model call. If it shows silence after `sam3_postprocess_started`, the
 block is postprocessing masks after the model returned. If it shows silence
 after `sam3_candidate_tracking_started`, the candidate returned from scene
-sweep but the tracking pass is blocking. These cases need different fixes, so
-preserve the copied debug report before retrying.
+sweep but the tracking pass is blocking. If it shows a mask frame encode/write
+event, the block is in PNG conversion or disk I/O for the named object/frame.
+If the report includes `pidVisibleInNvidiaSmi: false`, CUDA may be available but
+the child process was not visible as an active compute process at the sample
+time. These cases need different fixes, so preserve the copied debug report
+before retrying.
+
+When the parent process waits more than
+`MOTIONJSON_SAM3_STACK_PROBE_SECONDS` (default 90 seconds) after the last child
+event, it requests a best-effort Python stack dump from the isolated worker.
+The stack probe uses `faulthandler`/`SIGUSR1` where supported and reports
+`stackProbeStatus=unsupported` instead of failing the run on unsupported
+platforms. CUDA activity probes use `nvidia-smi` only when it is installed.
 
 ## Colab Checkpoint Path Flow
 

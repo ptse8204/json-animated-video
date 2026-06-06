@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import pytest
 
+import motionjson.backend.sam3_discovery_subprocess as subprocess_module
 from motionjson.backend.sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider, _write_frame_store, run_sam3_auto_masks_proposal_subprocess
 from motionjson.backend.sam3_discovery_worker import _load_video
 from motionjson.pipeline import run_multi_object_pipeline
@@ -162,6 +163,10 @@ def test_sam3_discovery_subprocess_times_out_and_marks_candidate_discovery_faile
             "progress": {{"overallRatio": 0.312}},
             "metadata": {{
                 "eventType": "sam3_inference_started",
+                "operationId": "sam3-op-test",
+                "operationKind": "sam3_inference",
+                "operationStatus": "started",
+                "operationStartedAt": "2026-06-05T00:00:00+00:00",
                 "frameIndex": 0,
                 "keyframe": 0,
                 "pointsPerBatch": 64,
@@ -189,8 +194,84 @@ def test_sam3_discovery_subprocess_times_out_and_marks_candidate_discovery_faile
     assert timeout_events
     assert "sam3_inference_started" in timeout_events[0]["message"]
     assert timeout_events[0]["metadata"]["lastChildEvent"]["eventType"] == "sam3_inference_started"
+    assert timeout_events[0]["metadata"]["currentOperation"]["operationKind"] == "sam3_inference"
+    assert timeout_events[0]["metadata"]["subprocessAlive"] is True
     assert timeout_events[0]["metadata"]["lastChildEvent"]["keyframe"] == 0
     assert not marker.exists()
+
+
+def test_sam3_discovery_subprocess_wait_report_includes_liveness_operation_and_gpu_probe(tmp_path, monkeypatch):
+    monkeypatch.setattr(subprocess_module, "SAM3_DISCOVERY_WAIT_REPORT_SECONDS", 0.05)
+    monkeypatch.setattr(
+        subprocess_module,
+        "_gpu_probe",
+        lambda pid: {
+            "gpuProbeStatus": "ok",
+            "gpuUtilizationPercent": 17,
+            "gpuMemoryUsedBytes": 123,
+            "pidVisibleInNvidiaSmi": True,
+            "computeProcessMemoryBytes": 456,
+        },
+    )
+    fake_python = _fake_python(
+        tmp_path,
+        """
+        import json
+        import sys
+        import time
+
+        json.load(sys.stdin)
+        print(json.dumps({
+            "type": "event",
+            "stage": "candidate_discovery",
+            "status": "running",
+            "message": "running SAM3 tracker inference",
+            "progress": {"overallRatio": 0.312},
+            "metadata": {
+                "eventType": "sam3_inference_started",
+                "operationId": "sam3-op-wait",
+                "operationKind": "sam3_inference",
+                "operationStatus": "started",
+                "operationStartedAt": "2026-06-05T00:00:00+00:00",
+                "objectId": "sam3_grid_023",
+                "recordOrdinal": 23,
+                "recordCount": 64,
+                "pointsPerBatch": 64
+            },
+        }), flush=True)
+        time.sleep(5)
+        """,
+    )
+    recorder = RecordingJobContext()
+
+    with pytest.raises(ProviderExecutionError, match="timed out"):
+        run_sam3_auto_masks_proposal_subprocess(
+            _video(tmp_path),
+            {},
+            RunContext(out_dir=tmp_path / "out", job_context=recorder),
+            model_path=str(tmp_path / "private-cache" / "models--facebook--sam3"),
+            device="cuda",
+            timeout_seconds=0.35,
+            python_executable=fake_python,
+            worker_module="ignored.by.fake.executable",
+        )
+
+    wait_event = next(
+        event
+        for event in recorder.events
+        if event["metadata"].get("eventType") == "sam3_discovery_subprocess_waiting"
+        and event["metadata"].get("currentOperation", {}).get("operationKind") == "sam3_inference"
+    )
+    metadata = wait_event["metadata"]
+    assert metadata["subprocessAlive"] is True
+    assert metadata["stdoutReaderAlive"] is True
+    assert metadata["stderrReaderAlive"] is True
+    assert metadata["currentOperation"]["operationKind"] == "sam3_inference"
+    assert metadata["currentOperation"]["objectId"] == "sam3_grid_023"
+    assert metadata["currentOperation"]["recordOrdinal"] == 23
+    assert metadata["currentOperation"]["operationElapsedMs"] >= 0
+    assert metadata["gpuProbe"]["gpuProbeStatus"] == "ok"
+    assert metadata["gpuProbe"]["pidVisibleInNvidiaSmi"] is True
 
 
 def test_sam3_discovery_subprocess_provider_feeds_multi_object_pipeline_without_gpu(tmp_path):

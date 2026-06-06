@@ -2168,8 +2168,35 @@ const staleDebugReport = ui.buildRunDebugReport(
       {
         created_at: "2026-05-20T10:01:00Z",
         event_type: "progress",
-        metadata: { progress: { overallRatio: 0.7 }, stage: "vectorization", token: "hf_1234567890abcdefTOKEN" },
-        message: "contours vectorized for sam3_grid_025 token=hf_1234567890abcdefTOKEN",
+        metadata: {
+          progress: { overallRatio: 0.32 },
+          stage: "candidate_discovery",
+          token: "hf_1234567890abcdefTOKEN",
+          eventType: "sam3_discovery_subprocess_waiting",
+          operationKind: "subprocess_wait",
+          operationStatus: "waiting",
+          operationElapsedMs: 184000,
+          objectId: "sam3_grid_023",
+          recordOrdinal: 23,
+          recordCount: 64,
+          keyframeIndex: 0,
+          subprocessAlive: true,
+          currentOperation: {
+            operationKind: "sam3_inference",
+            operationStatus: "started",
+            operationElapsedMs: 184000,
+            objectId: "sam3_grid_023",
+            recordOrdinal: 23,
+            recordCount: 64,
+            pointsPerBatch: 64,
+          },
+          gpuProbe: {
+            gpuProbeStatus: "ok",
+            gpuUtilizationPercent: 17,
+            pidVisibleInNvidiaSmi: true,
+          },
+        },
+        message: "SAM3 scene sweep subprocess still waiting after sam3_inference_started for sam3_grid_023 token=hf_1234567890abcdefTOKEN",
       },
     ],
     artifacts: [],
@@ -2195,6 +2222,11 @@ assert.equal(staleDebugReport.format, "motionjson.local_ui_debug_report.v0.1");
 assert.equal(staleDebugReport.summary.jobId, "job_stale");
 assert.match(staleDebugReport.text, /No progress update/);
 assert.match(staleDebugReport.text, /Suggested Next Step/);
+assert.match(staleDebugReport.text, /In-flight Diagnostics/);
+assert.match(staleDebugReport.text, /sam3_inference/);
+assert.match(staleDebugReport.text, /sam3_grid_023/);
+assert.match(staleDebugReport.text, /23\/64/);
+assert.match(staleDebugReport.text, /gpuUtilizationPercent/);
 assert.match(staleDebugReport.text, /sam3-local/);
 assert.match(staleDebugReport.text, /adaptiveParameters/);
 assert.match(staleDebugReport.text, /worker_heartbeat_stale/);

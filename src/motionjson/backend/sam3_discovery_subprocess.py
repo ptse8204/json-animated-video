@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,7 @@ from motionjson.tracks import Box, ObjectCandidate, RunContext, VideoSource
 SAM3_DISCOVERY_WORKER_MODULE = "motionjson.backend.sam3_discovery_worker"
 DEFAULT_SAM3_DISCOVERY_TIMEOUT_SECONDS = 1800.0
 SAM3_DISCOVERY_WAIT_REPORT_SECONDS = 30.0
+DEFAULT_SAM3_STACK_PROBE_SECONDS = 90.0
 LOCAL_PATH_REDACTION = "[LOCAL_PATH_REDACTED]"
 
 
@@ -68,6 +71,7 @@ def run_sam3_auto_masks_proposal_subprocess(
         temp_dir = Path(temp_name)
         frames_path = temp_dir / "frames.npz"
         result_path = temp_dir / "candidates.json"
+        stack_path = temp_dir / "sam3_child_stack.txt"
         _write_frame_store(video, frames_path)
         request = {
             "modelId": str(model_path or ""),
@@ -75,6 +79,7 @@ def run_sam3_auto_masks_proposal_subprocess(
             "config": dict(config),
             "framesPath": str(frames_path),
             "resultPath": str(result_path),
+            "stackDiagnosticsPath": str(stack_path),
             "outDir": str(ctx.out_dir) if ctx.out_dir is not None else "",
             "video": _video_payload(video),
         }
@@ -140,7 +145,13 @@ def _run_worker_process(
     started_at = time.monotonic()
     last_child_event: dict[str, Any] = {}
     last_child_event_at = started_at
+    last_stdout_line_at = started_at
+    last_stderr_line_at = started_at
     last_wait_report_at = started_at
+    last_stack_probe_at = 0.0
+    current_operations: dict[str, dict[str, Any]] = {}
+    stack_path = Path(str(request.get("stackDiagnosticsPath") or "")) if request.get("stackDiagnosticsPath") else None
+    stack_probe_seconds = _stack_probe_seconds()
 
     while True:
         now = time.monotonic()
@@ -148,6 +159,7 @@ def _run_worker_process(
         if remaining <= 0:
             inflight = _inflight_detail(last_child_event)
             suffix = f" Last in-flight operation: {inflight}." if inflight else ""
+            current_operation = _current_operation(last_child_event, current_operations, now=now)
             message = (
                 f"SAM3 scene sweep extraction timed out after {int(timeout_seconds)}s while loading or running the model. "
                 "The isolated process was terminated so the run can fail cleanly instead of staying active forever."
@@ -159,6 +171,16 @@ def _run_worker_process(
                 "eventType": "sam3_discovery_timeout",
                 "subprocessElapsedSeconds": round(time.monotonic() - started_at, 3),
                 "secondsSinceChildEvent": round(time.monotonic() - last_child_event_at, 3),
+                "secondsSinceStdoutLine": round(time.monotonic() - last_stdout_line_at, 3),
+                "secondsSinceStderrLine": round(time.monotonic() - last_stderr_line_at, 3),
+                "subprocessAlive": process.poll() is None,
+                "returnCode": process.poll(),
+                "pid": process.pid,
+                "stdoutReaderAlive": readers[0].is_alive(),
+                "stderrReaderAlive": readers[1].is_alive(),
+                "currentOperation": current_operation,
+                "gpuProbe": _gpu_probe(process.pid),
+                **_stack_probe_metadata(stack_path, model_path=model_path),
             }
             if last_child_event:
                 timeout_metadata["lastChildEvent"] = dict(last_child_event)
@@ -178,13 +200,29 @@ def _run_worker_process(
         except queue.Empty:
             now = time.monotonic()
             if now - last_wait_report_at >= SAM3_DISCOVERY_WAIT_REPORT_SECONDS:
+                current_operation = _current_operation(last_child_event, current_operations, now=now)
+                stack_metadata: dict[str, Any] = {}
+                if now - last_child_event_at >= stack_probe_seconds and now - last_stack_probe_at >= stack_probe_seconds:
+                    stack_metadata = _request_stack_probe(process, stack_path, model_path=model_path)
+                    last_stack_probe_at = now
+                stack_metadata = {**stack_metadata, **_stack_probe_metadata(stack_path, model_path=model_path)}
                 wait_metadata = {
                     "provider": "sam3-local",
                     "discoveryMode": "sam3_auto_masks",
                     "eventType": "sam3_discovery_subprocess_waiting",
+                    **_sam3_subprocess_operation_metadata(current_operation, started_at=started_at),
                     "subprocessElapsedSeconds": round(now - started_at, 3),
                     "secondsSinceChildEvent": round(now - last_child_event_at, 3),
+                    "secondsSinceStdoutLine": round(now - last_stdout_line_at, 3),
+                    "secondsSinceStderrLine": round(now - last_stderr_line_at, 3),
+                    "subprocessAlive": process.poll() is None,
+                    "returnCode": process.poll(),
                     "pid": process.pid,
+                    "stdoutReaderAlive": readers[0].is_alive(),
+                    "stderrReaderAlive": readers[1].is_alive(),
+                    "currentOperation": current_operation,
+                    "gpuProbe": _gpu_probe(process.pid),
+                    **stack_metadata,
                 }
                 if last_child_event:
                     wait_metadata["lastChildEvent"] = dict(last_child_event)
@@ -209,9 +247,11 @@ def _run_worker_process(
 
         clean_line = _redact_runtime_text(line.strip(), model_path)
         if stream_name == "stderr":
+            last_stderr_line_at = time.monotonic()
             if clean_line:
                 stderr_tail = (stderr_tail + [clean_line])[-12:]
             continue
+        last_stdout_line_at = time.monotonic()
 
         parsed = _json_line(clean_line)
         if not parsed:
@@ -223,6 +263,7 @@ def _run_worker_process(
             child_metadata = parsed.get("metadata") if isinstance(parsed.get("metadata"), Mapping) else {}
             last_child_event = _summarize_child_event(parsed, child_metadata)
             last_child_event_at = time.monotonic()
+            _update_current_operations(current_operations, last_child_event, last_child_event_at)
             _emit_ctx(
                 ctx,
                 str(parsed.get("stage") or "candidate_discovery"),
@@ -355,6 +396,14 @@ def _bounded_timeout(value: Any) -> float:
     return min(max(timeout, 0.1), 7200.0)
 
 
+def _stack_probe_seconds() -> float:
+    try:
+        value = float(os.environ.get("MOTIONJSON_SAM3_STACK_PROBE_SECONDS", DEFAULT_SAM3_STACK_PROBE_SECONDS))
+    except (TypeError, ValueError):
+        value = DEFAULT_SAM3_STACK_PROBE_SECONDS
+    return max(5.0, min(value, 7200.0))
+
+
 def _summarize_child_event(parsed: Mapping[str, Any], metadata: Mapping[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {
         "stage": str(parsed.get("stage") or "candidate_discovery"),
@@ -372,6 +421,18 @@ def _summarize_child_event(parsed: Mapping[str, Any], metadata: Mapping[str, Any
         "recordOrdinal",
         "recordCount",
         "pointsPerBatch",
+        "pointCount",
+        "batchOrdinal",
+        "batchCount",
+        "sourceFrameIndex",
+        "keyframeIndex",
+        "frame",
+        "totalFrames",
+        "operationId",
+        "operationKind",
+        "operationStatus",
+        "operationStartedAt",
+        "operationElapsedMs",
         "elapsedMs",
         "trackingProvider",
         "rejectionReason",
@@ -379,6 +440,129 @@ def _summarize_child_event(parsed: Mapping[str, Any], metadata: Mapping[str, Any
         if key in metadata and metadata[key] not in (None, ""):
             summary[key] = metadata[key]
     return summary
+
+
+def _update_current_operations(current_operations: dict[str, dict[str, Any]], event: Mapping[str, Any], event_at: float) -> None:
+    operation_id = str(event.get("operationId") or "")
+    if not operation_id:
+        return
+    status = str(event.get("operationStatus") or "").lower()
+    payload = dict(event)
+    payload["observedAtMonotonic"] = event_at
+    if status in {"finished", "failed"}:
+        current_operations.pop(operation_id, None)
+        return
+    current_operations[operation_id] = payload
+
+
+def _current_operation(last_child_event: Mapping[str, Any], current_operations: Mapping[str, Mapping[str, Any]], *, now: float) -> dict[str, Any]:
+    if current_operations:
+        operation = dict(max(current_operations.values(), key=lambda item: float(item.get("observedAtMonotonic") or 0.0)))
+    else:
+        operation = dict(last_child_event or {})
+    if not operation:
+        return {}
+    observed_at = operation.pop("observedAtMonotonic", None)
+    if isinstance(observed_at, (int, float)):
+        seconds_since_event = max(0.0, now - float(observed_at))
+        operation["secondsSinceOperationEvent"] = round(seconds_since_event, 3)
+        if "operationElapsedMs" not in operation:
+            operation["operationElapsedMs"] = round(seconds_since_event * 1000, 3)
+    started_at = _parse_monotonic_operation_start(operation, now=now)
+    if started_at is not None:
+        operation["operationElapsedMs"] = round(max(0.0, now - started_at) * 1000, 3)
+    return operation
+
+
+def _parse_monotonic_operation_start(operation: Mapping[str, Any], *, now: float) -> float | None:
+    elapsed = operation.get("operationElapsedMs")
+    if isinstance(elapsed, (int, float)):
+        return now - max(0.0, float(elapsed)) / 1000.0
+    return None
+
+
+def _sam3_subprocess_operation_metadata(current_operation: Mapping[str, Any], *, started_at: float) -> dict[str, Any]:
+    return {
+        "operationId": str(current_operation.get("operationId") or f"sam3-subprocess-{int(started_at * 1000)}"),
+        "operationKind": "subprocess_wait",
+        "operationStatus": "waiting",
+        "operationElapsedMs": current_operation.get("operationElapsedMs"),
+    }
+
+
+def _request_stack_probe(process: subprocess.Popen[str], stack_path: Path | None, *, model_path: str) -> dict[str, Any]:
+    if stack_path is None:
+        return {"stackProbeStatus": "unavailable", "stackProbeReason": "no diagnostics path"}
+    if process.poll() is not None:
+        return {"stackProbeStatus": "skipped", "stackProbeReason": "subprocess exited"}
+    if not hasattr(signal, "SIGUSR1") or os.name == "nt":
+        return {"stackProbeStatus": "unsupported", "stackProbeReason": "SIGUSR1 unavailable"}
+    if not stack_path.exists():
+        return {"stackProbeStatus": "waiting_for_registration", "stackProbeReason": "child has not registered faulthandler yet"}
+    try:
+        os.kill(process.pid, signal.SIGUSR1)
+    except Exception as exc:
+        return {"stackProbeStatus": "failed", "stackProbeReason": _redact_runtime_text(f"{type(exc).__name__}: {exc}", model_path)}
+    return {"stackProbeStatus": "requested"}
+
+
+def _stack_probe_metadata(stack_path: Path | None, *, model_path: str) -> dict[str, Any]:
+    if stack_path is None:
+        return {}
+    try:
+        text = stack_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}
+    except OSError as exc:
+        return {"stackProbeStatus": "read_failed", "stackProbeReason": _redact_runtime_text(str(exc), model_path)}
+    lines = [_redact_runtime_text(line.strip(), model_path) for line in text.splitlines() if line.strip()]
+    if not lines:
+        return {}
+    return {"stackProbeStatus": "captured", "pythonStackTop": lines[-12:]}
+
+
+def _gpu_probe(pid: int | None) -> dict[str, Any]:
+    if not pid:
+        return {"gpuProbeStatus": "unavailable", "reason": "missing pid"}
+    if shutil.which("nvidia-smi") is None:
+        return {"gpuProbeStatus": "unavailable", "reason": "nvidia-smi not found"}
+    probe: dict[str, Any] = {"gpuProbeStatus": "ok", "pidVisibleInNvidiaSmi": False}
+    try:
+        gpu = subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader,nounits"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        first_line = (gpu.stdout or "").splitlines()[0] if gpu.stdout else ""
+        if first_line:
+            parts = [part.strip() for part in first_line.split(",")]
+            if len(parts) >= 1 and parts[0]:
+                probe["gpuUtilizationPercent"] = int(float(parts[0]))
+            if len(parts) >= 2 and parts[1]:
+                probe["gpuMemoryUsedBytes"] = int(float(parts[1]) * 1024 * 1024)
+    except Exception as exc:
+        probe["gpuProbeStatus"] = "partial"
+        probe["gpuProbeReason"] = f"gpu query failed: {type(exc).__name__}"
+    try:
+        apps = subprocess.run(
+            ["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        for line in (apps.stdout or "").splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) >= 2 and parts[0] and int(float(parts[0])) == int(pid):
+                probe["pidVisibleInNvidiaSmi"] = True
+                probe["computeProcessMemoryBytes"] = int(float(parts[1]) * 1024 * 1024)
+                break
+    except Exception as exc:
+        probe.setdefault("gpuProbeStatus", "partial")
+        probe["computeProbeReason"] = f"compute query failed: {type(exc).__name__}"
+    return probe
 
 
 def _waiting_message(last_child_event: Mapping[str, Any]) -> str:

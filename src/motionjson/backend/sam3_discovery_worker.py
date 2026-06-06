@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import faulthandler
 import json
+import signal
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -14,6 +16,7 @@ from motionjson.video import Frame, VideoInfo
 
 
 LOCAL_PATH_REDACTION = "[LOCAL_PATH_REDACTED]"
+_STACK_PROBE_HANDLES: list[Any] = []
 
 
 class _EventBridge:
@@ -44,6 +47,7 @@ def main() -> int:
         return 2
     model_path = str(request.get("modelId") or request.get("model") or "")
     try:
+        _register_stack_probe(request)
         video = _load_video(request)
         config = request.get("config") if isinstance(request.get("config"), Mapping) else {}
         out_dir = Path(str(request.get("outDir") or "")).expanduser()
@@ -83,6 +87,20 @@ def main() -> int:
         return 2
     _emit({"type": "result", "status": "ok"})
     return 0
+
+
+def _register_stack_probe(request: Mapping[str, Any]) -> None:
+    stack_path = str(request.get("stackDiagnosticsPath") or "").strip()
+    if not stack_path or not hasattr(signal, "SIGUSR1"):
+        return
+    try:
+        path = Path(stack_path).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a", encoding="utf-8")
+        faulthandler.register(signal.SIGUSR1, file=handle, all_threads=True)
+        _STACK_PROBE_HANDLES.append(handle)
+    except Exception:
+        return
 
 
 def _load_video(request: Mapping[str, Any]) -> VideoSource:

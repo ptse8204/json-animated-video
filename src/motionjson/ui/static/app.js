@@ -2714,7 +2714,33 @@ const MotionJSONUI = (() => {
       typeof progress.known === "boolean"
         ? progress.known
         : Boolean(latestProgressEvent({ ...job, events }) || typeof job.progress === "number" || typeof job.percent === "number");
-    const latestEvent = lifecycle.latestEvent || job.latestEvent || {};
+    const rawLatestEvent = events.length ? events[events.length - 1] : {};
+    const rawLatestMetadata = eventMetadata(rawLatestEvent);
+    const latestEvent =
+      lifecycle.latestEvent ||
+      job.latestEvent || {
+        type: rawLatestEvent.type || rawLatestEvent.event_type || "",
+        message: rawLatestEvent.message || rawLatestMetadata.message || "",
+        createdAt: rawLatestEvent.createdAt || rawLatestEvent.created_at || rawLatestEvent.timestamp || "",
+        eventType: rawLatestMetadata.eventType || "",
+        operationKind: rawLatestMetadata.operationKind || "",
+        operationStatus: rawLatestMetadata.operationStatus || "",
+        operationElapsedMs: rawLatestMetadata.operationElapsedMs ?? "",
+        objectId: rawLatestMetadata.objectId || "",
+        recordOrdinal: rawLatestMetadata.recordOrdinal ?? "",
+        recordCount: rawLatestMetadata.recordCount ?? "",
+        keyframeIndex: rawLatestMetadata.keyframeIndex ?? "",
+        sourceFrameIndex: rawLatestMetadata.sourceFrameIndex ?? "",
+        frame: rawLatestMetadata.frame ?? "",
+        totalFrames: rawLatestMetadata.totalFrames ?? "",
+        lastChildEvent: rawLatestMetadata.lastChildEvent || {},
+        currentOperation: rawLatestMetadata.currentOperation || {},
+        subprocessAlive: rawLatestMetadata.subprocessAlive ?? "",
+        returnCode: rawLatestMetadata.returnCode ?? "",
+        gpuProbe: rawLatestMetadata.gpuProbe || {},
+        stackProbeStatus: rawLatestMetadata.stackProbeStatus || "",
+        pythonStackTop: rawLatestMetadata.pythonStackTop || [],
+      };
     const configProvider = job.payload?.run_config?.provider?.name || job.runConfig?.provider?.name || job.config?.provider?.name || "";
     const failure =
       lifecycle.failure ||
@@ -2772,10 +2798,29 @@ const MotionJSONUI = (() => {
         percent: completedAndReady ? 100 : status === "finalizing_review" ? Math.min(percent || 99, 99) : percent,
         label: completedAndReady ? "job completed" : status === "finalizing_review" ? readiness.blockedReason || "Finalizing review assets" : progress.label || `${percent}% complete`,
       },
+      inflightOperation: lifecycle.inflightOperation || job.inflightOperation || latestEvent.currentOperation || {},
       latestEvent: {
         type: latestEvent.type || "",
         message: latestEvent.message || latestStageLabel({ ...job, events }),
         createdAt: latestEvent.createdAt || latestEvent.created_at || "",
+        eventType: latestEvent.eventType || "",
+        operationKind: latestEvent.operationKind || "",
+        operationStatus: latestEvent.operationStatus || "",
+        operationElapsedMs: latestEvent.operationElapsedMs ?? "",
+        objectId: latestEvent.objectId || "",
+        recordOrdinal: latestEvent.recordOrdinal ?? "",
+        recordCount: latestEvent.recordCount ?? "",
+        keyframeIndex: latestEvent.keyframeIndex ?? "",
+        sourceFrameIndex: latestEvent.sourceFrameIndex ?? "",
+        frame: latestEvent.frame ?? "",
+        totalFrames: latestEvent.totalFrames ?? "",
+        lastChildEvent: latestEvent.lastChildEvent || {},
+        currentOperation: latestEvent.currentOperation || {},
+        subprocessAlive: latestEvent.subprocessAlive ?? "",
+        returnCode: latestEvent.returnCode ?? "",
+        gpuProbe: latestEvent.gpuProbe || {},
+        stackProbeStatus: latestEvent.stackProbeStatus || "",
+        pythonStackTop: latestEvent.pythonStackTop || [],
       },
       failure,
       review,
@@ -2848,15 +2893,53 @@ const MotionJSONUI = (() => {
     const progress = eventProgress(event);
     const ratio = progress.overallRatio ?? progress.ratio;
     const progressLabel = typeof ratio === "number" ? `${Math.round((ratio <= 1 ? ratio * 100 : ratio))}%` : "";
+    const currentOperation = metadata.currentOperation || {};
+    const gpuProbe = metadata.gpuProbe || currentOperation.gpuProbe || {};
     return redactDebugReportValue({
       at: event.createdAt || event.created_at || event.timestamp || "",
       type: event.type || event.event_type || "",
+      eventType: metadata.eventType || "",
       stage: metadata.stage || event.stage || "",
       phase: metadata.phase || event.phase || "",
       progress: progressLabel,
       message: event.message || metadata.message || "",
       action: metadata.action || "",
+      operation: metadata.operationKind || currentOperation.operationKind || "",
+      operationStatus: metadata.operationStatus || currentOperation.operationStatus || "",
+      operationElapsedMs: metadata.operationElapsedMs ?? currentOperation.operationElapsedMs ?? "",
+      objectId: metadata.objectId || currentOperation.objectId || "",
+      record: metadata.recordOrdinal && metadata.recordCount ? `${metadata.recordOrdinal}/${metadata.recordCount}` : "",
+      keyframe: metadata.keyframeIndex ?? currentOperation.keyframeIndex ?? "",
+      frame: metadata.frame && metadata.totalFrames ? `${metadata.frame}/${metadata.totalFrames}` : "",
+      subprocessAlive: metadata.subprocessAlive ?? "",
+      gpuProbeStatus: gpuProbe.gpuProbeStatus || "",
+      gpuUtilizationPercent: gpuProbe.gpuUtilizationPercent ?? "",
+      pidVisibleInNvidiaSmi: gpuProbe.pidVisibleInNvidiaSmi ?? "",
     });
+  }
+
+  function inflightOperationDebugSummary(lifecycle = {}, latestEvent = {}) {
+    const operation = lifecycle.inflightOperation || lifecycle.latestEvent?.currentOperation || latestEvent.metadata?.currentOperation || {};
+    const latest = lifecycle.latestEvent || {};
+    const merged = {
+      operationKind: operation.operationKind || latest.operationKind || "",
+      operationStatus: operation.operationStatus || latest.operationStatus || "",
+      operationElapsedMs: operation.operationElapsedMs ?? latest.operationElapsedMs ?? "",
+      objectId: operation.objectId || latest.objectId || "",
+      record: operation.recordOrdinal && operation.recordCount ? `${operation.recordOrdinal}/${operation.recordCount}` : latest.recordOrdinal && latest.recordCount ? `${latest.recordOrdinal}/${latest.recordCount}` : "",
+      keyframeIndex: operation.keyframeIndex ?? latest.keyframeIndex ?? "",
+      sourceFrameIndex: operation.sourceFrameIndex ?? latest.sourceFrameIndex ?? "",
+      frame: operation.frame && operation.totalFrames ? `${operation.frame}/${operation.totalFrames}` : latest.frame && latest.totalFrames ? `${latest.frame}/${latest.totalFrames}` : "",
+      pointsPerBatch: operation.pointsPerBatch ?? latest.pointsPerBatch ?? "",
+      batch: operation.batchOrdinal && operation.batchCount ? `${operation.batchOrdinal}/${operation.batchCount}` : latest.batchOrdinal && latest.batchCount ? `${latest.batchOrdinal}/${latest.batchCount}` : "",
+      subprocessAlive: latest.subprocessAlive ?? operation.subprocessAlive ?? "",
+      returnCode: latest.returnCode ?? "",
+      stackProbeStatus: latest.stackProbeStatus || operation.stackProbeStatus || "",
+      pythonStackTop: latest.pythonStackTop || operation.pythonStackTop || [],
+      gpuProbe: latest.gpuProbe || operation.gpuProbe || {},
+      lastChildEvent: latest.lastChildEvent || {},
+    };
+    return redactDebugReportValue(merged);
   }
 
   function runConfigDebugSummary(config = null) {
@@ -2907,6 +2990,7 @@ const MotionJSONUI = (() => {
     const generatedAt = new Date(now).toISOString();
     const latestEvents = events.slice(-12).map(runDebugReportEventSummary);
     const latestEvent = events.length ? events[events.length - 1] : {};
+    const inflightDiagnostics = inflightOperationDebugSummary(lifecycle, latestEvent);
     const sceneObjects = job.result?.scene?.objects;
     const objectCount = Array.isArray(sceneObjects) ? sceneObjects.length : (sceneObjects ?? job.result?.objects ?? reviewTracks.length);
     const project = redactDebugReportValue({
@@ -2945,6 +3029,17 @@ const MotionJSONUI = (() => {
       updatedAt: job.updated_at || job.updatedAt || "",
     });
     const runConfig = runConfigDebugSummary(snapshot.runConfig);
+    const inflightLines = Object.entries(inflightDiagnostics)
+      .filter(([_key, value]) => {
+        if (Array.isArray(value)) return value.length;
+        if (value && typeof value === "object") return Object.keys(value).length;
+        return value !== "" && value != null;
+      })
+      .map(([key, value]) => `${key}: ${debugReportLineValue(value)}`);
+    const inflightNextStep =
+      inflightDiagnostics.operationKind || inflightDiagnostics.objectId
+        ? `The last known in-flight operation is ${inflightDiagnostics.operationKind || "unknown"}${inflightDiagnostics.objectId ? ` for ${inflightDiagnostics.objectId}` : ""}. Open logs with operation metadata before canceling unless the subprocess is no longer alive.`
+        : "The run has no recent backend progress. Open logs, capture this report, then cancel and retry from Model setup if the worker does not recover.";
     const lines = [
       "# MotionJSON Run Debug Report",
       `Generated: ${generatedAt}`,
@@ -2962,6 +3057,9 @@ const MotionJSONUI = (() => {
       "## Run Config Summary",
       ...Object.entries(runConfig).map(([key, value]) => `${key}: ${debugReportLineValue(value)}`),
       "",
+      "## In-flight Diagnostics",
+      inflightLines.length ? inflightLines.join("\n") : "No in-flight operation metadata reported.",
+      "",
       "## Recent Events",
       latestEvents.length
         ? latestEvents
@@ -2971,7 +3069,7 @@ const MotionJSONUI = (() => {
       "",
       "## Suggested Next Step",
       lifecycle.stale?.stale
-        ? "The run has no recent backend progress. Open logs, capture this report, then cancel and retry from Model setup if the worker does not recover."
+        ? inflightNextStep
         : lifecycle.failure?.suggestedAction || "Open logs if the run does not behave as expected.",
       "",
     ];
@@ -2982,6 +3080,7 @@ const MotionJSONUI = (() => {
       project,
       video,
       runConfig,
+      inflightDiagnostics,
       latestEvents,
       eventCount: events.length,
       text: lines.join("\n"),

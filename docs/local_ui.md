@@ -525,13 +525,17 @@ quality. User overrides remain explicit and are recorded in the same metadata
 block.
 
 SAM3 Scene Sweep run logs now include inner operation events in addition to the
-outer `candidate_discovery` phase. Debug reports and Logs should identify the
-last in-flight operation with event metadata such as
+outer `candidate_discovery` phase. Debug reports include an **In-flight
+Diagnostics** section with the last operation, candidate/object, record number,
+frame/keyframe, subprocess liveness, optional GPU probe, and stack-probe status
+when available. Logs should identify the last in-flight operation with event
+metadata such as
 `scene_sweep_generator_call_started`, `sam3_inference_started`,
 `sam3_postprocess_started`, `sam3_candidate_tracking_started`, or
-`sam3_candidate_preview_started`. If the isolated worker waits or times out, the
-parent event includes `lastChildEvent` so the report distinguishes model
-inference, postprocessing, candidate tracking, artifact writes, and IPC waits.
+`sam3_candidate_preview_started`. If the isolated worker waits or times out,
+the parent event includes `lastChildEvent` and `currentOperation` so the report
+distinguishes model inference, postprocessing, candidate tracking, mask
+encoding/file writes, GPU visibility, Python stack location, and IPC waits.
 
 The browser cards show thumbnails and mask previews when the API resolves them
 to local artifact links. When previews are missing, the card keeps the same

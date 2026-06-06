@@ -16,7 +16,7 @@ from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
 from .sam2 import LocalSAM2AutomaticMaskProposalBackend, LocalSAM2HFAutomaticMaskProposalBackend
-from .sam3 import LocalSAM3DiscoveryBackend
+from .sam3 import LocalSAM3DiscoveryBackend, _sam3_operation_id, _sam3_operation_metadata, _utc_now_iso
 
 
 DISCOVERY_MODES = {
@@ -364,13 +364,103 @@ def _candidate_metadata(mode: str, description: str, extra: Mapping[str, Any] | 
     return metadata
 
 
-def _write_mask_sequence(video: VideoSource, mask_dir: Path, masks: Sequence[np.ndarray]) -> None:
+def _should_emit_mask_frame(index: int, total: int, emit_every_frames: int) -> bool:
+    frame_number = index + 1
+    return frame_number <= 3 or frame_number == total or (emit_every_frames > 0 and frame_number % emit_every_frames == 0)
+
+
+def _write_mask_sequence(
+    video: VideoSource,
+    mask_dir: Path,
+    masks: Sequence[np.ndarray],
+    *,
+    ctx: RunContext | None = None,
+    object_id: str | None = None,
+    operation_id: str | None = None,
+    emit_every_frames: int = 10,
+) -> None:
+    def emit_frame(event_type: str, message: str, *, index: int, mask: np.ndarray, started_at: str, elapsed_ms: float | None = None, path: Path | None = None) -> None:
+        if ctx is None or not hasattr(ctx, "emit") or not _should_emit_mask_frame(index, total_frames, emit_every_frames):
+            return
+        frame = video.frames[index]
+        frame_number = int(getattr(frame, "out_index", frame.index)) + 1
+        metadata = {
+            "provider": "sam3-local",
+            "discoveryMode": "sam3_auto_masks",
+            "eventType": event_type,
+            "objectId": object_id,
+            "frame": frame_number,
+            "totalFrames": total_frames,
+            "sourceFrameIndex": int(getattr(frame, "index", index)),
+            "outIndex": int(getattr(frame, "out_index", index)),
+            "maskArea": int(np.count_nonzero(mask)),
+            "maskShape": [int(value) for value in getattr(mask, "shape", [])],
+            **_sam3_operation_metadata(
+                "mask_encoding" if "encode" in event_type else "file_write",
+                "started" if event_type.endswith("_started") else "finished",
+                operation_id=operation_id or _sam3_operation_id("sam3-mask"),
+                operation_started_at=started_at,
+                operation_elapsed_ms=elapsed_ms,
+                objectId=object_id,
+                frame=frame_number,
+                totalFrames=total_frames,
+                sourceFrameIndex=int(getattr(frame, "index", index)),
+                outIndex=int(getattr(frame, "out_index", index)),
+            ),
+        }
+        if path is not None:
+            metadata["relPath"] = path.name
+            try:
+                metadata["byteSize"] = int(path.stat().st_size)
+            except OSError:
+                pass
+        ctx.emit("candidate_discovery", "running", message, metadata=metadata)
+
+    total_frames = min(len(video.frames), len(masks))
     mask_dir.mkdir(parents=True, exist_ok=True)
     for stale in mask_dir.glob("mask_*.png"):
         stale.unlink()
-    for frame, mask in zip(video.frames, masks):
+    for index, (frame, mask) in enumerate(zip(video.frames, masks)):
         frame_number = int(getattr(frame, "out_index", frame.index)) + 1
-        Image.fromarray(np.where(mask > 127, 255, 0).astype(np.uint8)).save(mask_dir / f"mask_{frame_number:06d}.png")
+        encode_started_at = _utc_now_iso()
+        encode_timer = time.perf_counter()
+        emit_frame(
+            "sam3_mask_frame_encode_started",
+            f"encoding mask frame {frame_number}/{total_frames} for {object_id or 'candidate'}",
+            index=index,
+            mask=mask,
+            started_at=encode_started_at,
+        )
+        image = Image.fromarray(np.where(mask > 127, 255, 0).astype(np.uint8))
+        emit_frame(
+            "sam3_mask_frame_encode_finished",
+            f"encoded mask frame {frame_number}/{total_frames} for {object_id or 'candidate'}",
+            index=index,
+            mask=mask,
+            started_at=encode_started_at,
+            elapsed_ms=round((time.perf_counter() - encode_timer) * 1000, 3),
+        )
+        path = mask_dir / f"mask_{frame_number:06d}.png"
+        write_started_at = _utc_now_iso()
+        write_timer = time.perf_counter()
+        emit_frame(
+            "sam3_mask_frame_write_started",
+            f"writing mask frame {frame_number}/{total_frames} for {object_id or 'candidate'}",
+            index=index,
+            mask=mask,
+            started_at=write_started_at,
+            path=path,
+        )
+        image.save(path)
+        emit_frame(
+            "sam3_mask_frame_write_finished",
+            f"wrote mask frame {frame_number}/{total_frames} for {object_id or 'candidate'}",
+            index=index,
+            mask=mask,
+            started_at=write_started_at,
+            elapsed_ms=round((time.perf_counter() - write_timer) * 1000, 3),
+            path=path,
+        )
 
 
 def _write_box_mask_sequence(video: VideoSource, candidate: ObjectCandidate, mask_dir: Path) -> None:
@@ -1296,6 +1386,26 @@ def _sam3_track_or_seed_sequence(
         False,
     )
     if scene_sweep_record and not tracker_requested:
+        ctx.emit(
+            "candidate_discovery",
+            "running",
+            f"SAM3 candidate {object_id} using keyframe fallback instead of video tracking",
+            metadata={
+                "eventType": "sam3_candidate_tracking_skipped",
+                "objectId": object_id,
+                "keyframeIndex": frame_index,
+                "provider": getattr(backend, "provider_name", "sam3-local"),
+                "trackingProvider": "keyframe_seed_sequence",
+                "fallbackReason": "sam3_scene_sweep_tracking_disabled",
+                **_sam3_operation_metadata(
+                    "video_tracking",
+                    "finished",
+                    objectId=object_id,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
+                ),
+            },
+        )
         return _sam3_template_fallback_result(
             video,
             frame_index=frame_index,
@@ -1307,6 +1417,8 @@ def _sam3_track_or_seed_sequence(
     if hasattr(backend, "track_candidate"):
         try:
             started_at = time.perf_counter()
+            operation_id = _sam3_operation_id()
+            operation_started_at = _utc_now_iso()
             ctx.emit(
                 "candidate_discovery",
                 "running",
@@ -1315,9 +1427,19 @@ def _sam3_track_or_seed_sequence(
                     "eventType": "sam3_candidate_tracking_started",
                     "objectId": object_id,
                     "keyframeIndex": frame_index,
+                    "sourceFrameIndex": int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
                     "provider": getattr(backend, "provider_name", "sam3-local"),
                     "trackingProvider": getattr(backend, "provider_name", "sam3-local"),
                     "bbox": [box.x, box.y, box.w, box.h],
+                    **_sam3_operation_metadata(
+                        "video_tracking",
+                        "started",
+                        operation_id=operation_id,
+                        operation_started_at=operation_started_at,
+                        objectId=object_id,
+                        keyframeIndex=frame_index,
+                        sourceFrameIndex=int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
+                    ),
                 },
             )
             masks = list(
@@ -1340,10 +1462,21 @@ def _sam3_track_or_seed_sequence(
                     "eventType": "sam3_candidate_tracking_finished",
                     "objectId": object_id,
                     "keyframeIndex": frame_index,
+                    "sourceFrameIndex": int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
                     "provider": getattr(backend, "provider_name", "sam3-local"),
                     "trackingProvider": getattr(backend, "provider_name", "sam3-local"),
                     "maskFrames": len(masks),
                     "elapsedMs": round((time.perf_counter() - started_at) * 1000, 3),
+                    **_sam3_operation_metadata(
+                        "video_tracking",
+                        "finished",
+                        operation_id=operation_id,
+                        operation_started_at=operation_started_at,
+                        operation_elapsed_ms=round((time.perf_counter() - started_at) * 1000, 3),
+                        objectId=object_id,
+                        keyframeIndex=frame_index,
+                        sourceFrameIndex=int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
+                    ),
                 },
             )
             return [normalize_binary_mask(candidate_mask) for candidate_mask in masks], None, getattr(backend, "provider_name", "sam3-local")
@@ -1355,12 +1488,21 @@ def _sam3_track_or_seed_sequence(
                 "running",
                 warning,
                 metadata={
+                    "eventType": "sam3_candidate_tracking_failed",
                     "objectId": object_id,
                     "keyframeIndex": frame_index,
+                    "sourceFrameIndex": int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
                     "provider": getattr(backend, "provider_name", "sam3-local"),
                     "trackingProvider": "keyframe_seed_sequence",
                     "fallbackReason": "sam3_tracking_failed",
                     "errorType": type(exc).__name__,
+                    **_sam3_operation_metadata(
+                        "video_tracking",
+                        "failed",
+                        objectId=object_id,
+                        keyframeIndex=frame_index,
+                        sourceFrameIndex=int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index,
+                    ),
                 },
             )
             return _sam3_template_fallback_result(
@@ -1410,26 +1552,45 @@ def _sam3_records_to_candidates(
     total_records = len(sorted_records)
     for record_index, record in enumerate(sorted_records):
         candidate_started_at = time.perf_counter()
+        candidate_operation_id = _sam3_operation_id()
+        candidate_operation_started_at = _utc_now_iso()
         frame_index = int(record.get("frame_index", record.get("frameIndex", config.get("frameIndex", 0))) or 0)
         frame_index = min(max(0, frame_index), max(0, len(video.frames) - 1))
+        source_frame_index = int(getattr(video.frames[frame_index], "index", frame_index)) if video.frames else frame_index
+        record_id = str(record.get("recordId") or record.get("record_id") or record.get("object_id") or record.get("objectId") or f"{source}_record_{record_index + 1:03d}")
         provisional_object_id = str(
             record.get("object_id")
             or record.get("objectId")
-            or f"{source}_record_{record_index + 1:03d}"
+            or record_id
         )
         ctx.emit(
             "candidate_discovery",
             "running",
             f"started SAM3 candidate record {record_index + 1}/{total_records}",
             metadata={
-                "eventType": "sam3_candidate_started",
+                "eventType": "sam3_candidate_record_started",
+                "compatibilityEventType": "sam3_candidate_started",
+                "recordId": record_id,
                 "objectId": provisional_object_id,
                 "recordIndex": record_index,
                 "recordOrdinal": record_index + 1,
                 "recordCount": total_records,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "provider": provider_name,
                 "source": source,
+                "promptType": prompt_type,
+                **_sam3_operation_metadata(
+                    "candidate_filtering",
+                    "started",
+                    operation_id=candidate_operation_id,
+                    operation_started_at=candidate_operation_started_at,
+                    objectId=provisional_object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
         record_sequence = _sam3_record_mask_sequence(record, video, width=width, height=height)
@@ -1472,13 +1633,29 @@ def _sam3_records_to_candidates(
                     f"skipped rejected SAM3 candidate {provisional_object_id}",
                     metadata={
                         "eventType": "sam3_candidate_skipped",
+                        "recordId": record_id,
                         "objectId": provisional_object_id,
                         "recordIndex": record_index,
+                        "recordOrdinal": record_index + 1,
+                        "recordCount": total_records,
                         "keyframeIndex": frame_index,
+                        "sourceFrameIndex": source_frame_index,
                         "rejectionReason": rejection_reason,
                         "maskArea": area,
                         "areaRatio": round(area_ratio, 6),
                         "bbox": [box.x, box.y, box.w, box.h],
+                        **_sam3_operation_metadata(
+                            "candidate_filtering",
+                            "finished",
+                            operation_id=candidate_operation_id,
+                            operation_started_at=candidate_operation_started_at,
+                            operation_elapsed_ms=round((time.perf_counter() - candidate_started_at) * 1000, 3),
+                            objectId=provisional_object_id,
+                            recordOrdinal=record_index + 1,
+                            recordCount=total_records,
+                            keyframeIndex=frame_index,
+                            sourceFrameIndex=source_frame_index,
+                        ),
                     },
                 )
                 continue
@@ -1486,20 +1663,64 @@ def _sam3_records_to_candidates(
         ctx.emit(
             "candidate_discovery",
             "running",
+            f"bound SAM3 candidate record {record_index + 1}/{total_records} to {object_id}",
+            metadata={
+                "eventType": "sam3_candidate_object_bound",
+                "recordId": record_id,
+                "objectId": object_id,
+                "provisionalObjectId": provisional_object_id,
+                "recordIndex": record_index,
+                "recordOrdinal": record_index + 1,
+                "recordCount": total_records,
+                "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
+                "provider": provider_name,
+                "source": source,
+                "bbox": [box.x, box.y, box.w, box.h],
+                **_sam3_operation_metadata(
+                    "candidate_filtering",
+                    "running",
+                    operation_id=candidate_operation_id,
+                    operation_started_at=candidate_operation_started_at,
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
+            },
+        )
+        ctx.emit(
+            "candidate_discovery",
+            "running",
             f"filtered SAM3 candidate {object_id}",
             metadata={
                 "eventType": "sam3_candidate_filtered",
+                "recordId": record_id,
                 "objectId": object_id,
                 "recordIndex": record_index,
                 "recordOrdinal": record_index + 1,
                 "recordCount": total_records,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "accepted": accepted,
                 "rejectionReason": rejection_reason,
                 "maskArea": area,
                 "areaRatio": round(area_ratio, 6),
                 "stabilityScore": round(stability, 4),
                 "bbox": [box.x, box.y, box.w, box.h],
+                **_sam3_operation_metadata(
+                    "candidate_filtering",
+                    "finished",
+                    operation_id=candidate_operation_id,
+                    operation_started_at=candidate_operation_started_at,
+                    operation_elapsed_ms=round((time.perf_counter() - candidate_started_at) * 1000, 3),
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
         if accepted:
@@ -1523,30 +1744,59 @@ def _sam3_records_to_candidates(
             warnings.append(tracking_warning)
         mask_dir, mask_dir_rel = _relative_mask_dir(ctx, source, object_id)
         mask_write_started_at = time.perf_counter()
+        mask_write_operation_id = _sam3_operation_id()
+        mask_write_operation_started_at = _utc_now_iso()
         ctx.emit(
             "candidate_discovery",
             "running",
             f"writing SAM3 candidate masks for {object_id}",
             metadata={
                 "eventType": "sam3_candidate_mask_write_started",
+                "recordId": record_id,
                 "objectId": object_id,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "maskFrames": len(mask_sequence),
                 "maskDir": mask_dir_rel,
+                **_sam3_operation_metadata(
+                    "file_write",
+                    "started",
+                    operation_id=mask_write_operation_id,
+                    operation_started_at=mask_write_operation_started_at,
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
-        _write_mask_sequence(video, mask_dir, mask_sequence)
+        _write_mask_sequence(video, mask_dir, mask_sequence, ctx=ctx, object_id=object_id, operation_id=mask_write_operation_id)
         ctx.emit(
             "candidate_discovery",
             "running",
             f"wrote SAM3 candidate masks for {object_id}",
             metadata={
                 "eventType": "sam3_candidate_mask_write_finished",
+                "recordId": record_id,
                 "objectId": object_id,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "maskFrames": len(mask_sequence),
                 "maskDir": mask_dir_rel,
                 "elapsedMs": round((time.perf_counter() - mask_write_started_at) * 1000, 3),
+                **_sam3_operation_metadata(
+                    "file_write",
+                    "finished",
+                    operation_id=mask_write_operation_id,
+                    operation_started_at=mask_write_operation_started_at,
+                    operation_elapsed_ms=round((time.perf_counter() - mask_write_started_at) * 1000, 3),
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
         confidence = round(_proposal_score(record), 4)
@@ -1607,14 +1857,29 @@ def _sam3_records_to_candidates(
             ),
         )
         preview_started_at = time.perf_counter()
+        preview_operation_id = _sam3_operation_id()
+        preview_operation_started_at = _utc_now_iso()
         ctx.emit(
             "candidate_discovery",
             "running",
             f"writing SAM3 candidate preview for {object_id}",
             metadata={
                 "eventType": "sam3_candidate_preview_started",
+                "recordId": record_id,
                 "objectId": object_id,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
+                **_sam3_operation_metadata(
+                    "file_write",
+                    "started",
+                    operation_id=preview_operation_id,
+                    operation_started_at=preview_operation_started_at,
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
         artifact_paths = _write_candidate_previews(video, candidate, mask_dir, mask=mask)
@@ -1624,9 +1889,23 @@ def _sam3_records_to_candidates(
             f"wrote SAM3 candidate preview for {object_id}",
             metadata={
                 "eventType": "sam3_candidate_preview_finished",
+                "recordId": record_id,
                 "objectId": object_id,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "elapsedMs": round((time.perf_counter() - preview_started_at) * 1000, 3),
+                **_sam3_operation_metadata(
+                    "file_write",
+                    "finished",
+                    operation_id=preview_operation_id,
+                    operation_started_at=preview_operation_started_at,
+                    operation_elapsed_ms=round((time.perf_counter() - preview_started_at) * 1000, 3),
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                ),
             },
         )
         candidates.append(
@@ -1647,10 +1926,22 @@ def _sam3_records_to_candidates(
             f"SAM3 object candidate {object_id} generated",
             metadata={
                 "eventType": "sam3_candidate_finished",
+                "recordId": record_id,
                 "objectId": object_id,
                 "keyframeIndex": frame_index,
+                "sourceFrameIndex": source_frame_index,
                 "rejectionReason": rejection_reason,
                 "elapsedMs": round((time.perf_counter() - candidate_started_at) * 1000, 3),
+                **_sam3_operation_metadata(
+                    "candidate_filtering",
+                    "finished",
+                    objectId=object_id,
+                    recordOrdinal=record_index + 1,
+                    recordCount=total_records,
+                    keyframeIndex=frame_index,
+                    sourceFrameIndex=source_frame_index,
+                    operation_elapsed_ms=round((time.perf_counter() - candidate_started_at) * 1000, 3),
+                ),
             },
         )
     if not candidates:

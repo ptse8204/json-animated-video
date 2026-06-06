@@ -11,6 +11,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
@@ -40,6 +41,95 @@ SAM3_TRACKER_VIDEO_FPN_BUG_MESSAGE = (
     "Install scene sweep, then restart the Colab runtime before enabling SAM3 "
     "video propagation."
 )
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _sam3_operation_id(prefix: str = "sam3-op") -> str:
+    return f"{prefix}-{time.time_ns()}"
+
+
+def _sam3_operation_status_from_event(event_type: str) -> str:
+    if event_type.endswith("_started"):
+        return "started"
+    if event_type.endswith("_finished"):
+        return "finished"
+    if event_type.endswith("_failed"):
+        return "failed"
+    if event_type.endswith("_waiting"):
+        return "waiting"
+    return "running"
+
+
+def _sam3_operation_kind_from_event(event_type: str) -> str:
+    text = str(event_type or "")
+    if "inference" in text:
+        return "sam3_inference"
+    if "postprocess" in text or "normalize" in text:
+        return "cpu_postprocess"
+    if "tracking" in text:
+        return "video_tracking"
+    if "mask_frame_encode" in text:
+        return "mask_encoding"
+    if "mask_frame_write" in text or "mask_write" in text or "preview" in text:
+        return "file_write"
+    if "candidate" in text or "filter" in text:
+        return "candidate_filtering"
+    if "subprocess" in text or "queue" in text:
+        return "queue_ipc"
+    return "sam3_scene_sweep"
+
+
+def _sam3_operation_metadata(
+    operation_kind: str,
+    operation_status: str,
+    *,
+    operation_id: str | None = None,
+    operation_started_at: str | None = None,
+    operation_elapsed_ms: float | int | None = None,
+    **metadata: Any,
+) -> dict[str, Any]:
+    payload = {
+        "operationId": operation_id or _sam3_operation_id(),
+        "operationKind": operation_kind,
+        "operationStatus": operation_status,
+        "operationStartedAt": operation_started_at or _utc_now_iso(),
+    }
+    if operation_elapsed_ms is not None:
+        try:
+            payload["operationElapsedMs"] = round(float(operation_elapsed_ms), 3)
+        except (TypeError, ValueError):
+            pass
+    payload.update({key: value for key, value in metadata.items() if value is not None})
+    return payload
+
+
+def _torch_cuda_memory_snapshot(torch_module: Any, device: Any) -> dict[str, Any]:
+    if not str(device or "").startswith("cuda"):
+        return {}
+    cuda = getattr(torch_module, "cuda", None)
+    if cuda is None:
+        return {}
+    try:
+        index = int(str(device).split(":", 1)[1]) if ":" in str(device) else 0
+    except (TypeError, ValueError):
+        index = 0
+    snapshot: dict[str, Any] = {}
+    try:
+        free_bytes, total_bytes = cuda.mem_get_info(index)
+        snapshot["freeBytes"] = int(free_bytes)
+        snapshot["totalBytes"] = int(total_bytes)
+        snapshot["usedBytes"] = int(total_bytes) - int(free_bytes)
+    except Exception:
+        pass
+    try:
+        snapshot["torchAllocatedBytes"] = int(cuda.memory_allocated(index))
+        snapshot["torchReservedBytes"] = int(cuda.memory_reserved(index))
+    except Exception:
+        pass
+    return snapshot
 
 
 def sam3_tracker_video_runtime_status() -> dict[str, Any]:
@@ -485,6 +575,14 @@ def sam3_scene_sweep_warmup(
 def _safe_progress_emit(progress: Any | None, event_type: str, label: str, **metadata: Any) -> None:
     if not callable(progress):
         return
+    if "operationKind" not in metadata:
+        metadata = {
+            **_sam3_operation_metadata(
+                _sam3_operation_kind_from_event(event_type),
+                _sam3_operation_status_from_event(event_type),
+            ),
+            **metadata,
+        }
     try:
         progress(event_type, label, metadata=metadata)
     except TypeError:
@@ -522,19 +620,45 @@ class SAM3TrackerPointGridMaskGenerator:
         progress = _kwargs.get("progress")
         pil_image = image if isinstance(image, Image.Image) else Image.fromarray(np.asarray(image, dtype=np.uint8)).convert("RGB")
         points = _sam3_grid_points(pil_image.width, pil_image.height, max_points=max(1, min(int(points_per_batch or 1), 64)))
+        grid_operation_id = _sam3_operation_id()
+        grid_started_at = _utc_now_iso()
         _safe_progress_emit(
             progress,
             "sam3_grid_points_prepared",
             f"prepared {len(points)} SAM3 grid points",
-            pointCount=len(points),
+            **_sam3_operation_metadata(
+                "candidate_filtering",
+                "finished",
+                operation_id=grid_operation_id,
+                operation_started_at=grid_started_at,
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
             imageWidth=pil_image.width,
             imageHeight=pil_image.height,
-            pointsPerBatch=points_per_batch,
         )
         input_points = [[[[float(x), float(y)]] for x, y in points]]
         input_labels = [[[1] for _ in points]]
         input_started_at = time.perf_counter()
-        _safe_progress_emit(progress, "sam3_inputs_started", "preparing SAM3 tracker inputs", pointCount=len(points))
+        input_operation_id = _sam3_operation_id()
+        input_operation_started_at = _utc_now_iso()
+        _safe_progress_emit(
+            progress,
+            "sam3_inputs_started",
+            "preparing SAM3 tracker inputs",
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "started",
+                operation_id=input_operation_id,
+                operation_started_at=input_operation_started_at,
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
+        )
         try:
             inputs = self.processor(
                 images=pil_image,
@@ -554,25 +678,67 @@ class SAM3TrackerPointGridMaskGenerator:
             progress,
             "sam3_inputs_finished",
             "SAM3 tracker inputs prepared",
-            pointCount=len(points),
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "finished",
+                operation_id=input_operation_id,
+                operation_started_at=input_operation_started_at,
+                operation_elapsed_ms=round((time.perf_counter() - input_started_at) * 1000, 3),
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
             elapsedMs=round((time.perf_counter() - input_started_at) * 1000, 3),
             device=str(self.device),
         )
         inference_started_at = time.perf_counter()
-        _safe_progress_emit(progress, "sam3_inference_started", "running SAM3 tracker inference", pointCount=len(points), device=str(self.device))
+        inference_operation_id = _sam3_operation_id()
+        inference_operation_started_at = _utc_now_iso()
+        cuda_memory_before = _torch_cuda_memory_snapshot(self.torch, self.device)
+        _safe_progress_emit(
+            progress,
+            "sam3_inference_started",
+            "running SAM3 tracker inference",
+            **_sam3_operation_metadata(
+                "sam3_inference",
+                "started",
+                operation_id=inference_operation_id,
+                operation_started_at=inference_operation_started_at,
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
+            device=str(self.device),
+            cudaMemoryBefore=cuda_memory_before,
+        )
         try:
             with self.torch.no_grad():
                 outputs = self.model(**inputs, multimask_output=False)
         except TypeError:
             with self.torch.no_grad():
                 outputs = self.model(**inputs)
+        cuda_memory_after = _torch_cuda_memory_snapshot(self.torch, self.device)
         _safe_progress_emit(
             progress,
             "sam3_inference_finished",
             "SAM3 tracker inference finished",
-            pointCount=len(points),
+            **_sam3_operation_metadata(
+                "sam3_inference",
+                "finished",
+                operation_id=inference_operation_id,
+                operation_started_at=inference_operation_started_at,
+                operation_elapsed_ms=round((time.perf_counter() - inference_started_at) * 1000, 3),
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
             elapsedMs=round((time.perf_counter() - inference_started_at) * 1000, 3),
             device=str(self.device),
+            cudaMemoryBefore=cuda_memory_before,
+            cudaMemoryAfter=cuda_memory_after,
         )
         raw_masks = getattr(outputs, "pred_masks", None)
         if raw_masks is None and isinstance(outputs, Mapping):
@@ -583,18 +749,49 @@ class SAM3TrackerPointGridMaskGenerator:
             return normalize_sam3_output(outputs)
         original_sizes = _input_value(inputs, "original_sizes")
         postprocess_started_at = time.perf_counter()
-        _safe_progress_emit(progress, "sam3_postprocess_started", "postprocessing SAM3 masks", pointCount=len(points))
+        postprocess_operation_id = _sam3_operation_id()
+        postprocess_operation_started_at = _utc_now_iso()
+        postprocess_cuda_before = _torch_cuda_memory_snapshot(self.torch, self.device)
+        _safe_progress_emit(
+            progress,
+            "sam3_postprocess_started",
+            "postprocessing SAM3 masks",
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "started",
+                operation_id=postprocess_operation_id,
+                operation_started_at=postprocess_operation_started_at,
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
+            cudaMemoryBefore=postprocess_cuda_before,
+        )
         masks_input = raw_masks.cpu() if hasattr(raw_masks, "cpu") else raw_masks
         try:
             processed_masks = self.processor.post_process_masks(masks_input, original_sizes)[0]
         except TypeError:
             processed_masks = self.processor.post_process_masks(masks_input, original_sizes=original_sizes)[0]
+        postprocess_cuda_after = _torch_cuda_memory_snapshot(self.torch, self.device)
         _safe_progress_emit(
             progress,
             "sam3_postprocess_finished",
             "SAM3 masks postprocessed",
-            pointCount=len(points),
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "finished",
+                operation_id=postprocess_operation_id,
+                operation_started_at=postprocess_operation_started_at,
+                operation_elapsed_ms=round((time.perf_counter() - postprocess_started_at) * 1000, 3),
+                pointCount=len(points),
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
             elapsedMs=round((time.perf_counter() - postprocess_started_at) * 1000, 3),
+            cudaMemoryBefore=postprocess_cuda_before,
+            cudaMemoryAfter=postprocess_cuda_after,
         )
         scores = _first_output_value(outputs, ("iou_scores", "pred_iou_scores", "scores"))
         return {
@@ -1226,6 +1423,8 @@ class LocalSAM3DiscoveryBackend:
             if ctx is not None and hasattr(ctx, "check_cancel"):
                 ctx.check_cancel("sam3_scene_sweep")
             keyframe_started_at = time.perf_counter()
+            keyframe_operation_id = _sam3_operation_id()
+            keyframe_operation_started_at = _utc_now_iso()
             if ctx is not None and hasattr(ctx, "emit"):
                 ctx.emit(
                     "candidate_discovery",
@@ -1235,10 +1434,23 @@ class LocalSAM3DiscoveryBackend:
                     metadata={
                         "provider": self.provider_name,
                         "keyframe": keyframe_index,
+                        "keyframeIndex": keyframe_index,
+                        "sourceFrameIndex": int(getattr(video.frames[keyframe_index], "index", keyframe_index)),
                         "keyframeOrdinal": keyframe_ordinal,
                         "keyframeCount": total_keyframes,
                         "pointsPerBatch": points_per_batch,
                         "eventType": "scene_sweep_keyframe_started",
+                        **_sam3_operation_metadata(
+                            "sam3_scene_sweep",
+                            "started",
+                            operation_id=keyframe_operation_id,
+                            operation_started_at=keyframe_operation_started_at,
+                            keyframeIndex=keyframe_index,
+                            sourceFrameIndex=int(getattr(video.frames[keyframe_index], "index", keyframe_index)),
+                            keyframeOrdinal=keyframe_ordinal,
+                            keyframeCount=total_keyframes,
+                            pointsPerBatch=points_per_batch,
+                        ),
                         "runtimeContract": dict(runtime_public),
                     },
                 )
@@ -1263,10 +1475,24 @@ class LocalSAM3DiscoveryBackend:
                     metadata={
                         "provider": self.provider_name,
                         "keyframe": keyframe_index,
+                        "keyframeIndex": keyframe_index,
+                        "sourceFrameIndex": int(getattr(video.frames[keyframe_index], "index", keyframe_index)),
                         "proposalCount": len(frame_records),
                         "pointsPerBatch": points_per_batch,
                         "elapsedMs": round((time.perf_counter() - keyframe_started_at) * 1000, 3),
                         "eventType": "scene_sweep_keyframe_finished",
+                        **_sam3_operation_metadata(
+                            "sam3_scene_sweep",
+                            "finished",
+                            operation_id=keyframe_operation_id,
+                            operation_started_at=keyframe_operation_started_at,
+                            operation_elapsed_ms=round((time.perf_counter() - keyframe_started_at) * 1000, 3),
+                            keyframeIndex=keyframe_index,
+                            sourceFrameIndex=int(getattr(video.frames[keyframe_index], "index", keyframe_index)),
+                            keyframeOrdinal=keyframe_ordinal,
+                            keyframeCount=total_keyframes,
+                            pointsPerBatch=points_per_batch,
+                        ),
                         "runtimeContract": dict(runtime_public),
                     },
                 )
@@ -1349,12 +1575,50 @@ class LocalSAM3DiscoveryBackend:
             )
 
         call_started_at = time.perf_counter()
-        emit_inner("scene_sweep_generator_call_started", f"calling SAM3 scene-sweep generator for keyframe {keyframe_ordinal}/{keyframe_count}")
+        call_operation_id = _sam3_operation_id()
+        call_operation_started_at = _utc_now_iso()
+
+        def scoped_progress(
+            event_type: str,
+            label: str,
+            percent: int | float | None = None,
+            known: bool = False,
+            metadata: Mapping[str, Any] | None = None,
+        ) -> None:
+            if not callable(progress):
+                return
+            scoped_metadata = {
+                "keyframeIndex": frame_index,
+                "sourceFrameIndex": frame_index,
+                "keyframeOrdinal": keyframe_ordinal,
+                "keyframeCount": keyframe_count,
+                "pointsPerBatch": points_per_batch,
+                **dict(metadata or {}),
+            }
+            progress(event_type, label, percent=percent, known=known, metadata=scoped_metadata)
+
+        emit_inner(
+            "scene_sweep_generator_call_started",
+            f"calling SAM3 scene-sweep generator for keyframe {keyframe_ordinal}/{keyframe_count}",
+            **_sam3_operation_metadata(
+                "sam3_inference",
+                "started",
+                operation_id=call_operation_id,
+                operation_started_at=call_operation_started_at,
+                keyframeIndex=frame_index,
+                sourceFrameIndex=frame_index,
+                keyframeOrdinal=keyframe_ordinal,
+                keyframeCount=keyframe_count,
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
+        )
         if hasattr(generator, "generate"):
             generate = generator.generate
             kwargs: dict[str, Any] = {"points_per_batch": points_per_batch}
             if _callable_accepts_keyword(generate, "progress"):
-                kwargs["progress"] = progress
+                kwargs["progress"] = scoped_progress
             output = generate(np.asarray(image), **kwargs)
         elif hasattr(generator, "propose_masks"):
             output = generator.propose_masks(np.asarray(image), frame_index=frame_index, config=config)
@@ -1371,14 +1635,56 @@ class LocalSAM3DiscoveryBackend:
         emit_inner(
             "scene_sweep_generator_call_finished",
             f"SAM3 scene-sweep generator returned for keyframe {keyframe_ordinal}/{keyframe_count}",
+            **_sam3_operation_metadata(
+                "sam3_inference",
+                "finished",
+                operation_id=call_operation_id,
+                operation_started_at=call_operation_started_at,
+                operation_elapsed_ms=round((time.perf_counter() - call_started_at) * 1000, 3),
+                keyframeIndex=frame_index,
+                sourceFrameIndex=frame_index,
+                keyframeOrdinal=keyframe_ordinal,
+                keyframeCount=keyframe_count,
+                pointsPerBatch=points_per_batch,
+                batchOrdinal=1,
+                batchCount=1,
+            ),
             elapsedMs=round((time.perf_counter() - call_started_at) * 1000, 3),
         )
         normalize_started_at = time.perf_counter()
-        emit_inner("scene_sweep_normalize_started", f"normalizing SAM3 scene masks for keyframe {keyframe_ordinal}/{keyframe_count}")
+        normalize_operation_id = _sam3_operation_id()
+        normalize_operation_started_at = _utc_now_iso()
+        emit_inner(
+            "scene_sweep_normalize_started",
+            f"normalizing SAM3 scene masks for keyframe {keyframe_ordinal}/{keyframe_count}",
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "started",
+                operation_id=normalize_operation_id,
+                operation_started_at=normalize_operation_started_at,
+                keyframeIndex=frame_index,
+                sourceFrameIndex=frame_index,
+                keyframeOrdinal=keyframe_ordinal,
+                keyframeCount=keyframe_count,
+                pointsPerBatch=points_per_batch,
+            ),
+        )
         records = normalize_sam3_output(output)
         emit_inner(
             "scene_sweep_normalize_finished",
             f"normalized {len(records)} SAM3 scene masks for keyframe {keyframe_ordinal}/{keyframe_count}",
+            **_sam3_operation_metadata(
+                "cpu_postprocess",
+                "finished",
+                operation_id=normalize_operation_id,
+                operation_started_at=normalize_operation_started_at,
+                operation_elapsed_ms=round((time.perf_counter() - normalize_started_at) * 1000, 3),
+                keyframeIndex=frame_index,
+                sourceFrameIndex=frame_index,
+                keyframeOrdinal=keyframe_ordinal,
+                keyframeCount=keyframe_count,
+                pointsPerBatch=points_per_batch,
+            ),
             proposalCount=len(records),
             elapsedMs=round((time.perf_counter() - normalize_started_at) * 1000, 3),
         )
