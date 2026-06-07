@@ -22,6 +22,7 @@ from motionjson.providers.sam3 import (
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
 ENVIRONMENT_PROFILE_FORMAT = "motionjson.local_environment_profile.v0.1"
 GPU_MODEL_RECOMMENDATION_FORMAT = "motionjson.gpu_model_recommendation.v0.1"
+RUNTIME_PROOF_FORMAT = "motionjson.runtime_proof.v0.1"
 
 
 @dataclass(frozen=True)
@@ -113,6 +114,21 @@ def _default_estimated_cost(network_required: bool) -> dict[str, Any]:
 
 def _check(name: str, status: str, detail: str | None = None, value: Any | None = None) -> dict[str, Any]:
     return {"name": name, "status": status, "detail": detail, "value": value}
+
+
+def _default_runtime_proof(provider_id: str, message: str) -> dict[str, Any]:
+    return {
+        "format": RUNTIME_PROOF_FORMAT,
+        "providerId": provider_id,
+        "proofRequired": True,
+        "proofStatus": "missing",
+        "runtimeProofStatus": "missing",
+        "allowsRun": False,
+        "verified": False,
+        "reasonCodes": ["runtime_proof_missing"],
+        "message": message,
+        "remediation": "Open Model setup, cache the selected model if needed, then run a bounded smoke test.",
+    }
 
 
 def _module_available(module: str) -> bool:
@@ -498,7 +514,20 @@ def provider_capabilities(
     torch_info = cuda_status()
     sam3_runtime = sam3_runtime_status()
     sam2_local_settings = dict((provider_settings or {}).get("sam2-local", {}))
+    sam2_hf_settings = dict((provider_settings or {}).get("sam2-hf-auto-masks", {}))
     sam3_local_settings = dict((provider_settings or {}).get("sam3-local", {}))
+    sam2_hf_runtime_proof = dict(sam2_hf_settings.get("runtime_proof") or {})
+    sam3_runtime_proof = dict(sam3_local_settings.get("runtime_proof") or {})
+    if not sam2_hf_runtime_proof:
+        sam2_hf_runtime_proof = _default_runtime_proof(
+            "sam2-hf-auto-masks",
+            "SAM2 HF automatic masks need runtime proof before extraction.",
+        )
+    if not sam3_runtime_proof:
+        sam3_runtime_proof = _default_runtime_proof(
+            "sam3-local",
+            "SAM3 Scene Sweep needs runtime proof before extraction.",
+        )
     if sam2_checkpoint is None:
         sam2_checkpoint = sam2_local_settings.get("sam2_checkpoint_path") or None
     if sam2_model_config is None:
@@ -631,16 +660,27 @@ def provider_capabilities(
         if reason
     ]
     sam2_auto_ready = bool(sam2_auto_installed and checkpoint["exists"] and model_config["exists"] and torch_info["torchInstalled"])
+    sam2_hf_runtime_ready = bool(transformers_installed and torch_info["torchInstalled"])
+    sam2_hf_proof_allows = bool(sam2_hf_runtime_proof.get("allowsRun"))
     sam2_hf_reasons = [
         reason
         for reason in (
             None if transformers_installed else "Python module 'transformers' is not importable.",
             None if torch_info["torchInstalled"] else "torch is not installed.",
+            None
+            if not sam2_hf_runtime_ready or sam2_hf_proof_allows
+            else str(sam2_hf_runtime_proof.get("message") or "Run SAM2 HF smoke test before extraction."),
         )
         if reason
     ]
-    sam2_hf_ready = bool(transformers_installed and torch_info["torchInstalled"])
-    sam2_hf_status = "ready" if sam2_hf_ready else "missing_dependency"
+    sam2_hf_ready = bool(sam2_hf_runtime_ready and sam2_hf_proof_allows)
+    sam2_hf_status = (
+        "ready"
+        if sam2_hf_ready
+        else "runtime_proof_required"
+        if sam2_hf_runtime_ready
+        else "missing_dependency"
+    )
     if not sam2_installed or not torch_info["torchInstalled"]:
         sam2_local_status = "missing_dependency"
     elif (checkpoint["configured"] and not checkpoint["exists"]) or (model_config["configured"] and not model_config["exists"]):
@@ -689,16 +729,24 @@ def provider_capabilities(
         )
         if reason
     ]
-    sam3_scene_sweep_ready = bool(
+    sam3_scene_sweep_runtime_ready = bool(
         transformers_installed
         and sam3_tracker_auto_masks_installed
         and sam3_tracker_model.get("valid")
         and torch_info["torchInstalled"]
     )
+    sam3_scene_sweep_proof_allows = bool(sam3_runtime_proof.get("allowsRun"))
+    if sam3_scene_sweep_runtime_ready and not sam3_scene_sweep_proof_allows:
+        sam3_scene_sweep_reasons.append(
+            str(sam3_runtime_proof.get("message") or "Run SAM3 Scene Sweep smoke test before extraction.")
+        )
+    sam3_scene_sweep_ready = bool(sam3_scene_sweep_runtime_ready and sam3_scene_sweep_proof_allows)
     if not transformers_installed or not torch_info["torchInstalled"] or not sam3_tracker_auto_masks_installed:
         sam3_scene_sweep_status = "missing_dependency"
     elif not sam3_tracker_model.get("valid"):
         sam3_scene_sweep_status = "missing_model"
+    elif not sam3_scene_sweep_proof_allows:
+        sam3_scene_sweep_status = "runtime_proof_required"
     else:
         sam3_scene_sweep_status = "ready"
     if not sam3_installed or not torch_info["torchInstalled"]:
@@ -919,7 +967,7 @@ def provider_capabilities(
         ProviderCapability(
             name="sam2-hf-auto-masks",
             kind="discovery_provider",
-            available=sam2_hf_ready,
+            available=sam2_hf_runtime_ready,
             configured=True,
             installed=bool(transformers_installed and torch_info["torchInstalled"]),
             runnable=sam2_hf_ready,
@@ -945,6 +993,7 @@ def provider_capabilities(
                 "defaultModel": SAM2_HF_AUTO_MASKS_DEFAULT_MODEL,
                 "officialSam2Required": False,
                 "mockRunnable": cv_ready and pil_ready,
+                "runtimeProof": sam2_hf_runtime_proof,
             },
         ),
         ProviderCapability(
@@ -995,6 +1044,7 @@ def provider_capabilities(
                 "settingsOnly": hosted_settings_only,
                 "profileDependency": hosted_profile_dependency,
                 "selectedModel": hosted_settings.get("selected_model"),
+                "runtimeProof": hosted_settings.get("runtime_proof") or {},
             },
         ),
         ProviderCapability(
@@ -1049,6 +1099,7 @@ def provider_capabilities(
                     },
                 },
                 "mockRunnable": cv_ready and pil_ready,
+                "runtimeProof": sam3_runtime_proof,
             },
         ),
         ProviderCapability(
@@ -1100,6 +1151,7 @@ def provider_capabilities(
                 "profileDependency": sam3_profile_dependency,
                 "selectedModel": sam3_hosted_settings.get("selected_model"),
                 "semanticDiscovery": True,
+                "runtimeProof": sam3_hosted_settings.get("runtime_proof") or {},
             },
         ),
         ProviderCapability(
@@ -1157,8 +1209,8 @@ def provider_capabilities(
         ProviderCapability(
             name="sam3-auto-masks",
             kind="discovery_provider",
-            available=sam3_scene_sweep_ready,
-            configured=sam3_scene_sweep_ready,
+            available=sam3_scene_sweep_runtime_ready,
+            configured=sam3_scene_sweep_runtime_ready,
             installed=bool(transformers_installed and torch_info["torchInstalled"]),
             runnable=sam3_scene_sweep_ready,
             status=sam3_scene_sweep_status,
@@ -1185,6 +1237,7 @@ def provider_capabilities(
                     "warning": sam3_tracker_video_warning,
                 },
                 "mockRunnable": cv_ready and pil_ready,
+                "runtimeProof": sam3_runtime_proof,
             },
         ),
         ProviderCapability(

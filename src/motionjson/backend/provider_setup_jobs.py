@@ -16,6 +16,7 @@ from motionjson.provider_settings import (
     hosted_sam3_smoke_test,
     local_sam_smoke_test,
     provider_runtime_settings,
+    provider_runtime_proof,
     record_provider_model_cache,
     redact_secret_payload,
     redact_secret_text,
@@ -314,6 +315,10 @@ def run_provider_setup_job(
             environ=environ,
             progress=emit_progress,
         )
+        result = {
+            **dict(result),
+            "runtimeProof": provider_runtime_proof(conn, user_id=user_id, provider_id=provider_id, environ=environ),
+        }
         _raise_if_canceled(conn, job_id)
     except _SetupCanceled as exc:
         _finish_setup_job(conn, job_id=job_id, status="canceled", result={"message": str(exc)}, error=str(exc))

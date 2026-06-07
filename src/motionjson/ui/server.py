@@ -85,6 +85,7 @@ from motionjson.provider_settings import (
     hosted_sam3_smoke_test,
     local_sam_smoke_test,
     provider_advanced_local_paths,
+    provider_runtime_proof,
     provider_runtime_settings,
     provider_settings_for_capabilities,
     provider_settings_response,
@@ -1493,6 +1494,7 @@ class LocalUIApp:
         settings_state = self._settings_provider_state(settings_payload, settings_provider_id)
         provider_readiness = settings_state.get("readiness") if isinstance(settings_state.get("readiness"), dict) else {}
         provider_settings = settings_state.get("settings") if isinstance(settings_state.get("settings"), dict) else {}
+        provider_proof = settings_state.get("runtimeProof") if isinstance(settings_state.get("runtimeProof"), dict) else {}
         credentials = settings_state.get("credentials") if isinstance(settings_state.get("credentials"), list) else []
         configured = bool(provider_readiness.get("configured"))
         hosted_allowed = bool(provider_settings.get("allowHosted"))
@@ -1520,6 +1522,7 @@ class LocalUIApp:
             connector.provider.implemented
             and configured
             and (not hosted_required or hosted_allowed)
+            and (not provider_proof or provider_proof.get("allowsRun") is True)
             and base.get("runnable", True)
         )
         return {
@@ -1537,7 +1540,9 @@ class LocalUIApp:
                 "name": settings_state.get("name"),
                 "locality": settings_state.get("locality"),
                 "readiness": provider_readiness,
+                "runtimeProof": provider_proof,
             },
+            "runtimeProof": provider_proof,
             "credentials": credentials,
             "effectiveModel": settings_state.get("effectiveModel"),
             "plannedConnector": not connector.provider.implemented,
@@ -1890,7 +1895,22 @@ class LocalUIApp:
 
         response["valid"] = True
         response["runConfig"] = _public_value(config.to_dict())
-        response["warnings"] = self._run_config_warnings(config)
+        provider_warnings = self._run_config_warnings(config)
+        conn = self.connection()
+        try:
+            user_id = self._local_user(conn)["id"]
+            proof_warnings = self._runtime_proof_warnings_for_config(conn, user_id=user_id, config=config)
+        finally:
+            conn.close()
+        hosted_ack_warnings = self._hosted_ack_warnings_for_config(config)
+        proof_blocked_providers = {str(warning.get("provider") or "") for warning in proof_warnings}
+        response["warnings"] = [
+            warning
+            for warning in provider_warnings
+            if not (warning.get("code") == "provider_unavailable" and str(warning.get("provider") or "") in proof_blocked_providers)
+        ]
+        response["warnings"].extend(proof_warnings)
+        response["warnings"].extend(hosted_ack_warnings)
         self._append_sam3_local_concept_blocker(response, config)
         return response
 
@@ -1932,6 +1952,149 @@ class LocalUIApp:
                     "action": "Choose a compatible SAM2 or SAM3 engine, or use mock, motion, threshold, or external masks for the workspace worker.",
                     "message": str(exc),
                 }
+            )
+        return warnings
+
+    @staticmethod
+    def _runtime_proof_requirements_for_config(config: ExtractionRunConfig) -> list[dict[str, str]]:
+        requirements: list[dict[str, str]] = []
+        discovery_config = dict(config.discovery.config or {})
+        if discovery_config.get("mock"):
+            return requirements
+
+        def add(provider_id: str, field: str, *, capability_name: str | None = None) -> None:
+            if not provider_id:
+                return
+            if any(item["providerId"] == provider_id and item["field"] == field for item in requirements):
+                return
+            requirements.append({"providerId": provider_id, "field": field, "capabilityName": capability_name or provider_id})
+
+        provider_name = str(config.provider.name or "")
+        discovery_mode = str(config.discovery.mode or "")
+        provider_preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or "")
+        hosted_requested = bool(discovery_config.get("hosted") or discovery_config.get("useHosted") or provider_preference == "sam3-hosted")
+
+        if provider_name in {"sam2-hosted", "sam3-hosted"}:
+            add(provider_name, "provider.name")
+        if discovery_mode == "sam2_hf_auto_masks" or provider_name == "sam2-hf-auto-masks" or provider_preference == "sam2-hf-auto-masks":
+            add("sam2-hf-auto-masks", "discovery.mode" if discovery_mode == "sam2_hf_auto_masks" else "provider.name")
+        if discovery_mode == "sam3_auto_masks":
+            if hosted_requested or provider_name == "sam3-hosted":
+                add("sam3-hosted", "discovery.mode")
+            else:
+                add("sam3-local", "discovery.mode", capability_name="sam3-auto-masks")
+        if discovery_mode in {"sam3_concept", "sam3_exemplar"} and (hosted_requested or provider_name == "sam3-hosted"):
+            add("sam3-hosted", "discovery.mode")
+        return requirements
+
+    @staticmethod
+    def _runtime_proof_warning_code(proof: dict[str, Any]) -> str:
+        status = str(proof.get("proofStatus") or proof.get("runtimeProofStatus") or "")
+        return {
+            "expired": "runtime_proof_expired",
+            "failed": "runtime_proof_failed",
+            "gpu_device_mismatch": "gpu_device_mismatch",
+            "hosted_opt_in_required": "runtime_proof_hosted_opt_in_required",
+            "missing": "runtime_proof_missing",
+            "missing_cache": "runtime_proof_missing",
+            "network_smoke_failed": "hosted_network_smoke_failed",
+            "settings_not_ready": "runtime_proof_settings_not_ready",
+            "stale": "runtime_proof_stale",
+        }.get(status, "runtime_proof_blocked")
+
+    def _runtime_proof_warnings_for_config(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        user_id: str,
+        config: ExtractionRunConfig,
+    ) -> list[dict[str, Any]]:
+        warnings: list[dict[str, Any]] = []
+        providers = {
+            (str(provider.get("kind") or ""), str(provider.get("name") or "")): provider
+            for provider in self._capability_report().get("providers", [])
+            if isinstance(provider, dict)
+        }
+        for requirement in self._runtime_proof_requirements_for_config(config):
+            provider_id = requirement["providerId"]
+            capability_name = requirement.get("capabilityName") or provider_id
+            capability = providers.get(("discovery_provider", capability_name)) or providers.get(("mask_provider", capability_name))
+            if capability and capability.get("available") is False:
+                continue
+            proof = provider_runtime_proof(conn, user_id=user_id, provider_id=provider_id)
+            if proof.get("allowsRun") is True:
+                continue
+            warnings.append(
+                {
+                    "code": self._runtime_proof_warning_code(proof),
+                    "field": requirement["field"],
+                    "provider": capability_name,
+                    "kind": "runtime_proof",
+                    "status": proof.get("proofStatus") or proof.get("runtimeProofStatus") or "blocked",
+                    "severity": "error",
+                    "action": proof.get("remediation") or "Open Model setup, fix provider setup, then rerun smoke proof.",
+                    "message": proof.get("message") or f"{provider_id} runtime proof is required before extraction.",
+                    "runtimeProof": _public_value(proof),
+                }
+            )
+        return warnings
+
+    @staticmethod
+    def _hosted_ack_warnings_for_config(config: ExtractionRunConfig) -> list[dict[str, Any]]:
+        warnings: list[dict[str, Any]] = []
+        discovery_config = dict(config.discovery.config or {})
+
+        def discovery_truthy(*keys: str) -> bool:
+            return _truthy_payload(discovery_config, *keys)
+
+        def add(provider_id: str, field: str, message: str) -> None:
+            if any(item.get("provider") == provider_id and item.get("field") == field for item in warnings):
+                return
+            warnings.append(
+                {
+                    "code": "hosted_network_ack_required",
+                    "field": field,
+                    "provider": provider_id,
+                    "kind": "hosted_network_ack",
+                    "status": "per_run_ack_required",
+                    "severity": "error",
+                    "action": "Confirm hosted network use and cost/privacy acknowledgement for this run.",
+                    "message": message,
+                }
+            )
+
+        provider_name = str(config.provider.name or "")
+        provider_preference = str(discovery_config.get("providerPreference") or discovery_config.get("provider_preference") or "")
+        sam3_hosted_discovery = bool(
+            provider_name == "sam3-hosted"
+            or provider_preference == "sam3-hosted"
+            or discovery_config.get("hosted")
+            or discovery_config.get("useHosted")
+        )
+
+        if provider_name == "sam2-hosted" and not bool(config.provider.sam2.hosted_allow_network):
+            add(
+                "sam2-hosted",
+                "provider.sam2.hosted_allow_network",
+                "sam2-hosted requires per-run hosted network and cost/privacy acknowledgement before extraction can send video frames.",
+            )
+
+        sam3_allow_network = bool(config.provider.sam3.hosted_allow_network or discovery_truthy("allowNetwork", "allow_network"))
+        sam3_acknowledged = bool(
+            config.provider.sam3.hosted_allow_network
+            or discovery_truthy("acknowledgeCostPrivacy", "acknowledge_cost_privacy", "acknowledge_cost_and_privacy")
+        )
+        if sam3_hosted_discovery and not sam3_allow_network:
+            add(
+                "sam3-hosted",
+                "discovery.config.allowNetwork",
+                "sam3-hosted requires allowNetwork=true before discovery can send sampled frames.",
+            )
+        if sam3_hosted_discovery and not sam3_acknowledged:
+            add(
+                "sam3-hosted",
+                "discovery.config.acknowledgeCostPrivacy",
+                "sam3-hosted requires cost/privacy acknowledgement before discovery can send sampled frames.",
             )
         return warnings
 
@@ -2076,6 +2239,13 @@ class LocalUIApp:
         run_config_payload = payload.get("runConfig", payload.get("run_config"))
         if isinstance(run_config_payload, dict):
             config = ExtractionRunConfig.from_dict(run_config_payload)
+            blocking_warnings = [
+                *self._runtime_proof_warnings_for_config(conn, user_id=user_id, config=config),
+                *self._hosted_ack_warnings_for_config(config),
+            ]
+            if blocking_warnings:
+                messages = "; ".join(str(item.get("message") or item.get("code") or "runtime proof blocked") for item in blocking_warnings)
+                raise ValueError(f"Runtime proof gate blocked extraction: {messages}")
             project_id = str(payload.get("projectId") or payload.get("project_id") or "")
             asset_id = self._asset_id_for_run_config(config, payload)
             rights_context = config.rights.to_dict()

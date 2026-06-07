@@ -638,10 +638,11 @@ def test_local_ui_validation_warns_when_configured_provider_is_not_runnable(tmp_
     payload = decode(body)
 
     assert status == 200
-    warning = next(item for item in payload["warnings"] if item["code"] == "provider_unavailable")
-    assert warning["status"] == "not_runnable"
-    assert "cannot run" in warning["message"]
-    assert warning["action"] == "Enable hosted network use explicitly."
+    warning = next(item for item in payload["warnings"] if item["code"] == "runtime_proof_settings_not_ready")
+    assert warning["status"] == "settings_not_ready"
+    assert warning["provider"] == "sam2-hosted"
+    assert warning["runtimeProof"]["format"] == "motionjson.runtime_proof.v0.1"
+    assert warning["runtimeProof"]["allowsRun"] is False
 
 
 def test_local_ui_validation_uses_sam3_auto_masks_for_scene_sweep_warnings(tmp_path, monkeypatch):
@@ -1164,6 +1165,230 @@ def test_local_ui_run_config_validation_uses_existing_config_code_and_warns(tmp_
     assert status == 200
     assert payload["valid"] is False
     assert "requires a point or box prompt" in payload["errors"][0]["message"]
+
+
+def test_local_ui_run_config_validation_and_enqueue_gate_runtime_proof(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda **_kwargs: {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 0, "providersTotal": 1},
+            "environment": {},
+            "providers": [
+                {
+                    "name": "sam3-auto-masks",
+                    "kind": "discovery_provider",
+                    "available": True,
+                    "runnable": False,
+                    "status": "runtime_proof_required",
+                    "reasons": ["SAM3 Scene Sweep needs runtime proof before extraction."],
+                }
+            ],
+        },
+    )
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "local-ui://assets/source-video"},
+        "output": {"directory": "out/runtime-proof"},
+        "sampling": {"sample_fps": 12, "max_frames": 2},
+        "provider": {"name": "sam3-local"},
+        "discovery": {
+            "mode": "sam3_auto_masks",
+            "config": {"sceneSweep": True, "providerPreference": "sam3-local"},
+        },
+        "prompts": [],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": run_config}).encode("utf-8"),
+    )
+    payload = decode(body)
+    proof_warning = next(item for item in payload["warnings"] if item["code"] == "runtime_proof_missing")
+
+    assert status == 200
+    assert payload["valid"] is True
+    assert proof_warning["severity"] == "error"
+    assert proof_warning["provider"] == "sam3-auto-masks"
+    assert proof_warning["runtimeProof"]["format"] == "motionjson.runtime_proof.v0.1"
+    assert proof_warning["runtimeProof"]["allowsRun"] is False
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Proof gate"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    failed = decode(body)
+
+    assert status == 400
+    assert "Runtime proof gate blocked extraction" in failed["error"]
+    assert "storage_key" not in body.decode("utf-8")
+
+
+def test_local_ui_blocks_hosted_sam2_without_per_run_ack_after_provider_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda **_kwargs: {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 1, "providersTotal": 1},
+            "environment": {},
+            "providers": [{"name": "sam2-hosted", "kind": "mask_provider", "available": True, "runnable": True, "status": "ready"}],
+        },
+    )
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "replicate-hosted-secret-abcdef123456"
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam2-hosted",
+                "hostedProfileId": "replicate-sam2-video",
+                "apiKey": secret,
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "local-ui://assets/source-video"},
+        "output": {"directory": "out/hosted-sam2"},
+        "sampling": {"sample_fps": 12, "max_frames": 2},
+        "provider": {
+            "name": "sam2-hosted",
+            "sam2": {"hosted_allow_network": False, "hosted_config": {"profile": "replicate-sam2-video"}},
+        },
+        "discovery": {"mode": "manual_prompt", "config": {}},
+        "prompts": [{"kind": "point", "frame_index": 0, "object_id": "object_0", "label": "Object", "data": {"x": 1, "y": 1}}],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": run_config}).encode("utf-8"),
+    )
+    payload = decode(body)
+    warning = next(item for item in payload["warnings"] if item["code"] == "hosted_network_ack_required")
+    assert status == 200
+    assert warning["provider"] == "sam2-hosted"
+    assert warning["field"] == "provider.sam2.hosted_allow_network"
+    assert secret not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Hosted SAM2 gate"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    failed = decode(body)
+    assert status == 400
+    assert "hosted network" in failed["error"]
+    assert secret not in body.decode("utf-8")
+
+    allowed = copy.deepcopy(run_config)
+    allowed["provider"]["sam2"]["hosted_allow_network"] = True
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": allowed}).encode("utf-8"),
+    )
+    payload = decode(body)
+    assert status == 200
+    assert "hosted_network_ack_required" not in {warning["code"] for warning in payload["warnings"]}
+
+
+def test_local_ui_blocks_hosted_sam3_without_per_run_ack_after_provider_opt_in(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda **_kwargs: {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 1, "providersTotal": 1},
+            "environment": {},
+            "providers": [
+                {"name": "sam3-hosted", "kind": "discovery_provider", "available": True, "runnable": True, "status": "ready"},
+                {"name": "sam3-concept", "kind": "discovery_provider", "available": True, "runnable": True, "status": "ready"},
+            ],
+        },
+    )
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "hosted-sam3-secret-abcdef123456"
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam3-hosted",
+                "apiKey": secret,
+                "endpoint": "https://provider.example.test/sam3",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "local-ui://assets/source-video"},
+        "output": {"directory": "out/hosted-sam3"},
+        "sampling": {"sample_fps": 12, "max_frames": 2},
+        "provider": {"name": "sam3-hosted", "sam3": {"hosted_allow_network": False}},
+        "discovery": {
+            "mode": "sam3_concept",
+            "config": {
+                "providerPreference": "sam3-hosted",
+                "hosted": True,
+                "concept": "red ball",
+                "allowNetwork": False,
+                "acknowledgeCostPrivacy": False,
+            },
+        },
+        "prompts": [],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": run_config}).encode("utf-8"),
+    )
+    payload = decode(body)
+    warning_codes = [item["code"] for item in payload["warnings"]]
+    assert status == 200
+    assert warning_codes.count("hosted_network_ack_required") == 2
+    assert secret not in body.decode("utf-8")
+
+    status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Hosted SAM3 gate"}).encode("utf-8"))
+    project = decode(body)["project"]
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/jobs",
+        body=json.dumps({"projectId": project["id"], "runConfig": run_config, "run": True}).encode("utf-8"),
+    )
+    failed = decode(body)
+    assert status == 400
+    assert "sam3-hosted requires" in failed["error"]
+    assert secret not in body.decode("utf-8")
+
+    allowed = copy.deepcopy(run_config)
+    allowed["discovery"]["config"]["allowNetwork"] = True
+    allowed["discovery"]["config"]["acknowledgeCostPrivacy"] = True
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": allowed}).encode("utf-8"),
+    )
+    payload = decode(body)
+    assert status == 200
+    assert "hosted_network_ack_required" not in {warning["code"] for warning in payload["warnings"]}
 
 
 def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):

@@ -3,10 +3,13 @@ from __future__ import annotations
 import copy
 import json
 import os
+import platform
 import re
 import sqlite3
 import sys
 import uuid
+from datetime import datetime, timedelta, timezone
+from importlib import metadata as importlib_metadata
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,11 +29,18 @@ from motionjson.providers.sam3 import (
 
 PROVIDER_SETTINGS_FORMAT = "motionjson.local_provider_settings.v0.1"
 PROVIDER_CATALOG_FORMAT = "motionjson.provider_registry.v0.1"
+RUNTIME_PROOF_FORMAT = "motionjson.runtime_proof.v0.1"
+RUNTIME_PROOF_TTL_SECONDS = 24 * 60 * 60
 
 CUSTOM_MODEL_ID = "__custom__"
 LOCAL_MODEL_CACHE_PROVIDER_IDS = {"sam2-hf-auto-masks", "sam3-local"}
+LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS = {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}
+RUNTIME_PROOF_REQUIRED_PROVIDER_IDS = {"sam2-hf-auto-masks", "sam3-local"}
+HOSTED_RUNTIME_PROOF_PROVIDER_IDS = {"sam2-hosted", "sam3-hosted", "openai"}
 LOCAL_MODEL_CACHE_KEYS = {"cached_model_id", "resolved_model_dir", "model_cache_updated_at"}
 LOCAL_MODEL_RUNTIME_KEYS = {
+    "runtime_proof",
+    "runtime_fingerprint",
     "runtime_verified_at",
     "runtime_verified_model_id",
     "runtime_device_requested",
@@ -171,6 +181,10 @@ SECRET_VALUE_PATTERNS = [
     re.compile(r"\bsk-[A-Za-z0-9._~-]{8,}\b"),
     re.compile(r"\bmj_local_[A-Za-z0-9._~-]{8,}\b"),
 ]
+LOCAL_RUNTIME_PATH_RE = re.compile(
+    r"(?<![\w:])(?:/(?:Users|private|var|tmp|Volumes|home|root|content)(?:/[^\s,;:)\]}\"']*)*)"
+)
+WINDOWS_RUNTIME_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
 
 
 PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
@@ -861,6 +875,15 @@ def provider_runtime_settings(
     runtime_model_info = _runtime_model_info(definition, settings, secrets, environ)
     model_cache = runtime_model_info["modelCache"]
     runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
+    runtime_proof = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=readiness,
+        model_cache=model_cache,
+        runtime_verification=runtime_verification,
+    )
     return {
         "providerId": provider_id,
         "hosted_profile_id": _selected_hosted_profile_id(definition, settings),
@@ -885,6 +908,7 @@ def provider_runtime_settings(
         "resolved_model_dir": runtime_model_info["resolvedModelDir"],
         "model_cache": model_cache,
         "runtime_verification": runtime_verification,
+        "runtime_proof": runtime_proof,
         "allow_hosted": bool(settings.get("allow_hosted", False)),
         "sam2_checkpoint_path": str(environ.get("SAM2_LOCAL_CHECKPOINT") or settings.get("sam2_checkpoint_path") or ""),
         "sam2_model_config_path": str(environ.get("SAM2_LOCAL_CONFIG") or settings.get("sam2_model_config_path") or ""),
@@ -917,7 +941,48 @@ def provider_runtime_model_info(
     if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
         settings["hosted_profile_id"] = hosted_profile_alias[1]
     settings = _settings_with_environment_profile(provider_id, settings, environ)
-    return _runtime_model_info(definition, settings, secrets, environ)
+    info = _runtime_model_info(definition, settings, secrets, environ)
+    readiness = _readiness(definition, settings, secrets, environ)
+    info["runtimeProof"] = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=readiness,
+        model_cache=info["modelCache"],
+        runtime_verification=info["runtimeVerification"],
+    )
+    return info
+
+
+def provider_runtime_proof(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    provider_id: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Return the public-safe runtime proof envelope for one provider."""
+
+    environ = environ or os.environ
+    provider_id = normalize_provider_id(provider_id)
+    definition = _definition(provider_id)
+    row = _settings_rows(conn, user_id=user_id).get(provider_id)
+    settings, secrets = _row_payloads(row)
+    settings = _settings_with_environment_profile(provider_id, settings, environ)
+    readiness = _readiness(definition, settings, secrets, environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ)
+    model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, model_cache)
+    runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
+    return _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=readiness,
+        model_cache=model_cache,
+        runtime_verification=runtime_verification,
+    )
 
 
 def record_provider_model_cache(
@@ -965,7 +1030,7 @@ def record_provider_runtime_verification(
 
     provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
-    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+    if provider_id not in LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS and provider_id not in HOSTED_RUNTIME_PROOF_PROVIDER_IDS:
         return provider_settings_response(conn, user_id=user_id, environ=environ)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
@@ -979,9 +1044,19 @@ def record_provider_runtime_verification(
         or _runtime_accelerator_kind(device_actual, device_requested, loaded_on_cuda=loaded_on_cuda, loaded_on_mps=loaded_on_mps)
     )
     warmup_status = str(verification.get("warmupStatus") or verification.get("status") or "")
+    if warmup_status == "ready":
+        warmup_status = "succeeded"
     runtime_proof_status = str(verification.get("runtimeProofStatus") or "")
     if not runtime_proof_status:
-        runtime_proof_status = "verified" if warmup_status == "succeeded" else "failed" if warmup_status else "not_verified"
+        runtime_proof_status = (
+            "network_smoke_passed"
+            if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS and warmup_status == "succeeded"
+            else "verified"
+            if warmup_status == "succeeded"
+            else "failed"
+            if warmup_status
+            else "not_verified"
+        )
     settings["runtime_verified_at"] = utc_now()
     settings["runtime_verified_model_id"] = str(runtime_info.get("selectedModel") or runtime_info.get("modelCache", {}).get("model") or "")
     settings["runtime_device_requested"] = device_requested
@@ -996,6 +1071,18 @@ def record_provider_runtime_verification(
     settings["runtime_gpu_memory_before"] = _safe_runtime_snapshot(verification.get("gpuMemoryBefore"))
     settings["runtime_gpu_memory_after"] = _safe_runtime_snapshot(verification.get("gpuMemoryAfter"))
     settings["runtime_warmup_status"] = warmup_status
+    settings["runtime_fingerprint"] = _runtime_fingerprint(provider_id, settings, environ or os.environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ or os.environ)
+    model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ or os.environ, model_cache)
+    runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ or os.environ)
+    settings["runtime_proof"] = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ or os.environ,
+        model_cache=model_cache,
+        runtime_verification=runtime_verification,
+    )
     _upsert_provider_settings(conn, user_id=user_id, provider_id=provider_id, settings=settings, secrets=secrets, existing=row)
     return provider_settings_response(conn, user_id=user_id, environ=environ)
 
@@ -1254,6 +1341,346 @@ def _safe_runtime_snapshot(value: Any) -> dict[str, Any]:
     return safe
 
 
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _runtime_proof_expires_at(verified_at: Any) -> str:
+    parsed = _parse_utc_datetime(verified_at)
+    if parsed is None:
+        return ""
+    return (parsed + timedelta(seconds=RUNTIME_PROOF_TTL_SECONDS)).isoformat()
+
+
+def _runtime_proof_expired(verified_at: Any, *, now: Any | None = None) -> bool:
+    expires_at = _parse_utc_datetime(_runtime_proof_expires_at(verified_at))
+    if expires_at is None:
+        return False
+    current = _parse_utc_datetime(now or utc_now()) or datetime.now(timezone.utc)
+    return current > expires_at
+
+
+def _safe_public_runtime_text(value: Any) -> str:
+    text = redact_secret_text(str(value or ""))
+    text = WINDOWS_RUNTIME_PATH_RE.sub("[LOCAL_PATH_REDACTED]", text)
+    text = LOCAL_RUNTIME_PATH_RE.sub("[LOCAL_PATH_REDACTED]", text)
+    return text
+
+
+def _safe_public_runtime_model_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if _looks_like_local_model_path(text):
+        return "[LOCAL_PATH_REDACTED]"
+    return _safe_public_runtime_text(text)
+
+
+def _module_public_state(module_name: str, *, distribution_name: str | None = None) -> dict[str, Any]:
+    module = sys.modules.get(module_name)
+    installed = bool(module)
+    if not installed:
+        try:
+            installed = find_spec(module_name) is not None
+        except (ImportError, ValueError):
+            installed = False
+    version = str(getattr(module, "__version__", "") or "")
+    if installed and not version:
+        try:
+            version = importlib_metadata.version(distribution_name or module_name)
+        except importlib_metadata.PackageNotFoundError:
+            version = ""
+    return {"installed": installed, "version": _safe_public_runtime_text(version)}
+
+
+def _torch_runtime_public_state() -> dict[str, Any]:
+    state = _module_public_state("torch")
+    state.update({"cudaAvailable": False, "mpsAvailable": False})
+    if not state["installed"]:
+        return state
+    try:
+        import torch  # type: ignore
+    except Exception as exc:  # pragma: no cover - depends on local torch install
+        state.update({"installed": False, "importError": _safe_public_runtime_text(str(exc))})
+        return state
+    state["version"] = _safe_public_runtime_text(str(getattr(torch, "__version__", "") or state.get("version") or ""))
+    try:
+        state["cudaAvailable"] = bool(torch.cuda.is_available())
+    except Exception:
+        state["cudaAvailable"] = False
+    try:
+        mps = getattr(getattr(torch, "backends", None), "mps", None)
+        state["mpsAvailable"] = bool(mps and mps.is_available())
+    except Exception:
+        state["mpsAvailable"] = False
+    return state
+
+
+def _runtime_fingerprint(provider_id: str, settings: Mapping[str, Any], environ: Mapping[str, str]) -> dict[str, Any]:
+    return {
+        "format": "motionjson.runtime_fingerprint.v0.1",
+        "providerId": provider_id,
+        "pythonVersion": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "platform": {
+            "system": _safe_public_runtime_text(platform.system()),
+            "machine": _safe_public_runtime_text(platform.machine()),
+        },
+        "deviceRequested": _safe_public_runtime_text(_runtime_requested_device(provider_id, settings, environ)),
+        "torch": _torch_runtime_public_state(),
+        "transformers": _module_public_state("transformers"),
+        "sam2": _module_public_state("sam2"),
+        "sam3": _module_public_state("sam3"),
+    }
+
+
+def _runtime_fingerprint_matches(stored: Any, current: Mapping[str, Any]) -> bool:
+    if not isinstance(stored, Mapping):
+        return False
+    return _sanitize_runtime_proof_payload(stored) == _sanitize_runtime_proof_payload(current)
+
+
+def _sanitize_runtime_proof_payload(value: Any, *, key: Any | None = None) -> Any:
+    normalized_key = re.sub(r"[^a-z0-9]", "", str(key or "").lower())
+    path_key = any(
+        part in normalized_key
+        for part in (
+            "checkpointpath",
+            "filepath",
+            "localmodel",
+            "modeldir",
+            "modelpath",
+            "resolved",
+            "sourceuri",
+            "storagekey",
+        )
+    ) or normalized_key.endswith(("path", "dir", "file", "uri"))
+    if isinstance(value, Mapping):
+        return {str(item_key): _sanitize_runtime_proof_payload(item, key=item_key) for item_key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_runtime_proof_payload(item, key=key) for item in value]
+    if isinstance(value, str):
+        if path_key and value.strip():
+            return "[LOCAL_PATH_REDACTED]"
+        return _safe_public_runtime_text(value)
+    return value
+
+
+def _runtime_proof_message(provider_id: str, proof_status: str, *, provider_name: str) -> tuple[str, str, list[str]]:
+    labels = {
+        "verified": (
+            f"{provider_name} runtime proof is current.",
+            "Start extraction or rerun smoke after changing model, device, or runtime.",
+            [],
+        ),
+        "network_smoke_passed": (
+            f"{provider_name} hosted smoke test passed.",
+            "Hosted extraction still requires per-run network and cost/privacy acknowledgement.",
+            [],
+        ),
+        "settings_ready_no_network": (
+            f"{provider_name} settings are ready. No hosted network smoke has been run.",
+            "Start hosted runs only after per-run network and cost/privacy acknowledgement, or run hosted smoke first.",
+            ["hosted_network_smoke_not_run"],
+        ),
+        "hosted_opt_in_required": (
+            f"{provider_name} settings are configured, but hosted calls are disabled.",
+            "Enable hosted cost/privacy opt-in before starting a hosted run.",
+            ["hosted_opt_in_required"],
+        ),
+        "settings_not_ready": (
+            f"{provider_name} settings are incomplete.",
+            "Complete provider setup before starting a run.",
+            ["provider_settings_incomplete"],
+        ),
+        "missing_cache": (
+            f"{provider_name} needs a cached runtime model before proof can run.",
+            "Cache the selected model from Model setup.",
+            ["model_cache_missing"],
+        ),
+        "missing": (
+            f"{provider_name} has no runtime proof yet.",
+            "Run Prepare local model or Run smoke test before extraction.",
+            ["runtime_proof_missing"],
+        ),
+        "not_required": (
+            f"{provider_name} does not require runtime proof.",
+            "This workflow can run without heavy model setup.",
+            [],
+        ),
+        "stale": (
+            f"{provider_name} runtime proof is stale.",
+            "Run smoke test again after changing model, cache, device, or runtime.",
+            ["runtime_proof_stale"],
+        ),
+        "expired": (
+            f"{provider_name} runtime proof has expired.",
+            "Run smoke test again before extraction.",
+            ["runtime_proof_expired"],
+        ),
+        "failed": (
+            f"{provider_name} runtime proof failed.",
+            "Open setup logs, fix the reported runtime issue, then rerun smoke test.",
+            ["runtime_proof_failed"],
+        ),
+        "gpu_device_mismatch": (
+            f"{provider_name} runtime proof did not load on the requested accelerator.",
+            "Run smoke test on the requested CUDA/MPS runtime or choose a supported device.",
+            ["gpu_device_mismatch"],
+        ),
+        "network_smoke_failed": (
+            f"{provider_name} hosted smoke test failed.",
+            "Fix hosted credentials, endpoint, provider status, or quota, then rerun hosted smoke.",
+            ["hosted_network_smoke_failed"],
+        ),
+    }
+    return labels.get(
+        proof_status,
+        (
+            f"{provider_name} runtime proof status is {proof_status or 'unknown'}.",
+            "Review Model setup before starting a run.",
+            [proof_status or "runtime_proof_unknown"],
+        ),
+    )
+
+
+def _runtime_proof_state(
+    definition: Mapping[str, Any],
+    settings: Mapping[str, Any],
+    secrets: Mapping[str, str],
+    environ: Mapping[str, str],
+    *,
+    readiness: Mapping[str, Any] | None = None,
+    model_cache: Mapping[str, Any] | None = None,
+    runtime_verification: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    provider_id = str(definition.get("id") or "")
+    provider_name = str(definition.get("name") or provider_id)
+    readiness = readiness or _readiness(definition, settings, secrets, environ)
+    model_cache = model_cache or _model_cache_state(definition, settings, secrets, environ)
+    runtime_verification = runtime_verification or _runtime_verification_state(definition, settings, model_cache, environ)
+    generated_at = utc_now()
+    proof_required = provider_id in RUNTIME_PROOF_REQUIRED_PROVIDER_IDS or provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS
+    proof_kind = "not_required"
+    proof_status = "not_required"
+    allows_run = True
+    verified = False
+    last_verified_at = str(runtime_verification.get("lastVerifiedAt") or settings.get("runtime_verified_at") or "")
+    expires_at = _runtime_proof_expires_at(last_verified_at)
+    reason_codes: list[str] = []
+
+    if provider_id in LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS:
+        proof_kind = "local_smoke"
+        cache_ready = bool(not model_cache.get("required") or model_cache.get("cached"))
+        runtime_status = str(runtime_verification.get("runtimeProofStatus") or settings.get("runtime_proof_status") or "").strip()
+        runtime_verified = bool(runtime_verification.get("verified"))
+        expired = bool(runtime_verified and _runtime_proof_expired(last_verified_at, now=generated_at))
+        if not cache_ready:
+            proof_status = "missing_cache"
+        elif runtime_verified and expired:
+            proof_status = "expired"
+        elif runtime_verified:
+            proof_status = "verified"
+            verified = True
+        elif runtime_status in {"failed", "stale", "gpu_device_mismatch"}:
+            proof_status = runtime_status
+        elif runtime_status and runtime_status not in {"not_verified", "verified"}:
+            proof_status = runtime_status
+        elif proof_required:
+            proof_status = "missing"
+        else:
+            proof_status = "not_required"
+        allows_run = bool(not proof_required or proof_status == "verified")
+    elif provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS or definition.get("locality") == "hosted":
+        proof_kind = "hosted_settings"
+        configured = bool(readiness.get("configured"))
+        hosted_allowed = bool(settings.get("allow_hosted", False))
+        persisted_status = str(settings.get("runtime_proof_status") or "").strip()
+        expired = bool(persisted_status and _runtime_proof_expired(last_verified_at, now=generated_at))
+        if not configured:
+            proof_status = "settings_not_ready"
+        elif not hosted_allowed:
+            proof_status = "hosted_opt_in_required"
+        elif persisted_status == "failed":
+            proof_status = "network_smoke_failed"
+        elif persisted_status == "network_smoke_passed" and not expired:
+            proof_status = "network_smoke_passed"
+            verified = True
+        elif persisted_status == "network_smoke_passed" and expired:
+            proof_status = "settings_ready_no_network"
+            reason_codes.append("hosted_network_smoke_expired")
+        else:
+            proof_status = "settings_ready_no_network"
+        allows_run = bool(configured and hosted_allowed)
+    elif provider_id in {"mock", "threshold", "motion", "external"}:
+        proof_kind = "no_model"
+
+    message, remediation, default_codes = _runtime_proof_message(provider_id, proof_status, provider_name=provider_name)
+    reason_codes.extend(code for code in default_codes if code not in reason_codes)
+    runtime = {
+        "deviceRequested": runtime_verification.get("deviceRequested") or _runtime_requested_device(provider_id, settings, environ),
+        "deviceActual": runtime_verification.get("deviceActual") or "",
+        "runtimeKind": runtime_verification.get("runtimeKind") or settings.get("runtime_kind") or "",
+        "acceleratorKind": runtime_verification.get("acceleratorKind") or settings.get("runtime_accelerator_kind") or "",
+        "loadedOnCuda": bool(runtime_verification.get("loadedOnCuda")),
+        "loadedOnMps": bool(runtime_verification.get("loadedOnMps")),
+        "cudaAvailable": bool(runtime_verification.get("cudaAvailable")),
+        "mpsAvailable": bool(runtime_verification.get("mpsAvailable")),
+        "gpuMemoryBefore": runtime_verification.get("gpuMemoryBefore") if isinstance(runtime_verification.get("gpuMemoryBefore"), Mapping) else {},
+        "gpuMemoryAfter": runtime_verification.get("gpuMemoryAfter") if isinstance(runtime_verification.get("gpuMemoryAfter"), Mapping) else {},
+    }
+    proof = {
+        "format": RUNTIME_PROOF_FORMAT,
+        "providerId": provider_id,
+        "capabilityId": definition.get("capabilityName") or provider_id,
+        "proofKind": proof_kind,
+        "proofRequired": proof_required,
+        "proofStatus": proof_status,
+        "runtimeProofStatus": proof_status,
+        "allowsRun": allows_run,
+        "verified": verified,
+        "generatedAt": generated_at,
+        "lastVerifiedAt": last_verified_at,
+        "expiresAt": expires_at,
+        "reasonCodes": reason_codes,
+        "message": message,
+        "remediation": remediation,
+        "model": {
+            "id": _safe_public_runtime_model_id(model_cache.get("model") or _runtime_effective_model(definition, settings, environ)),
+            "cacheRequired": bool(model_cache.get("required")),
+            "cacheStatus": model_cache.get("status") or "not_required",
+            "cached": bool(model_cache.get("cached")),
+            "runtimeModelSource": model_cache.get("runtimeModelSource") or _runtime_model_source(definition, settings, environ, model_cache),
+            "localPathDisplay": "[LOCAL_PATH_REDACTED]" if model_cache.get("localPathKnown") else "",
+        },
+        "runtime": runtime,
+        "runtimeFingerprint": runtime_verification.get("runtimeFingerprint") if isinstance(runtime_verification.get("runtimeFingerprint"), Mapping) else {},
+        "verifiedRuntimeFingerprint": runtime_verification.get("verifiedRuntimeFingerprint") if isinstance(runtime_verification.get("verifiedRuntimeFingerprint"), Mapping) else {},
+        "runtimeFingerprintMatches": bool(runtime_verification.get("runtimeFingerprintMatches")),
+        "smoke": {
+            "warmupStatus": runtime_verification.get("warmupStatus") or "not_run",
+            "networkAttempted": False,
+            "heavyLocalAttempted": provider_id in LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS and bool(last_verified_at),
+        },
+        "hosted": {
+            "hostedProfileId": _selected_hosted_profile_id(definition, settings),
+            "hostedCallsAllowed": bool(settings.get("allow_hosted", False)),
+            "networkSmokeRequired": False,
+            "networkAttempted": proof_status == "network_smoke_passed",
+        },
+    }
+    proof.update(runtime)
+    return _sanitize_runtime_proof_payload(proof)
+
+
 def _runtime_accelerator_kind(
     device_actual: str,
     device_requested: str = "",
@@ -1284,7 +1711,7 @@ def _runtime_verification_state(
 ) -> dict[str, Any]:
     environ = environ or os.environ
     provider_id = str(definition.get("id") or "")
-    if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+    if provider_id not in LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS:
         return {"required": False, "verified": True, "status": "not_required"}
     cached = bool(model_cache.get("cached"))
     warmup_status = str(settings.get("runtime_warmup_status") or "").strip()
@@ -1313,10 +1740,13 @@ def _runtime_verification_state(
     mps_available = bool(settings.get("runtime_mps_available"))
     gpu_memory_before = _safe_runtime_snapshot(settings.get("runtime_gpu_memory_before"))
     gpu_memory_after = _safe_runtime_snapshot(settings.get("runtime_gpu_memory_after"))
+    current_fingerprint = _runtime_fingerprint(provider_id, settings, environ) if verified_at else {}
+    verified_fingerprint = settings.get("runtime_fingerprint") if isinstance(settings.get("runtime_fingerprint"), Mapping) else {}
+    fingerprint_matches = bool(not verified_at or _runtime_fingerprint_matches(verified_fingerprint, current_fingerprint))
     cuda_verified = bool(not cuda_requested or (loaded_on_cuda and actual_device.lower().startswith("cuda")))
     mps_verified = bool(not mps_requested or (loaded_on_mps and actual_device.lower().startswith("mps")))
     device_verified = bool(cuda_verified and mps_verified)
-    verified = bool(cached and verified_at and warmup_status == "succeeded" and model_matches and device_matches and cache_is_current and device_verified)
+    verified = bool(cached and verified_at and warmup_status == "succeeded" and model_matches and device_matches and cache_is_current and device_verified and fingerprint_matches)
     stale_reasons = []
     if cached and verified_at:
         if not model_matches:
@@ -1325,6 +1755,8 @@ def _runtime_verification_state(
             stale_reasons.append("device changed")
         if not cache_is_current:
             stale_reasons.append("cache changed")
+        if not fingerprint_matches:
+            stale_reasons.append("runtime fingerprint changed")
         if cuda_requested and not cuda_verified:
             stale_reasons.append("CUDA placement not verified")
         if mps_requested and not mps_verified:
@@ -1367,9 +1799,12 @@ def _runtime_verification_state(
         "mpsAvailable": mps_available,
         "gpuMemoryBefore": gpu_memory_before,
         "gpuMemoryAfter": gpu_memory_after,
+        "runtimeFingerprint": _sanitize_runtime_proof_payload(current_fingerprint),
+        "verifiedRuntimeFingerprint": _sanitize_runtime_proof_payload(verified_fingerprint),
+        "runtimeFingerprintMatches": fingerprint_matches,
         "warmupStatus": warmup_status or "not_run",
         "lastVerifiedAt": verified_at,
-        "reasonCode": reason_code,
+        "reasonCode": "runtime_fingerprint_changed" if stale_reasons and not fingerprint_matches else reason_code,
         "message": (
             f"Cached model loaded and warmed up successfully on {accelerator_kind.upper() if accelerator_kind in {'cuda', 'mps'} else accelerator_kind}."
             if verified
@@ -1381,6 +1816,8 @@ def _runtime_verification_state(
 
 
 def _runtime_requested_device(provider_id: str, settings: Mapping[str, Any], environ: Mapping[str, str]) -> str:
+    if provider_id == "sam2-local":
+        return str(environ.get("SAM2_LOCAL_DEVICE") or settings.get("sam2_device") or "cpu")
     if provider_id == "sam3-local":
         return str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or "cuda")
     if provider_id == "sam2-hf-auto-masks":
@@ -1419,16 +1856,27 @@ def _apply_settings_payload(
         if not _is_redacted_public_placeholder(custom_model_id) and custom_model_id:
             assign_runtime_sensitive("custom_model_id", custom_model_id)
     if "endpoint" in payload:
-        settings["endpoint"] = _optional_url(payload.get("endpoint"), "endpoint")
+        endpoint = _optional_url(payload.get("endpoint"), "endpoint")
+        if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS:
+            assign_runtime_sensitive("endpoint", endpoint)
+        else:
+            settings["endpoint"] = endpoint
     if "baseUrl" in payload or "base_url" in payload:
-        settings["base_url"] = _optional_url(payload.get("baseUrl", payload.get("base_url")), "baseUrl")
+        base_url = _optional_url(payload.get("baseUrl", payload.get("base_url")), "baseUrl")
+        if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS:
+            assign_runtime_sensitive("base_url", base_url)
+        else:
+            settings["base_url"] = base_url
     if "allowHosted" in payload or "allow_hosted" in payload:
         settings["allow_hosted"] = bool(payload.get("allowHosted", payload.get("allow_hosted")))
     if "hostedProfileId" in payload or "hosted_profile_id" in payload:
         profile_id = _optional_text(payload.get("hostedProfileId", payload.get("hosted_profile_id")))
         if profile_id and validate_profile:
             _ensure_valid_hosted_profile(definition, profile_id)
-        settings["hosted_profile_id"] = profile_id
+        if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS:
+            assign_runtime_sensitive("hosted_profile_id", profile_id)
+        else:
+            settings["hosted_profile_id"] = profile_id
     if "sam2CheckpointPath" in payload or "sam2_checkpoint_path" in payload:
         value = _optional_text(payload.get("sam2CheckpointPath", payload.get("sam2_checkpoint_path")))
         if not _is_redacted_public_placeholder(value):
@@ -1448,7 +1896,7 @@ def _apply_settings_payload(
     if "sam3Device" in payload or "sam3_device" in payload:
         assign_runtime_sensitive("sam3_device", _optional_text(payload.get("sam3Device", payload.get("sam3_device"))), default="cuda")
 
-    if runtime_sensitive_changed and provider_id in LOCAL_MODEL_CACHE_PROVIDER_IDS:
+    if runtime_sensitive_changed and provider_id in (LOCAL_RUNTIME_VERIFICATION_PROVIDER_IDS | HOSTED_RUNTIME_PROOF_PROVIDER_IDS):
         had_runtime_verification = any(settings.get(key) for key in LOCAL_MODEL_RUNTIME_KEYS)
         for key in LOCAL_MODEL_RUNTIME_KEYS:
             settings.pop(key, None)
@@ -1467,10 +1915,19 @@ def _apply_settings_payload(
             or payload.get(f"{name}_action") == "clear"
         )
         if clear_value:
+            if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS and secrets.get(name):
+                for runtime_key in LOCAL_MODEL_RUNTIME_KEYS:
+                    settings.pop(runtime_key, None)
+                settings["runtime_proof_status"] = "stale"
             secrets.pop(name, None)
         elif isinstance(value, str) and value.strip():
             _ensure_accepts_credentials(profiled_definition)
-            secrets[name] = _clean_credential(str(definition["id"]), field, value)
+            cleaned = _clean_credential(str(definition["id"]), field, value)
+            if provider_id in HOSTED_RUNTIME_PROOF_PROVIDER_IDS and secrets.get(name) != cleaned:
+                for runtime_key in LOCAL_MODEL_RUNTIME_KEYS:
+                    settings.pop(runtime_key, None)
+                settings["runtime_proof_status"] = "stale"
+            secrets[name] = cleaned
 
 
 def save_provider_settings(
@@ -1701,6 +2158,21 @@ def hosted_sam3_smoke_test(
     except (ProviderConfigError, ProviderExecutionError) as exc:
         raise ValueError(redact_secret_text(str(exc))) from exc
 
+    record_provider_runtime_verification(
+        conn,
+        user_id=user_id,
+        provider_id=provider_id,
+        verification={
+            "runtimeProofStatus": "network_smoke_passed",
+            "runtimeKind": "hosted_provider",
+            "warmupStatus": "succeeded",
+            "status": "succeeded",
+            "deviceRequested": "hosted",
+            "deviceActual": "hosted",
+        },
+        environ=environ,
+    )
+
     return {
         "format": "motionjson.provider_network_smoke_test.v0.1",
         "providerId": provider_id,
@@ -1755,6 +2227,15 @@ def diagnose_provider_settings(
     model_cache = _model_cache_state(definition, settings, secrets, environ)
     model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, model_cache)
     runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
+    runtime_proof = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=readiness,
+        model_cache=model_cache,
+        runtime_verification=runtime_verification,
+    )
     checklist: list[dict[str, Any]] = []
     commands: list[str] = []
     docs = definition.get("docs")
@@ -1890,6 +2371,7 @@ def diagnose_provider_settings(
         "message": setup_state.get("message") or readiness.get("message") or ("Ready" if ok else "Setup is incomplete."),
         "modelCache": model_cache,
         "runtimeVerification": runtime_verification,
+        "runtimeProof": runtime_proof,
         "checklist": checklist,
         "commands": commands,
         "docs": docs,
@@ -1979,6 +2461,22 @@ def local_sam_smoke_test(
             )
             diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
         except Exception as exc:
+            try:
+                record_provider_runtime_verification(
+                    conn,
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    verification={
+                        "runtimeProofStatus": "failed",
+                        "warmupStatus": "failed",
+                        "status": "failed",
+                        "runtimeKind": "sam3_scene_sweep",
+                        "deviceRequested": runtime.get("sam3_device") or "cuda",
+                    },
+                    environ=environ,
+                )
+            except Exception:
+                pass
             return {
                 "format": "motionjson.provider_local_sam_smoke_test.v0.1",
                 "providerId": provider_id,
@@ -2015,15 +2513,33 @@ def local_sam_smoke_test(
 
                 from motionjson.providers.sam2 import LocalSAM2AutomaticMaskProposalBackend
 
+                sam2_device = str(runtime.get("sam2_device") or "cpu")
                 backend = LocalSAM2AutomaticMaskProposalBackend.from_config(
                     {
                         "checkpoint": runtime.get("sam2_checkpoint_path"),
                         "model_config": runtime.get("sam2_model_config_path"),
-                        "device": runtime.get("sam2_device") or "cpu",
+                        "device": sam2_device,
                     }
                 )
                 records = backend.propose_masks(np.zeros((8, 8, 3), dtype=np.uint8), frame_index=0, config={"max_candidates": 1})
-                smoke = {"providerName": "sam2-local", "recordCount": len(list(records)), "frameShape": [8, 8, 3]}
+                smoke = {
+                    "providerName": "sam2-local",
+                    "recordCount": len(list(records)),
+                    "frameShape": [8, 8, 3],
+                    "runtimeKind": "sam2_local_prompt_tracking",
+                    "deviceRequested": sam2_device,
+                    "deviceActual": sam2_device,
+                    "warmupStatus": "succeeded",
+                    "runtimeProofStatus": "verified",
+                }
+                record_provider_runtime_verification(
+                    conn,
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    verification=smoke,
+                    environ=environ,
+                )
+                diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
             elif provider_id == "sam2-hf-auto-masks":
                 import numpy as np
 
@@ -2059,14 +2575,47 @@ def local_sam_smoke_test(
             else:
                 from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 
+                sam3_device = str(runtime.get("sam3_device") or "cuda")
                 backend = LocalSAM3DiscoveryBackend.from_config(
                     {
                         "sam3ModelPath": runtime.get("sam3_model_path"),
-                        "sam3Device": runtime.get("sam3_device") or "cuda",
+                        "sam3Device": sam3_device,
                     }
                 )
                 smoke = backend.smoke_test(prompt=str(payload.get("prompt") or "object"))
+                smoke = {
+                    **dict(smoke or {}),
+                    "runtimeKind": "sam3_official_adapter",
+                    "deviceRequested": sam3_device,
+                    "deviceActual": str((smoke or {}).get("deviceActual") or sam3_device),
+                    "warmupStatus": "succeeded",
+                    "runtimeProofStatus": "verified",
+                }
+                record_provider_runtime_verification(
+                    conn,
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    verification=smoke,
+                    environ=environ,
+                )
+                diagnosis = diagnose_provider_settings(conn, user_id=user_id, provider_id=provider_id, payload=payload, environ=environ)
         except (ProviderConfigError, ProviderExecutionError, ImportError) as exc:
+            try:
+                record_provider_runtime_verification(
+                    conn,
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    verification={
+                        "runtimeProofStatus": "failed",
+                        "warmupStatus": "failed",
+                        "status": "failed",
+                        "runtimeKind": "local_sam_smoke",
+                        "deviceRequested": runtime.get("sam3_device") or runtime.get("sam2_hf_device") or runtime.get("sam2_device") or "",
+                    },
+                    environ=environ,
+                )
+            except Exception:
+                pass
             return {
                 "format": "motionjson.provider_local_sam_smoke_test.v0.1",
                 "providerId": provider_id,
@@ -2214,6 +2763,15 @@ def _public_provider_state(
     provider["modelCache"] = _model_cache_state(definition, settings, secrets, environ)
     provider["modelCache"]["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, provider["modelCache"])
     provider["runtimeVerification"] = _runtime_verification_state(definition, settings, provider["modelCache"], environ)
+    provider["runtimeProof"] = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=provider["readiness"],
+        model_cache=provider["modelCache"],
+        runtime_verification=provider["runtimeVerification"],
+    )
     provider["setupState"] = _setup_state_for_provider(
         definition,
         provider["readiness"],
@@ -2276,8 +2834,21 @@ def _capability_override(
     runtime_settings_only = bool(endpoint_source == "local_settings" or (api_credential and api_credential.get("source") == "local_settings"))
     if provider_id in {"sam2-hosted", "sam3-hosted"}:
         runtime_settings_only = False
+    readiness = _readiness(definition, settings, secrets, environ)
+    model_cache = _model_cache_state(definition, settings, secrets, environ)
+    model_cache["runtimeModelSource"] = _runtime_model_source(definition, settings, environ, model_cache)
+    runtime_verification = _runtime_verification_state(definition, settings, model_cache, environ)
+    runtime_proof = _runtime_proof_state(
+        definition,
+        settings,
+        secrets,
+        environ,
+        readiness=readiness,
+        model_cache=model_cache,
+        runtime_verification=runtime_verification,
+    )
     return {
-        "configured": _readiness(definition, settings, secrets, environ)["configured"],
+        "configured": readiness["configured"],
         "api_key_configured": bool(api_credential and api_credential.get("configured")),
         "credential_source": api_credential.get("source") if api_credential else "none",
         "endpoint_configured": bool(endpoint),
@@ -2298,6 +2869,9 @@ def _capability_override(
         "sam3_model_path": str(environ.get("SAM3_LOCAL_MODEL") or settings.get("sam3_model_path") or ""),
         "sam3_device": str(environ.get("SAM3_LOCAL_DEVICE") or settings.get("sam3_device") or ""),
         "hf_token_configured": bool(environ.get("HF_TOKEN") or environ.get("HUGGINGFACE_HUB_TOKEN") or secrets.get("hf_token")),
+        "model_cache": model_cache,
+        "runtime_verification": runtime_verification,
+        "runtime_proof": runtime_proof,
         "settings_source": "local_settings" if row is not None else "default",
     }
 

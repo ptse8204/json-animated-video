@@ -73,9 +73,9 @@ for (const workflowCase of builderCases) {
   }
 }
 
-const sam3Ready = builderCases.find((workflowCase) => workflowCase.id === "sam3_scene_sweep_available_mocked");
-const sam3ReadyConfig = buildRunConfig({ video: { id: "asset_1" }, outputDir: "out/ui-workflow-matrix", ...sam3Ready.builderInput });
-assert.equal(warningTextForCase(sam3ReadyConfig, sam3Ready), "");
+const sam3ProofBlocked = builderCases.find((workflowCase) => workflowCase.id === "sam3_scene_sweep_available_mocked");
+const sam3ProofBlockedConfig = buildRunConfig({ video: { id: "asset_1" }, outputDir: "out/ui-workflow-matrix", ...sam3ProofBlocked.builderInput });
+assert.match(warningTextForCase(sam3ProofBlockedConfig, sam3ProofBlocked), /runtime proof/i);
 
 const hostedBlocked = builderCases.find((workflowCase) => workflowCase.id === "hosted_configured_no_network");
 const hostedConfig = buildRunConfig({ video: { id: "asset_1" }, outputDir: "out/ui-workflow-matrix", ...hostedBlocked.builderInput });

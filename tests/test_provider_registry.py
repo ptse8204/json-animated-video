@@ -246,6 +246,8 @@ def test_hosted_and_settings_only_policy_is_explicit():
     assert openrouter["implemented"] is False
     assert openrouter["workerEligible"] is False
     assert openrouter["validationPolicy"] == "settings_only"
+    assert provider_by_id("sam2-hf-auto-masks")["runtimeProofRequired"] is True
+    assert provider_by_id("sam3-local")["runtimeProofRequired"] is True
     assert text_detector["implemented"] is False
     assert text_detector["validationPolicy"] == "mock_or_unavailable"
     assert class_detector["implemented"] is False

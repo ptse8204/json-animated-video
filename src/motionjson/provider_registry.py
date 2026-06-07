@@ -268,10 +268,11 @@ _PROVIDER_REGISTRY: list[dict[str, Any]] = [
         optional_extra="sam2-transformers",
         setup_actions=["diagnose", "install", "cache_model", "smoke"],
         expected_capability_names=["sam2-hf-auto-masks"],
+        runtime_proof_required=True,
         remediation="Install the SAM2 Transformers extra and cache the selected model, or use motion foreground/import masks.",
         workflow_support=_support_map(
-            trace_all_objects=_workflow_support("conditional", run_config_provider_name="sam2-hf-auto-masks", run_config_discovery_mode="sam2_hf_auto_masks", fallbacks=["sam3-local", "motion_foreground"]),
-            auto_object_proposals=_workflow_support("conditional", run_config_provider_name="sam2-hf-auto-masks", run_config_discovery_mode="sam2_hf_auto_masks", fallbacks=["sam2-local", "motion_foreground"]),
+            trace_all_objects=_workflow_support("conditional", requires_runtime_proof=True, run_config_provider_name="sam2-hf-auto-masks", run_config_discovery_mode="sam2_hf_auto_masks", fallbacks=["sam3-local", "motion_foreground"]),
+            auto_object_proposals=_workflow_support("conditional", requires_runtime_proof=True, run_config_provider_name="sam2-hf-auto-masks", run_config_discovery_mode="sam2_hf_auto_masks", fallbacks=["sam2-local", "motion_foreground"]),
         ),
     ),
     _entry(

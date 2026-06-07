@@ -315,7 +315,7 @@
     },
     {
       "id": "sam2_hf_auto_masks_available_mocked",
-      "title": "SAM2 HF automatic masks validate when capability is mocked ready",
+      "title": "SAM2 HF automatic masks require runtime proof after capability is mocked ready",
       "status": "mocked",
       "goal": "trace_all_objects",
       "uiPreset": "trace_all_objects",
@@ -328,15 +328,20 @@
       },
       "capabilityReport": {
         "providers": [
-          {"name": "sam2-hf-auto-masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+          {"name": "sam2-hf-auto-masks", "kind": "discovery_provider", "available": true, "runnable": false, "status": "runtime_proof_required", "reasons": ["SAM2 HF automatic masks need runtime proof before extraction."], "metadata": {"runtimeProof": {"format": "motionjson.runtime_proof.v0.1", "providerId": "sam2-hf-auto-masks", "proofRequired": true, "proofStatus": "missing", "runtimeProofStatus": "missing", "allowsRun": false, "verified": false, "reasonCodes": ["runtime_proof_missing"]}}}
         ]
       },
       "expectedRunConfig": {
         "provider.name": "sam2-hf-auto-masks",
         "discovery.mode": "sam2_hf_auto_masks"
       },
-      "expectedValidation": {"valid": true, "warningCodes": []},
-      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false}
+      "expectedValidation": {
+        "valid": true,
+        "warningCodes": ["runtime_proof_missing"],
+        "blockingWarningCodesAnyOf": ["runtime_proof_missing"],
+        "blockingProvidersAnyOf": ["sam2-hf-auto-masks"]
+      },
+      "expectedJob": {"uiCanStart": false, "canRunInDefaultTests": false}
     },
     {
       "id": "sam3_scene_sweep_unavailable",
@@ -373,7 +378,7 @@
     },
     {
       "id": "sam3_scene_sweep_available_mocked",
-      "title": "SAM3 scene sweep validates when scene-sweep capability is mocked ready",
+      "title": "SAM3 scene sweep requires runtime proof after scene-sweep capability is mocked ready",
       "status": "mocked",
       "goal": "trace_all_objects",
       "uiPreset": "trace_all_objects",
@@ -387,15 +392,21 @@
       "capabilityReport": {
         "providers": [
           {"name": "sam3-local", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Official concept adapter is not installed."]},
-          {"name": "sam3-auto-masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+          {"name": "sam3-auto-masks", "kind": "discovery_provider", "available": true, "runnable": false, "status": "runtime_proof_required", "reasons": ["SAM3 Scene Sweep needs runtime proof before extraction."], "metadata": {"runtimeProof": {"format": "motionjson.runtime_proof.v0.1", "providerId": "sam3-local", "proofRequired": true, "proofStatus": "missing", "runtimeProofStatus": "missing", "allowsRun": false, "verified": false, "reasonCodes": ["runtime_proof_missing"]}}}
         ]
       },
       "expectedRunConfig": {
         "provider.name": "sam3-local",
         "discovery.mode": "sam3_auto_masks"
       },
-      "expectedValidation": {"valid": true, "warningCodes": [], "mustNotMentionAnyOf": ["SAM3_LOCAL_MODEL"]},
-      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false}
+      "expectedValidation": {
+        "valid": true,
+        "warningCodes": ["runtime_proof_missing"],
+        "blockingWarningCodesAnyOf": ["runtime_proof_missing"],
+        "blockingProvidersAnyOf": ["sam3-auto-masks"],
+        "mustNotMentionAnyOf": ["SAM3_LOCAL_MODEL"]
+      },
+      "expectedJob": {"uiCanStart": false, "canRunInDefaultTests": false}
     },
     {
       "id": "sam3_local_concept_blocked",
@@ -462,7 +473,7 @@
       },
       "expectedValidation": {
         "valid": true,
-        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam2-hosted"],
         "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
       },
@@ -500,7 +511,7 @@
       },
       "expectedValidation": {
         "valid": true,
-        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam3-hosted"],
         "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
       },
@@ -535,7 +546,7 @@
       },
       "expectedValidation": {
         "valid": true,
-        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam2-hosted"],
         "messageContainsAnyOf": ["hosted", "disabled", "confirmed", "network"]
       },

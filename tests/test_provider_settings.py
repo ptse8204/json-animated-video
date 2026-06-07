@@ -25,6 +25,7 @@ from motionjson.provider_settings import (
     provider_catalog,
     hosted_sam3_smoke_test,
     provider_runtime_model_info,
+    provider_runtime_proof,
     provider_runtime_settings,
     redact_secret_payload,
     redact_secret_text,
@@ -62,6 +63,7 @@ class FakeHostedSAM3Transport:
 def install_fake_torch(monkeypatch, *, cuda: bool = False):
     fake_torch = types.ModuleType("torch")
     fake_torch.__spec__ = ModuleSpec("torch", loader=None)
+    fake_torch.__version__ = "2.9.0"
     class FakeNoGrad:
         def __enter__(self):
             return None
@@ -84,6 +86,7 @@ def install_fake_torch(monkeypatch, *, cuda: bool = False):
 def install_fake_transformers_for_sam2(monkeypatch, seen: dict[str, object]):
     fake_transformers = types.ModuleType("transformers")
     fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
+    fake_transformers.__version__ = "4.57.0"
 
     def pipeline(task, model=None, device=None):
         seen["pipeline"] = {"task": task, "model": model, "device": device}
@@ -109,6 +112,7 @@ def write_fake_from_pretrained_dir(path, *, model_type: str = "sam3", with_weigh
 def install_fake_transformers_for_sam3(monkeypatch, seen: dict[str, object] | None = None, *, device_type: str = "cuda"):
     fake_transformers = types.ModuleType("transformers")
     fake_transformers.__spec__ = ModuleSpec("transformers", loader=None)
+    fake_transformers.__version__ = "4.57.0"
 
     class FakeDevice:
         type = device_type
@@ -1316,6 +1320,90 @@ def test_sam3_runtime_verification_invalidates_when_device_changes(tmp_path, mon
     assert provider["setupState"]["status"] == "needs_smoke"
 
 
+def test_runtime_proof_contract_persists_redacts_and_expires(tmp_path, monkeypatch):
+    monkeypatch.delenv("SAM3_LOCAL_MODEL", raising=False)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch)
+    model_dir = tmp_path / "private" / "mock-sam3-from-pretrained"
+    write_fake_from_pretrained_dir(model_dir)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "cache_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "model": str(model_dir),
+            }
+        ).encode("utf-8"),
+    )
+    app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps({"action": "smoke", "runInline": True, "allowHeavyLocal": True}).encode("utf-8"),
+    )
+
+    status, _headers, body = app.handle("GET", "/api/provider-settings")
+    provider = provider_by_id(decode(body), "sam3-local")
+    proof = provider["runtimeProof"]
+
+    assert status == 200
+    assert proof["format"] == "motionjson.runtime_proof.v0.1"
+    assert proof["proofStatus"] == "verified"
+    assert proof["allowsRun"] is True
+    assert proof["model"]["localPathDisplay"] == "[LOCAL_PATH_REDACTED]"
+    assert proof["runtime"]["acceleratorKind"] == "cuda"
+    assert proof["runtimeFingerprint"]["torch"]["version"] == "2.9.0"
+    assert proof["runtimeFingerprintMatches"] is True
+    assert str(model_dir) not in body.decode("utf-8")
+
+    reloaded = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    status, _headers, body = reloaded.handle("GET", "/api/provider-settings")
+    persisted = provider_by_id(decode(body), "sam3-local")["runtimeProof"]
+    assert status == 200
+    assert persisted["proofStatus"] == "verified"
+    assert persisted["allowsRun"] is True
+
+    sys.modules["torch"].__version__ = "2.9.1"
+    status, _headers, body = reloaded.handle("GET", "/api/provider-settings")
+    stale = provider_by_id(decode(body), "sam3-local")["runtimeProof"]
+    assert status == 200
+    assert stale["proofStatus"] == "stale"
+    assert stale["allowsRun"] is False
+    assert stale["runtimeFingerprintMatches"] is False
+    assert "runtime_proof_stale" in stale["reasonCodes"]
+
+    sys.modules["torch"].__version__ = "2.9.0"
+
+    conn = reloaded.connection()
+    try:
+        user = reloaded._local_user(conn)
+        row = conn.execute(
+            "SELECT settings_json FROM provider_settings WHERE user_id = ? AND provider_id = ?",
+            (user["id"], "sam3-local"),
+        ).fetchone()
+        settings = json.loads(row["settings_json"])
+        settings["runtime_verified_at"] = "2000-01-01T00:00:00+00:00"
+        settings["model_cache_updated_at"] = "1999-12-31T00:00:00+00:00"
+        conn.execute(
+            "UPDATE provider_settings SET settings_json = ? WHERE user_id = ? AND provider_id = ?",
+            (json.dumps(settings, sort_keys=True), user["id"], "sam3-local"),
+        )
+        conn.commit()
+        expired = provider_runtime_proof(conn, user_id=user["id"], provider_id="sam3-local")
+    finally:
+        conn.close()
+
+    assert expired["proofStatus"] == "expired"
+    assert expired["allowsRun"] is False
+    assert "runtime_proof_expired" in expired["reasonCodes"]
+    assert str(model_dir) not in json.dumps(expired)
+
+
 def test_legacy_sam2_hf_smoke_route_is_local_and_requires_ack(tmp_path, monkeypatch):
     seen: dict[str, object] = {}
     install_fake_torch(monkeypatch)
@@ -1831,12 +1919,26 @@ def test_hosted_sam3_settings_are_redacted_and_never_test_network(tmp_path):
                 "apiKey": secret,
                 "endpoint": "https://provider.example.test/sam3",
                 "selectedModel": "auto",
-                "allowHosted": True,
             }
         ).encode("utf-8"),
     )
     assert status == 200
     assert secret not in body.decode("utf-8")
+    provider = provider_by_id(decode(body), "sam3-hosted")
+    assert provider["runtimeProof"]["proofStatus"] == "hosted_opt_in_required"
+    assert provider["runtimeProof"]["allowsRun"] is False
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps({"providerId": "sam3-hosted", "allowHosted": True}).encode("utf-8"),
+    )
+    assert status == 200
+    assert secret not in body.decode("utf-8")
+    provider = provider_by_id(decode(body), "sam3-hosted")
+    assert provider["runtimeProof"]["proofStatus"] == "settings_ready_no_network"
+    assert provider["runtimeProof"]["allowsRun"] is True
+    assert provider["runtimeProof"]["smoke"]["networkAttempted"] is False
 
     status, _headers, body = app.handle("POST", "/api/provider-settings/sam3-hosted/test", body=b"{}")
     checked = decode(body)
@@ -1853,6 +1955,7 @@ def test_hosted_sam3_settings_are_redacted_and_never_test_network(tmp_path):
     assert capability["status"] == "ready"
     assert capability["metadata"]["credentialSource"] == "local_settings"
     assert capability["metadata"]["settingsOnly"] is False
+    assert capability["metadata"]["runtimeProof"]["proofStatus"] == "settings_ready_no_network"
     assert secret not in body.decode("utf-8")
 
 

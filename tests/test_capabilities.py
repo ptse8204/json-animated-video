@@ -352,14 +352,22 @@ def test_sam2_auto_discovery_reports_runnable_when_optional_backend_configured(t
         assert provider["modelPaths"]
         assert "scaffolded" in " ".join(provider["reasons"])
 
-    for name in ("sam3-local", "sam3-concept", "sam3-exemplar", "sam3-auto-masks"):
+    for name in ("sam3-local", "sam3-concept", "sam3-exemplar"):
         provider = _provider(report, name)
         assert provider["available"] is True
         assert provider["runnable"] is True
         assert provider["status"] == "ready"
-        assert provider["needsModelPath"] is (name != "sam3-auto-masks")
-        assert provider["needsGpu"] is (name != "sam3-auto-masks")
+        assert provider["needsModelPath"] is True
+        assert provider["needsGpu"] is True
         assert provider["mockAvailable"] is True
+    sam3_auto_masks = _provider(report, "sam3-auto-masks")
+    assert sam3_auto_masks["available"] is True
+    assert sam3_auto_masks["runnable"] is False
+    assert sam3_auto_masks["status"] == "runtime_proof_required"
+    assert sam3_auto_masks["needsModelPath"] is False
+    assert sam3_auto_masks["needsGpu"] is False
+    assert sam3_auto_masks["mockAvailable"] is True
+    assert sam3_auto_masks["metadata"]["runtimeProof"]["allowsRun"] is False
     assert _provider(report, "sam3-local")["metadata"]["runtime"]["pythonSupported"] is True
     assert _provider(report, "sam3-auto-masks")["metadata"]["trackerModel"]["resolvedModel"] == "facebook/sam3"
 

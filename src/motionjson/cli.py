@@ -208,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
     from .backend.cli import add_backend_parser
 
     add_backend_parser(backend)
-    ui = sub.add_parser("ui", help="Launch the MotionJSON Workspace", description="Launch the MotionJSON Workspace")
+    ui = sub.add_parser("ui", help="Launch the local MotionJSON UI", description="Launch the local MotionJSON UI")
     ui.add_argument("--db", type=str, default=os.environ.get("MOTIONJSON_BACKEND_DB", ".motionjson/backend.sqlite"), help="SQLite database path for workspace projects and jobs")
     ui.add_argument("--storage-root", type=str, default=os.environ.get("MOTIONJSON_STORAGE_ROOT", ".motionjson/storage"), help="File storage root for uploaded videos and artifacts")
     ui.add_argument("--host", type=str, default="127.0.0.1", help="Host interface for the workspace server")

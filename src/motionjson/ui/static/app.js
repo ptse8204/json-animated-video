@@ -3101,24 +3101,41 @@ const MotionJSONUI = (() => {
 
   function runtimeProofBadge(runtimeVerification = {}, provider = null, setupJob = null) {
     const smoke = setupJob?.result?.smokeTest || {};
+    const proofRuntime = runtimeVerification?.runtime || {};
+    const proofStatusValue = String(runtimeVerification.proofStatus || runtimeVerification.runtimeProofStatus || smoke.runtimeProofStatus || "").toLowerCase();
+    if (proofStatusValue === "not_required") {
+      return { label: "Proof not required", tone: "is-ready", acceleratorKind: "none" };
+    }
+    if (proofStatusValue === "settings_ready_no_network") {
+      return { label: "Hosted settings ready", tone: "is-warn", acceleratorKind: "hosted" };
+    }
+    if (proofStatusValue === "hosted_opt_in_required") {
+      return { label: "Hosted opt-in needed", tone: "is-warn", acceleratorKind: "hosted" };
+    }
+    if (proofStatusValue === "network_smoke_passed") {
+      return { label: "Hosted smoke passed", tone: "is-ready", acceleratorKind: "hosted" };
+    }
+    if (["missing", "missing_cache", "stale", "expired", "failed", "gpu_device_mismatch"].includes(proofStatusValue)) {
+      return { label: proofStatusValue === "missing_cache" ? "Cache proof needed" : proofStatusValue === "gpu_device_mismatch" ? "Device mismatch" : "Runtime proof needed", tone: proofStatusValue === "failed" || proofStatusValue === "gpu_device_mismatch" ? "is-bad" : "is-warn", acceleratorKind: "unknown" };
+    }
     if (provider?.locality === "hosted") {
       return { label: "Hosted runtime", tone: "is-warn", acceleratorKind: "hosted" };
     }
-    const deviceActual = String(runtimeVerification.deviceActual || smoke.deviceActual || "").toLowerCase();
-    const kind = String(runtimeVerification.acceleratorKind || smoke.acceleratorKind || "").toLowerCase();
-    const proofStatus = String(runtimeVerification.runtimeProofStatus || smoke.runtimeProofStatus || "").toLowerCase();
-    const loadedOnCuda = runtimeVerification.loadedOnCuda === true || smoke.loadedOnCuda === true;
-    const loadedOnMps = runtimeVerification.loadedOnMps === true || smoke.loadedOnMps === true;
+    const deviceActual = String(proofRuntime.deviceActual || runtimeVerification.deviceActual || smoke.deviceActual || "").toLowerCase();
+    const kind = String(proofRuntime.acceleratorKind || runtimeVerification.acceleratorKind || smoke.acceleratorKind || "").toLowerCase();
+    const proofStatus = String(runtimeVerification.proofStatus || runtimeVerification.runtimeProofStatus || smoke.runtimeProofStatus || "").toLowerCase();
+    const loadedOnCuda = proofRuntime.loadedOnCuda === true || runtimeVerification.loadedOnCuda === true || smoke.loadedOnCuda === true;
+    const loadedOnMps = proofRuntime.loadedOnMps === true || runtimeVerification.loadedOnMps === true || smoke.loadedOnMps === true;
     if (loadedOnCuda || (kind === "cuda" && proofStatus === "verified")) {
       return { label: "CUDA active", tone: "is-ready", acceleratorKind: "cuda" };
     }
-    if (kind === "cuda" || deviceActual.startsWith("cuda") || runtimeVerification.cudaAvailable === true || smoke.cudaAvailable === true) {
+    if (kind === "cuda" || deviceActual.startsWith("cuda") || proofRuntime.cudaAvailable === true || runtimeVerification.cudaAvailable === true || smoke.cudaAvailable === true) {
       return { label: "CUDA available", tone: "is-warn", acceleratorKind: "cuda" };
     }
     if (loadedOnMps || (kind === "mps" && proofStatus === "verified")) {
       return { label: "MPS active", tone: "is-warn", acceleratorKind: "mps" };
     }
-    if (kind === "mps" || deviceActual.startsWith("mps") || runtimeVerification.mpsAvailable === true || smoke.mpsAvailable === true) {
+    if (kind === "mps" || deviceActual.startsWith("mps") || proofRuntime.mpsAvailable === true || runtimeVerification.mpsAvailable === true || smoke.mpsAvailable === true) {
       return { label: "MPS available", tone: "is-warn", acceleratorKind: "mps" };
     }
     if (kind === "cpu" || deviceActual.startsWith("cpu") || deviceActual === "-1") {
@@ -3137,12 +3154,14 @@ const MotionJSONUI = (() => {
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
     const setupRunning = setupJob && !setupJob.terminal;
     const localCacheProvider = providerId === "sam3-local" || providerId === "sam2-hf-auto-masks";
-    const runtimeVerification = provider?.runtimeVerification || setupJob?.result?.diagnosis?.runtimeVerification || {};
+    const runtimeProof = provider?.runtimeProof || setupJob?.result?.runtimeProof || setupJob?.result?.diagnosis?.runtimeProof || {};
+    const runtimeVerification = runtimeProof.proofStatus ? runtimeProof : provider?.runtimeVerification || setupJob?.result?.diagnosis?.runtimeVerification || {};
     const setupEvents = asArray(setupJob?.events);
     const hasSetupEvent = (...names) => setupEvents.some((event) => names.includes(String(event.eventType || event.type || "")));
-    const verificationReady = runtimeVerification.verified === true || (!localCacheProvider && setupState.status === "ready") || setupJob?.result?.ready === true;
+    const setupActionVerified = ["smoke", "prepare_model"].includes(String(setupJob?.action || "")) && setupJob?.result?.ready === true;
+    const verificationReady = runtimeProof.allowsRun === true || runtimeVerification.verified === true || (!localCacheProvider && setupState.status === "ready") || setupActionVerified;
     const proofBadge = runtimeProofBadge(runtimeVerification, provider, setupJob);
-    const deviceActual = runtimeVerification.deviceActual || setupJob?.result?.smokeTest?.deviceActual || provider?.settings?.sam3Device || "cuda";
+    const deviceActual = runtimeVerification.runtime?.deviceActual || runtimeVerification.deviceActual || setupJob?.result?.smokeTest?.deviceActual || provider?.settings?.sam3Device || "cuda";
     const loadRunning =
       setupRunning &&
       ["smoke", "prepare_model"].includes(setupJob.action) &&
@@ -3195,7 +3214,7 @@ const MotionJSONUI = (() => {
       id: "warmup",
       label: "Warm up",
       status: verificationReady ? "done" : warmupRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
-      detail: verificationReady ? runtimeVerification.message || "Bounded smoke inference succeeded." : "Run a bounded inference before unlocking extraction.",
+      detail: verificationReady ? runtimeProof.message || runtimeVerification.message || "Bounded smoke inference succeeded." : "Run a bounded inference before unlocking extraction.",
     });
     steps.push({
       id: "ready",
@@ -6405,7 +6424,7 @@ const MotionJSONUI = (() => {
       if (provider.device) details.push(`device: ${provider.device}`);
       if (provider.optionalExtra) details.push(`extra: ${provider.optionalExtra}`);
       if (provider.noModelSafe === true) details.push("no-model safe");
-      if (provider.estimatedCost?.status?.startsWith("zero_local") && !provider.networkRequired) details.push("runtime/free");
+      if (provider.estimatedCost?.status?.startsWith("zero_local") && !provider.networkRequired) details.push("local/free", "runtime/free");
       if (provider.networkRequired === true) details.push("network");
       if (provider.needsCredentials === true) details.push("credentials");
       if (provider.needsGpu === true) details.push("GPU required");
@@ -6712,6 +6731,23 @@ const MotionJSONUI = (() => {
       const environmentCard = environmentRecommendationCard(connection);
       const setupPlaybook = modelSetupPlaybookMarkup(connection, settingsProvider, setupState, setupJob);
       const cacheSummary = modelCacheStatusSummary(settingsProvider, setupJob);
+      const runtimeProof = settingsProvider?.runtimeProof || setupJob?.result?.runtimeProof || setupJob?.result?.diagnosis?.runtimeProof || {};
+      const proofBadge = runtimeProofBadge(runtimeProof, settingsProvider, setupJob);
+      const proofRequired = runtimeProof.proofRequired === true;
+      const proofStatusCard = runtimeProof.format
+        ? `<div class="model-cache-status is-${escapeAttribute(runtimeProof.allowsRun ? "ready" : runtimeProof.proofStatus === "failed" || runtimeProof.proofStatus === "gpu_device_mismatch" ? "bad" : "warn")}">
+            <div>
+              <strong>${escapeHtml(proofBadge.label)}</strong>
+              <span class="row-meta">${escapeHtml(runtimeProof.message || "Runtime proof status is not reported.")}</span>
+              ${runtimeProof.remediation ? `<span class="row-meta">${escapeHtml(runtimeProof.remediation)}</span>` : ""}
+            </div>
+            <div class="provider-detail">
+              ${detailChip(runtimeProof.proofStatus || runtimeProof.runtimeProofStatus || "not reported")}
+              ${detailChip(proofRequired ? "proof required" : "proof optional")}
+              ${runtimeProof.expiresAt ? detailChip(`expires ${runtimeProof.expiresAt}`) : ""}
+            </div>
+          </div>`
+        : "";
       const cacheStatusCard = cacheSummary.required
         ? `<div class="model-cache-status is-${escapeAttribute(cacheSummary.cached ? "ready" : "warn")}">
             <div>
@@ -6775,6 +6811,7 @@ const MotionJSONUI = (() => {
         ${setupPlaybook}
         ${normalAccessCard}
         ${setupProgressCard}
+        ${proofStatusCard}
         ${cacheStatusCard}
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
