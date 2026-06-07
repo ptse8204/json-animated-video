@@ -638,9 +638,11 @@ export function providerWarnings(config, capabilities) {
   const providers = capabilities?.providers || [];
   const lookup = new Map(providers.map((provider) => [provider.name, provider]));
   const warnings = [];
-  const provider = lookup.get(config.provider?.name);
-  if (provider && !provider.available) {
-    warnings.push(`${provider.name}: ${provider.reasons?.[0] || provider.status || "provider unavailable"}`);
+  const skipProviderWarning = config.provider?.name === "sam3-local" && config.discovery?.mode === "sam3_auto_masks";
+  const provider = skipProviderWarning ? null : lookup.get(config.provider?.name);
+  if (provider && (provider.available === false || provider.runnable === false)) {
+    const setup = provider.available !== false && provider.runnable === false ? "configured but not runnable yet" : provider.status || "provider unavailable";
+    warnings.push(`${provider.name}: ${provider.reasons?.[0] || setup}`);
   }
   const discoveryMode = config.discovery?.mode;
   if (discoveryMode) {
@@ -656,8 +658,9 @@ export function providerWarnings(config, capabilities) {
               ? preference
               : discoveryMode;
     const discovery = lookup.get(discoveryName) || lookup.get(String(discoveryMode).replaceAll("_", "-"));
-    if (discovery && !discovery.available) {
-      warnings.push(`${discovery.name}: ${discovery.reasons?.[0] || discovery.status || "discovery unavailable"}`);
+    if (discovery && (discovery.available === false || discovery.runnable === false)) {
+      const setup = discovery.available !== false && discovery.runnable === false ? "configured but not runnable yet" : discovery.status || "discovery unavailable";
+      warnings.push(`${discovery.name}: ${discovery.reasons?.[0] || setup}`);
     }
   }
   if (config.provider?.name === "sam2-hosted" && !config.provider?.sam2?.hosted_allow_network) {

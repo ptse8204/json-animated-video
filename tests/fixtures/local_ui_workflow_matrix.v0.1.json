@@ -1,0 +1,605 @@
+{
+  "schema": "motionjson.local_ui_workflow_matrix.v0.1",
+  "description": "Matrix of local UI workflow paths, generated run configs, backend validation expectations, model planner behavior, review tools, and export surfaces.",
+  "caseStatusLegend": {
+    "runnable": "Runs in the default local test environment without GPU, model weights, credentials, or hosted network calls.",
+    "blocked": "Intentionally blocked by validation/readiness with a user-actionable message.",
+    "conditional": "Can validate or run when optional CPU-safe dependencies/capabilities are available; tests use controlled capability reports.",
+    "mocked": "Validated with mocked provider/model readiness; no real hosted/GPU/model call is required."
+  },
+  "cases": [
+    {
+      "id": "trace_one_mock_prompt",
+      "title": "Trace one object with mock/no-model provider",
+      "status": "runnable",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "mock",
+      "providerName": "mock",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "maskProvider": "mock",
+        "debugMockMode": true,
+        "prompts": [{"kind": "positive_point", "x": 24, "y": 24, "frameIndex": 0}],
+        "sampleFps": 6,
+        "maxFrames": 2
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "mock", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "mock",
+        "discovery.mode": "manual_prompt",
+        "prompts.0.kind": "positive_point",
+        "sampling.sample_fps": 6,
+        "sampling.max_frames": 2,
+        "provider.sam2.hosted_allow_network": false,
+        "provider.sam3.hosted_allow_network": false
+      },
+      "expectedValidation": {
+        "valid": true,
+        "errorCodes": [],
+        "warningCodes": []
+      },
+      "expectedJob": {
+        "uiCanStart": true,
+        "canRunInDefaultTests": true,
+        "terminalStatus": "succeeded"
+      },
+      "expectedArtifacts": {
+        "kindsAnyOf": ["scene_graph", "object_manifest", "candidate_summary", "track_summary", "web_manifest"]
+      },
+      "expectedReview": {
+        "readyForReview": true,
+        "reviewToolsReady": true,
+        "hasTracksOrDiagnostics": true
+      },
+      "expectedExport": {
+        "validationOk": true,
+        "formatsAnyOf": ["motionjson"],
+        "kindsAnyOf": ["validated_motionjson_scene", "final_export_manifest", "motionjson_export_zip"]
+      }
+    },
+    {
+      "id": "threshold_cpu_local",
+      "title": "HSV threshold CPU path",
+      "status": "conditional",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "threshold",
+      "providerName": "threshold",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "maskProvider": "threshold",
+        "modelConnectionId": "threshold",
+        "prompts": [{"kind": "box", "x": 12, "y": 12, "w": 32, "h": 32, "frameIndex": 0}]
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "threshold", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "threshold",
+        "discovery.mode": "manual_prompt",
+        "prompts.0.kind": "box",
+        "provider.sam2.hosted_allow_network": false
+      },
+      "expectedValidation": {"valid": true, "warningCodes": []},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false, "reason": "CPU-safe but mask quality depends on input and HSV settings."}
+    },
+    {
+      "id": "motion_foreground_cpu",
+      "title": "Motion foreground no-model CPU workflow",
+      "status": "conditional",
+      "goal": "find_moving_things",
+      "uiPreset": "motion_foreground",
+      "modelConnectionId": "motion_foreground",
+      "providerName": "motion",
+      "discoveryMode": "motion_foreground",
+      "builderInput": {
+        "presetId": "motion_foreground",
+        "modelConnectionId": "motion_foreground",
+        "maskProvider": "motion",
+        "sampleFps": 6,
+        "maxFrames": 12
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "motion", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true},
+          {"name": "motion_foreground", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "motion",
+        "discovery.mode": "motion_foreground",
+        "discovery.config.threshold": 32,
+        "prompts.length": 0
+      },
+      "expectedValidation": {"valid": true, "warningCodes": []},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false, "reason": "Deterministic run assertions need motion-specific fixtures."}
+    },
+    {
+      "id": "sam_auto_masks_mock_proposals",
+      "title": "Propose all visible segments with mock no-model provider",
+      "status": "mocked",
+      "goal": "propose_visible_segments",
+      "uiPreset": "sam_auto_masks",
+      "modelConnectionId": "mock",
+      "providerName": "mock",
+      "discoveryMode": "sam_auto_masks",
+      "builderInput": {
+        "presetId": "sam_auto_masks",
+        "maskProvider": "mock",
+        "debugMockMode": true
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "mock", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true},
+          {"name": "sam_auto_masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready", "mockAvailable": true}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "mock",
+        "discovery.mode": "sam_auto_masks",
+        "discovery.config.mock": true,
+        "discovery.config.providerPreference": "mock",
+        "prompts.length": 0
+      },
+      "expectedValidation": {"valid": true, "warningCodes": []},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false, "reason": "Matrix validates generated config and readiness without requiring automatic-mask runtime."}
+    },
+    {
+      "id": "sam_auto_masks_unavailable",
+      "title": "Propose all visible segments is blocked when SAM automatic masks are unavailable",
+      "status": "blocked",
+      "goal": "propose_visible_segments",
+      "uiPreset": "sam_auto_masks",
+      "modelConnectionId": "sam2-local",
+      "providerName": "sam2-local",
+      "discoveryMode": "sam_auto_masks",
+      "builderInput": {
+        "presetId": "sam_auto_masks",
+        "modelConnectionId": "sam2-local"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-local", "kind": "mask_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["sam2 package is not importable."], "installHint": "Install SAM2 and save checkpoint/config paths."},
+          {"name": "sam_auto_masks", "kind": "discovery_provider", "available": false, "runnable": false, "status": "not_configured", "reasons": ["SAM automatic-mask discovery is unavailable until a compatible SAM runtime is configured."], "installHint": "Configure a ready SAM automatic-mask provider or use mock/no-model mode."}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-local",
+        "discovery.mode": "sam_auto_masks",
+        "discovery.config.providerPreference": "sam2-local",
+        "discovery.config.reject_background": true,
+        "prompts.length": 0
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam2-local", "sam_auto_masks"],
+        "messageContainsAnyOf": ["sam2", "automatic-mask", "not available", "unavailable"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "external_masks_missing_dir",
+      "title": "External masks are blocked when mask directory is missing",
+      "status": "blocked",
+      "goal": "import_masks",
+      "uiPreset": "external_masks",
+      "modelConnectionId": "external_masks",
+      "providerName": "external",
+      "discoveryMode": "external_masks",
+      "builderInput": {
+        "presetId": "external_masks",
+        "modelConnectionId": "external_masks",
+        "maskProvider": "external",
+        "advanced": {"externalMaskDir": ""}
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "external", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true},
+          {"name": "external_masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready", "noModelSafe": true}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "external",
+        "discovery.mode": "external_masks",
+        "provider.external.mask_dir": null
+      },
+      "expectedValidation": {
+        "valid": false,
+        "messageContainsAnyOf": ["mask_dir", "mask directory", "external"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam2_local_unavailable",
+      "title": "SAM2 local is blocked when package/model paths are missing",
+      "status": "blocked",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "sam2-local",
+      "providerName": "sam2-local",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "modelConnectionId": "sam2-local",
+        "prompts": [{"kind": "positive_point", "x": 24, "y": 24, "frameIndex": 0}]
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-local", "kind": "mask_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["sam2 package is not importable and checkpoint/config paths are missing."], "installHint": "Install SAM2 and save checkpoint/config paths."},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-local",
+        "discovery.mode": "manual_prompt",
+        "prompts.0.kind": "positive_point"
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam2-local"],
+        "messageContainsAnyOf": ["not available", "SAM2", "sam2", "checkpoint"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam2_local_available_mocked",
+      "title": "SAM2 local validates when capability/runtime is mocked ready",
+      "status": "mocked",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "sam2-local",
+      "providerName": "sam2-local",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "modelConnectionId": "sam2-local",
+        "prompts": [{"kind": "box", "x": 12, "y": 12, "w": 32, "h": 32, "frameIndex": 0}]
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-local", "kind": "mask_provider", "available": true, "runnable": true, "status": "ready"},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-local",
+        "discovery.mode": "manual_prompt",
+        "prompts.0.kind": "box"
+      },
+      "expectedValidation": {"valid": true, "warningCodes": []},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false}
+    },
+    {
+      "id": "sam2_hf_auto_masks_unavailable",
+      "title": "SAM2 HF automatic masks are blocked when Transformers/Torch are missing",
+      "status": "blocked",
+      "goal": "trace_all_objects",
+      "uiPreset": "trace_all_objects",
+      "modelConnectionId": "sam2-hf-auto-masks",
+      "providerName": "sam2-hf-auto-masks",
+      "discoveryMode": "sam2_hf_auto_masks",
+      "builderInput": {
+        "presetId": "trace_all_objects",
+        "modelConnectionId": "sam2-hf-auto-masks"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-hf-auto-masks", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Transformers or Torch is missing for SAM2 HF automatic masks."], "installHint": "Install the sam2-transformers extra and cache facebook/sam2.1-hiera-large."}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-hf-auto-masks",
+        "discovery.mode": "sam2_hf_auto_masks",
+        "discovery.config.providerPreference": "sam2-hf-auto-masks"
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam2-hf-auto-masks"],
+        "messageContainsAnyOf": ["Transformers", "Torch", "SAM2"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam2_hf_auto_masks_available_mocked",
+      "title": "SAM2 HF automatic masks validate when capability is mocked ready",
+      "status": "mocked",
+      "goal": "trace_all_objects",
+      "uiPreset": "trace_all_objects",
+      "modelConnectionId": "sam2-hf-auto-masks",
+      "providerName": "sam2-hf-auto-masks",
+      "discoveryMode": "sam2_hf_auto_masks",
+      "builderInput": {
+        "presetId": "trace_all_objects",
+        "modelConnectionId": "sam2-hf-auto-masks"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-hf-auto-masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-hf-auto-masks",
+        "discovery.mode": "sam2_hf_auto_masks"
+      },
+      "expectedValidation": {"valid": true, "warningCodes": []},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false}
+    },
+    {
+      "id": "sam3_scene_sweep_unavailable",
+      "title": "SAM3 scene sweep is blocked against the scene-sweep capability",
+      "status": "blocked",
+      "goal": "trace_all_objects",
+      "uiPreset": "trace_all_objects",
+      "modelConnectionId": "sam3-local",
+      "providerName": "sam3-local",
+      "discoveryMode": "sam3_auto_masks",
+      "builderInput": {
+        "presetId": "trace_all_objects",
+        "modelConnectionId": "sam3-local"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam3-local", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Official SAM3 adapter is not configured."], "installHint": "Configure advanced local SAM3 only for concept/exemplar workflows."},
+          {"name": "sam3-auto-masks", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Transformers does not expose Sam3TrackerModel/Sam3TrackerProcessor."], "installHint": "Install the sam3-transformers extra and cache facebook/sam3."}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam3-local",
+        "discovery.mode": "sam3_auto_masks",
+        "discovery.config.sceneSweep": true,
+        "discovery.config.providerPreference": "sam3-local"
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam3-auto-masks"],
+        "mustNotMentionAnyOf": ["SAM3_LOCAL_MODEL"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam3_scene_sweep_available_mocked",
+      "title": "SAM3 scene sweep validates when scene-sweep capability is mocked ready",
+      "status": "mocked",
+      "goal": "trace_all_objects",
+      "uiPreset": "trace_all_objects",
+      "modelConnectionId": "sam3-local",
+      "providerName": "sam3-local",
+      "discoveryMode": "sam3_auto_masks",
+      "builderInput": {
+        "presetId": "trace_all_objects",
+        "modelConnectionId": "sam3-local"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam3-local", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Official concept adapter is not installed."]},
+          {"name": "sam3-auto-masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam3-local",
+        "discovery.mode": "sam3_auto_masks"
+      },
+      "expectedValidation": {"valid": true, "warningCodes": [], "mustNotMentionAnyOf": ["SAM3_LOCAL_MODEL"]},
+      "expectedJob": {"uiCanStart": true, "canRunInDefaultTests": false}
+    },
+    {
+      "id": "sam3_local_concept_blocked",
+      "title": "Local SAM3 concept is blocked without advanced official adapter",
+      "status": "blocked",
+      "goal": "find_objects_from_text",
+      "uiPreset": "text_detector",
+      "modelConnectionId": "sam3-local",
+      "providerName": "sam3-local",
+      "discoveryMode": "sam3_concept",
+      "builderInput": {
+        "presetId": "text_detector",
+        "modelConnectionId": "sam3-local",
+        "textDiscoveryProvider": "sam3-local",
+        "discoveryText": "red ball"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam3-local", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["Python module 'sam3' is not importable."], "installHint": "Install official SAM3 only for advanced concept/exemplar workflows."},
+          {"name": "sam3-concept", "kind": "discovery_provider", "available": false, "runnable": false, "status": "missing_dependency", "reasons": ["SAM3 local concept adapter requires the official SAM3 package and a local sam3.pt checkpoint."], "installHint": "Use hosted SAM3 concept or configure the advanced local adapter."},
+          {"name": "sam3-auto-masks", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam3-local",
+        "discovery.mode": "sam3_concept",
+        "discovery.config.providerPreference": "sam3-local",
+        "discovery.config.hosted": false
+      },
+      "expectedValidation": {
+        "valid": false,
+        "errorCodesAnyOf": ["sam3_local_concept_unavailable"],
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam3-local", "sam3-concept"],
+        "messageContainsAnyOf": ["hosted SAM3 concept", "Scene Sweep", "advanced official SAM3", "official SAM3"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam2_hosted_blocked_without_opt_in",
+      "title": "Hosted SAM2 is blocked without cost/privacy/network acknowledgement",
+      "status": "blocked",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "sam2-hosted:replicate-sam2-video",
+      "providerName": "sam2-hosted",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "modelConnectionId": "sam2-hosted:replicate-sam2-video",
+        "prompts": [{"kind": "positive_point", "x": 24, "y": 24, "frameIndex": 0}],
+        "hostedSam2AllowHosted": false
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-hosted", "kind": "mask_provider", "available": true, "configured": true, "runnable": false, "status": "ready", "networkRequired": true, "needsCredentials": true, "reasons": ["Hosted SAM2 requires explicit cost/privacy/network opt-in."], "installHint": "Enable hosted network use explicitly."},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-hosted",
+        "discovery.mode": "manual_prompt",
+        "provider.sam2.hosted_allow_network": false
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam2-hosted"],
+        "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "sam3_hosted_blocked_without_opt_in",
+      "title": "Hosted SAM3 is blocked without cost/privacy/network acknowledgement",
+      "status": "blocked",
+      "goal": "find_objects_from_text",
+      "uiPreset": "text_detector",
+      "modelConnectionId": "sam3-hosted:roboflow-sam3-pcs",
+      "providerName": "sam3-hosted",
+      "discoveryMode": "sam3_concept",
+      "builderInput": {
+        "presetId": "text_detector",
+        "modelConnectionId": "sam3-hosted:roboflow-sam3-pcs",
+        "textDiscoveryProvider": "sam3-hosted",
+        "hostedSam3ProfileId": "roboflow-sam3-pcs",
+        "hostedSam3AllowHosted": false,
+        "discoveryText": "red ball"
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam3-hosted", "kind": "discovery_provider", "available": true, "configured": true, "runnable": false, "status": "ready", "networkRequired": true, "needsCredentials": true, "reasons": ["Hosted SAM3 requires explicit cost/privacy/network opt-in."], "installHint": "Enable hosted SAM3 network use explicitly."},
+          {"name": "sam3-concept", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam3-hosted",
+        "discovery.mode": "sam3_concept",
+        "discovery.config.providerPreference": "sam3-hosted",
+        "discovery.config.hosted": true,
+        "discovery.config.allowNetwork": false
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam3-hosted"],
+        "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "hosted_configured_no_network",
+      "title": "Hosted provider with credentials remains blocked until network opt-in",
+      "status": "blocked",
+      "goal": "trace_one_object",
+      "uiPreset": "trace_one_object",
+      "modelConnectionId": "sam2-hosted:replicate-sam2-video",
+      "providerName": "sam2-hosted",
+      "discoveryMode": "manual_prompt",
+      "builderInput": {
+        "presetId": "trace_one_object",
+        "modelConnectionId": "sam2-hosted:replicate-sam2-video",
+        "hostedSam2ProfileId": "replicate-sam2-video",
+        "hostedSam2AllowHosted": false,
+        "prompts": [{"kind": "positive_point", "x": 24, "y": 24, "frameIndex": 0}]
+      },
+      "capabilityReport": {
+        "providers": [
+          {"name": "sam2-hosted", "kind": "mask_provider", "available": true, "configured": true, "runnable": false, "status": "hosted_opt_in_required", "networkRequired": true, "needsCredentials": false, "reasons": ["Credentials are saved, but hosted calls remain disabled until cost and privacy are confirmed."], "installHint": "Confirm hosted network use before running."},
+          {"name": "manual_prompt", "kind": "discovery_provider", "available": true, "runnable": true, "status": "ready"}
+        ]
+      },
+      "expectedRunConfig": {
+        "provider.name": "sam2-hosted",
+        "provider.sam2.hosted_allow_network": false,
+        "provider.sam2.hosted_config.profile": "replicate-sam2-video"
+      },
+      "expectedValidation": {
+        "valid": true,
+        "blockingWarningCodesAnyOf": ["provider_unavailable"],
+        "blockingProvidersAnyOf": ["sam2-hosted"],
+        "messageContainsAnyOf": ["hosted", "disabled", "confirmed", "network"]
+      },
+      "expectedJob": {"uiCanStart": false}
+    },
+    {
+      "id": "fake_local_planner",
+      "title": "Fake local planner generates a valid plan without network",
+      "status": "runnable",
+      "goal": "find_objects_from_text",
+      "modelProviderId": "fake-local-planner",
+      "modelInput": {"goal": "Find by description", "prompt": "red ball", "videoId": "asset_123", "projectId": "project_123"},
+      "expectedModelRun": {
+        "networkAttempted": false,
+        "status": "succeeded",
+        "requiresUserConfirmation": true,
+        "runConfigValid": true,
+        "provider.name": "mock"
+      }
+    },
+    {
+      "id": "openai_planner_mocked",
+      "title": "OpenAI planner uses mocked transport and redacts secrets/paths",
+      "status": "mocked",
+      "goal": "find_objects_from_text",
+      "modelProviderId": "openai-planner",
+      "modelInput": {"goal": "Find by description", "prompt": "red ball api_key=sk-test-secret", "sourcePath": "/Users/alice/private/movie.mp4", "videoId": "asset_123", "projectId": "project_123"},
+      "expectedModelRun": {
+        "networkAttempted": true,
+        "realNetworkAllowedInDefaultTests": false,
+        "requiresUserConfirmation": true,
+        "runConfigValid": true,
+        "provider.name": "mock",
+        "payloadMustNotContain": ["sk-test-secret", "/Users/alice"]
+      }
+    },
+    {
+      "id": "openrouter_planner_not_runnable",
+      "title": "OpenRouter planner remains settings-only until implemented",
+      "status": "blocked",
+      "goal": "find_objects_from_text",
+      "modelProviderId": "openrouter-planner",
+      "modelInput": {"goal": "Find by description", "prompt": "red ball"},
+      "expectedModelRun": {
+        "readinessRunnable": false,
+        "planRaises": true,
+        "messageContainsAnyOf": ["settings-only", "not enabled", "not runnable"]
+      }
+    },
+    {
+      "id": "review_existing_import",
+      "title": "Review existing MotionJSON result via project import",
+      "status": "runnable",
+      "goal": "review_existing_result",
+      "uiPreset": "review_existing",
+      "modelConnectionId": "none",
+      "providerName": "import",
+      "discoveryMode": "review_existing",
+      "expectedImport": {
+        "endpoint": "/api/projects/{projectId}/imports/motionjson",
+        "validationOk": true,
+        "reviewToolsReady": true,
+        "previewFilesAnyOf": ["preview/timeline_editor.html", "web_asset_manifest.json"]
+      }
+    }
+  ]
+}
