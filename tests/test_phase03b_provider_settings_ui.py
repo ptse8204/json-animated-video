@@ -13,6 +13,8 @@ def read(path: str) -> str:
 def test_phase03b_local_ui_has_provider_settings_surface():
     html = read("src/motionjson/ui/static/index.html")
     js = read("src/motionjson/ui/static/app.js")
+    provider_connections = read("src/motionjson/ui/static/modules/provider_connections.js")
+    static_js = js + "\n" + provider_connections
     css = read("src/motionjson/ui/static/app.css")
     layout = read("scripts/check_local_ui_layout.mjs")
 
@@ -49,11 +51,11 @@ def test_phase03b_local_ui_has_provider_settings_surface():
         "/api/provider-settings/${encodeURIComponent(providerId)}/test",
         "/api/provider-settings/${encodeURIComponent(providerId)}/diagnose",
         "/api/provider-settings/${encodeURIComponent(providerId)}/smoke-test",
-        "Run local smoke",
+        "Run runtime smoke",
         "Run hosted smoke",
         'state.health?.mockMode || provider.id !== "mock"',
     ]:
-        assert expected in js
+        assert expected in static_js
 
     for expected in [
         "model-setup-panel",

@@ -809,6 +809,12 @@ def test_local_ui_serves_static_shell(tmp_path):
     assert b"MotionJSON" in body
     assert b"/ui/app.js" in body
 
+    status, headers, body = app.handle("GET", "/ui/modules/workflow.js")
+
+    assert status == 200
+    assert headers["content-type"].startswith("text/javascript")
+    assert b"export const WORKFLOW_STEPS" in body
+
 
 def test_local_ui_api_creates_project_and_registers_local_video(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage")

@@ -128,6 +128,8 @@ def test_review_export_workspace_has_distinct_review_and_export_hooks():
 
 def test_advanced_discover_objects_has_compatible_model_connections():
     js = read("src/motionjson/ui/static/app.js")
+    provider_connections = read("src/motionjson/ui/static/modules/provider_connections.js")
+    static_js = js + "\n" + provider_connections
 
-    assert 'auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"]' in js
+    assert 'auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"]' in static_js
     assert 'presetId === "auto_object_proposals"' in js

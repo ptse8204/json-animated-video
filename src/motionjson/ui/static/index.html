@@ -4,13 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MotionJSON Workspace</title>
-    <!-- Build check labels retained for shell contract: Platform release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
+    <!-- Build check labels retained for shell contract: Local release candidate; Platform release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
     <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
   <body>
     <a class="skip-link" href="#workspaceMain">Skip to workspace</a>
-    <main class="app-shell">
+    <main class="app-shell" data-testid="local-ui-shell">
       <aside id="workspaceSidebar" class="sidebar" aria-label="Workspace navigation">
         <div class="brand">
           <span class="brand-mark" aria-hidden="true"></span>
@@ -81,7 +81,7 @@
 
           <details class="compact-panel disclosure-panel">
             <summary>Runtime API</summary>
-            <dl id="healthStatus" class="facts"></dl>
+            <dl id="healthStatus" class="facts" data-testid="runtime-health-status"></dl>
           </details>
 
           <details class="compact-panel disclosure-panel">
@@ -103,7 +103,7 @@
               aria-expanded="false"
             >Project</button>
           </div>
-          <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow">
+          <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
             <li class="is-active" data-studio-step="choose_goal">
               <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Start</strong></button>
             </li>
@@ -137,7 +137,7 @@
           </div>
         </header>
 
-        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Task setup">
+        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Task setup" data-testid="workflow-goal-panel">
           <div class="guided-start-header">
             <div>
               <h2>What do you want to do?</h2>
@@ -146,19 +146,19 @@
             <span id="guidedModeChip" class="status-chip is-neutral">Runtime first</span>
           </div>
           <div class="goal-card-grid" aria-label="Object tracing goals">
-            <button class="goal-card is-active" type="button" data-preset="trace_one_object" aria-pressed="true">
+            <button class="goal-card is-active" type="button" data-preset="trace_one_object" data-testid="goal-trace-one-object" aria-pressed="true">
               <span class="goal-card-title">Cut out one object</span>
               <span class="goal-card-copy">Place a point or box, then track that subject.</span>
             </button>
-            <button class="goal-card" type="button" data-preset="text_detector" aria-pressed="false">
+            <button class="goal-card" type="button" data-preset="text_detector" data-testid="goal-text-detector" aria-pressed="false">
               <span class="goal-card-title">Find by description</span>
               <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
             </button>
-            <button class="goal-card" type="button" data-preset="trace_all_objects" aria-pressed="false">
+            <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
               <span class="goal-card-title">Find everything in scene</span>
               <span class="goal-card-copy">Sweep for visible objects, review candidates, then track accepted objects.</span>
             </button>
-            <button class="goal-card" type="button" data-preset="review_existing" aria-pressed="false">
+            <button class="goal-card" type="button" data-preset="review_existing" data-testid="goal-review-existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
               <span class="goal-card-copy">Open a prior result and check tracks before export.</span>
             </button>
@@ -166,23 +166,23 @@
           <details class="advanced-panel advanced-task-panel">
             <summary>Advanced tasks</summary>
             <div class="advanced-goal-list">
-              <button class="goal-card" type="button" data-preset="motion_foreground" aria-pressed="false">
+              <button class="goal-card" type="button" data-preset="motion_foreground" data-testid="goal-motion-foreground" aria-pressed="false">
                 <span class="goal-card-title">Find moving things</span>
                 <span class="goal-card-copy">Use runtime motion cues without a model.</span>
               </button>
-              <button class="goal-card" type="button" data-preset="auto_object_proposals" aria-pressed="false">
+              <button class="goal-card" type="button" data-preset="auto_object_proposals" data-testid="goal-auto-object-proposals" aria-pressed="false">
                 <span class="goal-card-title">Discover objects</span>
                 <span class="goal-card-copy">Generate automatic proposals before tracking.</span>
               </button>
-              <button class="goal-card" type="button" data-preset="sam_auto_masks" aria-pressed="false">
+              <button class="goal-card" type="button" data-preset="sam_auto_masks" data-testid="goal-sam-auto-masks" aria-pressed="false">
                 <span class="goal-card-title">Propose all visible segments</span>
                 <span class="goal-card-copy">Use noisier segmentation for expert review.</span>
               </button>
-              <button class="goal-card" type="button" data-preset="external_masks" aria-pressed="false">
+              <button class="goal-card" type="button" data-preset="external_masks" data-testid="goal-external-masks" aria-pressed="false">
                 <span class="goal-card-title">Import masks</span>
                 <span class="goal-card-copy">Bring prepared masks into review.</span>
               </button>
-              <button class="goal-card" type="button" data-preset="class_detector" aria-pressed="false">
+              <button class="goal-card" type="button" data-preset="class_detector" data-testid="goal-class-detector" aria-pressed="false">
                 <span class="goal-card-title">Find known classes</span>
                 <span class="goal-card-copy">Use configured detector classes.</span>
               </button>
@@ -190,7 +190,7 @@
           </details>
         </section>
 
-        <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow">
+        <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow" data-testid="workflow-controller">
           <div class="workflow-controller-header">
             <div>
               <h2 id="workflowTitle">Setup</h2>
@@ -206,6 +206,7 @@
             class="workflow-steps workflow-steps-accessible"
             aria-label="Workspace workflow"
             aria-keyshortcuts="ArrowRight ArrowDown ArrowLeft ArrowUp Home End"
+            data-testid="workflow-stepper"
             hidden
           >
             <li><button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong><small>Choose what to trace</small></button></li>
@@ -218,8 +219,8 @@
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
           <div class="workflow-footer">
             <div class="workflow-footer-actions">
-              <button id="workflowBackButton" type="button">Back</button>
-              <button id="workflowPrimaryButton" class="primary-action" type="button">Continue to video</button>
+              <button id="workflowBackButton" type="button" data-testid="workflow-back">Back</button>
+              <button id="workflowPrimaryButton" class="primary-action" type="button" data-testid="workflow-primary">Continue to video</button>
             </div>
             <p id="workflowFooterHint" class="row-meta">Choose a tracing goal to continue.</p>
             <p id="workflowFooterReason" class="form-hint workflow-footer-reason" hidden></p>
@@ -282,9 +283,9 @@
           <div id="postRunGuideList" class="post-run-guide-list" aria-live="polite"></div>
         </section>
 
-        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" role="status"></div>
+        <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" data-testid="run-plan-alert" role="status"></div>
 
-        <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup">
+        <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup" data-testid="model-setup-panel">
           <div class="model-setup-heading">
             <div>
               <p class="section-kicker">Model setup</p>
@@ -293,8 +294,8 @@
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
-          <div id="modelSetupChoices" class="model-choice-grid" data-workflow-fragment="provider_settings" aria-label="SAM model connection choices"></div>
-          <div id="modelSetupDetail" class="model-setup-detail" data-workflow-fragment="provider_settings" aria-live="polite"></div>
+          <div id="modelSetupChoices" class="model-choice-grid" data-workflow-fragment="provider_settings" data-testid="model-setup-choices" aria-label="SAM model connection choices"></div>
+          <div id="modelSetupDetail" class="model-setup-detail" data-workflow-fragment="provider_settings" data-testid="model-setup-detail" aria-live="polite"></div>
         </section>
 
         <section class="workspace-grid">
@@ -450,7 +451,7 @@
               <div class="advanced-stack">
                 <label>
                   <span>Current project</span>
-                  <select id="projectSelect" aria-label="Project"></select>
+                  <select id="projectSelect" data-testid="project-select" aria-label="Project"></select>
                 </label>
                 <form id="projectForm" class="inline-form">
                   <label>
@@ -468,7 +469,7 @@
                 <span id="videoCount" class="subtle-chip">0 videos</span>
               </div>
               <p class="form-hint step-leading-note">The source file stays in the selected runtime unless you explicitly choose a hosted provider. MotionJSON prepares a browser-safe preview automatically when needed.</p>
-              <div id="directUploadCard" class="upload-dropzone">
+              <div id="directUploadCard" class="upload-dropzone" data-testid="direct-upload-card">
                 <div>
                   <strong>Upload a video</strong>
                   <p class="form-hint">Choose an MP4, MOV, WebM, or other video file. This creates the project and registers the source in one step.</p>
@@ -476,7 +477,7 @@
                 </div>
                 <label class="file-control upload-file-control">
                   <span>Choose video file</span>
-                  <input id="videoFileInput" type="file" accept="video/*" />
+                  <input id="videoFileInput" type="file" accept="video/*" data-testid="video-file-input" />
                 </label>
               </div>
               <div id="browserPreviewCard" class="browser-preview-card">
@@ -491,18 +492,18 @@
                 <button id="retryPreviewButton" type="button" hidden>Retry preview</button>
               </div>
               <div class="inline-secondary-actions">
-                <button id="guidedDemoVideoButton" type="button">Use demo video</button>
+                <button id="guidedDemoVideoButton" type="button" data-testid="use-demo-video">Use demo video</button>
               </div>
-              <select id="videoSelect" aria-label="Registered video"></select>
+              <select id="videoSelect" data-testid="video-select" aria-label="Registered video"></select>
               <details id="localVideoPathDisclosure" class="advanced-panel">
                 <summary>Use a runtime file path instead</summary>
                 <div class="advanced-stack">
-                  <form id="videoForm" class="inline-form primary-form">
+                  <form id="videoForm" class="inline-form primary-form" data-testid="video-path-form">
                     <label>
                       <span>Runtime video path</span>
-                      <input id="videoPath" type="text" placeholder="/Users/me/video.mp4 or examples/demo_red_ball.mp4" required />
+                      <input id="videoPath" type="text" placeholder="/Users/me/video.mp4 or examples/demo_red_ball.mp4" required data-testid="video-path-input" />
                     </label>
-                    <button type="submit">Register path</button>
+                    <button type="submit" data-testid="register-video-path">Register path</button>
                   </form>
                   <p class="form-hint">Use this when the browser file picker cannot access the source file. The upload path is safer for normal use.</p>
                 </div>
@@ -535,7 +536,7 @@
               <span id="presetSummary" class="status-chip is-neutral">Discover objects</span>
             </div>
 
-            <div id="providerWarning" class="warning-box" role="status"></div>
+            <div id="providerWarning" class="warning-box" data-testid="provider-warning" role="status"></div>
 
             <div class="wizard-fields">
               <label id="objectLabelField" data-workflow-fragment="prompt_preview">
@@ -736,10 +737,10 @@
             </div>
             <div class="config-actions">
               <button id="startMockRunButton" class="primary-action" type="button" data-action="run-job" data-tooltip="Start debug no-model smoke job" hidden>Start debug mock job</button>
-              <button id="validateConfigButton" type="button" data-tooltip="Validate without starting a job">Validate config</button>
-              <button id="startRunButton" type="button" data-action="run-job" data-tooltip="Start with selected provider">Start extraction</button>
+              <button id="validateConfigButton" type="button" data-testid="validate-config" data-tooltip="Validate without starting a job">Validate config</button>
+              <button id="startRunButton" type="button" data-action="run-job" data-testid="start-run" data-tooltip="Start with selected provider">Start extraction</button>
             </div>
-            <div id="runPlanSummary" class="run-plan-summary" aria-live="polite"></div>
+            <div id="runPlanSummary" class="run-plan-summary" data-testid="run-plan-summary" aria-live="polite"></div>
             <details class="advanced-panel compact-advanced-actions">
               <summary>Save or load generated config</summary>
               <div class="advanced-action-row">
@@ -767,7 +768,7 @@
           </button>
         </section>
 
-        <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan">
+        <section id="modelPlanPanel" class="model-plan-panel panel" data-workflow-panel="validate_run" aria-label="Model generated run plan" data-testid="model-plan-panel">
           <div class="model-plan-heading">
             <div>
               <p class="section-kicker">Advanced planning</p>
@@ -779,12 +780,12 @@
           <div class="model-plan-compose">
             <label class="model-intent-field">
               <span>What should MotionJSON trace?</span>
-              <textarea id="modelIntent" rows="3">Cut out the selected object and keep export review required.</textarea>
+              <textarea id="modelIntent" rows="3" data-testid="model-intent">Cut out the selected object and keep export review required.</textarea>
             </label>
             <div class="model-plan-actions">
-              <button id="generateModelPlanButton" type="button">Generate planner config</button>
-              <button id="validateModelPlanButton" type="button" disabled>Validate generated config</button>
-              <button id="confirmModelPlanButton" class="primary-action" type="button" disabled>Confirm and start</button>
+              <button id="generateModelPlanButton" type="button" data-testid="generate-model-plan">Generate planner config</button>
+              <button id="validateModelPlanButton" type="button" data-testid="validate-model-plan" disabled>Validate generated config</button>
+              <button id="confirmModelPlanButton" class="primary-action" type="button" data-testid="confirm-model-plan" disabled>Confirm and start</button>
             </div>
           </div>
           <div id="modelPlanDetail" class="model-plan-detail" aria-live="polite">
@@ -813,9 +814,9 @@
           <section id="providerSettingsPanel" class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Providers and models</h2>
-              <span id="providerSettingsStatus" class="status-chip is-muted">Not loaded</span>
+              <span id="providerSettingsStatus" class="status-chip is-muted" data-testid="provider-settings-status">Not loaded</span>
             </div>
-            <div id="providerSettingsList" class="provider-settings-list" aria-live="polite"></div>
+            <div id="providerSettingsList" class="provider-settings-list" data-testid="provider-settings-list" aria-live="polite"></div>
           </section>
         </details>
 
@@ -836,9 +837,9 @@
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Run status</h2>
-              <span id="runMonitorStatus" class="status-chip is-muted">No run</span>
+              <span id="runMonitorStatus" class="status-chip is-muted" data-testid="run-monitor-status">No run</span>
             </div>
-            <div id="runMonitorSummary" class="status-summary-grid" aria-live="polite"></div>
+            <div id="runMonitorSummary" class="status-summary-grid" data-testid="run-monitor-summary" aria-live="polite"></div>
           </section>
           <details class="nested-rail-disclosure">
             <summary>Run defaults</summary>
@@ -879,7 +880,7 @@
                 <h2>Logs</h2>
                 <span id="eventCount" class="subtle-chip">0 events</span>
               </div>
-              <div id="jobEventLog" class="event-log" aria-live="polite"></div>
+              <div id="jobEventLog" class="event-log" data-testid="job-event-log" aria-live="polite"></div>
             </section>
           </details>
         </details>
@@ -936,7 +937,7 @@
               <h2>Tracks</h2>
               <span id="trackCount" class="subtle-chip">0 tracks</span>
             </div>
-            <div id="trackList" class="track-list"></div>
+            <div id="trackList" class="track-list" data-testid="track-list"></div>
           </section>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -959,17 +960,17 @@
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Export</h2>
-              <span id="exportStatus" class="status-chip is-muted">Not validated</span>
+              <span id="exportStatus" class="status-chip is-muted" data-testid="export-status">Not validated</span>
             </div>
             <p class="panel-note">Only reviewed tracks kept in Review and marked for export are included by default.</p>
             <div id="exportDecision" class="export-decision-slot" aria-live="polite"></div>
             <div id="exportStatusSummary" class="status-summary-grid" aria-live="polite"></div>
-            <div id="exportHandoffCards" class="export-handoff-grid"></div>
+            <div id="exportHandoffCards" class="export-handoff-grid" data-testid="export-handoff-cards"></div>
             <div id="exportReviewTools" class="review-tool-grid is-compact"></div>
             <div id="exportNextSteps" class="export-next-steps"></div>
             <div class="export-primary-actions" aria-label="MotionJSON export actions">
-              <button id="validateExportButton" type="button" data-tooltip="Validate the selected export preset">Validate export</button>
-              <button id="exportMotionJsonButton" class="primary-action" type="button" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
+              <button id="validateExportButton" type="button" data-testid="validate-export" data-tooltip="Validate the selected export preset">Validate export</button>
+              <button id="exportMotionJsonButton" class="primary-action" type="button" data-testid="export-motionjson" data-tooltip="Write validated MotionJSON artifacts">Export MotionJSON</button>
             </div>
             <details class="advanced-export-disclosure">
               <summary>Advanced export settings</summary>
@@ -1016,21 +1017,21 @@
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Corrections</h2>
-              <span id="correctionStatus" class="status-chip is-muted">Not loaded</span>
+              <span id="correctionStatus" class="status-chip is-muted" data-testid="correction-status">Not loaded</span>
             </div>
             <p id="correctionPersistenceMessage" class="panel-note">Correction edits load and save through the Runtime API.</p>
             <div id="correctionStatusSummary" class="status-summary-grid" aria-live="polite"></div>
-            <div id="correctionGuidance" class="correction-guidance" aria-live="polite"></div>
+            <div id="correctionGuidance" class="correction-guidance" data-testid="correction-guidance" aria-live="polite"></div>
             <div class="correction-editor">
               <label>
                 <span>Track</span>
-                <select id="correctionTrackSelect" aria-label="Correction target track"></select>
+                <select id="correctionTrackSelect" data-testid="correction-track-select" aria-label="Correction target track"></select>
               </label>
               <label>
                 <span>Label</span>
-                <input id="correctionLabelInput" type="text" placeholder="object label" />
+                <input id="correctionLabelInput" type="text" placeholder="object label" data-testid="correction-label-input" />
               </label>
-              <button id="relabelTrackButton" type="button">Relabel</button>
+              <button id="relabelTrackButton" type="button" data-testid="relabel-track">Relabel</button>
             </div>
             <div class="correction-range">
               <label>
@@ -1041,13 +1042,13 @@
                 <span>End frame</span>
                 <input id="correctionFrameEnd" type="number" min="0" step="1" value="0" />
               </label>
-              <button id="useCurrentFrameRangeButton" type="button">Use current</button>
+              <button id="useCurrentFrameRangeButton" type="button" data-testid="use-current-frame-range">Use current</button>
             </div>
             <div class="correction-actions">
-              <button id="mergeTracksButton" type="button">Merge selected</button>
-              <button id="splitTrackButton" type="button">Split track</button>
-              <button id="addObjectButton" type="button">Add from prompts</button>
-              <button id="repairTrackButton" class="primary-action" type="button">Repair with prompts</button>
+              <button id="mergeTracksButton" type="button" data-testid="merge-tracks">Merge selected</button>
+              <button id="splitTrackButton" type="button" data-testid="split-track">Split track</button>
+              <button id="addObjectButton" type="button" data-testid="add-object">Add from prompts</button>
+              <button id="repairTrackButton" class="primary-action" type="button" data-testid="repair-track">Repair with prompts</button>
             </div>
             <div class="correction-meta">
               <span id="mergeSelectionCount" class="subtle-chip">0 selected</span>

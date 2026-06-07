@@ -1,9 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = process.cwd();
 const staticDir = join(root, "src", "motionjson", "ui", "static");
-const files = ["index.html", "app.css", "app.js", "config_builder.js", "ui_selectors.js", "favicon.svg"];
+const topLevelFiles = ["index.html", "app.css", "app.js", "config_builder.js", "ui_selectors.js", "favicon.svg"];
+const moduleFiles = await collectJsModules("modules");
+const files = [...topLevelFiles, ...moduleFiles];
 const contents = new Map();
 
 for (const file of files) {
@@ -20,6 +22,27 @@ const style = contents.get("app.css");
 const configBuilder = contents.get("config_builder.js");
 const uiSelectors = contents.get("ui_selectors.js");
 const combined = [...contents.values()].join("\n");
+
+async function collectJsModules(prefix) {
+  const rootDir = join(staticDir, prefix);
+  let entries;
+  try {
+    entries = await readdir(rootDir, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  const files = [];
+  for (const entry of entries) {
+    const relPath = `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...(await collectJsModules(relPath)));
+    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+      files.push(relPath);
+    }
+  }
+  return files.sort();
+}
 
 for (const reference of ["/ui/app.css", "/ui/app.js", "/ui/favicon.svg"]) {
   if (!index.includes(reference)) {
@@ -343,6 +366,45 @@ for (const helper of [
 
 if (!script.includes("from \"./ui_selectors.js\"")) {
   throw new Error("app.js must import the dependency-free UI selectors");
+}
+
+for (const moduleImport of [
+  "from \"./modules/api_client.js\"",
+  "from \"./modules/provider_connections.js\"",
+  "from \"./modules/state_store.js\"",
+  "from \"./modules/workflow.js\"",
+]) {
+  if (!script.includes(moduleImport)) {
+    throw new Error(`app.js must import ${moduleImport}`);
+  }
+}
+
+for (const testId of [
+  "local-ui-shell",
+  "workflow-goal-panel",
+  "workflow-stepper",
+  "model-setup-panel",
+  "model-setup-choices",
+  "video-file-input",
+  "register-video-path",
+  "start-run",
+  "generate-model-plan",
+  "validate-model-plan",
+  "confirm-model-plan",
+  "job-event-log",
+  "track-list",
+  "correction-track-select",
+  "relabel-track",
+  "merge-tracks",
+  "split-track",
+  "add-object",
+  "repair-track",
+  "export-motionjson",
+  "provider-settings-list",
+]) {
+  if (!index.includes(`data-testid="${testId}"`)) {
+    throw new Error(`index.html is missing data-testid="${testId}"`);
+  }
 }
 
 const remotePattern = /https?:\/\//;

@@ -6,6 +6,38 @@ import {
   projectShellStateFromSnapshot,
   reviewExportScreenStateFromSnapshot,
 } from "./ui_selectors.js";
+import { api, artifactRelPath, localApiUrl, previewFileUrl, reviewToolUrl, safeLocalContentUrl } from "./modules/api_client.js";
+import {
+  ADVANCED_MODEL_CONNECTIONS,
+  MODEL_CONNECTIONS,
+  MODEL_CONNECTION_PRIORITY,
+  engineFromProviderId,
+  localityFromProviderId,
+  modelConnectionByConnectionId,
+  normalizedModelConnection,
+  providerIdFromConnectionId,
+  providerLabel,
+} from "./modules/provider_connections.js";
+import { CORRECTION_STATE_FORMAT, defaultState, emptyCorrectionState } from "./modules/state_store.js";
+import {
+  WORKFLOW_FRAGMENT_STEP_ALIASES,
+  WORKFLOW_PANEL_STEP_ALIASES,
+  WORKFLOW_STEPS,
+  goalRequiresModel,
+  goalRequiresReviewExportFlow,
+  isActiveJobStatus,
+  isFailedJobStatus,
+  normalizeWorkflowStepId,
+  workflowJobStatusFromSnapshot as workflowJobStatusFromSnapshotBase,
+  workflowModelSetupStatusFromSnapshot,
+  workflowNextStepId,
+  workflowReadinessFromSnapshot,
+  workflowRestoredStepFromSnapshot,
+  workflowScreenForStep,
+  workflowStepForScreen,
+  workflowStepIndex,
+  workflowSummaryCardsFromSnapshot,
+} from "./modules/workflow.js";
 
 const MotionJSONUI = (() => {
   const API_ROUTES = [
@@ -68,7 +100,6 @@ const MotionJSONUI = (() => {
   ];
 
   const RUN_CONFIG_SCHEMA = "motionjson.extraction_run_config.v0.1";
-  const CORRECTION_STATE_FORMAT = "motionjson.local_ui_corrections.v0.1";
   const TERMINAL_JOB_STATUSES = new Set(["succeeded", "failed", "canceled", "cancelled"]);
   const STALE_ACTIVE_JOB_MS = 2 * 60 * 1000;
   const LOCAL_JOB_PROVIDERS = new Set(["mock", "threshold", "motion", "external", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-local", "sam3-hosted"]);
@@ -87,7 +118,6 @@ const MotionJSONUI = (() => {
     deviceSelect: "device",
   };
   const AUTO_PARAMETER_KEYS = new Set(Object.values(AUTO_PARAMETER_FIELDS));
-  const SAFE_LOCAL_CONTENT_URL_RE = /^\/api\/(?:videos|artifacts|assets)\/[A-Za-z0-9._~-]+\/content(?:[?#][^\s]*)?$|^\/api\/jobs\/[A-Za-z0-9._~-]+\/preview-files\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]+(?:[?#][^\s]*)?$/;
   const TRACK_COLORS = ["#20c4cf", "#45b844", "#2f8dea", "#f9bd0a", "#9b59b6", "#ef5b5b", "#6f7a86"];
   const REVIEW_TOOL_DEFS = [
     {
@@ -111,110 +141,6 @@ const MotionJSONUI = (() => {
   ];
   const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
   const BUNDLED_DEMO_VIDEO_PATH = "examples/demo_red_ball.mp4";
-  const MODEL_CONNECTIONS = [
-    {
-      id: "sam2-local",
-      providerId: "sam2-local",
-      engine: "sam2",
-      locality: "local",
-      displayLabel: "SAM2 prompt tracking",
-      workflow: "Trace one object",
-      title: "SAM2 prompt tracking",
-      capabilities: ["point", "box", "tracking"],
-      recommendation: "Recommended runtime path for cutting out one prompted object.",
-      nextAction: "Install SAM2 fallback or save checkpoint and config paths",
-      profileId: "",
-    },
-    {
-      id: "sam2-hf-auto-masks",
-      providerId: "sam2-hf-auto-masks",
-      engine: "sam2",
-      locality: "local",
-      displayLabel: "SAM2 HF automatic masks",
-      workflow: "Find everything fallback",
-      title: "SAM2 HF automatic masks",
-      capabilities: ["auto_masks", "scene_sweep"],
-      recommendation: "Fallback for finding everything in scene when SAM3 Scene Sweep is blocked.",
-      nextAction: "Install the SAM2 Transformers fallback and cache facebook/sam2.1-hiera-large",
-      profileId: "",
-    },
-    {
-      id: "sam2-hosted:replicate-sam2-video",
-      providerId: "sam2-hosted",
-      profileId: "replicate-sam2-video",
-      engine: "sam2",
-      locality: "hosted",
-      displayLabel: "Replicate SAM2 video",
-      workflow: "Trace one object",
-      title: "Replicate SAM2 video",
-      capabilities: ["point", "box", "tracking", "hosted"],
-      recommendation: "Hosted fallback for promptable SAM2 video tracking when the in-process SAM2 runtime is not ready.",
-      nextAction: "Link Replicate API token",
-    },
-    {
-      id: "sam3-local",
-      providerId: "sam3-local",
-      engine: "sam3",
-      locality: "local",
-      displayLabel: "SAM3 Scene Sweep",
-      workflow: "Find everything in scene",
-      title: "SAM3 Scene Sweep",
-      capabilities: ["scene_sweep", "concept", "box", "tracking", "auto_masks"],
-      recommendation: "Recommended CUDA runtime path for finding everything in the scene with SAM3 Tracker masks and video tracking. Text prompts require hosted SAM3 concept setup or the advanced official SAM3 concept adapter.",
-      nextAction: "Install scene sweep, check Hugging Face access, then cache facebook/sam3",
-      profileId: "",
-    },
-    {
-      id: "sam3-hosted:roboflow-sam3-pcs",
-      providerId: "sam3-hosted",
-      profileId: "roboflow-sam3-pcs",
-      engine: "sam3",
-      locality: "hosted",
-      displayLabel: "Roboflow SAM3",
-      workflow: "Find objects from text",
-      title: "Roboflow SAM3",
-      capabilities: ["concept", "hosted"],
-      recommendation: "Recommended hosted concept segmentation provider for prompts like red ball or person in white.",
-      nextAction: "Link Roboflow API key",
-    },
-    {
-      id: "sam3-hosted:fal-sam3-image",
-      providerId: "sam3-hosted",
-      profileId: "fal-sam3-image",
-      engine: "sam3",
-      locality: "hosted",
-      displayLabel: "Fal SAM3 image",
-      workflow: "Find objects from text",
-      title: "Fal SAM3 image",
-      capabilities: ["concept", "hosted"],
-      recommendation: "Hosted frame-by-frame concept fallback for sampled images when a Fal workflow is preferred.",
-      nextAction: "Link FAL_KEY",
-    },
-    {
-      id: "sam3-hosted:custom-sam3-compatible",
-      providerId: "sam3-hosted",
-      profileId: "custom-sam3-compatible",
-      engine: "sam3",
-      locality: "hosted",
-      displayLabel: "Custom SAM3 endpoint",
-      workflow: "Custom SAM3",
-      title: "Custom hosted SAM3",
-      capabilities: ["concept", "box", "tracking", "auto_masks", "hosted"],
-      recommendation: "Use a SAM3-compatible endpoint when it supports the guided workflow you selected.",
-      nextAction: "Link endpoint and API key",
-    },
-  ];
-  const MODEL_FREE_PRESETS = new Set(["motion_foreground", "external_masks", "review_existing"]);
-  const MODEL_CONNECTION_PRIORITY = {
-    trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
-    trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
-    auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
-    text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
-  };
-  const ADVANCED_MODEL_CONNECTIONS = {
-    trace_one_object: ["sam3-local", "sam3-hosted:custom-sam3-compatible"],
-    text_detector: ["sam3-local"],
-  };
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
     "final_render_mp4",
@@ -389,77 +315,6 @@ const MotionJSONUI = (() => {
     },
   };
 
-  const WORKFLOW_STEPS = [
-    {
-      id: "choose_goal",
-      title: "Choose goal",
-      label: "Goal",
-      description: "Pick the kind of object tracing workflow before setup details appear.",
-      nextHint: "Choose a tracing goal to continue.",
-    },
-    {
-      id: "source_video",
-      title: "Add or select video",
-      label: "Video",
-      description: "Add a video or open an existing result. Guided mode creates a workspace automatically.",
-      nextHint: "Add a video or existing result to continue.",
-    },
-    {
-      id: "provider_settings",
-      title: "Model setup",
-      label: "Model",
-      description: "Install, check, or select one compatible SAM engine for the selected workflow.",
-      nextHint: "Choose one compatible model connection to continue.",
-    },
-    {
-      id: "prompt_preview",
-      title: "Prepare run",
-      label: "Prepare",
-      description: "Show only the inputs needed for the selected workflow, then run extraction.",
-      nextHint: "Add the required prompt or run the prepared workflow.",
-    },
-    {
-      id: "run_monitor",
-      title: "Run monitor",
-      label: "Run",
-      description: "Watch progress, inspect logs, or recover from a failed run before review.",
-      nextHint: "Start a run before reviewing tracks and exporting.",
-    },
-    {
-      id: "review_export",
-      title: "Review and export",
-      label: "Review",
-      description: "Inspect the results, correct mistakes, and export reviewed objects.",
-      nextHint: "Run extraction before reviewing tracks and exporting.",
-    },
-  ];
-
-  const WORKFLOW_PANEL_STEP_ALIASES = {
-    choose_goal: ["choose_goal"],
-    source_video: ["project_video", "source_video"],
-    provider_settings: ["provider_settings"],
-    prompt_preview: ["prompt_preview", "validate_run"],
-    run_monitor: ["run_monitor"],
-    review_export: ["review_candidates", "correct_tracks", "export"],
-  };
-
-  const WORKFLOW_FRAGMENT_STEP_ALIASES = {
-    choose_goal: ["choose_goal"],
-    source_video: ["source_video"],
-    provider_settings: ["provider_settings"],
-    prompt_preview: ["prompt_preview"],
-    run_monitor: ["run_monitor"],
-    review_export: ["review_candidates", "correct_tracks", "export"],
-  };
-  const SCREEN_STEPS = [
-    { id: "start", label: "Start", workflowSteps: ["choose_goal"] },
-    { id: "video", label: "Video", workflowSteps: ["source_video"] },
-    { id: "model", label: "Model", workflowSteps: ["provider_settings"] },
-    { id: "prepare", label: "Prepare", workflowSteps: ["prompt_preview"] },
-    { id: "run", label: "Run", workflowSteps: ["run_monitor"] },
-    { id: "review", label: "Review", workflowSteps: ["review_export"] },
-  ];
-
   const EMPTY_SAM2 = {
     checkpoint: null,
     model_config: null,
@@ -471,110 +326,6 @@ const MotionJSONUI = (() => {
     hosted_config: {},
     hosted_allow_network: false,
   };
-
-  const emptyCorrectionState = (jobId = "") => ({
-    format: CORRECTION_STATE_FORMAT,
-    jobId,
-    trackEdits: {},
-    syntheticTracks: [],
-    history: [],
-    mergeSuggestions: [],
-    loaded: false,
-    persistenceStatus: "not_loaded",
-    persistenceMessage: "Correction state has not been loaded yet.",
-  });
-
-  const defaultState = () => ({
-    health: null,
-    capabilities: null,
-    runDefaults: null,
-    exportFormats: null,
-    providerRegistry: null,
-    providerSettings: null,
-    modelProviders: null,
-    workspace: null,
-    commercialReadiness: null,
-    projects: [],
-    selectedProjectId: "",
-    videos: [],
-    selectedVideoId: "",
-    jobs: [],
-    selectedJobId: "",
-    selectedJob: null,
-    jobReview: null,
-    reviewTools: null,
-    jobEvents: [],
-    jobArtifacts: [],
-    reviewTracks: [],
-    trackVisibility: {},
-    correctionState: emptyCorrectionState(),
-    configValidation: null,
-    exportValidation: null,
-    exportResult: null,
-    exportCopyPayloads: {},
-    exportCopiedHandoffId: "",
-    runDebugReportCopiedJobId: "",
-    selectedReviewToolId: "canvas-player",
-    libraryAssets: [],
-    libraryCollections: [],
-    libraryPacks: [],
-    selectedLibraryAssetId: "",
-    selectedLibraryArtifactId: "",
-    selectedLibraryCollectionId: "",
-    libraryStatus: "Not loaded",
-    importStatus: "",
-    selectedModelSetupProviderId: "sam2-local",
-    modelSetupAlternativesOpen: false,
-    providerSetupJobs: {},
-    advancedLocalPaths: {},
-    copiedAdvancedPathProviderId: "",
-    selectedProviderSetupJobId: "",
-    modelSetupMessage: "",
-    modelSetupTone: "neutral",
-    pendingModelSetupConfirmation: null,
-    confirmedModelSetupAction: null,
-    modelPlanRun: null,
-    modelPlanValidation: null,
-    modelPlanMessage: "",
-    modelPlanTone: "neutral",
-    modelPlanConfirmedJobId: "",
-    modelPlanConfirming: false,
-    selectedCorrectionTrackId: "",
-    mergeSelection: new Set(),
-    candidateSelection: {},
-    candidateSelectionJobId: "",
-    candidateTrackingStatus: "",
-    runConfigsByJob: {},
-    lastRunConfig: null,
-    polling: false,
-    errors: {},
-    railOpenedByUser: false,
-    selectedPreset: "trace_one_object",
-    parameterOverrides: new Set(),
-    applyingAdaptiveParameters: false,
-    reviewExportSubscreen: "review",
-    activeWorkflowStep: "choose_goal",
-    workflowDashboard: false,
-    activeTool: "point",
-    pointKind: "positive_point",
-    prompts: [],
-    strokes: [],
-    keyframes: new Set([0]),
-    selectedPromptId: "",
-    pointer: null,
-    draftBox: null,
-    activeStroke: null,
-    previewObjectUrl: "",
-    video: {
-      width: 0,
-      height: 0,
-      duration: 0,
-      currentFrame: 0,
-      loadedName: "",
-    },
-    videoUploadStatus: "",
-    videoUploadBusy: false,
-  });
 
   const state = defaultState();
 
@@ -635,62 +386,6 @@ const MotionJSONUI = (() => {
     `;
   }
 
-  function localApiUrl(value) {
-    const path = String(value || "").trim();
-    if (!/^\/api(?:[/?#]|$)/.test(path)) return path;
-    const loc = globalThis.location;
-    if (!loc || !/^https?:$/i.test(String(loc.protocol || ""))) return path;
-    const origin = loc.origin || `${loc.protocol}//${loc.host}`;
-    let basePath = String(loc.pathname || "/");
-    if (basePath.endsWith("/ui")) {
-      basePath = `${basePath}/`;
-    } else if (!basePath.endsWith("/")) {
-      basePath = basePath.replace(/[^/]*$/, "");
-    }
-    try {
-      const url = new URL(`..${path}`, `${origin}${basePath}`);
-      return `${url.pathname}${url.search}${url.hash}`;
-    } catch {
-      return path;
-    }
-  }
-
-  function safeLocalContentUrl(value) {
-    const url = String(value || "").trim();
-    return SAFE_LOCAL_CONTENT_URL_RE.test(url) ? localApiUrl(url) : "";
-  }
-
-  function artifactRelPath(artifact = {}) {
-    const metadata = artifact.metadata || artifact.metadata_json || {};
-    return String(metadata.rel_path || artifact.relPath || artifact.path || "").replace(/\\/g, "/").replace(/^\/+/, "");
-  }
-
-  function previewFileUrl(jobId, relPath) {
-    const id = String(jobId || "").trim();
-    const path = String(relPath || "")
-      .replace(/\\/g, "/")
-      .split("/")
-      .filter(Boolean)
-      .map((part) => encodeURIComponent(part))
-      .join("/");
-    if (!id || !path) return "";
-    return safeLocalContentUrl(`/api/jobs/${encodeURIComponent(id)}/preview-files/${path}`);
-  }
-
-  function reviewToolUrl(jobId, tool) {
-    const base = previewFileUrl(jobId, tool?.relPath);
-    if (!base) return "";
-    const encodedJobId = encodeURIComponent(jobId);
-    const params = new URLSearchParams({
-      scene: previewFileUrl(jobId, "scene_graph.json"),
-      manifest: previewFileUrl(jobId, "web_asset_manifest.json"),
-      jobId: String(jobId || ""),
-      review: localApiUrl(`/api/jobs/${encodedJobId}/review`),
-      export: localApiUrl(`/api/jobs/${encodedJobId}/exports/motionjson`),
-    });
-    return `${base}?${params.toString()}`;
-  }
-
   function slugObjectId(value, fallback = "object_0") {
     const slug = String(value || "")
       .trim()
@@ -715,189 +410,6 @@ const MotionJSONUI = (() => {
       .sort((a, b) => a - b);
   }
 
-  function normalizeWorkflowStepId(value, fallback = "choose_goal") {
-    const id = String(value || "").trim();
-    return WORKFLOW_STEPS.some((step) => step.id === id) ? id : fallback;
-  }
-
-  function workflowStepIndex(stepId) {
-    const normalized = normalizeWorkflowStepId(stepId);
-    return Math.max(0, WORKFLOW_STEPS.findIndex((step) => step.id === normalized));
-  }
-
-  function workflowNextStepId(stepId, direction = 1) {
-    const index = workflowStepIndex(stepId);
-    const nextIndex = clamp(index + (direction < 0 ? -1 : 1), 0, WORKFLOW_STEPS.length - 1);
-    return WORKFLOW_STEPS[nextIndex].id;
-  }
-
-  function workflowScreenForStep(stepId = "choose_goal") {
-    const normalized = normalizeWorkflowStepId(stepId);
-    return SCREEN_STEPS.find((screen) => screen.workflowSteps.includes(normalized))?.id || "setup";
-  }
-
-  function workflowStepForScreen(screenId = "setup") {
-    return SCREEN_STEPS.find((screen) => screen.id === screenId)?.workflowSteps[0] || "choose_goal";
-  }
-
-  function goalRequiresModel(presetId = "trace_one_object") {
-    return !MODEL_FREE_PRESETS.has(String(presetId || ""));
-  }
-
-  function goalRequiresReviewExportFlow(presetId = "trace_one_object") {
-    return presetId !== "review_existing";
-  }
-
-  function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = "choose_goal") {
-    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
-    const hasRunData = Boolean(snapshot.selectedJobId || toInteger(snapshot.candidateCount, 0) || toInteger(snapshot.trackCount, 0));
-    if (selectedPreset === "review_existing") {
-      return snapshot.selectedJobId ? "review_export" : "choose_goal";
-    }
-    if (!hasRunData) {
-      if (!snapshot.selectedVideoId) return "choose_goal";
-    }
-    const normalizedStep = normalizeWorkflowStepId(requestedStep);
-    const readiness = workflowReadinessFromSnapshot(snapshot);
-    const requestedIndex = workflowStepIndex(normalizedStep);
-    for (let index = 0; index < requestedIndex; index += 1) {
-      const prior = WORKFLOW_STEPS[index];
-      if (!readiness[prior.id]?.complete) return prior.id;
-    }
-    return normalizedStep;
-  }
-
-  function workflowReadinessFromSnapshot(snapshot = {}) {
-    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
-    const promptCount = toInteger(snapshot.promptCount, 0) + toInteger(snapshot.strokeCount, 0);
-    const candidateCount = toInteger(snapshot.candidateCount, 0);
-    const trackCount = toInteger(snapshot.trackCount, 0);
-    const correctionCount = toInteger(snapshot.correctionCount, 0);
-    const hasRegisteredVideo = Boolean(snapshot.selectedVideoId);
-    const hasImportedResult = selectedPreset === "review_existing" && Boolean(snapshot.selectedJobId);
-    const hasPreview = Boolean(snapshot.previewName || snapshot.previewLoaded);
-    const previewReady = snapshot.videoPreviewReady === true || snapshot.videoPreviewStatus === "ready";
-    const previewBlocked = ["failed", "blocked"].includes(String(snapshot.videoPreviewStatus || ""));
-    const providerBlocked = Boolean(snapshot.providerBlocked || snapshot.providerTone === "is-bad");
-    const providerWarn = snapshot.providerTone === "is-warn";
-    const providerSetupTone = String(snapshot.providerSummaryTone || "");
-    const providerConfigured = providerSetupTone === "ready";
-    const configBlocked = Boolean(snapshot.configBlocked || snapshot.configTone === "is-bad");
-    const configValid = Boolean(snapshot.configValid || snapshot.backendValidated);
-    const hasJob = Boolean(snapshot.selectedJobId);
-    const hasRunData = hasJob || candidateCount > 0 || trackCount > 0;
-    const selectedJobStatus = String(snapshot.selectedJobStatus || "").toLowerCase();
-    const jobRunning = isActiveJobStatus(selectedJobStatus);
-    const jobFailed = isFailedJobStatus(selectedJobStatus);
-    const jobSucceeded = /succeeded|completed|complete/.test(selectedJobStatus);
-    const hasReviewablePartial = jobFailed && Boolean(snapshot.partialSuccess || snapshot.reviewableObjectCount || candidateCount || trackCount);
-    const exportOk = Boolean(snapshot.exportOk);
-    const requiresModel = goalRequiresModel(selectedPreset);
-    const manualPromptRequired = selectedPreset === "trace_one_object";
-    const requiresSam3Box = selectedPreset === "trace_one_object" && /sam3/i.test(String(snapshot.providerName || ""));
-    const hasBoxPrompt = Boolean(snapshot.hasBoxPrompt);
-    const hasPointPrompt = Boolean(snapshot.hasPointPrompt);
-
-    const step = (status, message, options = {}) => ({
-      status,
-      message,
-      tone: options.tone || (status === "done" || status === "ready" ? "is-ready" : status === "blocked" ? "is-bad" : "is-warn"),
-      complete: options.complete ?? (status === "done" || status === "ready"),
-    });
-
-    return {
-      choose_goal: step("done", snapshot.presetLabel ? `Goal selected: ${snapshot.presetLabel}` : "Choose the tracing goal.", { complete: true }),
-      source_video: hasImportedResult
-        ? step("done", "Existing result loaded for review.")
-        : hasRegisteredVideo && previewReady
-          ? step("done", "Registered video and browser preview are ready.")
-          : hasRegisteredVideo && previewBlocked
-            ? step("blocked", snapshot.videoPreviewReason || "Browser preview could not be prepared for this video.", { complete: false })
-            : hasRegisteredVideo
-              ? step("needs-action", "Preparing a browser-safe preview for this video.", { tone: "is-warn", complete: false })
-        : hasPreview
-            ? step("needs-action", "Browser preview is loaded; add a local video path before extraction.", { tone: "is-warn", complete: false })
-            : step("needs-action", selectedPreset === "review_existing" ? "Open an existing MotionJSON result to continue." : "Add a video or use the demo video to continue.", { complete: false }),
-      provider_settings: !requiresModel
-        ? step("done", "No model setup is needed for this workflow.")
-        : providerBlocked
-        ? step("blocked", "Model setup has a blocker. Open the selected connection and fix it before running.", { complete: false })
-        : providerSetupTone === "bad"
-          ? step("needs-action", snapshot.providerWarning || "Save one compatible model connection before continuing.", { complete: false })
-        : providerWarn || providerSetupTone === "warn"
-          ? step("needs-action", "Model setup still needs attention before guided runs continue.", { tone: "is-warn", complete: false })
-          : providerConfigured
-            ? step("done", "Compatible model connection is ready.")
-            : step("needs-action", "Save one compatible model connection before continuing.", { complete: false }),
-      prompt_preview:
-        manualPromptRequired && requiresSam3Box && !hasBoxPrompt
-          ? step("needs-action", "Draw one box around the object for SAM3 tracing.", { complete: false })
-          : manualPromptRequired && !requiresSam3Box && !hasBoxPrompt && !hasPointPrompt
-            ? step("needs-action", "Add at least one point or box prompt for this goal.", { complete: false })
-            : hasJob && !jobFailed
-              ? step(configBlocked ? "blocked" : configValid ? "ready" : "done", configBlocked ? "Run validation failed. Fix the generated config before retrying." : "Run started. MotionJSON will switch to review when results are ready.")
-              : step("done", promptCount ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"} ready.` : "This workflow is ready to run without manual prompts."),
-      run_monitor: jobFailed && !hasReviewablePartial
-        ? step("blocked", "Run failed or was canceled. Open logs, change setup, run again, or choose a different model.", { complete: false })
-        : jobRunning
-          ? step("needs-action", "Run is in progress. Watch progress and logs before review.", { tone: "is-neutral", complete: false })
-          : jobSucceeded || hasRunData
-            ? step("done", hasReviewablePartial ? "Partial objects are reviewable. Continue to review before retrying failed frames." : "Run finished. Continue to review and export.")
-            : step("needs-action", "Start a run before review.", { complete: false }),
-      review_export: (jobSucceeded || hasRunData) && (!jobFailed || hasReviewablePartial)
-        ? exportOk
-          ? step("done", "Reviewed objects exported successfully.")
-          : step(correctionCount || hasReviewablePartial ? "ready" : "done", trackCount ? `${trackCount} reviewed track${trackCount === 1 ? "" : "s"} ready for export.` : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} ready to review.`)
-        : step("needs-action", selectedPreset === "review_existing" ? "Open an existing result before reviewing and exporting." : "Run extraction before reviewing tracks and exporting.", { complete: false }),
-    };
-  }
-
-  function workflowSummaryCardsFromSnapshot(snapshot = {}, activeStep = "choose_goal") {
-    const activeIndex = workflowStepIndex(activeStep);
-    if (activeIndex <= 0) return [];
-    const readiness = workflowReadinessFromSnapshot(snapshot);
-    const promptCount = toInteger(snapshot.promptCount, 0) + toInteger(snapshot.strokeCount, 0);
-    const candidateCount = toInteger(snapshot.candidateCount, 0);
-    const trackCount = toInteger(snapshot.trackCount, 0);
-    const correctionCount = toInteger(snapshot.correctionCount, 0);
-    const providerName = snapshot.providerName || "selected provider";
-    const providerDevice = snapshot.providerDevice ? ` on ${snapshot.providerDevice}` : "";
-    const values = {
-      choose_goal: snapshot.presetLabel || "Goal selected",
-      source_video:
-        snapshot.selectedPreset === "review_existing"
-          ? snapshot.selectedJobId
-            ? "Existing result loaded"
-            : "No result yet"
-          : snapshot.videoName || (snapshot.selectedVideoId ? "Registered video" : snapshot.previewName ? "Preview only" : "No video yet"),
-      provider_settings: `${providerName}${providerDevice}`,
-      prompt_preview:
-        snapshot.selectedJobStatus
-          ? humanizeReviewCode(snapshot.selectedJobStatus)
-          : promptCount
-            ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"}`
-            : "Ready to run",
-      run_monitor: snapshot.selectedJobStatus ? humanizeReviewCode(snapshot.selectedJobStatus) : "No run yet",
-      review_export: snapshot.exportOk
-        ? "Exported"
-        : trackCount
-          ? `${trackCount} track${trackCount === 1 ? "" : "s"}`
-          : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"}`,
-    };
-    return WORKFLOW_STEPS.slice(0, activeIndex).map((step) => {
-      const stepReadiness = readiness[step.id] || {};
-      return {
-        id: step.id,
-        label: step.label,
-        value: values[step.id] || step.label,
-        detail: stepReadiness.message || step.nextHint || "",
-        status: stepReadiness.status || "not-started",
-        tone: stepReadiness.tone || "is-muted",
-        complete: Boolean(stepReadiness.complete),
-      };
-    });
-  }
-
   function defaultProjectSummaryText() {
     const project = state.projects.find((item) => item.id === state.selectedProjectId) || null;
     if (project?.name) return `Using ${project.name}. Uploads and exports stay in this workspace.`;
@@ -919,65 +431,8 @@ const MotionJSONUI = (() => {
     return labels[presetId] || "Run workflow";
   }
 
-  function isActiveJobStatus(status) {
-    return /queued|running|pending|started|cancel_requested/.test(String(status || "").toLowerCase());
-  }
-
-  function isFailedJobStatus(status) {
-    return /failed|error|canceled|cancelled/.test(String(status || "").toLowerCase());
-  }
-
   function workflowJobStatusFromSnapshot(snapshot = {}) {
-    const lifecycle = snapshot.job ? normalizeJobLifecycle(snapshot.job) : null;
-    const status = String(snapshot.selectedJobStatus || lifecycle?.status || "").toLowerCase();
-    const rawStatus = String(snapshot.selectedJobRawStatus || lifecycle?.rawStatus || status).toLowerCase();
-    const failureReason = String(snapshot.selectedJobFailureReason || lifecycle?.failure?.reasonCode || "").toLowerCase();
-    const hasJob = Boolean(snapshot.selectedJobId || snapshot.hasSelectedJob || lifecycle?.id || status);
-    return {
-      hasJob,
-      id: snapshot.selectedJobId || lifecycle?.id || "",
-      lifecycle,
-      status,
-      rawStatus,
-      failureReason,
-      running: isActiveJobStatus(status) || isActiveJobStatus(rawStatus),
-      failed: isFailedJobStatus(status) || isFailedJobStatus(rawStatus),
-      succeeded: /succeeded|completed|complete/.test(status),
-    };
-  }
-
-  function workflowModelSetupStatusFromSnapshot(snapshot = {}) {
-    const selectedPreset = snapshot.selectedPreset || "trace_one_object";
-    const requiresModel = goalRequiresModel(selectedPreset);
-    const modelSetupState = snapshot.modelSetupState || {};
-    const fallbackStatus = !requiresModel
-      ? "ready"
-      : snapshot.providerSummaryTone === "ready"
-        ? "ready"
-        : snapshot.providerBlocked
-          ? "blocked"
-          : "not_configured";
-    const status = String(snapshot.modelSetupStatus || modelSetupState.status || fallbackStatus);
-    const action = snapshot.modelSetupAction || {};
-    const ready = !requiresModel || status === "ready";
-    return {
-      requiresModel,
-      status,
-      ready,
-      message:
-        modelSetupState.message ||
-        snapshot.modelSetupMessage ||
-        snapshot.providerSummaryMessage ||
-        snapshot.providerWarning ||
-        (requiresModel ? "Choose one compatible model connection before continuing." : "No model setup is needed for this workflow."),
-      action: {
-        id: action.id || (ready ? "continue-to-run" : snapshot.modelSetupActionId || "install"),
-        label: action.label || (ready ? "Continue to run" : snapshot.modelSetupActionLabel || "Save setup"),
-        primary: action.primary !== false,
-      },
-      hasForm: snapshot.hasModelSetupForm !== false,
-      hasConnection: Boolean(snapshot.modelSetupConnectionId || snapshot.providerConnectionId || snapshot.providerId),
-    };
+    return workflowJobStatusFromSnapshotBase(snapshot, { normalizeJobLifecycle });
   }
 
   function workflowRecoveryActionsFromSnapshot(snapshot = {}) {
@@ -1621,72 +1076,6 @@ const MotionJSONUI = (() => {
       label: prompt.label,
       data: { ...prompt.data },
     };
-  }
-
-  function normalizedModelConnection(connection) {
-    if (!connection) return null;
-    return {
-      ...connection,
-      connectionId: connection.id,
-      displayLabel: connection.displayLabel || connection.title || connection.id,
-      providerId: connection.providerId || providerIdFromConnectionId(connection.id),
-      profileId: connection.profileId || profileIdFromConnectionId(connection.id),
-      engine: connection.engine || engineFromProviderId(connection.providerId || connection.id),
-      locality: connection.locality || localityFromProviderId(connection.providerId || connection.id),
-      capabilities: asArray(connection.capabilities),
-    };
-  }
-
-  function modelConnectionByConnectionId(connectionId) {
-    const normalized = String(connectionId || "").trim();
-    return normalizedModelConnection(MODEL_CONNECTIONS.find((connection) => connection.id === normalized) || null);
-  }
-
-  function providerIdFromConnectionId(connectionId) {
-    const id = String(connectionId || "").trim();
-    if (id.startsWith("sam2-hosted:")) return "sam2-hosted";
-    if (id.startsWith("sam3-hosted:")) return "sam3-hosted";
-    return id;
-  }
-
-  function profileIdFromConnectionId(connectionId) {
-    const parts = String(connectionId || "").split(":");
-    return parts.length > 1 ? parts.slice(1).join(":") : "";
-  }
-
-  function engineFromProviderId(providerId) {
-    const id = String(providerId || "");
-    if (id.includes("sam3")) return "sam3";
-    if (id.includes("sam2")) return "sam2";
-    if (id.includes("motion")) return "motion";
-    if (id.includes("external")) return "external_masks";
-    return id ? "no_model" : "";
-  }
-
-  function localityFromProviderId(providerId) {
-    const id = String(providerId || "");
-    if (id.includes("hosted")) return "hosted";
-    if (MODEL_FREE_PRESETS.has(id) || ["mock", "threshold", "motion", "external"].includes(id)) return "no_model";
-    return id ? "local" : "";
-  }
-
-  function providerLabel(providerId, profileId = "") {
-    if (providerId === "sam2-local") return "SAM2 local";
-    if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
-    if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
-    if (providerId === "sam2-hosted") return "Hosted SAM2";
-    if (providerId === "sam3-local") return "SAM3 Scene Sweep runtime";
-    if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
-    if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
-    if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";
-    return {
-      mock: "Mock no-model",
-      threshold: "Color threshold",
-      motion: "Motion foreground",
-      external: "Imported masks",
-      "motion_foreground": "Motion foreground",
-      "external_masks": "Imported masks",
-    }[providerId] || providerId || "No model";
   }
 
   function hostedCallsAllowedForProvider(input, providerId) {
@@ -3262,37 +2651,6 @@ const MotionJSONUI = (() => {
   function selectedJob() {
     const id = state.selectedJobId;
     return state.selectedJob || state.jobs.find((job) => jobIdentifier(job) === id) || null;
-  }
-
-  async function api(path, options = {}) {
-    let response;
-    const headers = { ...(options.headers || {}) };
-    if (!(options.body instanceof FormData)) {
-      headers["content-type"] = headers["content-type"] || "application/json";
-    }
-    try {
-      response = await fetch(localApiUrl(path), {
-        headers,
-        ...options,
-      });
-    } catch (error) {
-      throw new Error(`Runtime API unavailable: ${error.message}`);
-    }
-
-    const body = await response.text();
-    let payload = {};
-    if (body) {
-      try {
-        payload = JSON.parse(body);
-      } catch {
-        payload = { error: body.slice(0, 180) };
-      }
-    }
-
-    if (!response.ok) {
-      throw new Error(payload.error || payload.detail || `Request failed: ${response.status}`);
-    }
-    return payload;
   }
 
   function providerSmokeTestEndpoint(providerId) {
@@ -7176,7 +6534,7 @@ const MotionJSONUI = (() => {
             ? asArray(provider?.hostedProfiles).find((item) => item.id === connection.profileId)
             : null;
           return `
-            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" aria-pressed="${active}">
+            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" data-testid="model-choice-${escapeAttribute(connection.id)}" aria-pressed="${active}">
               <span class="model-choice-topline">
                 <strong>${escapeHtml(connection.displayLabel || connection.title)}</strong>
                 ${statusChip(summary.label, summary.status, summary.tone === "ready")}
@@ -7396,7 +6754,7 @@ const MotionJSONUI = (() => {
             <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
           </div>
         </div>
-        <form id="modelSetupForm" class="model-setup-form-shell" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}">
+        <form id="modelSetupForm" class="model-setup-form-shell" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}" data-testid="model-setup-form">
         <div class="model-setup-state-card is-${escapeAttribute(setupStateTone)}">
           <div>
             <strong>${escapeHtml(setupState.label)}</strong>
@@ -7456,7 +6814,7 @@ const MotionJSONUI = (() => {
             ${
               hosted
                 ? `<label class="track-toggle model-hosted-toggle">
-                    <input data-model-setup-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+                    <input data-model-setup-field="allowHosted" data-testid="model-setup-allow-hosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
                     <span>I understand hosted calls can send frames off-device and may cost money</span>
                   </label>`
                 : ""
@@ -7781,7 +7139,7 @@ const MotionJSONUI = (() => {
           ? `<button type="button" data-provider-action="smoke-test">${hosted ? "Run hosted smoke" : "Run runtime smoke"}</button>`
           : "";
       return `
-        <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}">
+        <article class="provider-settings-row ${hosted ? "is-hosted" : "is-local"}" data-provider-settings-id="${escapeAttribute(provider.id)}" data-testid="provider-settings-${escapeAttribute(provider.id)}">
           <div class="provider-settings-header">
             <div>
               <strong>${escapeHtml(provider.name)}</strong>
@@ -7816,7 +7174,7 @@ const MotionJSONUI = (() => {
             ${
               hosted
                 ? `<label class="track-toggle provider-hosted-toggle">
-                    <input data-provider-field="allowHosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+                    <input data-provider-field="allowHosted" data-testid="provider-allow-hosted-${escapeAttribute(provider.id)}" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
                     <span>I understand hosted calls can send data off-device and may cost money</span>
                   </label>`
                 : ""
