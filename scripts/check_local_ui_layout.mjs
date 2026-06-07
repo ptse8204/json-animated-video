@@ -45,7 +45,11 @@ const CAPTURE_STATES = [
   "provider-settings",
   "model-setup",
   "model-setup-local",
+  "model-setup-trace-all-options",
   "model-setup-sam3-local",
+  "model-setup-sam2-hf-fallback",
+  "model-setup-no-model-cpu",
+  "model-setup-advanced-local-sam3",
   "model-setup-sam3-roboflow",
   "model-setup-sam3-custom",
   "model-setup-hosted-warning",
@@ -847,13 +851,22 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {
       failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be the active guided model choice`);
     }
-    if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Roboflow SAM3") {
-      failures.push(`${viewport.name}/${state}: Roboflow SAM3 should be the active guided model choice`);
+    if (state === "model-setup-sam2-hf-fallback" && stateValue.activeModelChoice !== "SAM2 HF automatic masks fallback") {
+      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
     }
-    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Custom SAM3 endpoint") {
-      failures.push(`${viewport.name}/${state}: custom hosted SAM3 should be the active guided model choice`);
+    if (state === "model-setup-no-model-cpu" && stateValue.activeModelChoice !== "No-model CPU workflow") {
+      failures.push(`${viewport.name}/${state}: no-model CPU workflow should be the active guided model choice`);
     }
-    if (state === "model-setup-confirm-cache" && stateValue.activeModelChoice !== "SAM2 HF automatic masks") {
+    if (state === "model-setup-advanced-local-sam3" && stateValue.activeModelChoice !== "Advanced local SAM3 concept/exemplar") {
+      failures.push(`${viewport.name}/${state}: advanced local SAM3 should be the active guided model choice`);
+    }
+    if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Hosted SAM3 text discovery") {
+      failures.push(`${viewport.name}/${state}: hosted SAM3 text discovery should be the active guided model choice`);
+    }
+    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Hosted SAM3 text discovery") {
+      failures.push(`${viewport.name}/${state}: custom hosted SAM3 text discovery should be the active guided model choice`);
+    }
+    if (state === "model-setup-confirm-cache" && stateValue.activeModelChoice !== "SAM2 HF automatic masks fallback") {
       failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
     }
     if (state === "model-setup-confirm-access" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {

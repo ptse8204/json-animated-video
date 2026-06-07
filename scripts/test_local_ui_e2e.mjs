@@ -64,6 +64,26 @@ test("browser mobile first load keeps primary workflow controls visible", { skip
   });
 });
 
+test("browser separates SAM3 scene sweep setup from fallback cards", { skip: chromeSkip, timeout: E2E_TIMEOUT_MS }, async () => {
+  await withPage(async (page) => {
+    await openFreshUi(page);
+    await page.clickTestId("goal-trace-all-objects");
+    await page.clickTestId("workflow-primary");
+    await page.clickTestId("use-demo-video");
+    await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected for scene sweep flow");
+    await page.clickTestId("workflow-primary");
+    await page.waitForTestId("model-setup-panel");
+    await page.waitForText('[data-testid="model-setup-choices"]', /SAM3 Scene Sweep|No-model CPU workflow/i);
+    await page.click('[data-model-setup-action="change-model"]');
+    await page.waitForText('[data-testid="model-setup-choices"]', /SAM3 Scene Sweep/i);
+    await page.waitForText('[data-testid="model-setup-choices"]', /SAM2 HF automatic masks fallback/i);
+    await page.waitForText('[data-testid="model-setup-choices"]', /No-model CPU workflow/i);
+    await page.clickTestId("model-choice-sam3-local");
+    await page.waitForText('[data-testid="model-setup-detail"]', /facebook\/sam3|runtime proof|Hugging Face/i);
+    await page.assertNoConsoleErrors();
+  });
+});
+
 test("browser completes mock/no-model run, review correction, and export", { skip: chromeSkip, timeout: E2E_TIMEOUT_MS }, async () => {
   await withPage(async (page) => {
     await openFreshUi(page);

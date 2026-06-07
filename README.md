@@ -387,12 +387,14 @@ a component today.
 | `threshold` | Yes | Simple color demos | Good for the red-ball example. |
 | `motion` / `motion_foreground` | Yes | Moving objects on simple backgrounds | CPU-friendly, rough by design. |
 | `external` / `external_masks` | Yes | Masks from another tool | Import mask PNG/JPG/WebP sequences. |
-| `sam3_auto_masks` | Optional local SAM3 Tracker runtime | Find everything in scene | Uses `sam3TrackerModel=facebook/sam3` or a local Hugging Face model directory. Never pass a single `sam3.pt` file to this Transformers path. |
+| `sam3_tracker_scene_sweep` / `sam3_auto_masks` | Optional local SAM3 Tracker runtime | Find everything in scene | Uses `sam3TrackerModel=facebook/sam3` or a local Hugging Face model directory. Never pass a single `sam3.pt` file to this Transformers path. Executable run configs still use provider `sam3-local` with discovery mode `sam3_auto_masks`. |
 | `sam2-hf-auto-masks` | Optional local Transformers runtime | Fallback automatic masks for scene sweep | Uses `facebook/sam2.1-hiera-large`; independent from official SAM2 prompt tracking. |
 | `auto_object_proposals` | Local SAM2 or hosted/profiled SAM flow | Clean candidate gallery before selected tracking | Official local proposals require SAM2 automatic masks, torch, checkpoint, and config. |
 | `sam2-local` | Optional | Promptable segmentation/tracking | Requires SAM2 package, torch, checkpoint, and config. |
 | `sam2-hosted` | Optional | Explicit hosted segmentation experiments | Requires endpoint/auth and opt-in network use. |
-| `sam3-local` / `sam3-hosted` | Optional | Scene sweep, concept, exemplar, and higher-recall discovery | Local scene sweep uses the independent Transformers tracker model. Official local concept/exemplar uses `sam3ModelPath`/`SAM3_LOCAL_MODEL` and a `sam3.pt` checkpoint. Hosted SAM3 requires endpoint/auth plus explicit network and cost/privacy acknowledgement. |
+| `hosted_sam3_concept_text` | Optional hosted | Text/concept discovery | Uses hosted SAM3-compatible profiles such as Roboflow, Fal, or a custom endpoint. Requires credentials plus explicit network and cost/privacy acknowledgement. |
+| `advanced_local_sam3_concept_exemplar` | Advanced optional local | Local SAM3 text/exemplar discovery | Uses the official SAM3 package and `sam3ModelPath`/`SAM3_LOCAL_MODEL` pointing to a local `sam3.pt` checkpoint. This is separate from Scene Sweep and remains hidden/blocked until proof exists. |
+| `no_model_cpu_workflow` | Yes | CPU-only smoke checks and simple fallbacks | Groups mock, threshold, motion, and imported-mask workflows. No GPU, model cache, hosted provider, or runtime proof is required. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |

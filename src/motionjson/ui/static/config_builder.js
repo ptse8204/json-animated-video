@@ -161,14 +161,24 @@ export function promptToConfig(prompt, { objectId, label, frameIndex }) {
   };
 }
 
+function executableProviderFromConnectionId(connectionId) {
+  const id = String(connectionId || "").trim();
+  if (id === "sam2_prompt_tracking") return "sam2-local";
+  if (id === "sam2_hf_scene_fallback") return "sam2-hf-auto-masks";
+  if (id === "sam3_tracker_scene_sweep") return "sam3-local";
+  if (id === "hosted_sam3_concept_text") return "sam3-hosted";
+  if (id === "advanced_local_sam3_concept_exemplar") return "sam3-local";
+  if (id === "no_model_cpu_workflow") return "mock";
+  if (id.startsWith("sam3-hosted:")) return "sam3-hosted";
+  if (id.startsWith("sam2-hosted:")) return "sam2-hosted";
+  return id;
+}
+
 function guidedEnginePlan(input, preset) {
   const connectionId = String(input.modelConnectionId || "").trim();
   const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
-  const connectionProvider = connectionId.startsWith("sam3-hosted:")
-    ? "sam3-hosted"
-    : connectionId.startsWith("sam2-hosted:")
-      ? "sam2-hosted"
-      : connectionId || (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider) ? input.textDiscoveryProvider : "") || input.maskProvider || "";
+  const textDiscoveryProvider = executableProviderFromConnectionId(input.textDiscoveryProvider);
+  const connectionProvider = executableProviderFromConnectionId(connectionId) || (["sam3-local", "sam3-hosted"].includes(textDiscoveryProvider) ? textDiscoveryProvider : "") || executableProviderFromConnectionId(input.maskProvider) || "";
   if (preset.id === "trace_one_object") {
     if (connectionProvider === "sam3-local" || connectionProvider === "sam3-hosted") {
       return { providerName: connectionProvider, discoveryMode: requestedDiscoveryMode === "manual_prompt" ? "sam3_exemplar" : requestedDiscoveryMode };
@@ -176,6 +186,9 @@ function guidedEnginePlan(input, preset) {
     return { providerName: connectionProvider === "sam2-hosted" ? "sam2-hosted" : connectionProvider || "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode };
   }
   if (preset.id === "trace_all_objects") {
+    if (connectionProvider === "mock") {
+      return { providerName: "mock", discoveryMode: "auto_object_proposals" };
+    }
     if (connectionProvider === "sam2-hf-auto-masks") {
       return { providerName: "sam2-hf-auto-masks", discoveryMode: "sam2_hf_auto_masks" };
     }
@@ -203,6 +216,7 @@ function guidedEnginePlan(input, preset) {
 }
 
 export function objectDiscoveryConfig(input, advanced) {
+  const useMockProvider = input.providerName === "mock";
   const effortPreset = String(input.effortPreset || advanced.effortPreset || "balanced");
   const effortDefaults = {
     fast: { qualityPreset: "clean", maxObjects: 12, maskRefinementPreset: "fast", useTransformersTracker: false, requireRealTracking: false },
@@ -278,12 +292,12 @@ export function objectDiscoveryConfig(input, advanced) {
   const preset = presets[qualityPreset] || presets.clean;
   const explicitMaxObjects = input.maxObjects ?? input.advanced?.maxObjects;
   return {
-    mock: Boolean(input.debugMockMode),
+    mock: useMockProvider || Boolean(input.debugMockMode),
     effortPreset,
     maskRefinementPreset: input.maskRefinementPreset || advanced.maskRefinementPreset || effortDefaults.maskRefinementPreset,
     qualityPreset,
     intent: preset.intent,
-    providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
+    providerPreference: useMockProvider || input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
     sam2Checkpoint: input.localSam2CheckpointPath || advanced.localSam2CheckpointPath || null,
     sam2ModelConfig: input.localSam2ModelConfigPath || advanced.localSam2ModelConfigPath || null,
     sam2Device: input.localSam2Device || advanced.localSam2Device || advanced.device || "auto",
@@ -431,7 +445,7 @@ export function buildRunConfig(input) {
       discoveryConfig.box_threshold = Number(advanced.boxThreshold);
       discoveryConfig.text_threshold = Number(advanced.textThreshold);
     }
-    if (discoveryMode === "sam3_concept" || ["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider)) {
+    if (discoveryMode === "sam3_concept" || ["sam3-local", "sam3-hosted"].includes(executableProviderFromConnectionId(input.textDiscoveryProvider))) {
       const hosted = providerName === "sam3-hosted";
       discoveryConfig.concept = input.discoveryText || "";
       discoveryConfig.providerPreference = hosted ? "sam3-hosted" : "sam3-local";

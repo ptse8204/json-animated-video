@@ -164,6 +164,37 @@ def test_capability_report_names_are_declared_by_registry():
     assert provider_by_id("sam3-auto-masks")["settingsProviderId"] == "sam3-local"
 
 
+def test_sam3_product_paths_are_distinct_registry_entries_with_worker_mappings():
+    expected = {
+        "no_model_cpu_workflow": ("mock", ""),
+        "sam2_prompt_tracking": ("sam2-local", "manual_prompt"),
+        "sam2_hf_scene_fallback": ("sam2-hf-auto-masks", "sam2_hf_auto_masks"),
+        "sam3_tracker_scene_sweep": ("sam3-local", "sam3_auto_masks"),
+        "hosted_sam3_concept_text": ("sam3-hosted", "sam3_concept"),
+        "advanced_local_sam3_concept_exemplar": ("sam3-local", "sam3_concept"),
+    }
+
+    for product_id, (run_provider, run_mode) in expected.items():
+        entry = provider_by_id(product_id)
+        assert entry is not None, product_id
+        assert entry["providerId"] == product_id
+        assert entry["kind"] == "product_workflow"
+        assert entry["workerEligible"] is False
+        assert product_id in registry_capability_ids()
+        supports = [support for support in entry["workflowSupport"].values() if support["supported"] is not False]
+        assert supports, product_id
+        assert any(support["runConfigProviderName"] == run_provider for support in supports)
+        if run_mode:
+            assert any(support["runConfigDiscoveryMode"] == run_mode for support in supports)
+
+    assert provider_by_id("sam3-local")["providerId"] == "sam3-local"
+    assert provider_by_id("sam3-local")["capabilityId"] == "sam3-auto-masks"
+    assert provider_by_id("sam3-scene-sweep")["providerId"] == "sam3-local"
+    assert provider_by_id("sam3_tracker_scene_sweep")["providerId"] == "sam3_tracker_scene_sweep"
+    assert provider_by_id("sam2_prompt_tracking")["settingsProviderId"] == "sam2-local"
+    assert provider_by_id("sam2_hf_scene_fallback")["settingsProviderId"] == "sam2-hf-auto-masks"
+
+
 def test_config_and_worker_policy_are_registry_backed():
     payload = registry_public_payload()
 

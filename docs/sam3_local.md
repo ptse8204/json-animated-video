@@ -5,12 +5,20 @@ not install SAM3, download checkpoints, require CUDA, or make hosted calls. For
 runtime setup details, use the official [facebookresearch/sam3](https://github.com/facebookresearch/sam3)
 instructions as the source of truth.
 
-Use SAM3 when you need scene-wide or semantic discovery:
+MotionJSON exposes SAM3 as distinct product paths:
 
-- Find everything in the scene with SAM3 Tracker automatic mask generation on
-  sampled keyframes, then SAM3 Tracker Video propagation for accepted masks.
-- Trace by concept, for example `red ball` or `person in white`.
-- Find objects like an exemplar/crop.
+- `sam3_tracker_scene_sweep`: Find everything in the scene with SAM3 Tracker
+  automatic mask generation on sampled keyframes, then SAM3 Tracker Video
+  propagation for accepted masks.
+- `hosted_sam3_concept_text`: Trace by hosted concept, for example `red ball`
+  or `person in white`, with explicit cost/privacy/network opt-in.
+- `advanced_local_sam3_concept_exemplar`: Find objects from a local concept or
+  exemplar only after the official SAM3 package, local `sam3.pt` checkpoint,
+  and runtime proof are configured.
+
+Related fallback paths are `sam2_hf_scene_fallback` for Transformers-based SAM2
+automatic masks and `no_model_cpu_workflow` for mock, motion/threshold, and
+imported-mask workflows.
 
 For lower-cost default object proposals, use `auto_object_proposals` with the
 clean preset first.

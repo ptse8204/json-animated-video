@@ -1085,13 +1085,24 @@ const MotionJSONUI = (() => {
   }
 
   function selectedConnectionForInput(input = {}) {
-    const explicit = modelConnectionByConnectionId(input.modelConnectionId);
+    const presetName = input.preset || state.selectedPreset;
+    const explicitId = String(input.modelConnectionId || "").trim();
+    if (explicitId === "sam3-local" && !["trace_all_objects", "auto_object_proposals"].includes(presetName)) {
+      return modelConnectionByConnectionId("advanced_local_sam3_concept_exemplar");
+    }
+    const explicit = modelConnectionByConnectionId(explicitId);
     if (explicit) return explicit;
     if (input.maskProvider === "sam2-local") return modelConnectionByConnectionId("sam2-local");
     if (input.maskProvider === "sam2-hf-auto-masks") return modelConnectionByConnectionId("sam2-hf-auto-masks");
     if (input.maskProvider === "sam2-hosted") return modelConnectionByConnectionId("sam2-hosted:replicate-sam2-video");
-    if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local") return modelConnectionByConnectionId("sam3-local");
-    if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted") {
+    if (input.maskProvider === "sam2_prompt_tracking") return modelConnectionByConnectionId("sam2_prompt_tracking");
+    if (input.maskProvider === "sam2_hf_scene_fallback") return modelConnectionByConnectionId("sam2_hf_scene_fallback");
+    if (input.maskProvider === "sam3_tracker_scene_sweep") return modelConnectionByConnectionId("sam3_tracker_scene_sweep");
+    if (input.maskProvider === "no_model_cpu_workflow") return modelConnectionByConnectionId("no_model_cpu_workflow");
+    if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local" || input.textDiscoveryProvider === "advanced_local_sam3_concept_exemplar") {
+      return modelConnectionByConnectionId(["trace_all_objects", "auto_object_proposals"].includes(presetName) ? "sam3-local" : "advanced_local_sam3_concept_exemplar");
+    }
+    if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted" || input.textDiscoveryProvider === "hosted_sam3_concept_text") {
       return (
         modelConnectionByConnectionId(`sam3-hosted:${input.hostedSam3ProfileId || "roboflow-sam3-pcs"}`) ||
         modelConnectionByConnectionId("sam3-hosted:custom-sam3-compatible")
@@ -1108,7 +1119,7 @@ const MotionJSONUI = (() => {
     const connection = selectedConnectionForInput(input);
     const providerId =
       connection?.providerId ||
-      (["sam3-local", "sam3-hosted"].includes(input.textDiscoveryProvider) ? input.textDiscoveryProvider : "") ||
+      (["sam3-local", "sam3-hosted"].includes(providerIdFromConnectionId(input.textDiscoveryProvider)) ? providerIdFromConnectionId(input.textDiscoveryProvider) : "") ||
       input.maskProvider ||
       "";
     const profileId = connection?.profileId || (providerId === "sam2-hosted" ? input.hostedSam2ProfileId || "replicate-sam2-video" : providerId === "sam3-hosted" ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : "");
@@ -1183,6 +1194,9 @@ const MotionJSONUI = (() => {
       return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode, profileId, connection });
     }
     if (presetName === "trace_all_objects") {
+      if (providerId === "mock") {
+        return enginePlanFromContract(contract, input, { providerId: "mock", discoveryMode: "auto_object_proposals", connection });
+      }
       if (providerId === "sam2-hf-auto-masks") {
         return enginePlanFromContract(contract, input, { providerId: "sam2-hf-auto-masks", discoveryMode: "sam2_hf_auto_masks", connection });
       }
@@ -1229,18 +1243,19 @@ const MotionJSONUI = (() => {
   }
 
   function objectDiscoveryConfig(input) {
+    const useMockProvider = input.providerName === "mock";
     const effort = effortPresetDefaults(input.effortPreset || "balanced");
     const defaultQualityPreset = input.preset === "trace_all_objects" ? "balanced" : "clean";
     const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || defaultQualityPreset;
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
     const config = {
-      mock: Boolean(input.debugMockMode),
+      mock: useMockProvider || Boolean(input.debugMockMode),
       effortPreset: effort.effortPreset,
       maskRefinementPreset: input.maskRefinementPreset || effort.maskRefinementPreset,
       qualityPreset,
       intent: defaults.intent,
-      providerPreference: input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
+      providerPreference: useMockProvider || input.debugMockMode ? "mock" : input.providerName === "sam2-hf-auto-masks" ? "sam2-hf-auto-masks" : input.providerName === "sam2-local" ? "sam2-local" : "auto",
       sam2Checkpoint: input.localSam2CheckpointPath || null,
       sam2ModelConfig: input.localSam2ModelConfigPath || null,
       sam2Device: input.localSam2Device || input.device || "auto",
@@ -2850,8 +2865,10 @@ const MotionJSONUI = (() => {
     if (!connection || !goalRequiresModel(presetId)) return false;
     const meta = connectionCapabilityMeta(connection);
     const capabilities = new Set(asArray(connection.capabilities));
+    const connectionGoals = asArray(connection.supportedGoals).map(String);
+    if (connectionGoals.length && !connectionGoals.includes(presetId)) return false;
     const supportedGoals = asArray(meta?.supportedGoals).map(String);
-    if (supportedGoals.length && !supportedGoals.includes(presetId)) return false;
+    if (!connectionGoals.length && supportedGoals.length && !supportedGoals.includes(presetId)) return false;
     if (presetId === "trace_one_object") {
       const promptTypes = asArray(meta?.supportedPromptTypes);
       return (promptTypes.includes("box") || capabilities.has("box")) && meta?.supportsTracking !== false;
@@ -3046,7 +3063,9 @@ const MotionJSONUI = (() => {
 
   function environmentRecommendationCard(connection = null) {
     const summary = environmentRecommendationSummary();
-    const matchesSelection = summary.providerId && connection?.providerId === summary.providerId;
+    const matchesSelection =
+      summary.providerId &&
+      [connection?.providerId, connection?.productPathId, connection?.connectionId].filter(Boolean).includes(summary.providerId);
     const status = summary.runnable ? "ready" : summary.status || "setup";
     const details = [
       summary.accelerator ? `${summary.accelerator.toUpperCase()} detected` : "",
@@ -3146,6 +3165,24 @@ const MotionJSONUI = (() => {
 
   function modelSetupPlaybookSteps(connection = {}, provider = null, setupState = {}, setupJob = null) {
     const providerId = connection.providerId || provider?.id || "";
+    const productPathId = connection.productPathId || connection.connectionId || connection.id || "";
+    if (productPathId === "no_model_cpu_workflow") {
+      return [
+        {
+          id: "environment",
+          label: "Environment",
+          status: "done",
+          detail: "No GPU, model cache, or hosted provider is required for mock, threshold, motion, and imported-mask workflows.",
+        },
+        {
+          id: "ready",
+          label: "Ready to run",
+          status: "done",
+          detail: "Use this path for smoke checks or CPU-only fallback workflows.",
+        },
+      ];
+    }
+    const advancedLocalSam3 = productPathId === "advanced_local_sam3_concept_exemplar";
     const readiness = provider?.readiness || {};
     const credentials = asArray(provider?.credentials);
     const hfCredential = credentials.find((credential) => credential.name === "hf_token");
@@ -3153,7 +3190,7 @@ const MotionJSONUI = (() => {
     const status = String(setupState.status || readiness.status || "");
     const runtimeReady = readiness.configured === true || readiness.status === "ready" || readiness.status === "configured";
     const setupRunning = setupJob && !setupJob.terminal;
-    const localCacheProvider = providerId === "sam3-local" || providerId === "sam2-hf-auto-masks";
+    const localCacheProvider = !advancedLocalSam3 && (providerId === "sam3-local" || providerId === "sam2-hf-auto-masks");
     const runtimeProof = provider?.runtimeProof || setupJob?.result?.runtimeProof || setupJob?.result?.diagnosis?.runtimeProof || {};
     const runtimeVerification = runtimeProof.proofStatus ? runtimeProof : provider?.runtimeVerification || setupJob?.result?.diagnosis?.runtimeVerification || {};
     const setupEvents = asArray(setupJob?.events);
@@ -3202,12 +3239,14 @@ const MotionJSONUI = (() => {
     }
     steps.push({
       id: "load_gpu",
-      label: providerId === "sam3-local" ? "Prove accelerator" : "Load model",
+      label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Prove advanced SAM3" : "Prove accelerator") : "Load model",
       status: verificationReady ? "done" : loadRunning ? "running" : status === "needs_smoke" ? "active" : "pending",
       detail: verificationReady
         ? `${proofBadge.label}. Model loaded on ${deviceActual || "reported runtime"}.`
-        : providerId === "sam3-local"
+        : providerId === "sam3-local" && !advancedLocalSam3
           ? "Smoke test must prove whether the SAM3 Tracker model loaded on CUDA, MPS, or CPU."
+          : advancedLocalSam3
+            ? "Diagnostics must prove the official SAM3 package and checkpoint before local concept/exemplar runs."
           : "Smoke test loads the cached model before extraction.",
     });
     steps.push({
@@ -3406,6 +3445,7 @@ const MotionJSONUI = (() => {
     const status = String(stateInfo.status || "not_configured");
     const nextAction = String(stateInfo.nextAction || "");
     const providerId = connection?.providerId || "";
+    const advancedLocalSam3 = connection?.productPathId === "advanced_local_sam3_concept_exemplar";
     const localSetupProvider = connection?.locality === "local" || ["sam3-local", "sam2-hf-auto-masks", "sam2-local"].includes(providerId);
     if (["checking_environment", "caching_model", "installing_runtime", "preparing_model", "smoke_testing"].includes(status)) {
       return { id: "cancel-setup-job", label: "Cancel setup", primary: false };
@@ -3413,10 +3453,13 @@ const MotionJSONUI = (() => {
     if (status === "needs_smoke") {
       return { id: "smoke", label: "Run smoke test", primary: true };
     }
+    if (advancedLocalSam3 && status !== "ready") {
+      return { id: "diagnose", label: "Diagnose advanced setup", primary: true };
+    }
     if (localSetupProvider && nextAction === "install") {
       return {
         id: "install",
-        label: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
+        label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Install advanced SAM3" : "Install scene sweep") : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
         primary: true,
       };
     }
@@ -3444,7 +3487,7 @@ const MotionJSONUI = (() => {
       return { id: providerId === "sam3-local" || providerId === "sam2-hf-auto-masks" || providerId === "sam2-local" ? "install" : "diagnose", label: "Retry setup", primary: true };
     }
     if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
-    return { id: "install", label: providerId === "sam3-local" ? "Install scene sweep" : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
+    return { id: "install", label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Install advanced SAM3" : "Install scene sweep") : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
   }
 
   function modelSetupConfirmationForAction(action, providerId, options = {}) {
@@ -6552,6 +6595,10 @@ const MotionJSONUI = (() => {
           const profile = connection.profileId
             ? asArray(provider?.hostedProfiles).find((item) => item.id === connection.profileId)
             : null;
+          const productPathId = connection.productPathId || connection.id || "";
+          const metaProviderLabel = productPathId === "advanced_local_sam3_concept_exemplar"
+            ? connection.title
+            : profile?.name || provider?.name || connection.providerId;
           return `
             <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" data-testid="model-choice-${escapeAttribute(connection.id)}" aria-pressed="${active}">
               <span class="model-choice-topline">
@@ -6559,7 +6606,7 @@ const MotionJSONUI = (() => {
                 ${statusChip(summary.label, summary.status, summary.tone === "ready")}
               </span>
               <span class="model-choice-copy">${escapeHtml(connection.recommendation)}</span>
-              <span class="model-choice-meta">${escapeHtml(`${connection.workflow} - ${profile?.name || provider?.name || connection.providerId}`)}</span>
+              <span class="model-choice-meta">${escapeHtml(`${connection.workflow} - ${metaProviderLabel}`)}</span>
             </button>
           `;
         })
@@ -6571,6 +6618,8 @@ const MotionJSONUI = (() => {
     function renderModelSetupDetail(connection, summary) {
       const settingsProvider = providerSettingsById(connection.providerId);
       const hosted = settingsProvider?.locality === "hosted";
+      const productPathId = connection.productPathId || connection.connectionId || connection.id || "";
+      const advancedLocalSam3 = productPathId === "advanced_local_sam3_concept_exemplar";
       const resultTone = state.modelSetupTone || summary.tone || "neutral";
       const resultMessage = state.modelSetupMessage || summary.message;
       const readiness = settingsProvider?.readiness || {};
@@ -6580,9 +6629,9 @@ const MotionJSONUI = (() => {
       const selectedModel = settings.selectedModel || settingsProvider?.defaultModel || "";
       const selectedProfile = connection.profileId || settings.hostedProfileId || settingsProvider?.defaultHostedProfile || "";
       const customHidden = selectedModel !== "__custom__";
-      const guide = connection.profileId
+      const guide = connection.setupGuide || (connection.profileId
         ? asArray(settingsProvider?.hostedProfiles).find((item) => item.id === connection.profileId)?.setupGuide || {}
-        : settingsProvider?.setupGuide || {};
+        : settingsProvider?.setupGuide || {});
       const readinessDetails = [
         hosted ? "hosted API" : "runtime model",
         readiness.status || summary.status,
@@ -6637,10 +6686,10 @@ const MotionJSONUI = (() => {
         })
         .join("");
       const advancedLocalPath = state.advancedLocalPaths?.[connection.providerId] || {};
-      const cachedSceneSweepPath = connection.providerId === "sam3-local"
+      const cachedSceneSweepPath = connection.providerId === "sam3-local" && !advancedLocalSam3
         ? String(advancedLocalPath.cachedSceneSweepModelDir || advancedLocalPath.localModelDirDisplayRaw || "")
         : "";
-      const cachedSceneSweepPathField = connection.providerId === "sam3-local"
+      const cachedSceneSweepPathField = connection.providerId === "sam3-local" && !advancedLocalSam3
         ? `<label class="model-setup-readonly-path">
             <span>Cached SAM3 Scene Sweep model directory</span>
             <div class="readonly-path-control">
@@ -6710,8 +6759,9 @@ const MotionJSONUI = (() => {
               : "warn";
       const hasAlternatives = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: true }).length > 1;
       const local = !hosted;
-      const canInstall = connection.providerId === "sam3-local" || connection.providerId === "sam2-local" || connection.providerId === "sam2-hf-auto-masks";
-      const canCheckAccess = connection.providerId === "sam3-local" || hosted;
+      const canInstall = !advancedLocalSam3 && (connection.providerId === "sam3-local" || connection.providerId === "sam2-local" || connection.providerId === "sam2-hf-auto-masks");
+      const canCheckAccess = !advancedLocalSam3 && (connection.providerId === "sam3-local" || hosted);
+      const canCacheModel = !advancedLocalSam3 && (connection.providerId === "sam3-local" || connection.providerId === "sam2-hf-auto-masks");
       const manualCommands = commandRows
         ? `<details class="provider-setup-commands">
             <summary>Manual commands</summary>
@@ -6859,7 +6909,7 @@ const MotionJSONUI = (() => {
             <div class="model-setup-actions">
               ${canInstall ? `<button type="button" data-model-setup-action="install">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : connection.providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install fallback"}</button>` : ""}
               ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
-              <button type="button" data-model-setup-action="cache-model">Cache model</button>
+              ${canCacheModel ? `<button type="button" data-model-setup-action="cache-model">Cache model</button>` : ""}
               <button type="button" data-model-setup-action="save">Save setup</button>
               <button type="button" data-model-setup-action="diagnose">Diagnose</button>
               <button type="button" data-model-setup-action="smoke">Run smoke test</button>
@@ -11491,7 +11541,11 @@ const MotionJSONUI = (() => {
           "model-setup": ["sam2-local", "", "neutral"],
           "model-setup-local": ["sam2-local", "SAM2 runtime is selected. Save checkpoint and model config paths, then diagnose setup.", "warn"],
           "model-setup-hosted-warning": ["sam2-hosted:replicate-sam2-video", "Replicate SAM2 is selected. Save a token and confirm hosted cost/privacy before smoke tests or extraction.", "warn"],
+          "model-setup-trace-all-options": ["sam3-local", "Choose the scene-sweep runtime first, then a fallback only when the runtime is unavailable.", "warn", "trace_all_objects"],
           "model-setup-sam3-local": ["sam3-local", "SAM3 Scene Sweep is selected. Install the sam3-transformers extra, check Hugging Face access if needed, then diagnose setup before running.", "warn", "trace_all_objects"],
+          "model-setup-sam2-hf-fallback": ["sam2-hf-auto-masks", "SAM2 HF fallback is selected for scene proposals when SAM3 Scene Sweep is blocked.", "warn", "trace_all_objects"],
+          "model-setup-no-model-cpu": ["no_model_cpu_workflow", "No-model CPU workflow is selected for local smoke checks and simple moving-object footage.", "ready", "trace_all_objects"],
+          "model-setup-advanced-local-sam3": ["advanced_local_sam3_concept_exemplar", "Advanced local SAM3 concept/exemplar is selected. Configure the official SAM3 package and checkpoint path before using this path.", "warn", "trace_one_object"],
           "model-setup-sam3-roboflow": ["sam3-hosted:roboflow-sam3-pcs", "Roboflow SAM3 is selected. Paste an API key, save, then test setup before discovery.", "warn", "text_detector"],
           "model-setup-sam3-custom": ["sam3-hosted:custom-sam3-compatible", "Custom hosted SAM3 is selected. Save endpoint, key, and hosted opt-in before testing.", "warn", "trace_one_object"],
           "model-setup-missing": ["sam3-hosted:roboflow-sam3-pcs", "Paste a server-side Roboflow API key before hosted SAM3 concept discovery can run.", "bad"],
@@ -11510,6 +11564,7 @@ const MotionJSONUI = (() => {
           state.selectedModelSetupProviderId = captureState[0];
           state.modelSetupMessage = captureState[1];
           state.modelSetupTone = captureState[2];
+          if (capture === "model-setup-trace-all-options" || capture === "model-setup-advanced-local-sam3") state.modelSetupAlternativesOpen = true;
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") state.modelSetupAlternativesOpen = true;
           if (captureState[0] === "sam3-local") markCaptureProviderReady("sam3-local");
           if (capture === "model-setup-sam3-missing-runtime") {
@@ -11523,6 +11578,13 @@ const MotionJSONUI = (() => {
           }
           if (captureState[0] === "sam2-local") markCaptureProviderReady("sam2-local");
           if (captureState[0] === "sam2-hf-auto-masks") markCaptureProviderReady("sam2-hf-auto-masks", { message: "SAM2 HF fallback runtime is available. Cache the selected model before running automatic masks." });
+          if (captureState[0] === "no_model_cpu_workflow") markCaptureProviderReady("mock", { message: "No-model CPU workflow is ready." });
+          if (captureState[0] === "advanced_local_sam3_concept_exemplar") {
+            markCaptureCapabilityBlocked("sam3-local", {
+              reasons: ["Python module 'sam3' is not importable. SAM3_LOCAL_MODEL is only required for concept and exemplar workflows."],
+              installHint: "Install the official SAM3 package and configure a local sam3.pt checkpoint for advanced concept/exemplar workflows.",
+            });
+          }
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") markCaptureProviderReady("sam3-hosted", { hostedProfileId: "custom-sam3-compatible", allowHosted: true });
           if (captureState[0] === "sam3-hosted:roboflow-sam3-pcs") markCaptureProviderReady("sam3-hosted", { hostedProfileId: "roboflow-sam3-pcs", allowHosted: true });
           if (captureState[0] === "sam2-hosted:replicate-sam2-video") markCaptureProviderReady("sam2-hosted", { hostedProfileId: "replicate-sam2-video", allowHosted: true });

@@ -370,8 +370,8 @@
       },
       "expectedValidation": {
         "valid": true,
-        "blockingWarningCodesAnyOf": ["provider_unavailable"],
-        "blockingProvidersAnyOf": ["sam3-auto-masks"],
+        "blockingWarningCodesAnyOf": ["sam3_scene_sweep_missing_tracker_classes"],
+        "blockingProvidersAnyOf": ["sam3_tracker_scene_sweep"],
         "mustNotMentionAnyOf": ["SAM3_LOCAL_MODEL"]
       },
       "expectedJob": {"uiCanStart": false}
@@ -438,9 +438,9 @@
       },
       "expectedValidation": {
         "valid": false,
-        "errorCodesAnyOf": ["sam3_local_concept_unavailable"],
+        "errorCodesAnyOf": ["sam3_advanced_local_missing_checkpoint"],
         "blockingWarningCodesAnyOf": ["provider_unavailable"],
-        "blockingProvidersAnyOf": ["sam3-local", "sam3-concept"],
+        "blockingProvidersAnyOf": ["advanced_local_sam3_concept_exemplar", "sam3-local", "sam3-concept"],
         "messageContainsAnyOf": ["hosted SAM3 concept", "Scene Sweep", "advanced official SAM3", "official SAM3"]
       },
       "expectedJob": {"uiCanStart": false}

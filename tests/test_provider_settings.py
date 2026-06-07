@@ -246,16 +246,18 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_sam_first(tmp_path
     assert "apiKey" not in json.dumps(payload)
 
 
-def test_sam3_local_setup_guide_distinguishes_source_repo_from_checkpoint_path():
+def test_sam3_scene_sweep_setup_guide_is_not_advanced_checkpoint_setup():
     catalog = provider_catalog()
     sam3_local = provider_by_id(catalog, "sam3-local")
     guide_text = json.dumps(sam3_local["setupGuide"])
 
-    assert "SAM3_LOCAL_MODEL" in guide_text
-    assert "sam3.pt" in guide_text
+    assert "sam3-transformers" in guide_text
+    assert "Sam3TrackerModel" in guide_text
     assert "facebook/sam3" in guide_text
-    assert "/content/sam3" in guide_text
-    assert "checkpoint file path" in sam3_local["localConfigFields"][0]["label"]
+    assert "SAM3_LOCAL_MODEL" not in guide_text
+    assert "sam3.pt" not in guide_text
+    assert "/content/sam3" not in guide_text
+    assert "Advanced SAM3 checkpoint file path" == sam3_local["localConfigFields"][0]["label"]
     assert "Do not enter /content/sam3 or facebook/sam3" in sam3_local["localConfigFields"][0]["helpText"]
     assert "sam3.pt" in sam3_local["localConfigFields"][0]["placeholder"]
     assert sam3_local["docs"] == "docs/sam3_local.md"
@@ -275,9 +277,12 @@ def test_sam_goal_capabilities_are_declared_for_guided_ui():
 
     assert "trace_one_object" in sam2_local["supportedGoals"]
     assert sam2_local["supportsTracking"] is True
-    assert sam3_local["supportedPromptTypes"] == ["box"]
-    assert {"trace_one_object", "trace_all_objects"} <= set(sam3_local["supportedGoals"])
+    assert sam3_local["supportedPromptTypes"] == []
+    assert sam3_local["supportedGoals"] == ["trace_all_objects"]
     assert "text_detector" not in sam3_local["supportedGoals"]
+    assert sam3_local["supportsAutoMasks"] is True
+    assert sam3_local["supportsConcept"] is False
+    assert sam3_local["supportsExemplar"] is False
     assert roboflow["supportedGoals"] == ["text_detector"]
     assert roboflow["supportsExemplar"] is False
     assert roboflow["supportsAutoMasks"] is False

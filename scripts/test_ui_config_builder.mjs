@@ -766,7 +766,7 @@ const cudaRecommendation = ui.environmentRecommendationSummary({
   summary: {
     gpuModelRecommendation: {
       accelerator: "cuda",
-      recommendedProviderId: "sam3-local",
+      recommendedProviderId: "sam3_tracker_scene_sweep",
       connectionId: "sam3-local",
       model: "facebook/sam3",
       label: "SAM3 Scene Sweep on CUDA",
@@ -778,7 +778,7 @@ const cudaRecommendation = ui.environmentRecommendationSummary({
   },
 });
 assert.equal(cudaRecommendation.accelerator, "cuda");
-assert.equal(cudaRecommendation.providerId, "sam3-local");
+assert.equal(cudaRecommendation.providerId, "sam3_tracker_scene_sweep");
 assert.equal(cudaRecommendation.model, "facebook/sam3");
 
 const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
@@ -981,7 +981,7 @@ const hostedSam3Plan = ui.guidedEnginePlan({
 });
 assert.equal(hostedSam3Plan.providerId, "sam3-hosted");
 assert.equal(hostedSam3Plan.connectionId, "sam3-hosted:roboflow-sam3-pcs");
-assert.equal(hostedSam3Plan.displayLabel, "Roboflow SAM3");
+assert.equal(hostedSam3Plan.displayLabel, "Hosted SAM3 text discovery");
 assert.equal(hostedSam3Plan.discoveryMode, "sam3_concept");
 assert.equal(hostedSam3Plan.hostedCallsAllowed, false);
 
@@ -1083,7 +1083,7 @@ const textPromptDefaultsToHostedSam3 = ui.guidedEnginePlan({
   preset: "text_detector",
 });
 assert.equal(textPromptDefaultsToHostedSam3.providerId, "sam3-hosted");
-assert.equal(textPromptDefaultsToHostedSam3.displayLabel, "Roboflow SAM3");
+assert.equal(textPromptDefaultsToHostedSam3.displayLabel, "Hosted SAM3 text discovery");
 assert.equal(textPromptDefaultsToHostedSam3.discoveryMode, "sam3_concept");
 
 const advancedDetectorFallback = ui.guidedEnginePlan({
@@ -1111,7 +1111,7 @@ const runPlanUsesProviderIdForLogic = ui.buildRunPlan(hostedSam3Config, {
   videoId: "video_1",
   previewName: "preview.mp4",
 });
-assert.equal(runPlanUsesProviderIdForLogic.providerName, "Roboflow SAM3");
+assert.equal(runPlanUsesProviderIdForLogic.providerName, "Hosted SAM3 text discovery");
 assert.equal(runPlanUsesProviderIdForLogic.providerId, "sam3-hosted");
 assert.equal(runPlanUsesProviderIdForLogic.providerLocality, "hosted");
 assert.equal(runPlanUsesProviderIdForLogic.privacy, "Hosted calls allowed after confirmation");
@@ -1149,10 +1149,10 @@ const PROVIDER_STATE_FIXTURES = [
     name: "SAM3 local exemplar tracking",
     input: { preset: "trace_one_object", modelConnectionId: "sam3-local" },
     expected: {
-      connectionId: "sam3-local",
+      connectionId: "advanced_local_sam3_concept_exemplar",
       providerId: "sam3-local",
       profileId: "",
-      displayLabel: "SAM3 Scene Sweep",
+      displayLabel: "Advanced local SAM3 concept/exemplar",
       engine: "sam3",
       locality: "local",
       hostedCallsAllowed: false,
@@ -1166,7 +1166,7 @@ const PROVIDER_STATE_FIXTURES = [
       connectionId: "sam3-hosted:roboflow-sam3-pcs",
       providerId: "sam3-hosted",
       profileId: "roboflow-sam3-pcs",
-      displayLabel: "Roboflow SAM3",
+      displayLabel: "Hosted SAM3 text discovery",
       engine: "sam3",
       locality: "hosted",
       hostedCallsAllowed: false,
@@ -1180,7 +1180,7 @@ const PROVIDER_STATE_FIXTURES = [
       connectionId: "sam2-hf-auto-masks",
       providerId: "sam2-hf-auto-masks",
       profileId: "",
-      displayLabel: "SAM2 HF automatic masks",
+      displayLabel: "SAM2 HF automatic masks fallback",
       engine: "sam2",
       locality: "local",
       hostedCallsAllowed: false,
@@ -1238,7 +1238,7 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 const compatibleConnectionExpectations = {
   trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
   text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
-  trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "sam3-hosted:custom-sam3-compatible"],
+  trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
 };
@@ -1253,7 +1253,7 @@ for (const [preset, expectedIds] of Object.entries(compatibleConnectionExpectati
 
 assert.deepEqual(
   ui.compatibleModelConnectionsForPreset("trace_one_object", { includeAdvanced: true }).map((connection) => connection.id),
-  ["sam2-local", "sam2-hosted:replicate-sam2-video", "sam3-local", "sam3-hosted:custom-sam3-compatible"],
+  ["sam2-local", "sam2-hosted:replicate-sam2-video", "advanced_local_sam3_concept_exemplar", "sam3-hosted:custom-sam3-compatible"],
   "SAM3 one-object connections stay available only in the Advanced model list",
 );
 
@@ -2116,7 +2116,7 @@ const lifecycleBackendShape = ui.normalizeJobLifecycle({
     provider: {
       id: "sam3-hosted",
       connectionId: "sam3-hosted:roboflow-sam3-pcs",
-      label: "Roboflow SAM3",
+      label: "Hosted SAM3 text discovery",
       engine: "sam3",
       locality: "hosted",
       hostedCallsAllowed: true,
@@ -2127,7 +2127,7 @@ const lifecycleBackendShape = ui.normalizeJobLifecycle({
 });
 assert.equal(lifecycleBackendShape.status, "waiting_review");
 assert.equal(lifecycleBackendShape.provider.providerId, "sam3-hosted");
-assert.equal(lifecycleBackendShape.provider.displayLabel, "Roboflow SAM3");
+assert.equal(lifecycleBackendShape.provider.displayLabel, "Hosted SAM3 text discovery");
 assert.equal(lifecycleBackendShape.actions.canCancel, false);
 
 const lifecycleRunning = ui.normalizeJobLifecycle({

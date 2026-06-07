@@ -14,7 +14,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import parse_qs, unquote, urlparse
 
 from motionjson import __version__
@@ -1932,13 +1932,16 @@ class LocalUIApp:
             )
         if config.discovery.mode:
             discovery_name = self._capability_name_for_discovery_mode(config.discovery.mode)
-            self._append_provider_warning(
-                warnings,
-                providers,
-                kind="discovery_provider",
-                name=discovery_name,
-                field="discovery.mode",
-            )
+            if config.discovery.mode == "sam3_auto_masks" and config.provider.name != "sam3-hosted":
+                self._append_sam3_scene_sweep_warning(warnings, providers, field="discovery.mode")
+            else:
+                self._append_provider_warning(
+                    warnings,
+                    providers,
+                    kind="discovery_provider",
+                    name=discovery_name,
+                    field="discovery.mode",
+                )
 
         try:
             validate_extract_provider_policy(config.provider.name)
@@ -1985,6 +1988,12 @@ class LocalUIApp:
                 add("sam3-local", "discovery.mode", capability_name="sam3-auto-masks")
         if discovery_mode in {"sam3_concept", "sam3_exemplar"} and (hosted_requested or provider_name == "sam3-hosted"):
             add("sam3-hosted", "discovery.mode")
+        if discovery_mode in {"sam3_concept", "sam3_exemplar"} and not hosted_requested and provider_name == "sam3-local":
+            add(
+                "sam3-local",
+                "discovery.mode",
+                capability_name="sam3-concept" if discovery_mode == "sam3_concept" else "sam3-exemplar",
+            )
         return requirements
 
     @staticmethod
@@ -2052,7 +2061,7 @@ class LocalUIApp:
                 return
             warnings.append(
                 {
-                    "code": "hosted_network_ack_required",
+                    "code": "sam3_hosted_requires_opt_in" if provider_id == "sam3-hosted" else "hosted_network_ack_required",
                     "field": field,
                     "provider": provider_id,
                     "kind": "hosted_network_ack",
@@ -2126,6 +2135,7 @@ class LocalUIApp:
         if not provider or (provider.get("available") is not False and provider.get("runnable") is not False):
             return
         mode_label = "Find by description" if config.discovery.mode == "sam3_concept" else "SAM3 box/example tracing"
+        code = self._sam3_advanced_local_blocker_code(provider)
         action = (
             "Use a hosted SAM3 concept provider, switch to Trace all objects / SAM3 Scene Sweep, "
             "or configure the advanced official SAM3 package plus a local sam3.pt checkpoint path."
@@ -2133,9 +2143,10 @@ class LocalUIApp:
         response["valid"] = False
         response.setdefault("errors", []).append(
             {
-                "code": "sam3_local_concept_unavailable",
+                "code": code,
+                "legacyCode": "sam3_local_concept_unavailable",
                 "field": "discovery.mode",
-                "provider": "sam3-local",
+                "provider": "advanced_local_sam3_concept_exemplar",
                 "discoveryProvider": provider_name,
                 "severity": "error",
                 "action": action,
@@ -2144,6 +2155,68 @@ class LocalUIApp:
                     "Scene Sweep can propose visible objects, but local text/concept SAM3 requires the advanced official SAM3 adapter."
                 ),
                 "reasons": _public_value(provider.get("reasons") or []),
+            }
+        )
+
+    @staticmethod
+    def _sam3_advanced_local_blocker_code(provider: Mapping[str, Any]) -> str:
+        text = " ".join(
+            [
+                str(provider.get("status") or ""),
+                str(provider.get("installHint") or ""),
+                *[str(reason) for reason in provider.get("reasons") or []],
+            ]
+        ).lower()
+        if "sam3_local_model" in text or "sam3.pt" in text or "checkpoint" in text or "model path" in text:
+            return "sam3_advanced_local_missing_checkpoint"
+        return "sam3_advanced_local_unavailable"
+
+    @staticmethod
+    def _sam3_scene_sweep_warning_code(provider: Mapping[str, Any]) -> str:
+        text = " ".join(
+            [
+                str(provider.get("status") or ""),
+                str(provider.get("installHint") or ""),
+                *[str(reason) for reason in provider.get("reasons") or []],
+            ]
+        ).lower()
+        if "sam3tracker" in text or "tracker automatic-mask" in text or "tracker classes" in text or "does not expose sam3 tracker" in text:
+            return "sam3_scene_sweep_missing_tracker_classes"
+        if "transformers" in text:
+            return "sam3_scene_sweep_missing_transformers"
+        return "sam3_scene_sweep_unavailable"
+
+    @classmethod
+    def _append_sam3_scene_sweep_warning(
+        cls,
+        warnings: list[dict[str, Any]],
+        providers: dict[tuple[str, str], dict[str, Any]],
+        *,
+        field: str,
+    ) -> None:
+        provider = providers.get(("discovery_provider", "sam3-auto-masks"))
+        if not provider or (provider.get("available") is not False and provider.get("runnable") is not False):
+            return
+        status = provider.get("status")
+        if provider.get("available") is not False and status == "runtime_proof_required":
+            return
+        message = "SAM3 Scene Sweep is not available on this machine."
+        if provider.get("available") is not False and provider.get("runnable") is False:
+            status = "not_runnable"
+            message = "SAM3 Scene Sweep is configured but cannot run from this local workflow yet."
+        warnings.append(
+            {
+                "code": cls._sam3_scene_sweep_warning_code(provider),
+                "field": field,
+                "provider": "sam3_tracker_scene_sweep",
+                "capabilityProvider": "sam3-auto-masks",
+                "kind": "discovery_provider",
+                "status": status,
+                "severity": "error",
+                "action": provider.get("installHint") or "Install the sam3-transformers runtime, cache facebook/sam3, then run scene-sweep proof.",
+                "message": message,
+                "reasons": _public_value(provider.get("reasons") or []),
+                "installHint": provider.get("installHint"),
             }
         )
 
@@ -2164,9 +2237,14 @@ class LocalUIApp:
         if provider.get("available") is not False and provider.get("runnable") is False:
             status = "not_runnable"
             message = f"{name} is configured but cannot run from this local workflow yet."
+        code = "provider_unavailable"
+        if name == "sam3-hosted":
+            text = " ".join([str(provider.get("status") or ""), *[str(reason) for reason in provider.get("reasons") or []]]).lower()
+            if "api_key" in text or "api key" in text or "token" in text or "credential" in text or "env" in text:
+                code = "sam3_hosted_missing_credentials"
         warnings.append(
             {
-                "code": "provider_unavailable",
+                "code": code,
                 "field": field,
                 "provider": name,
                 "kind": kind,

@@ -329,7 +329,7 @@ def test_capability_environment_profile_recommends_sam3_for_cuda_gpu():
 
     assert profile["accelerator"] == "cuda"
     assert "CUDA GPU" in profile["label"]
-    assert recommendation["recommendedProviderId"] == "sam3-local"
+    assert recommendation["recommendedProviderId"] == "sam3_tracker_scene_sweep"
     assert recommendation["model"] == "facebook/sam3"
     assert "Cache facebook/sam3" in " ".join(recommendation["nextActions"])
 
@@ -358,9 +358,9 @@ def test_capability_environment_profile_guides_cpu_and_mps_fallbacks():
     )
 
     assert cpu_profile["accelerator"] == "cpu"
-    assert cpu_recommendation["recommendedProviderId"] == "motion_foreground"
+    assert cpu_recommendation["recommendedProviderId"] == "no_model_cpu_workflow"
     assert cpu_recommendation["runnable"] is True
-    assert "CPU-safe" in cpu_recommendation["label"]
+    assert "No-model CPU" in cpu_recommendation["label"]
 
     mps_profile = local_environment_profile(
         {
@@ -715,9 +715,10 @@ def test_local_ui_validation_uses_sam3_auto_masks_for_scene_sweep_warnings(tmp_p
         }
     )
     payload = validate_with_report(scene_sweep_unavailable)
-    warnings = [warning for warning in payload["warnings"] if warning["code"] == "provider_unavailable"]
+    warnings = [warning for warning in payload["warnings"] if warning["code"] == "sam3_scene_sweep_missing_tracker_classes"]
 
-    assert [warning["provider"] for warning in warnings] == ["sam3-auto-masks"]
+    assert [warning["provider"] for warning in warnings] == ["sam3_tracker_scene_sweep"]
+    assert warnings[0]["capabilityProvider"] == "sam3-auto-masks"
     assert "SAM3_LOCAL_MODEL" not in json.dumps(warnings)
     assert "Transformers does not expose" in json.dumps(warnings)
 
@@ -790,7 +791,9 @@ def test_local_ui_validation_blocks_unconfigured_local_sam3_concept(tmp_path, mo
 
     assert status == 200
     assert payload["valid"] is False
-    error = next(item for item in payload["errors"] if item["code"] == "sam3_local_concept_unavailable")
+    error = next(item for item in payload["errors"] if item["code"] == "sam3_advanced_local_missing_checkpoint")
+    assert error["legacyCode"] == "sam3_local_concept_unavailable"
+    assert error["provider"] == "advanced_local_sam3_concept_exemplar"
     assert error["discoveryProvider"] == "sam3-concept"
     assert "Scene Sweep can propose visible objects" in error["message"]
     assert "hosted SAM3 concept" in error["action"]
@@ -1363,7 +1366,7 @@ def test_local_ui_blocks_hosted_sam3_without_per_run_ack_after_provider_opt_in(t
     payload = decode(body)
     warning_codes = [item["code"] for item in payload["warnings"]]
     assert status == 200
-    assert warning_codes.count("hosted_network_ack_required") == 2
+    assert warning_codes.count("sam3_hosted_requires_opt_in") == 2
     assert secret not in body.decode("utf-8")
 
     status, _headers, body = app.handle("POST", "/api/projects", body=json.dumps({"name": "Hosted SAM3 gate"}).encode("utf-8"))
@@ -1388,7 +1391,65 @@ def test_local_ui_blocks_hosted_sam3_without_per_run_ack_after_provider_opt_in(t
     )
     payload = decode(body)
     assert status == 200
-    assert "hosted_network_ack_required" not in {warning["code"] for warning in payload["warnings"]}
+    assert "sam3_hosted_requires_opt_in" not in {warning["code"] for warning in payload["warnings"]}
+
+
+def test_local_ui_validation_reports_sam3_hosted_missing_credentials(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        ui_server,
+        "build_capability_report",
+        lambda **_kwargs: {
+            "schema": "motionjson.provider_diagnostics.v0.1",
+            "summary": {"providersReady": 0, "providersTotal": 2},
+            "environment": {},
+            "providers": [
+                {
+                    "name": "sam3-hosted",
+                    "kind": "discovery_provider",
+                    "available": False,
+                    "configured": False,
+                    "runnable": False,
+                    "status": "not_configured",
+                    "networkRequired": True,
+                    "needsCredentials": True,
+                    "reasons": ["SAM3_HOSTED_API_KEY is not set."],
+                    "installHint": "Save hosted SAM3 credentials and opt into network use.",
+                },
+                {"name": "sam3-concept", "kind": "discovery_provider", "available": True, "runnable": True, "status": "ready"},
+            ],
+        },
+    )
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    run_config = {
+        "schema": "motionjson.extraction_run_config.v0.1",
+        "input": {"path": "local-ui://assets/source-video"},
+        "output": {"directory": "out/hosted-sam3"},
+        "sampling": {"sample_fps": 12, "max_frames": 2},
+        "provider": {"name": "sam3-hosted", "sam3": {"hosted_allow_network": True}},
+        "discovery": {
+            "mode": "sam3_concept",
+            "config": {
+                "providerPreference": "sam3-hosted",
+                "hosted": True,
+                "concept": "red ball",
+                "allowNetwork": True,
+                "acknowledgeCostPrivacy": True,
+            },
+        },
+        "prompts": [],
+    }
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/run-config/validate",
+        body=json.dumps({"runConfig": run_config}).encode("utf-8"),
+    )
+    payload = decode(body)
+
+    assert status == 200
+    warning = next(item for item in payload["warnings"] if item["code"] == "sam3_hosted_missing_credentials")
+    assert warning["provider"] == "sam3-hosted"
+    assert "SAM3_HOSTED_API_KEY" in json.dumps(warning)
 
 
 def test_local_ui_api_queues_mock_job_and_scrubs_storage_keys(tmp_path):
