@@ -14,6 +14,7 @@ const MotionJSONUI = (() => {
     "/api/preferences",
     "/api/commercial-readiness",
     "/api/capabilities",
+    "/api/provider-registry",
     "/api/provider-settings",
     "/api/provider-settings/{providerId}",
     "/api/provider-settings/{providerId}/test",
@@ -488,6 +489,7 @@ const MotionJSONUI = (() => {
     capabilities: null,
     runDefaults: null,
     exportFormats: null,
+    providerRegistry: null,
     providerSettings: null,
     modelProviders: null,
     workspace: null,
@@ -11087,6 +11089,7 @@ const MotionJSONUI = (() => {
           ["workspace", "/api/workspace"],
           ["commercialReadiness", "/api/commercial-readiness"],
           ["capabilities", capabilityRoute],
+          ["providerRegistry", "/api/provider-registry"],
           ["providerSettings", "/api/provider-settings"],
           ["modelProviders", "/api/model-providers"],
           ["runDefaults", "/api/run-config/defaults"],
@@ -11111,6 +11114,7 @@ const MotionJSONUI = (() => {
         if (key === "workspace") state.workspace = payload;
         if (key === "commercialReadiness") state.commercialReadiness = payload;
         if (key === "capabilities") state.capabilities = payload;
+        if (key === "providerRegistry") state.providerRegistry = payload;
         if (key === "providerSettings") state.providerSettings = payload;
         if (key === "modelProviders") state.modelProviders = payload;
         if (key === "runDefaults") state.runDefaults = payload;
@@ -14357,6 +14361,8 @@ const MotionJSONUI = (() => {
   const publicApi = {
     API_ROUTES,
     CORRECTION_STATE_FORMAT,
+    MODEL_CONNECTION_PRIORITY,
+    MODEL_CONNECTIONS,
     PRESETS,
     REVIEW_TOOL_DEFS,
     RUN_CONFIG_SCHEMA,

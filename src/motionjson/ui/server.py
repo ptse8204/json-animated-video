@@ -93,6 +93,7 @@ from motionjson.provider_settings import (
     save_provider_settings,
     test_provider_settings,
 )
+from motionjson.provider_registry import registry_public_payload
 from motionjson.providers.discovery import discovery_provider_schemas
 from motionjson.providers.local_storage import LocalStorageProvider
 from motionjson.review_timeline import review_timeline_payload
@@ -947,6 +948,7 @@ class LocalUIApp:
                     "/api/preferences",
                     "/api/commercial-readiness",
                     "/api/capabilities",
+                    "/api/provider-registry",
                     "/api/provider-settings",
                     "/api/provider-settings/{providerId}",
                     "/api/provider-settings/{providerId}/test",
@@ -1009,6 +1011,8 @@ class LocalUIApp:
                     output_dir=self._query_one(query, "outputDir") or self._query_one(query, "output"),
                 )
             )
+        if path == "/api/provider-registry" and method == "GET":
+            return _public_value(registry_public_payload())
         if path == "/api/provider-settings" and method == "GET":
             return self._provider_settings_response()
         if path == "/api/provider-settings" and method == "POST":

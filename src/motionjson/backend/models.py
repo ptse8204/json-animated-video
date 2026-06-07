@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from motionjson.provider_registry import rejected_segmentation_aliases, worker_extract_provider_ids
+
 
 class BackendError(RuntimeError):
     """Base class for backend service errors."""
@@ -24,8 +26,8 @@ class ProviderPolicyError(BackendError):
     """Raised when a job payload requests a disallowed provider."""
 
 
-ALLOWED_EXTRACT_MASK_PROVIDERS = {"threshold", "external", "mock", "motion", "sam2-local", "sam2-hf-auto-masks", "sam2-hosted", "sam3-local", "sam3-hosted"}
-REJECTED_SEGMENTATION_ALIASES = {"openrouter", "llm", "vlm", "sam2", "hosted", "replicate", "runpod"}
+ALLOWED_EXTRACT_MASK_PROVIDERS = worker_extract_provider_ids()
+REJECTED_SEGMENTATION_ALIASES = rejected_segmentation_aliases()
 
 
 def validate_extract_provider_policy(mask_provider: str) -> str:

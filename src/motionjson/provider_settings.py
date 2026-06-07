@@ -13,6 +13,7 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from motionjson.backend.usage import utc_now
+from motionjson.provider_registry import hosted_profile_for_alias, normalize_provider_id, registry_entry_summary
 from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
 from motionjson.providers.sam3 import (
     SAM3_HF_REPO_ID,
@@ -642,10 +643,18 @@ PROVIDER_BY_ID = {provider["id"]: provider for provider in PROVIDER_DEFINITIONS}
 
 
 def provider_catalog() -> dict[str, Any]:
-    return {"format": PROVIDER_CATALOG_FORMAT, "providers": copy.deepcopy(PROVIDER_DEFINITIONS)}
+    providers = copy.deepcopy(PROVIDER_DEFINITIONS)
+    for provider in providers:
+        provider["registry"] = registry_entry_summary(str(provider["id"]))
+    return {
+        "format": PROVIDER_CATALOG_FORMAT,
+        "workflowRegistryFormat": "motionjson.provider_workflow_registry.v0.1",
+        "providers": providers,
+    }
 
 
 def hosted_profiles_for(provider_id: str) -> list[dict[str, Any]]:
+    provider_id = normalize_provider_id(provider_id)
     return copy.deepcopy(HOSTED_PROFILES_BY_PROVIDER.get(provider_id, []))
 
 
@@ -794,9 +803,14 @@ def provider_runtime_settings(
     """
 
     environ = environ or os.environ
+    requested_provider_id = str(provider_id or "").strip()
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     settings = _settings_with_environment_profile(provider_id, settings, environ)
     profiled_definition = _profiled_definition(definition, settings)
     profile = _profile_definition(definition, settings)
@@ -894,9 +908,14 @@ def provider_runtime_model_info(
     """Return backend-only runtime model resolution for cached providers."""
 
     environ = environ or os.environ
+    requested_provider_id = str(provider_id or "").strip()
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     settings = _settings_with_environment_profile(provider_id, settings, environ)
     return _runtime_model_info(definition, settings, secrets, environ)
 
@@ -912,6 +931,7 @@ def record_provider_model_cache(
 ) -> dict[str, Any]:
     """Persist a resolved from_pretrained directory without exposing it publicly."""
 
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
         return provider_settings_response(conn, user_id=user_id, environ=environ)
@@ -943,6 +963,7 @@ def record_provider_runtime_verification(
 ) -> dict[str, Any]:
     """Persist a backend-only proof that a cached local model loaded and warmed up."""
 
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     if provider_id not in LOCAL_MODEL_CACHE_PROVIDER_IDS:
         return provider_settings_response(conn, user_id=user_id, environ=environ)
@@ -988,6 +1009,7 @@ def provider_advanced_local_paths(
 ) -> dict[str, Any]:
     """Return intentionally raw runtime paths for Workspace Advanced display only."""
 
+    provider_id = normalize_provider_id(provider_id)
     if provider_id != "sam3-local":
         return {
             "format": "motionjson.provider_advanced_local_paths.v0.1",
@@ -1458,10 +1480,14 @@ def save_provider_settings(
     payload: Mapping[str, Any],
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    provider_id = str(payload.get("providerId") or payload.get("provider_id") or "").strip()
+    requested_provider_id = str(payload.get("providerId") or payload.get("provider_id") or "").strip()
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(requested_provider_id)
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     if provider_id == "sam2-hosted" and not settings.get("hosted_profile_id") and payload.get("endpoint"):
         settings["hosted_profile_id"] = "custom-sam2-compatible"
     if provider_id == "sam3-hosted" and not settings.get("hosted_profile_id") and payload.get("endpoint"):
@@ -1475,6 +1501,7 @@ def save_provider_settings(
 
 
 def reset_provider_settings(conn: sqlite3.Connection, *, user_id: str, provider_id: str) -> dict[str, Any]:
+    provider_id = normalize_provider_id(provider_id)
     _definition(provider_id)
     conn.execute("DELETE FROM provider_settings WHERE user_id = ? AND provider_id = ?", (user_id, provider_id))
     conn.commit()
@@ -1489,9 +1516,14 @@ def test_provider_settings(
     environ: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     environ = environ or os.environ
+    requested_provider_id = str(provider_id or "").strip()
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     settings = _settings_with_environment_profile(provider_id, settings, environ)
     profiled_definition = _profiled_definition(definition, settings)
 
@@ -1565,12 +1597,16 @@ def hosted_sam3_smoke_test(
     from motionjson.providers.sam3 import HostedSAM3DiscoveryBackend
 
     environ = environ or os.environ
-    provider_id = str(payload.get("providerId") or payload.get("provider_id") or "sam3-hosted")
+    requested_provider_id = str(payload.get("providerId") or payload.get("provider_id") or "sam3-hosted")
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(requested_provider_id)
     if provider_id not in {"sam2-hosted", "sam3-hosted"}:
         raise ValueError("Hosted SAM smoke tests are only available for providerId sam2-hosted or sam3-hosted.")
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     settings = _settings_with_environment_profile(provider_id, settings, environ)
     profile = _profile_definition(definition, settings)
     profiled_definition = _profiled_definition(definition, settings)
@@ -1704,10 +1740,15 @@ def diagnose_provider_settings(
 
     environ = environ or os.environ
     payload = payload or {}
+    requested_provider_id = str(provider_id or "").strip()
+    hosted_profile_alias = hosted_profile_for_alias(requested_provider_id)
+    provider_id = normalize_provider_id(provider_id)
     definition = _definition(provider_id)
     row = _settings_rows(conn, user_id=user_id).get(provider_id)
     settings, secrets = _row_payloads(row)
     settings = dict(settings)
+    if hosted_profile_alias and hosted_profile_alias[0] == provider_id and not settings.get("hosted_profile_id"):
+        settings["hosted_profile_id"] = hosted_profile_alias[1]
     _apply_settings_payload(definition, settings, secrets, payload, validate_profile=False)
     readiness = _readiness(definition, settings, secrets, environ)
     credentials = _credential_states(definition, settings, secrets, environ)
@@ -1840,6 +1881,7 @@ def diagnose_provider_settings(
     return {
         "format": "motionjson.provider_settings_diagnose.v0.1",
         "providerId": provider_id,
+        "hostedProfileId": _selected_hosted_profile_id(definition, settings),
         "status": "ready" if runnable else "needs_setup",
         "setupState": setup_state,
         "ready": runnable,
@@ -2050,6 +2092,7 @@ def local_sam_smoke_test(
 
 
 def _definition(provider_id: str) -> dict[str, Any]:
+    provider_id = normalize_provider_id(provider_id)
     if provider_id not in PROVIDER_BY_ID:
         raise ValueError(f"Unknown provider settings id: {provider_id}")
     return PROVIDER_BY_ID[provider_id]
@@ -2148,6 +2191,7 @@ def _public_provider_state(
     profile = _profile_definition(definition, settings)
     profiled_definition = _profiled_definition(definition, settings)
     provider = copy.deepcopy(dict(profiled_definition))
+    provider["registry"] = registry_entry_summary(str(definition["id"]))
     provider["settings"] = {
         "enabled": bool(settings.get("enabled", definition.get("locality") != "hosted")),
         "selectedModel": settings.get("selected_model") or profiled_definition.get("defaultModel"),
