@@ -9416,7 +9416,7 @@ const MotionJSONUI = (() => {
       if (!jobId) return;
       for (const frameNumber of [currentFrame - 1, currentFrame, currentFrame + 1]) {
         const frame = trackFrameForDisplay(track, frameNumber);
-        for (const relPath of [frame?.mask, frame?.asset]) {
+        for (const relPath of [frame?.asset]) {
           if (!relPath || /^https?:\/\//i.test(String(relPath))) continue;
           const url = previewFileUrl(jobId, relPath);
           if (!url || preloadedReviewAssets.has(url)) continue;

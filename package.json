@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "node scripts/build_ui_shell.mjs",
+    "test:e2e": "node --test scripts/test_local_ui_e2e.mjs",
     "test": "node --test scripts/test_ui_config_builder.mjs scripts/test_ui_modules.mjs scripts/test_ui_workflow_matrix.mjs packages/motionjson-runtime/test/*.test.mjs packages/motionjson-sdk/test/*.test.mjs",
     "lint": "node scripts/lint_runtime.mjs",
     "ui:layout": "node scripts/check_local_ui_layout.mjs",
