@@ -179,6 +179,11 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert health["localFirst"] is True
     assert health["mockModeAvailable"] is True
     assert health["mockMode"] is True
+    assert health["deployment"]["format"] == "motionjson.deployment_readiness.v0.1"
+    assert health["deployment"]["mode"] == "local_single_user"
+    assert health["deployment"]["hostedReady"] is False
+    assert health["deployment"]["components"]["modelRuns"]["kind"] == "persistent_sqlite"
+    assert "/api/deployment-readiness" in health["routes"]
     assert "/api/capabilities" in health["routes"]
     assert "/api/progress" in health["routes"]
     assert "/api/artifacts" in health["routes"]
@@ -262,6 +267,42 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert status == 200
     assert {entry["id"] for entry in exports["exports"]} >= {"motionjson", "mp4", "website-zip", "remotion-plan"}
     assert {entry["id"] for entry in exports["presets"]} >= {"compact", "debug", "vector-heavy", "raster-fallback"}
+
+
+def test_local_ui_deployment_readiness_and_hosted_mode_fail_closed(tmp_path):
+    app = LocalUIApp(
+        db_path=tmp_path / "backend.sqlite",
+        storage_root=tmp_path / "storage",
+        deployment_mode="hosted_multi_tenant",
+    )
+
+    status, _headers, body = app.handle("GET", "/api/health")
+    health = decode(body)
+    assert status == 200
+    assert health["localFirst"] is False
+    assert health["deployment"]["mode"] == "hosted_multi_tenant"
+    assert health["deployment"]["hostedReady"] is False
+
+    status, _headers, body = app.handle("GET", "/api/deployment-readiness")
+    readiness = decode(body)
+    blocker_codes = {blocker["code"] for blocker in readiness["blockers"]}
+    assert status == 200
+    assert readiness["mode"] == "hosted_multi_tenant"
+    assert readiness["hostedReady"] is False
+    assert "hosted_auth_not_configured" in blocker_codes
+    assert "object_storage_not_configured" in blocker_codes
+
+    for method, path, payload in [
+        ("GET", "/api/workspace", None),
+        ("GET", "/api/capabilities", None),
+        ("GET", "/api/provider-settings", None),
+        ("POST", "/api/model-runs", {"request": {"goal": "Cut out one object"}}),
+        ("GET", "/api/videos/not-real/content", None),
+    ]:
+        body_bytes = json.dumps(payload).encode("utf-8") if payload is not None else b""
+        status, _headers, raw = app.handle(method, path, body=body_bytes)
+        assert status == 401
+        assert "configured auth provider" in decode(raw)["error"]
 
 
 def test_local_ui_direct_video_upload_creates_project_and_video(tmp_path):
@@ -890,6 +931,9 @@ def test_local_ui_workspace_preferences_and_recent_work_are_public(tmp_path):
     assert workspace["preferences"]["preferences"]["defaultExportPreset"] == "compact"
     assert workspace["providerSettingsSummary"]["mockNoModelDefault"] is True
     assert {preset["id"] for preset in workspace["exportPresets"]} >= {"compact", "debug"}
+    assert workspace["deployment"]["mode"] == "local_single_user"
+    assert workspace["deployment"]["hostedReady"] is False
+    assert workspace["deployment"]["components"]["modelRuns"]["kind"] == "persistent_sqlite"
     assert str(demo_video()) not in body.decode("utf-8")
     assert "storage_key" not in body.decode("utf-8")
 
@@ -939,8 +983,11 @@ def test_local_ui_commercial_readiness_surface_is_local_and_audit_friendly(tmp_p
     assert status == 200
     assert readiness["format"] == "motionjson.local_ui_commercial_readiness.v0.1"
     assert readiness["accountBoundary"]["mode"] == "local_single_user"
+    assert readiness["accountBoundary"]["deploymentMode"] == "local_single_user"
+    assert readiness["accountBoundary"]["hostedReady"] is False
     assert readiness["accountBoundary"]["teamMode"] == "placeholder_not_enabled"
     assert readiness["accountBoundary"]["billing"] == "not_implemented"
+    assert readiness["deployment"]["components"]["auth"]["kind"] == "local_single_user_adapter"
     assert readiness["usageCost"]["costDashboard"]["schema"] == "motionjson.backend_cost_dashboard.v0.1"
     assert isinstance(readiness["providerRunHistory"], list)
     assert isinstance(readiness["exportHistory"], list)

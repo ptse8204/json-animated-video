@@ -222,6 +222,7 @@ def workspace_response(
     user_id: str,
     provider_settings: Mapping[str, Any],
     export_presets_payload: list[dict[str, Any]],
+    deployment: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     projects = list_projects(conn, user_id=user_id)
     configured = [
@@ -245,6 +246,7 @@ def workspace_response(
             "mockNoModelDefault": True,
         },
         "exportPresets": export_presets_payload,
+        "deployment": dict(deployment or {}),
     }
 
 
@@ -311,9 +313,17 @@ def _export_history(conn: sqlite3.Connection, *, user_id: str, limit: int = 8) -
     ]
 
 
-def commercial_readiness_response(conn: sqlite3.Connection, *, user_id: str) -> dict[str, Any]:
+def commercial_readiness_response(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    deployment: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     user = conn.execute("SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
     usage = summarize_usage(conn, user_id=user_id)
+    deployment_payload = dict(deployment or {})
+    deployment_mode = str(deployment_payload.get("mode") or "local_single_user")
+    hosted_ready = deployment_payload.get("hostedReady") is True
     provider_history = [
         {
             "eventType": event["event_type"],
@@ -330,12 +340,15 @@ def commercial_readiness_response(conn: sqlite3.Connection, *, user_id: str) -> 
     return {
         "format": COMMERCIAL_READINESS_FORMAT,
         "accountBoundary": {
-            "mode": "local_single_user",
+            "mode": "local_single_user" if deployment_mode in {"local_single_user", "colab_local", "ci"} else "hosted_auth_required",
+            "deploymentMode": deployment_mode,
+            "hostedReady": hosted_ready,
             "teamMode": "placeholder_not_enabled",
             "userId": user["id"] if user else user_id,
             "email": user["email"] if user else "local-ui@motionjson.local",
             "billing": "not_implemented",
         },
+        "deployment": deployment_payload,
         "usageCost": usage,
         "providerRunHistory": provider_history,
         "exportHistory": _export_history(conn, user_id=user_id),

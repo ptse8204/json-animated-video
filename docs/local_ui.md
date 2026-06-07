@@ -25,6 +25,8 @@ user needs before running extraction:
 
 The backing API routes are:
 
+- `GET /api/health`
+- `GET /api/deployment-readiness`
 - `GET /api/workspace`
 - `GET /api/preferences`
 - `POST /api/preferences`
@@ -38,6 +40,16 @@ The Commercial readiness panel is intentionally a foundation, not billing. It
 shows local account/team placeholders, usage and cost policy, provider run
 history, export history, privacy notices, and rights reminders so commercial
 review work has an audit trail before team accounts or paid plans exist.
+
+Deployment readiness is explicit and conservative. Normal local runs report
+`mode: "local_single_user"` with SQLite, local file storage, server-owned
+provider settings, a SQLite-backed model-run store, and an in-process worker.
+`MOTIONJSON_DEPLOYMENT_PROFILE=hosted_single_tenant` or
+`hosted_multi_tenant` requests a hosted profile, but hosted readiness remains
+blocked until real hosted auth, database, object storage, external queue,
+secrets management, worker isolation, team boundaries, and billing are
+implemented and configured. In those hosted profiles, private Local UI API
+routes return 401 instead of falling back to the local single-user account.
 
 ## Guided First Run
 

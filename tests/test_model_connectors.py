@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import sqlite3
+import time
+
 import pytest
 
+from motionjson.backend.auth import register_user
+from motionjson.backend.db import initialize_database
 from motionjson.config import ExtractionRunConfig
 from motionjson.model_connectors import (
     FakeModelConnector,
@@ -10,6 +15,7 @@ from motionjson.model_connectors import (
     ModelPlanRequest,
     OpenAIPlanningConnector,
     OpenRouterSettingsModelConnector,
+    SQLiteModelRunStore,
     VolatileModelRunStore,
 )
 
@@ -177,3 +183,104 @@ def test_volatile_model_run_store_tracks_events_and_cancellation():
     store.create(provider_id="fake-local-planner", request=request)
     third = store.create(provider_id="fake-local-planner", request=request)
     assert store.get(third.id).id == third.id
+
+
+def test_sqlite_model_run_store_persists_events_and_scopes_by_owner(tmp_path):
+    db_path = tmp_path / "model-runs.sqlite"
+    conn = initialize_database(sqlite3.connect(db_path))
+    try:
+        owner = register_user(conn, email="owner@example.test", password="secret")
+        other = register_user(conn, email="other@example.test", password="secret")
+    finally:
+        conn.close()
+
+    def connect():
+        return initialize_database(sqlite3.connect(db_path))
+
+    owner_store = SQLiteModelRunStore(
+        connection_factory=connect,
+        owner_user_id_factory=lambda conn: owner["id"],
+        max_runs=4,
+    )
+    other_store = SQLiteModelRunStore(
+        connection_factory=connect,
+        owner_user_id_factory=lambda conn: other["id"],
+        max_runs=4,
+    )
+    request = ModelPlanRequest.from_dict(
+        {
+            "goal": "Find by description",
+            "prompt": "red ball",
+        }
+    )
+
+    run = owner_store.create(provider_id="fake-local-planner", request=request)
+    owner_store.mark_running(run.id)
+    planned = FakeModelConnector().plan(request)
+    owner_store.mark_succeeded(run.id, planned)
+
+    reloaded_store = SQLiteModelRunStore(
+        connection_factory=connect,
+        owner_user_id_factory=lambda conn: owner["id"],
+        max_runs=4,
+    )
+    reloaded = reloaded_store.get(run.id)
+    events = reloaded_store.events(run.id)
+
+    assert reloaded.status == "succeeded"
+    assert reloaded.request.prompt == "red ball"
+    assert reloaded.result is not None
+    assert reloaded.result.validation["valid"] is True
+    assert [event.event_type for event in events] == ["queued", "running", "planned"]
+    with pytest.raises(ModelConnectorError, match="model run not found"):
+        other_store.get(run.id)
+
+
+def test_sqlite_model_run_store_trims_per_owner_and_removes_events(tmp_path):
+    db_path = tmp_path / "model-runs-trim.sqlite"
+    conn = initialize_database(sqlite3.connect(db_path))
+    try:
+        owner = register_user(conn, email="trim-owner@example.test", password="secret")
+        other = register_user(conn, email="trim-other@example.test", password="secret")
+    finally:
+        conn.close()
+
+    def connect():
+        return initialize_database(sqlite3.connect(db_path))
+
+    owner_store = SQLiteModelRunStore(
+        connection_factory=connect,
+        owner_user_id_factory=lambda conn: owner["id"],
+        max_runs=2,
+    )
+    other_store = SQLiteModelRunStore(
+        connection_factory=connect,
+        owner_user_id_factory=lambda conn: other["id"],
+        max_runs=2,
+    )
+    request = ModelPlanRequest.from_dict({"goal": "Cut out one object"})
+
+    first = owner_store.create(provider_id="fake-local-planner", request=request)
+    owner_store.mark_running(first.id)
+    time.sleep(0.001)
+    other_run = other_store.create(provider_id="fake-local-planner", request=request)
+    time.sleep(0.001)
+    second = owner_store.create(provider_id="fake-local-planner", request=request)
+    time.sleep(0.001)
+    third = owner_store.create(provider_id="fake-local-planner", request=request)
+
+    with pytest.raises(ModelConnectorError, match="model run not found"):
+        owner_store.get(first.id)
+    assert owner_store.get(second.id).id == second.id
+    assert owner_store.get(third.id).id == third.id
+    assert other_store.get(other_run.id).id == other_run.id
+
+    conn = connect()
+    try:
+        event_count = conn.execute(
+            "SELECT COUNT(*) FROM model_run_events WHERE model_run_id = ?",
+            (first.id,),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert event_count == 0

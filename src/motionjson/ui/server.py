@@ -19,8 +19,9 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from motionjson import __version__
 from motionjson.backend.assets import get_asset, list_assets_for_job, list_project_assets, register_upload
-from motionjson.backend.browser_preview import prepare_browser_preview
 from motionjson.backend.auth import register_user
+from motionjson.backend.auth_context import auth_context_for_deployment
+from motionjson.backend.browser_preview import prepare_browser_preview
 from motionjson.backend.corrections import (
     apply_track_edit,
     apply_track_correction_state,
@@ -30,6 +31,7 @@ from motionjson.backend.corrections import (
     write_review_state_manifest,
 )
 from motionjson.backend.db import connect, initialize_database
+from motionjson.backend.deployment import HOSTED_DEPLOYMENT_MODES, build_deployment_profile
 from motionjson.backend.export_workflows import (
     export_motionjson_job,
     export_presets,
@@ -49,7 +51,7 @@ from motionjson.backend.library import (
     list_library_assets,
     save_library_asset,
 )
-from motionjson.backend.models import BackendError, NotFoundError, validate_extract_provider_policy
+from motionjson.backend.models import BackendError, ForbiddenError, NotFoundError, UnauthorizedError, validate_extract_provider_policy
 from motionjson.backend.projects import create_project, list_projects
 from motionjson.backend.provider_setup_jobs import (
     cancel_provider_setup_job,
@@ -78,7 +80,7 @@ from motionjson.model_connectors import (
     ModelConnectorRegistry,
     ModelPlanRequest,
     ModelPlanResult,
-    VolatileModelRunStore,
+    SQLiteModelRunStore,
 )
 from motionjson.provider_settings import (
     diagnose_provider_settings,
@@ -111,7 +113,17 @@ LOCAL_ABSOLUTE_PATH_RE = re.compile(
     r"(?<![\w:])(?:/(?:root|content)(?:/[^\s,;:)\]}\"']*)*|/(?:Users|private|var|tmp|Volumes|home)/[^\r\n]+)"
 )
 WINDOWS_ABSOLUTE_PATH_RE = re.compile(r"(?i)(?<![\w:])(?:[A-Z]:[\\/]|\\\\)[^\r\n\"'<>|]+")
-LOCAL_PATH_FIELD_NAMES = {"sourceuri", "sourcepath", "localpath"}
+LOCAL_PATH_FIELD_NAMES = {
+    "inputpath",
+    "localpath",
+    "maskdir",
+    "outputdirectory",
+    "outputdir",
+    "outputpath",
+    "sourcepath",
+    "sourceuri",
+    "videopath",
+}
 TERMINAL_JOB_STATUSES = {"succeeded", "failed", "canceled"}
 PUBLIC_ARTIFACT_CONTENT_TYPES = ("image/", "video/")
 PUBLIC_DOWNLOAD_ARTIFACT_KINDS = {
@@ -836,22 +848,59 @@ def _is_allowed_preview_rel_path(rel_path: str) -> bool:
 class LocalUIApp:
     """Small local-only UI app over the existing SQLite backend."""
 
-    def __init__(self, *, db_path: str | Path, storage_root: str | Path, mock_mode: bool = False):
+    def __init__(
+        self,
+        *,
+        db_path: str | Path,
+        storage_root: str | Path,
+        mock_mode: bool = False,
+        deployment_mode: str | None = None,
+        deployment_environ: Mapping[str, str] | None = None,
+    ):
         self.db_path = Path(db_path)
         self.storage_root = Path(storage_root)
         self.mock_mode = mock_mode
+        deployment_profile = build_deployment_profile(
+            environ=deployment_environ,
+            explicit_mode=deployment_mode,
+            mock_mode=mock_mode,
+            model_run_store="persistent_sqlite",
+        )
+        self.deployment_profile = deployment_profile
+        self.deployment = deployment_profile.to_dict()
+        self.auth_context = auth_context_for_deployment(self.deployment)
         self._worker_lock = threading.Lock()
         self._worker_thread: threading.Thread | None = None
         self._provider_setup_lock = threading.Lock()
         self._provider_setup_threads: dict[str, threading.Thread] = {}
         self.model_connectors = ModelConnectorRegistry()
-        self.model_runs = VolatileModelRunStore(max_runs=128)
+        self.model_runs = SQLiteModelRunStore(
+            connection_factory=self.connection,
+            owner_user_id_factory=self._model_run_owner_user_id,
+            max_runs=128,
+        )
 
     def connection(self) -> sqlite3.Connection:
         return initialize_database(connect(self.db_path))
 
     def storage(self) -> LocalStorageProvider:
         return LocalStorageProvider(self.storage_root)
+
+    def _model_run_owner_user_id(self, conn: sqlite3.Connection) -> str:
+        if self.deployment["mode"] in HOSTED_DEPLOYMENT_MODES:
+            raise UnauthorizedError(
+                "hosted deployment mode requires a configured auth provider before model runs can be persisted"
+            )
+        return self._local_user(conn)["id"]
+
+    def _request_user(self, conn: sqlite3.Connection, headers: Mapping[str, str] | None = None) -> dict[str, Any]:
+        return self.auth_context.require_user(conn, headers=headers, local_user_factory=self._local_user)
+
+    @staticmethod
+    def _api_route_requires_auth(method: str, path: str) -> bool:
+        if method in {"GET", "HEAD"} and path in {"/api/health", "/api/deployment-readiness"}:
+            return False
+        return True
 
     def _public_video_payload(self, conn: sqlite3.Connection, *, user_id: str, asset: dict[str, Any], prepare_preview: bool = False, force_preview: bool = False) -> dict[str, Any]:
         if prepare_preview:
@@ -898,6 +947,12 @@ class LocalUIApp:
             return self._error(HTTPStatus.NOT_FOUND, "route not found")
 
         try:
+            if self._api_route_requires_auth(method, path):
+                conn = self.connection()
+                try:
+                    self._request_user(conn, request_headers)
+                finally:
+                    conn.close()
             if method in {"GET", "HEAD"} and path.startswith("/api/videos/") and path.endswith("/content"):
                 parts = [part for part in path.split("/") if part]
                 if len(parts) == 4:
@@ -919,7 +974,7 @@ class LocalUIApp:
                 fields, files = _parse_multipart_form(content_type, body)
                 conn = self.connection()
                 try:
-                    user = self._local_user(conn)
+                    user = self._request_user(conn, request_headers)
                     return _json_response(self._upload_video_form(conn, user_id=user["id"], fields=fields, files=files))
                 finally:
                     conn.close()
@@ -927,6 +982,10 @@ class LocalUIApp:
             return _json_response(self._route(method, path, query, payload))
         except json.JSONDecodeError as exc:
             return self._error(HTTPStatus.BAD_REQUEST, f"invalid json: {exc}")
+        except UnauthorizedError as exc:
+            return self._error(HTTPStatus.UNAUTHORIZED, str(exc))
+        except ForbiddenError as exc:
+            return self._error(HTTPStatus.FORBIDDEN, str(exc))
         except NotFoundError as exc:
             return self._error(HTTPStatus.NOT_FOUND, str(exc))
         except FileNotFoundError as exc:
@@ -940,11 +999,13 @@ class LocalUIApp:
                 "format": LOCAL_UI_FORMAT,
                 "status": "ok",
                 "version": __version__,
-                "localFirst": True,
+                "localFirst": self.deployment.get("localFirst") is True,
                 "mockModeAvailable": True,
                 "mockMode": self.mock_mode,
+                "deployment": _public_value(self.deployment),
                 "routes": [
                     "/api/health",
+                    "/api/deployment-readiness",
                     "/api/workspace",
                     "/api/preferences",
                     "/api/commercial-readiness",
@@ -1005,6 +1066,8 @@ class LocalUIApp:
                     "/api/projects/{projectId}/imports/motionjson",
                 ],
             }
+        if path == "/api/deployment-readiness" and method == "GET":
+            return _public_value(self.deployment)
         if path == "/api/capabilities" and method == "GET":
             return _public_value(
                 self._capability_report(
@@ -1090,7 +1153,7 @@ class LocalUIApp:
 
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             user_id = user["id"]
             if path == "/api/workspace" and method == "GET":
                 settings = provider_settings_response(conn, user_id=user_id)
@@ -1099,6 +1162,7 @@ class LocalUIApp:
                     user_id=user_id,
                     provider_settings=settings,
                     export_presets_payload=export_presets(),
+                    deployment=self.deployment,
                 )
                 workspace["jobCenter"] = self._job_center_payload(conn, user_id=user_id)
                 return _public_value(workspace)
@@ -1107,7 +1171,7 @@ class LocalUIApp:
             if path == "/api/preferences" and method == "POST":
                 return _public_value(save_workspace_preferences(conn, user_id=user_id, payload=payload))
             if path == "/api/commercial-readiness" and method == "GET":
-                return _public_value(commercial_readiness_response(conn, user_id=user_id))
+                return _public_value(commercial_readiness_response(conn, user_id=user_id, deployment=self.deployment))
             if path == "/api/projects" and method == "GET":
                 return {"projects": list_projects(conn, user_id=user_id)}
             if path == "/api/projects" and method == "POST":
@@ -1470,7 +1534,7 @@ class LocalUIApp:
     def _model_provider_settings_snapshot(self) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return provider_settings_response(conn, user_id=user["id"])
         finally:
             conn.close()
@@ -1583,7 +1647,7 @@ class LocalUIApp:
         if connector.provider.settings_provider_id:
             conn = self.connection()
             try:
-                user = self._local_user(conn)
+                user = self._request_user(conn)
                 settings_check = test_provider_settings(
                     conn,
                     user_id=user["id"],
@@ -1635,7 +1699,7 @@ class LocalUIApp:
             return connector
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             settings = provider_runtime_settings(
                 conn,
                 user_id=user["id"],
@@ -1829,7 +1893,7 @@ class LocalUIApp:
 
         conn = self.connection()
         try:
-            user_id = self._local_user(conn)["id"]
+            user_id = self._request_user(conn)["id"]
             existing_job = self._confirmed_job_for_model_run(conn, user_id=user_id, run_id=run_id)
             if existing_job is not None:
                 return _public_value(
@@ -1898,7 +1962,7 @@ class LocalUIApp:
         provider_warnings = self._run_config_warnings(config)
         conn = self.connection()
         try:
-            user_id = self._local_user(conn)["id"]
+            user_id = self._request_user(conn)["id"]
             proof_warnings = self._runtime_proof_warnings_for_config(conn, user_id=user_id, config=config)
         finally:
             conn.close()
@@ -2454,7 +2518,7 @@ class LocalUIApp:
     ) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             settings = provider_settings_for_capabilities(conn, user_id=user["id"])
         finally:
             conn.close()
@@ -2472,7 +2536,7 @@ class LocalUIApp:
     def _provider_settings_response(self) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(provider_settings_response(conn, user_id=user["id"]))
         finally:
             conn.close()
@@ -2480,7 +2544,7 @@ class LocalUIApp:
     def _save_provider_settings(self, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(save_provider_settings(conn, user_id=user["id"], payload=payload))
         finally:
             conn.close()
@@ -2488,7 +2552,7 @@ class LocalUIApp:
     def _reset_provider_settings(self, provider_id: str) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             result = reset_provider_settings(conn, user_id=user["id"], provider_id=provider_id)
             return _public_value({**result, "providerSettings": provider_settings_response(conn, user_id=user["id"])})
         finally:
@@ -2497,7 +2561,7 @@ class LocalUIApp:
     def _test_provider_settings(self, provider_id: str) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(test_provider_settings(conn, user_id=user["id"], provider_id=provider_id))
         finally:
             conn.close()
@@ -2505,7 +2569,7 @@ class LocalUIApp:
     def _diagnose_provider_settings(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(
                 diagnose_provider_settings(
                     conn,
@@ -2520,7 +2584,7 @@ class LocalUIApp:
     def _smoke_test_provider_settings(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             if provider_id in {"sam2-local", "sam2-hf-auto-masks", "sam3-local"}:
                 return _public_value(
                     local_sam_smoke_test(
@@ -2543,7 +2607,7 @@ class LocalUIApp:
     def _advanced_local_paths(self, provider_id: str) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return provider_advanced_local_paths(conn, user_id=user["id"], provider_id=provider_id)
         finally:
             conn.close()
@@ -2551,7 +2615,7 @@ class LocalUIApp:
     def _start_provider_setup_job(self, provider_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             job = create_provider_setup_job(conn, user_id=user["id"], provider_id=provider_id, payload=payload)
             job_id = str(job["id"])
             if payload.get("runInline") is True or payload.get("run_inline") is True:
@@ -2580,7 +2644,7 @@ class LocalUIApp:
         def run() -> None:
             conn = self.connection()
             try:
-                user = self._local_user(conn)
+                user = self._request_user(conn)
                 run_provider_setup_job(conn, user_id=user["id"], job_id=job_id, payload=payload)
             finally:
                 conn.close()
@@ -2598,7 +2662,7 @@ class LocalUIApp:
     def _provider_setup_job_response(self, job_id: str) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(
                 {
                     "format": "motionjson.provider_setup_job.v0.1",
@@ -2612,7 +2676,7 @@ class LocalUIApp:
     def _cancel_provider_setup_job(self, job_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             return _public_value(
                 {
                     "format": "motionjson.provider_setup_job.v0.1",
@@ -3045,7 +3109,7 @@ class LocalUIApp:
     def _video_content(self, asset_id: str, *, headers: dict[str, str], head: bool = False) -> tuple[int, dict[str, str], bytes]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn, headers)
             asset = get_asset(conn, user_id=user["id"], asset_id=asset_id)
             if asset["kind"] != "source_video":
                 raise NotFoundError("video not found")
@@ -3080,7 +3144,7 @@ class LocalUIApp:
     def _artifact_content(self, asset_id: str, *, head: bool = False) -> tuple[int, dict[str, str], bytes]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             asset = get_asset(conn, user_id=user["id"], asset_id=asset_id)
             if not asset.get("source_job_id"):
                 raise NotFoundError("artifact not found")
@@ -3106,7 +3170,7 @@ class LocalUIApp:
             raise NotFoundError("preview file not found")
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             job = get_job(conn, user_id=user["id"], job_id=job_id)
             assets = list_assets_for_job(conn, project_id=job["project_id"], source_job_id=job_id)
             asset = next((item for item in assets if _asset_rel_path(item) == safe_rel_path), None)
@@ -3146,7 +3210,7 @@ class LocalUIApp:
     def _asset_content(self, asset_id: str, *, head: bool = False) -> tuple[int, dict[str, str], bytes]:
         conn = self.connection()
         try:
-            user = self._local_user(conn)
+            user = self._request_user(conn)
             asset = get_asset(conn, user_id=user["id"], asset_id=asset_id)
             if asset["kind"] == "source_video":
                 raise NotFoundError("use the source video route for source_video assets")

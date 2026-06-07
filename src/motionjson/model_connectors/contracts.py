@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import urllib.error
 import urllib.request
@@ -1062,3 +1063,294 @@ class VolatileModelRunStore:
         while len(self._order) > self.max_runs:
             expired = self._order.pop(0)
             self._runs.pop(expired, None)
+
+
+class SQLiteModelRunStore:
+    """SQLite-backed model run store scoped to the current Local UI user."""
+
+    def __init__(
+        self,
+        *,
+        connection_factory: Callable[[], sqlite3.Connection],
+        owner_user_id_factory: Callable[[sqlite3.Connection], str],
+        max_runs: int = 128,
+    ):
+        self.connection_factory = connection_factory
+        self.owner_user_id_factory = owner_user_id_factory
+        self.max_runs = max(1, max_runs)
+        self._lock = threading.Lock()
+
+    def create(self, *, provider_id: str, request: ModelPlanRequest) -> ModelRunState:
+        run_id = uuid.uuid4().hex
+        now = utc_now()
+        event = ModelRunEvent(
+            id=uuid.uuid4().hex,
+            run_id=run_id,
+            event_type="queued",
+            message="model planning run queued",
+            metadata={"progress": {"overallRatio": 0.0}},
+            created_at=now,
+        )
+        run = ModelRunState(
+            id=run_id,
+            provider_id=provider_id,
+            status="pending",
+            request=request,
+            created_at=now,
+            updated_at=now,
+            events=[event],
+        )
+        with self._lock:
+            conn = self.connection_factory()
+            try:
+                owner_user_id = self.owner_user_id_factory(conn)
+                conn.execute(
+                    """
+                    INSERT INTO model_runs (
+                        id, owner_user_id, project_id, video_id, provider_id, status,
+                        request_json, result_json, error, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run.id,
+                        owner_user_id,
+                        request.project_id,
+                        request.video_id,
+                        provider_id,
+                        run.status,
+                        json.dumps(request.to_dict(), sort_keys=True),
+                        "{}",
+                        None,
+                        run.created_at,
+                        run.updated_at,
+                    ),
+                )
+                self._insert_event(conn, owner_user_id=owner_user_id, event=event)
+                self._trim_locked(conn, owner_user_id=owner_user_id)
+                conn.commit()
+            finally:
+                conn.close()
+        return run
+
+    def get(self, run_id: str) -> ModelRunState:
+        conn = self.connection_factory()
+        try:
+            owner_user_id = self.owner_user_id_factory(conn)
+            run = self._get_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+            events = self._events_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+            return ModelRunState(
+                id=run.id,
+                provider_id=run.provider_id,
+                status=run.status,
+                request=run.request,
+                result=run.result,
+                error=run.error,
+                created_at=run.created_at,
+                updated_at=run.updated_at,
+                events=events,
+            )
+        finally:
+            conn.close()
+
+    def events(self, run_id: str) -> list[ModelRunEvent]:
+        conn = self.connection_factory()
+        try:
+            owner_user_id = self.owner_user_id_factory(conn)
+            self._get_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+            return self._events_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+        finally:
+            conn.close()
+
+    def mark_running(self, run_id: str) -> ModelRunState:
+        return self._replace(
+            run_id,
+            status="running",
+            event_type="running",
+            message="fake model planner started",
+            metadata={"progress": {"overallRatio": 0.25}},
+        )
+
+    def mark_succeeded(self, run_id: str, result: ModelPlanResult) -> ModelRunState:
+        return self._replace(
+            run_id,
+            status="succeeded",
+            result=result,
+            event_type="planned",
+            message="fake model planner produced a reviewable plan",
+            metadata={"progress": {"overallRatio": 1.0}, "valid": result.validation.get("valid") is True},
+        )
+
+    def mark_failed(self, run_id: str, error: str) -> ModelRunState:
+        return self._replace(
+            run_id,
+            status="failed",
+            error=error,
+            event_type="failed",
+            message=error,
+            metadata={"progress": {"overallRatio": 1.0}},
+        )
+
+    def cancel(self, run_id: str, *, reason: str = "user_canceled") -> ModelRunState:
+        run = self.get(run_id)
+        if run.status in {"succeeded", "failed", "canceled"}:
+            return self._replace(
+                run_id,
+                event_type="cancel_ignored",
+                message="model run is already terminal",
+                metadata={"reason": reason, "status": run.status},
+            )
+        return self._replace(
+            run_id,
+            status="canceled",
+            event_type="canceled",
+            message="model planning run canceled",
+            metadata={"reason": reason, "progress": {"overallRatio": 1.0}},
+        )
+
+    def _replace(
+        self,
+        run_id: str,
+        *,
+        status: str | None = None,
+        result: ModelPlanResult | None = None,
+        error: str | None = None,
+        event_type: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ModelRunState:
+        with self._lock:
+            conn = self.connection_factory()
+            try:
+                owner_user_id = self.owner_user_id_factory(conn)
+                run = self._get_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+                event = ModelRunEvent(
+                    id=uuid.uuid4().hex,
+                    run_id=run_id,
+                    event_type=event_type,
+                    message=message,
+                    metadata=metadata or {},
+                )
+                updated = ModelRunState(
+                    id=run.id,
+                    provider_id=run.provider_id,
+                    status=status or run.status,
+                    request=run.request,
+                    result=result if result is not None else run.result,
+                    error=error if error is not None else run.error,
+                    created_at=run.created_at,
+                    updated_at=event.created_at,
+                )
+                conn.execute(
+                    """
+                    UPDATE model_runs
+                    SET status = ?, result_json = ?, error = ?, updated_at = ?
+                    WHERE id = ? AND owner_user_id = ?
+                    """,
+                    (
+                        updated.status,
+                        json.dumps(updated.result.to_dict(), sort_keys=True) if updated.result else "{}",
+                        updated.error,
+                        updated.updated_at,
+                        run_id,
+                        owner_user_id,
+                    ),
+                )
+                self._insert_event(conn, owner_user_id=owner_user_id, event=event)
+                conn.commit()
+                updated_events = self._events_locked(conn, owner_user_id=owner_user_id, run_id=run_id)
+                return ModelRunState(
+                    id=updated.id,
+                    provider_id=updated.provider_id,
+                    status=updated.status,
+                    request=updated.request,
+                    result=updated.result,
+                    error=updated.error,
+                    created_at=updated.created_at,
+                    updated_at=updated.updated_at,
+                    events=updated_events,
+                )
+            finally:
+                conn.close()
+
+    @staticmethod
+    def _run_from_row(row: Mapping[str, Any]) -> ModelRunState:
+        request_payload = json.loads(str(row["request_json"] or "{}"))
+        result_payload = json.loads(str(row["result_json"] or "{}"))
+        return ModelRunState(
+            id=str(row["id"]),
+            provider_id=str(row["provider_id"]),
+            status=str(row["status"]),
+            request=ModelPlanRequest.from_dict(request_payload),
+            result=ModelPlanResult.from_dict(result_payload) if result_payload else None,
+            error=row["error"],
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
+
+    @staticmethod
+    def _event_from_row(row: Mapping[str, Any]) -> ModelRunEvent:
+        metadata = json.loads(str(row["metadata_json"] or "{}"))
+        return ModelRunEvent(
+            id=str(row["id"]),
+            run_id=str(row["model_run_id"]),
+            event_type=str(row["event_type"]),
+            message=str(row["message"]),
+            metadata=metadata if isinstance(metadata, dict) else {},
+            created_at=str(row["created_at"]),
+        )
+
+    def _get_locked(self, conn: sqlite3.Connection, *, owner_user_id: str, run_id: str) -> ModelRunState:
+        row = conn.execute(
+            "SELECT * FROM model_runs WHERE id = ? AND owner_user_id = ?",
+            (run_id, owner_user_id),
+        ).fetchone()
+        if row is None:
+            raise ModelConnectorError("model run not found")
+        return self._run_from_row(row)
+
+    def _events_locked(self, conn: sqlite3.Connection, *, owner_user_id: str, run_id: str) -> list[ModelRunEvent]:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM model_run_events
+            WHERE model_run_id = ? AND owner_user_id = ?
+            ORDER BY created_at, id
+            """,
+            (run_id, owner_user_id),
+        ).fetchall()
+        return [self._event_from_row(row) for row in rows]
+
+    @staticmethod
+    def _insert_event(conn: sqlite3.Connection, *, owner_user_id: str, event: ModelRunEvent) -> None:
+        conn.execute(
+            """
+            INSERT INTO model_run_events (
+                id, model_run_id, owner_user_id, event_type, message, metadata_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event.id,
+                event.run_id,
+                owner_user_id,
+                event.event_type,
+                event.message,
+                json.dumps(event.metadata, sort_keys=True),
+                event.created_at,
+            ),
+        )
+
+    def _trim_locked(self, conn: sqlite3.Connection, *, owner_user_id: str) -> None:
+        rows = conn.execute(
+            """
+            SELECT id
+            FROM model_runs
+            WHERE owner_user_id = ?
+            ORDER BY created_at DESC, id DESC
+            LIMIT -1 OFFSET ?
+            """,
+            (owner_user_id, self.max_runs),
+        ).fetchall()
+        for row in rows:
+            conn.execute("DELETE FROM model_runs WHERE id = ? AND owner_user_id = ?", (row["id"], owner_user_id))

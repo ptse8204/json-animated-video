@@ -271,6 +271,30 @@ CREATE TABLE IF NOT EXISTS provider_setup_events (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS model_runs (
+    id TEXT PRIMARY KEY,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    project_id TEXT REFERENCES projects(id),
+    video_id TEXT REFERENCES assets(id),
+    provider_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    request_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS model_run_events (
+    id TEXT PRIMARY KEY,
+    model_run_id TEXT NOT NULL REFERENCES model_runs(id) ON DELETE CASCADE,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    event_type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS user_preferences (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -372,6 +396,9 @@ CREATE INDEX IF NOT EXISTS idx_error_reports_project_status ON error_reports(pro
 CREATE INDEX IF NOT EXISTS idx_provider_settings_user ON provider_settings(user_id, provider_id);
 CREATE INDEX IF NOT EXISTS idx_provider_setup_jobs_user ON provider_setup_jobs(user_id, provider_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_provider_setup_events_job ON provider_setup_events(setup_job_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_model_runs_owner ON model_runs(owner_user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_model_runs_project ON model_runs(project_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_model_run_events_run ON model_run_events(model_run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_user_preferences_user ON user_preferences(user_id, namespace);
 CREATE INDEX IF NOT EXISTS idx_library_assets_owner ON library_assets(owner_user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_library_assets_project ON library_assets(project_id, created_at);

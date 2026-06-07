@@ -354,6 +354,41 @@ def test_local_ui_model_run_redacts_request_plan_and_events(tmp_path):
     assert [event["eventType"] for event in events["events"]] == ["queued", "running", "planned"]
 
 
+def test_local_ui_model_runs_persist_across_app_instances_and_redact_paths(tmp_path):
+    db_path = tmp_path / "backend.sqlite"
+    storage_root = tmp_path / "storage"
+    app = LocalUIApp(db_path=db_path, storage_root=storage_root, mock_mode=True)
+
+    status, body = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "fake-local-planner",
+            "request": {
+                "goal": "Find by description",
+                "prompt": "red ball",
+                "sourcePath": str(tmp_path / "private-source.mp4"),
+                "outputDirectory": str(tmp_path / "private-output"),
+            },
+        },
+    )
+    assert status == 200
+    run_id = body["modelRun"]["id"]
+    assert body["modelRun"]["status"] == "succeeded"
+    assert str(tmp_path) not in json.dumps(body)
+
+    reloaded_app = LocalUIApp(db_path=db_path, storage_root=storage_root, mock_mode=True)
+    status, persisted = api(reloaded_app, "GET", f"/api/model-runs/{run_id}")
+
+    assert status == 200
+    assert persisted["modelRun"]["id"] == run_id
+    assert persisted["modelRun"]["status"] == "succeeded"
+    assert persisted["modelRun"]["result"]["validation"]["valid"] is True
+    assert [event["eventType"] for event in persisted["modelRun"]["events"]] == ["queued", "running", "planned"]
+    assert str(tmp_path) not in json.dumps(persisted)
+
+
 def test_local_ui_model_run_cancel_supports_deferred_runs(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 

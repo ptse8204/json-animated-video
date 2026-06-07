@@ -74,10 +74,11 @@ hosted model providers by default. Provider failures should remain visible in
 diagnostics so missing CUDA, SAM2 weights, FFmpeg, detectors, or optional
 packages are not mistaken for successful extraction.
 
-The local UI exposes `/api/health`, `/api/capabilities`, `/api/projects`,
-`/api/videos`, `/api/videos/{videoId}/content`, `/api/run-config/validate`,
-`/api/jobs`, `/api/progress`, job event/artifact/review routes, correction
-history and track-edit routes, and
+The local UI exposes `/api/health`, `/api/deployment-readiness`,
+`/api/capabilities`, `/api/projects`, `/api/videos`,
+`/api/videos/{videoId}/content`, `/api/run-config/validate`, `/api/jobs`,
+`/api/progress`, job event/artifact/review routes, correction history and
+track-edit routes, and
 `/api/exports/formats`. Phase 11 adds
 `POST /api/jobs/{jobId}/validate`, `POST /api/jobs/{jobId}/exports`, and
 `POST /api/projects/{projectId}/imports/motionjson` for validated corrected
@@ -90,6 +91,16 @@ same-origin public artifact content. `POST
 queued. `POST /api/jobs` enqueues a local extract job and defaults to `mock`
 when the UI is launched with `--mock`. See [Local UI](local_ui.md) for route
 details and the static build smoke command.
+
+`GET /api/deployment-readiness` reports the active deployment profile. Local
+profiles (`local_single_user`, `colab_local`, and `ci`) keep the no-model/mock
+first-run path and use SQLite, local file storage, server-side provider
+settings, and local/in-process workers. Hosted profiles are explicit opt-ins via
+`MOTIONJSON_DEPLOYMENT_PROFILE=hosted_single_tenant` or
+`hosted_multi_tenant`; without implemented hosted auth, database, object
+storage, queue, secrets manager, worker isolation, team mode, and billing, the
+Local UI returns `hostedReady: false` and private API routes fail closed with
+401 instead of silently using the local single-user account.
 
 The authenticated API exposes `GET /v1/jobs/{jobId}/review` for headless
 review clients. When a `candidate_summary` artifact exists, the response
