@@ -896,8 +896,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
     }
-    if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Choose and install models") {
-      failures.push(`${viewport.name}/${state}: provider step title should focus on choosing and installing one compatible model`);
+    if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Recommended model setup") {
+      failures.push(`${viewport.name}/${state}: provider step title should focus on the guided runtime recommendation`);
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);

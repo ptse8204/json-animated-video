@@ -3497,6 +3497,143 @@ const MotionJSONUI = (() => {
     return { id: "install", label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Install advanced SAM3" : "Install scene sweep") : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
   }
 
+  function modelSetupToneFromRecommendationStatus(status) {
+    const normalized = String(status || "").toLowerCase();
+    if (["ready", "fallback_ready"].includes(normalized)) return "ready";
+    if (["blocked", "failed", "error"].includes(normalized)) return "bad";
+    if (["needs_install", "needs_model", "needs_smoke", "needs_credentials", "needs_hosted_opt_in"].includes(normalized)) return "warn";
+    return "neutral";
+  }
+
+  function modelSetupBadgeTone(status) {
+    const normalized = String(status || "").toLowerCase();
+    if (["ok", "ready", "verified", "available", "not_required"].includes(normalized)) return "ready";
+    if (["blocked", "failed", "error", "bad"].includes(normalized)) return "bad";
+    if (["missing", "warn", "warning", "needed", "required", "not_ready", "needs_setup"].includes(normalized)) return "warn";
+    return "neutral";
+  }
+
+  function modelSetupActionFromRecommendation(recommendation = {}, fallbackAction = {}) {
+    const action = recommendation?.primaryAction || {};
+    const actionId = String(action.id || "");
+    const mappedId =
+      actionId === "continue"
+        ? "continue-to-run"
+        : actionId === "run_smoke"
+          ? "smoke"
+          : actionId === "cache_model"
+            ? "cache-model"
+            : actionId === "save_required_inputs"
+              ? "save"
+              : actionId === "choose_fallback"
+                ? "change-model"
+                : actionId || fallbackAction.id || "install";
+    const label =
+      recommendation?.status === "needs_smoke"
+        ? "Run proof"
+        : action.label || fallbackAction.label || humanizeReviewCode(mappedId);
+    return {
+      id: mappedId,
+      label,
+      primary: fallbackAction.primary !== false,
+    };
+  }
+
+  function modelSetupStatusMessageFromRecommendation(recommendation = {}, setupState = {}) {
+    const status = String(recommendation.status || "");
+    const badges = asArray(recommendation.runtimeBadges);
+    const runtimeBadge = badges.find((badge) => String(badge.id || "") === "runtime");
+    const modelBadge = badges.find((badge) => String(badge.id || "") === "model");
+    const proofBadge = badges.find((badge) => String(badge.id || "") === "proof");
+    if (status === "needs_install") {
+      const label = runtimeBadge?.status !== "ok" ? runtimeBadge?.label : "";
+      return label || setupState.message || "Install the selected runtime before running this workflow.";
+    }
+    if (status === "needs_model") return modelBadge?.label || setupState.message || "Cache or configure the selected model before running.";
+    if (status === "needs_smoke") return proofBadge?.label || setupState.message || "Run proof before extraction.";
+    if (status === "needs_credentials") return "Save the required credential before checking access.";
+    if (status === "needs_hosted_opt_in") return "Hosted calls require explicit cost and privacy opt-in.";
+    if (status === "fallback_ready") return "This no-model path is ready now and does not require model setup.";
+    if (status === "ready") return setupState.message || "This path is ready for the selected goal.";
+    return setupState.message || recommendation.whyThis || "Review setup status before continuing.";
+  }
+
+  function modelSetupRuntimeSummary(recommendation = {}) {
+    const runtime = state.capabilities?.environment?.runtimeEnvironment || {};
+    const profile = state.capabilities?.environment?.profile || {};
+    const accelerators = asArray(runtime.hardware?.accelerators);
+    const primaryAccelerator = accelerators.find((item) => item?.kind && item.kind !== "cpu") || accelerators[0] || {};
+    const host = runtime.host || profile.hostLabel || profile.host || "local runtime";
+    const hardwareLabel =
+      recommendation.runtimeBadges?.find?.((badge) => badge.id === "hardware")?.label ||
+      primaryAccelerator.name ||
+      primaryAccelerator.kind ||
+      profile.accelerator ||
+      "hardware not reported";
+    const runtimeLabel =
+      recommendation.runtimeBadges?.find?.((badge) => badge.id === "runtime")?.label ||
+      runtime.classification ||
+      profile.summary ||
+      "runtime not reported";
+    const reason = asArray(runtime.messages)[0] || profile.summary || recommendation.whyThis || "";
+    return { host, hardwareLabel, runtimeLabel, classification: runtime.classification || profile.classification || "", reason };
+  }
+
+  function modelSetupRuntimeBadgesMarkup(recommendation = {}, setupState = {}) {
+    const badges = asArray(recommendation.runtimeBadges);
+    const fallbackBadges = badges.length
+      ? badges
+      : [
+          { id: "hardware", label: modelSetupRuntimeSummary(recommendation).hardwareLabel, status: "ok" },
+          { id: "runtime", label: setupState.label || "Runtime status", status: setupState.status === "ready" ? "ok" : "missing" },
+          { id: "model", label: "Selected model path", status: setupState.status === "ready" ? "ok" : "missing" },
+          { id: "proof", label: setupState.status === "ready" ? "Verified" : "Not verified", status: setupState.status === "ready" ? "ok" : "missing" },
+        ];
+    return `
+      <div class="model-setup-checklist" aria-label="Model setup status checklist">
+        ${fallbackBadges
+          .map((badge) => {
+            const tone = modelSetupBadgeTone(badge.status);
+            const label = humanizeReviewCode(badge.id || "status");
+            return `
+              <div class="model-setup-check-item is-${escapeAttribute(tone)}">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(badge.label || humanizeReviewCode(badge.status || ""))}</strong>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    `;
+  }
+
+  function modelSetupRequiredNowMarkup(recommendation = {}, connection = null) {
+    const requiredInputs = asArray(recommendation.requiredInputs);
+    const warnings = asArray(recommendation.warnings);
+    const inputRows = requiredInputs
+      .map((input) => {
+        const required = input.required === true ? "required" : "needed when prompted";
+        return `<li><strong>${escapeHtml(input.label || input.key || "Required input")}</strong><span>${escapeHtml(required)}${input.when ? ` - ${escapeHtml(input.when)}` : ""}</span></li>`;
+      })
+      .join("");
+    const warningsMarkup = warnings.length
+      ? `<ul class="model-setup-required-warnings">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>`
+      : "";
+    const fallback = connection?.productPathId === "no_model_cpu_workflow"
+      ? "No model paths, credentials, GPU runtime, or hosted opt-in are required."
+      : "No extra fields are required in the primary path right now.";
+    return `
+      <div class="model-setup-required-now">
+        <div>
+          <strong>Required now</strong>
+          <span>${escapeHtml(requiredInputs.length ? "Complete only these inputs before continuing." : fallback)}</span>
+        </div>
+        ${inputRows ? `<ul>${inputRows}</ul>` : ""}
+        ${warningsMarkup}
+      </div>
+    `;
+  }
+
   function modelSetupConfirmationForAction(action, providerId, options = {}) {
     const normalized = String(action || "");
     const provider = providerSettingsById(providerId) || {};
@@ -6644,10 +6781,7 @@ const MotionJSONUI = (() => {
       status.textContent = selectedSetupState.label || selectedReadiness.label;
       status.className = `status-chip is-${selectedSetupTone}`;
 
-      const normalConnections = state.modelSetupAlternativesOpen || state.workflowDashboard
-        ? compatibleConnections
-        : compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId || connection.id === recommendedId).slice(0, 1);
-      choices.innerHTML = normalConnections.map((connection) => {
+      const optionCards = compatibleConnections.map((connection) => {
           const provider = providerSettingsById(connection.providerId);
           const readinessSummary = connectionReadiness(connection);
           const setupState = modelSetupStateForConnection(connection, provider, setupJobForProvider(connection.providerId));
@@ -6678,6 +6812,17 @@ const MotionJSONUI = (() => {
           `;
         })
         .join("");
+      choices.className = "model-setup-options-shell";
+      choices.innerHTML = compatibleConnections.length > 1
+        ? `
+          <details class="model-setup-options" ${state.modelSetupAlternativesOpen || state.workflowDashboard ? "open" : ""}>
+            <summary>Other options</summary>
+            <div class="model-choice-grid" aria-label="Other compatible model setup options">
+              ${optionCards}
+            </div>
+          </details>
+        `
+        : "";
 
       detail.innerHTML = renderModelSetupDetail(selected, {
         ...selectedReadiness,
@@ -6703,12 +6848,6 @@ const MotionJSONUI = (() => {
       const guide = connection.setupGuide || (connection.profileId
         ? asArray(settingsProvider?.hostedProfiles).find((item) => item.id === connection.profileId)?.setupGuide || {}
         : settingsProvider?.setupGuide || {});
-      const readinessDetails = [
-        hosted ? "hosted API" : "runtime model",
-        readiness.status || summary.status,
-        providerEffectiveModel(settingsProvider),
-        connection.profileId || "",
-      ].filter(Boolean);
       const commandRows = asArray(guide.commands)
         .map((command) => `<code>${escapeHtml(command)}</code>`)
         .join("");
@@ -6849,7 +6988,6 @@ const MotionJSONUI = (() => {
           </div>`
         : "";
       const setupProgressCard = setupJobProgressCard(setupJob, setupJobSummary);
-      const environmentCard = environmentRecommendationCard(connection);
       const setupPlaybook = modelSetupPlaybookMarkup(connection, settingsProvider, setupState, setupJob);
       const cacheSummary = modelCacheStatusSummary(settingsProvider, setupJob);
       const runtimeProof = settingsProvider?.runtimeProof || setupJob?.result?.runtimeProof || setupJob?.result?.diagnosis?.runtimeProof || {};
@@ -6888,6 +7026,36 @@ const MotionJSONUI = (() => {
       const overrideNotice = summary.manualOverrideStale
         ? `<div class="warning-box is-warn">You chose a non-recommended model path for this goal. Recommended: ${escapeHtml(modelConnectionByConnectionId(summary.recommendedId)?.displayLabel || "backend recommendation")}.</div>`
         : "";
+      const recommendation = modelSetupRecommendationForPreset(state.selectedPreset);
+      const hasRecommendation = recommendation?.format === "motionjson.model_setup_recommendation.v0.1";
+      const showingRecommendation = hasRecommendation && recommendation.selectedConnectionId === connection.id && !summary.manualOverrideStale;
+      const guidedTone = showingRecommendation
+        ? modelSetupToneFromRecommendationStatus(recommendation.status)
+        : setupStateTone;
+      const guidedAction = showingRecommendation
+        ? modelSetupActionFromRecommendation(recommendation, primarySetupAction)
+        : primarySetupAction;
+      const runtimeSummary = modelSetupRuntimeSummary(recommendation || {});
+      const guidedKicker = showingRecommendation
+        ? `Recommended for ${currentPresetLabel()}`
+        : summary.manualOverrideStale
+          ? "Selected override"
+          : "Selected model path";
+      const guidedTitle = showingRecommendation ? recommendation.title : connection.displayLabel || connection.title;
+      const guidedSubtitle = showingRecommendation ? recommendation.subtitle : connection.recommendation || guide.setupSummary;
+      const guidedWhy = showingRecommendation ? recommendation.whyThis : connection.recommendation || guide.setupSummary || setupState.message;
+      const guidedStatusLabel = showingRecommendation ? humanizeReviewCode(recommendation.status) : setupState.label;
+      const guidedStatusMessage = showingRecommendation ? modelSetupStatusMessageFromRecommendation(recommendation, setupState) : resultMessage || setupState.message;
+      const fallbackAlternative = asArray(recommendation?.alternatives)
+        .find((alternative) => alternative?.connectionId && alternative.connectionId !== connection.id);
+      const fallbackConnection = fallbackAlternative ? modelConnectionByConnectionId(fallbackAlternative.connectionId) : null;
+      const fallbackButton = fallbackAlternative
+        ? `<button type="button" data-model-setup-provider="${escapeAttribute(fallbackAlternative.connectionId)}">${escapeHtml(
+            fallbackAlternative.connectionId === "no_model_cpu_workflow"
+              ? "Run no-model smoke now"
+              : `Use ${fallbackAlternative.label || fallbackConnection?.displayLabel || "fallback"}`,
+          )}</button>`
+        : "";
       const confirmationCard = pendingConfirmation
         ? `<div class="model-setup-confirmation" role="alert">
             <div>
@@ -6907,32 +7075,41 @@ const MotionJSONUI = (() => {
         : "";
 
       return `
-        <div class="model-setup-summary">
-          <div class="model-setup-copy">
-            <h3>${escapeHtml(connection.displayLabel || connection.title)}</h3>
-            <p>${escapeHtml(connection.recommendation || guide.setupSummary)}</p>
-            <div class="provider-detail">${readinessDetails.map((detail) => detailChip(detail)).join("")}</div>
-          </div>
-        </div>
         <form id="modelSetupForm" class="model-setup-form-shell" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}" data-testid="model-setup-form">
-        <div class="model-setup-state-card is-${escapeAttribute(setupStateTone)}">
-          <div>
-            <strong>${escapeHtml(setupState.label)}</strong>
-            <span class="row-meta">${escapeHtml(resultMessage || setupState.message)}</span>
+        <div class="model-setup-guided-card is-${escapeAttribute(guidedTone)}">
+          <div class="model-setup-runtime-strip" aria-label="Detected runtime">
+            <span>${escapeHtml(runtimeSummary.host)}</span>
+            <strong>${escapeHtml(runtimeSummary.hardwareLabel)}</strong>
+            <span>${escapeHtml(runtimeSummary.runtimeLabel)}</span>
           </div>
-          <div class="model-setup-normal-actions">
-            <button
-              type="button"
-              class="${primarySetupAction.primary ? "primary-action" : ""}"
-              data-model-setup-action="${escapeAttribute(primarySetupAction.id)}"
-              ${primarySetupAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
-            >${escapeHtml(primarySetupAction.label)}</button>
-            ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide models" : "Change model"}</button>` : ""}
+          <div class="model-setup-recommendation-copy">
+            <p class="section-kicker">${escapeHtml(guidedKicker)}</p>
+            <h3 class="model-setup-recommendation-title">${escapeHtml(guidedTitle)}</h3>
+            <p>${escapeHtml(guidedSubtitle || guidedWhy)}</p>
+            ${guidedWhy && guidedWhy !== guidedSubtitle ? `<p class="row-meta">${escapeHtml(guidedWhy)}</p>` : ""}
+            ${runtimeSummary.reason ? `<p class="row-meta">${escapeHtml(runtimeSummary.reason)}</p>` : ""}
           </div>
+          <div class="model-setup-state-card is-${escapeAttribute(guidedTone)}">
+            <div>
+              <strong>${escapeHtml(guidedStatusLabel)}</strong>
+              <span class="row-meta">${escapeHtml(guidedStatusMessage)}</span>
+            </div>
+            <div class="model-setup-normal-actions">
+              <button
+                type="button"
+                class="${guidedAction.primary ? "primary-action" : ""}"
+                data-model-setup-action="${escapeAttribute(guidedAction.id)}"
+                ${guidedAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
+              >${escapeHtml(guidedAction.label)}</button>
+              ${fallbackButton}
+              ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide options" : "Other options"}</button>` : ""}
+            </div>
+          </div>
+          ${modelSetupRuntimeBadgesMarkup(showingRecommendation ? recommendation : {}, setupState)}
+          ${modelSetupRequiredNowMarkup(showingRecommendation ? recommendation : {}, connection)}
         </div>
         ${confirmationCard}
         ${overrideNotice}
-        ${environmentCard}
         ${setupPlaybook}
         ${normalAccessCard}
         ${setupProgressCard}
