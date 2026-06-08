@@ -1912,11 +1912,11 @@ const MotionJSONUI = (() => {
   }
 
   function statusChip(label, status, available) {
-    return `<span class="status-chip ${statusClass(status || label, available)}">${escapeHtml(label)}</span>`;
+    return `<span class="status-chip ${statusClass(status || label, available)}" aria-label="${escapeAttribute(`Status: ${label}`)}">${escapeHtml(label)}</span>`;
   }
 
   function detailChip(label) {
-    return `<span class="status-chip is-muted">${escapeHtml(label)}</span>`;
+    return `<span class="status-chip is-muted" aria-label="${escapeAttribute(`Detail: ${label}`)}">${escapeHtml(label)}</span>`;
   }
 
   function isActiveJob(job) {
@@ -3551,6 +3551,12 @@ const MotionJSONUI = (() => {
     return "neutral";
   }
 
+  function modelSetupActionAriaLabel(action = {}, recommendation = {}, connection = {}) {
+    const label = action.label || "Run setup action";
+    const path = recommendation?.title || connection?.displayLabel || connection?.title || "selected model setup";
+    return `${label} for ${path}`;
+  }
+
   function modelSetupActionFromRecommendation(recommendation = {}, fallbackAction = {}) {
     const action = recommendation?.primaryAction || {};
     const actionId = String(action.id || "");
@@ -3585,14 +3591,26 @@ const MotionJSONUI = (() => {
     const proofBadge = badges.find((badge) => String(badge.id || "") === "proof");
     if (status === "needs_install") {
       const label = runtimeBadge?.status !== "ok" ? runtimeBadge?.label : "";
-      return label || setupState.message || "Install the selected runtime before running this workflow.";
+      return label
+        ? `Runtime missing: ${label}. Install the matching runtime, then re-scan.`
+        : setupState.message || "Install the selected runtime, then re-scan before running this workflow.";
     }
-    if (status === "needs_model") return modelBadge?.label || setupState.message || "Cache or configure the selected model before running.";
-    if (status === "needs_smoke") return proofBadge?.label || setupState.message || "Run proof before extraction.";
-    if (status === "needs_credentials") return "Save the required credential before checking access.";
-    if (status === "needs_hosted_opt_in") return "Hosted calls require explicit cost and privacy opt-in.";
-    if (status === "fallback_ready") return "This no-model path is ready now and does not require model setup.";
-    if (status === "ready") return setupState.message || "This path is ready for the selected goal.";
+    if (status === "needs_model") {
+      const label = modelBadge?.label || "";
+      return label
+        ? `Model missing: ${label}. Cache or configure that model, then run proof.`
+        : setupState.message || "Cache or configure the selected model, then run proof before extraction.";
+    }
+    if (status === "needs_smoke") {
+      const label = proofBadge?.label || "";
+      return label
+        ? `Proof missing: ${label}. Run proof before extraction so failures stay visible.`
+        : setupState.message || "Run proof before extraction so runtime failures are visible before export.";
+    }
+    if (status === "needs_credentials") return "Credential missing. Save the required token or key before checking access.";
+    if (status === "needs_hosted_opt_in") return "Hosted calls are off until you confirm cost, privacy, and network use.";
+    if (status === "fallback_ready") return "Ready now. This no-model path does not need model paths, credentials, GPU runtime, or hosted opt-in.";
+    if (status === "ready") return setupState.message || "Ready for this goal. Continue to prepare the run inputs.";
     return setupState.message || recommendation.whyThis || "Review setup status before continuing.";
   }
 
@@ -3628,13 +3646,15 @@ const MotionJSONUI = (() => {
           { id: "proof", label: setupState.status === "ready" ? "Verified" : "Not verified", status: setupState.status === "ready" ? "ok" : "missing" },
         ];
     return `
-      <div class="model-setup-checklist" aria-label="Model setup status checklist">
+      <div class="model-setup-checklist" role="list" aria-label="Model setup status checklist">
         ${fallbackBadges
           .map((badge) => {
             const tone = modelSetupBadgeTone(badge.status);
             const label = humanizeReviewCode(badge.id || "status");
+            const statusLabel = humanizeReviewCode(badge.status || tone);
+            const ariaLabel = `${label} status: ${badge.label || statusLabel}. ${statusLabel}`;
             return `
-              <div class="model-setup-check-item is-${escapeAttribute(tone)}">
+              <div class="model-setup-check-item is-${escapeAttribute(tone)}" role="listitem" aria-label="${escapeAttribute(ariaLabel)}">
                 <span>${escapeHtml(label)}</span>
                 <strong>${escapeHtml(badge.label || humanizeReviewCode(badge.status || ""))}</strong>
               </div>
@@ -3661,7 +3681,7 @@ const MotionJSONUI = (() => {
       ? "No model paths, credentials, GPU runtime, or hosted opt-in are required."
       : "No extra fields are required in the primary path right now.";
     return `
-      <div class="model-setup-required-now">
+      <div class="model-setup-required-now" aria-label="Required setup inputs for the selected recommendation">
         <div>
           <strong>Required now</strong>
           <span>${escapeHtml(requiredInputs.length ? "Complete only these inputs before continuing." : fallback)}</span>
@@ -6761,6 +6781,35 @@ const MotionJSONUI = (() => {
       list.innerHTML = providers.map(renderProviderSettingsRow).join("");
     }
 
+    function setModelSetupStatusChip(element, label, tone = "muted", ariaDetail = "") {
+      if (!element) return;
+      const safeTone = ["ready", "warn", "bad", "neutral", "muted"].includes(tone) ? tone : "muted";
+      element.textContent = label;
+      element.className = `status-chip is-${safeTone}`;
+      element.setAttribute("aria-label", `Model setup status: ${label}${ariaDetail ? `. ${ariaDetail}` : ""}`);
+    }
+
+    function modelSetupCapabilityScanErrorMarkup(message = "") {
+      const detail = message || "Runtime capability information did not load.";
+      return `
+        <div class="model-setup-scan-error error-state" role="alert">
+          <div>
+            <strong>Runtime scan failed</strong>
+            <p>MotionJSON could not inspect hardware, Python runtime, model cache, or proof status, so it cannot choose a safe model path yet.</p>
+            <p class="row-meta">${escapeHtml(detail)}</p>
+          </div>
+          <div class="model-setup-normal-actions">
+            <button type="button" class="primary-action" data-model-setup-action="rescan-runtime" aria-label="Re-scan runtime and refresh the model setup recommendation">Re-scan runtime</button>
+          </div>
+          <details class="advanced-panel model-setup-advanced">
+            <summary aria-label="Show advanced manual setup after runtime scan failure">Advanced manual setup</summary>
+            <p class="row-meta">Manual setup can bypass the recommendation, but extraction validation will still block missing runtimes, credentials, model cache, hosted opt-in, or proof failures.</p>
+            <button type="button" data-model-setup-action="change-model" aria-label="Show manual model setup options after runtime scan failure">Show manual options</button>
+          </details>
+        </div>
+      `;
+    }
+
     function renderModelSetup() {
       const status = $("#modelSetupStatus");
       const choices = $("#modelSetupChoices");
@@ -6768,27 +6817,32 @@ const MotionJSONUI = (() => {
       if (!status || !choices || !detail) return;
 
       if (!state.providerSettings) {
-        status.textContent = state.errors.providerSettings ? "Unavailable" : "Not loaded";
-        status.className = `status-chip ${state.errors.providerSettings ? "is-bad" : "is-muted"}`;
+        setModelSetupStatusChip(status, state.errors.providerSettings ? "Unavailable" : "Not loaded", state.errors.providerSettings ? "bad" : "muted", state.errors.providerSettings || "Provider settings have not loaded yet.");
         choices.innerHTML = "";
         detail.innerHTML = `<div class="${state.errors.providerSettings ? "error-state" : "empty-state"}">${escapeHtml(state.errors.providerSettings || "Provider information has not loaded yet.")}</div>`;
         return;
       }
 
       if (!goalRequiresModel(state.selectedPreset)) {
-        status.textContent = "Not needed";
-        status.className = "status-chip is-ready";
+        setModelSetupStatusChip(status, "Not needed", "ready", "No model setup needed for this workflow.");
         choices.innerHTML = "";
-        detail.innerHTML = `<div class="empty-state">This workflow does not need a SAM model. Continue to prepare the run.</div>`;
+        detail.innerHTML = `<div class="empty-state"><strong>No model setup needed</strong><p>This workflow uses existing masks, motion cues, or review data. Continue to prepare the run.</p></div>`;
+        return;
+      }
+
+      const capabilityScanError = String(state.errors?.capabilities || "").trim();
+      if (capabilityScanError) {
+        setModelSetupStatusChip(status, "Scan failed", "bad", capabilityScanError);
+        choices.innerHTML = "";
+        detail.innerHTML = modelSetupCapabilityScanErrorMarkup(capabilityScanError);
         return;
       }
 
       let compatibleConnections = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.workflowDashboard || state.modelSetupAlternativesOpen });
       if (!compatibleConnections.length) {
-        status.textContent = "Unavailable";
-        status.className = "status-chip is-bad";
+        setModelSetupStatusChip(status, "Unavailable", "bad", `No compatible model connection is available for ${currentPresetLabel()}.`);
         choices.innerHTML = "";
-        detail.innerHTML = `<div class="error-state">No compatible model connection is available for ${escapeHtml(currentPresetLabel())}.</div>`;
+        detail.innerHTML = `<div class="error-state"><strong>No compatible model setup found</strong><p>No compatible model connection is available for ${escapeHtml(currentPresetLabel())}.</p><button type="button" data-model-setup-action="rescan-runtime" aria-label="Re-scan runtime and look for compatible model setup options">Re-scan runtime</button></div>`;
         return;
       }
 
@@ -6816,8 +6870,7 @@ const MotionJSONUI = (() => {
           : selectedSetupState.status === "failed_recoverable"
             ? "bad"
             : "warn";
-      status.textContent = selectedSetupState.label || selectedReadiness.label;
-      status.className = `status-chip is-${selectedSetupTone}`;
+      setModelSetupStatusChip(status, selectedSetupState.label || selectedReadiness.label, selectedSetupTone, selectedSetupState.message || selectedReadiness.message || "");
 
       const optionCards = compatibleConnections.map((connection) => {
           const provider = providerSettingsById(connection.providerId);
@@ -6839,7 +6892,7 @@ const MotionJSONUI = (() => {
             ? connection.title
             : profile?.name || provider?.name || connection.providerId;
           return `
-            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" data-testid="model-choice-${escapeAttribute(connection.id)}" aria-pressed="${active}">
+            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" data-testid="model-choice-${escapeAttribute(connection.id)}" aria-pressed="${active}" aria-label="${escapeAttribute(`${connection.displayLabel || connection.title}: ${summary.label}. ${active ? "Selected model setup path." : "Select as a manual model setup option."}`)}">
               <span class="model-choice-topline">
                 <strong>${escapeHtml(connection.displayLabel || connection.title)}</strong>
                 ${statusChip(summary.label, summary.status, summary.tone === "ready")}
@@ -6854,7 +6907,7 @@ const MotionJSONUI = (() => {
       choices.innerHTML = compatibleConnections.length > 1
         ? `
           <details class="model-setup-options" ${state.modelSetupAlternativesOpen || state.workflowDashboard ? "open" : ""}>
-            <summary>Other options</summary>
+            <summary aria-label="Show other compatible model setup options">Other options</summary>
             <div class="model-choice-grid" aria-label="Other compatible model setup options">
               ${optionCards}
             </div>
@@ -7012,7 +7065,7 @@ const MotionJSONUI = (() => {
       const canCacheModel = !advancedLocalSam3 && (connection.providerId === "sam3-local" || connection.providerId === "sam2-hf-auto-masks");
       const manualCommands = commandRows
         ? `<details class="provider-setup-commands">
-            <summary>Manual commands</summary>
+            <summary aria-label="Show manual setup commands">Manual commands</summary>
             ${commandRows}
           </details>`
         : "";
@@ -7088,7 +7141,7 @@ const MotionJSONUI = (() => {
         .find((alternative) => alternative?.connectionId && alternative.connectionId !== connection.id);
       const fallbackConnection = fallbackAlternative ? modelConnectionByConnectionId(fallbackAlternative.connectionId) : null;
       const fallbackButton = fallbackAlternative
-        ? `<button type="button" data-model-setup-provider="${escapeAttribute(fallbackAlternative.connectionId)}">${escapeHtml(
+        ? `<button type="button" data-model-setup-provider="${escapeAttribute(fallbackAlternative.connectionId)}" aria-label="${escapeAttribute(`Switch to fallback setup: ${fallbackAlternative.label || fallbackConnection?.displayLabel || "fallback"}`)}">${escapeHtml(
             fallbackAlternative.connectionId === "no_model_cpu_workflow"
               ? "Run no-model smoke now"
               : `Use ${fallbackAlternative.label || fallbackConnection?.displayLabel || "fallback"}`,
@@ -7106,9 +7159,16 @@ const MotionJSONUI = (() => {
               </div>
             </div>
             <div class="model-setup-confirmation-actions">
-              <button type="button" data-model-setup-confirmation="cancel">Cancel</button>
-              <button type="button" data-model-setup-confirmation="confirm">${escapeHtml(pendingConfirmation.label)}</button>
+              <button type="button" data-model-setup-confirmation="cancel" aria-label="${escapeAttribute(`Cancel ${pendingConfirmation.label}`)}">Cancel</button>
+              <button type="button" data-model-setup-confirmation="confirm" aria-label="${escapeAttribute(`Confirm ${pendingConfirmation.label}`)}">${escapeHtml(pendingConfirmation.label)}</button>
             </div>
+          </div>`
+        : "";
+      const advancedOverrideNotice = summary.manualOverrideStale
+        ? `<div class="warning-box is-warn model-setup-override-warning">
+            <strong>Manual override</strong>
+            <p>You selected a path that does not match the runtime recommendation. Use it only when you know the runtime, model, and proof requirements are already handled.</p>
+            <button type="button" data-model-setup-action="acknowledge-override" aria-label="Use this manual model setup override anyway">Use this anyway</button>
           </div>`
         : "";
 
@@ -7116,9 +7176,9 @@ const MotionJSONUI = (() => {
         <form id="modelSetupForm" class="model-setup-form-shell" data-provider-settings-id="${escapeAttribute(settingsProvider?.id || connection.providerId)}" data-testid="model-setup-form">
         <div class="model-setup-guided-card is-${escapeAttribute(guidedTone)}">
           <div class="model-setup-runtime-strip" aria-label="Detected runtime">
-            <span>${escapeHtml(runtimeSummary.host)}</span>
-            <strong>${escapeHtml(runtimeSummary.hardwareLabel)}</strong>
-            <span>${escapeHtml(runtimeSummary.runtimeLabel)}</span>
+            <span aria-label="${escapeAttribute(`Runtime host: ${runtimeSummary.host}`)}">${escapeHtml(runtimeSummary.host)}</span>
+            <strong aria-label="${escapeAttribute(`Detected hardware: ${runtimeSummary.hardwareLabel}`)}">${escapeHtml(runtimeSummary.hardwareLabel)}</strong>
+            <span aria-label="${escapeAttribute(`Runtime status: ${runtimeSummary.runtimeLabel}`)}">${escapeHtml(runtimeSummary.runtimeLabel)}</span>
           </div>
           <div class="model-setup-recommendation-copy">
             <p class="section-kicker">${escapeHtml(guidedKicker)}</p>
@@ -7137,10 +7197,12 @@ const MotionJSONUI = (() => {
                 type="button"
                 class="${guidedAction.primary ? "primary-action" : ""}"
                 data-model-setup-action="${escapeAttribute(guidedAction.id)}"
+                aria-label="${escapeAttribute(modelSetupActionAriaLabel(guidedAction, showingRecommendation ? recommendation : {}, connection))}"
                 ${guidedAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
               >${escapeHtml(guidedAction.label)}</button>
               ${fallbackButton}
-              ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model">${state.modelSetupAlternativesOpen ? "Hide options" : "Other options"}</button>` : ""}
+              <button type="button" data-model-setup-action="rescan-runtime" aria-label="Re-scan runtime and refresh the model setup recommendation">Re-scan runtime</button>
+              ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model" aria-label="${escapeAttribute(state.modelSetupAlternativesOpen ? "Hide other model setup options" : "Show other model setup options")}">${state.modelSetupAlternativesOpen ? "Hide options" : "Other options"}</button>` : ""}
             </div>
           </div>
           ${modelSetupRuntimeBadgesMarkup(showingRecommendation ? recommendation : {}, setupState)}
@@ -7156,14 +7218,15 @@ const MotionJSONUI = (() => {
         ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
-          <summary>Advanced</summary>
+          <summary aria-label="Show advanced model setup controls and manual override actions">Advanced</summary>
+          ${advancedOverrideNotice}
           ${manualCommands}
           <div class="model-setup-job is-${escapeAttribute(setupJobSummary.tone)}">
             <div>
               <strong>${escapeHtml(setupJobSummary.label)}</strong>
               <span class="row-meta">${escapeHtml(setupJobSummary.message)}</span>
             </div>
-            ${setupJob?.status === "running" || setupJob?.status === "queued" ? `<button type="button" data-model-setup-action="cancel-setup-job" data-setup-job-id="${escapeAttribute(setupJob.id)}">Cancel setup</button>` : ""}
+            ${setupJob?.status === "running" || setupJob?.status === "queued" ? `<button type="button" data-model-setup-action="cancel-setup-job" data-setup-job-id="${escapeAttribute(setupJob.id)}" aria-label="Cancel the current model setup job">Cancel setup</button>` : ""}
           </div>
           <div class="model-setup-credentials">${credentialSummary}</div>
           <div class="model-setup-form">
@@ -7197,14 +7260,14 @@ const MotionJSONUI = (() => {
                 : ""
             }
             <div class="model-setup-actions">
-              ${canInstall ? `<button type="button" data-model-setup-action="install">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : connection.providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install fallback"}</button>` : ""}
-              ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
-              ${canCacheModel ? `<button type="button" data-model-setup-action="cache-model">Cache model</button>` : ""}
-              <button type="button" data-model-setup-action="save">Save setup</button>
-              <button type="button" data-model-setup-action="diagnose">Diagnose</button>
-              <button type="button" data-model-setup-action="smoke">Run smoke test</button>
-              <button type="button" data-model-setup-action="view-setup-logs">View logs</button>
-              <button type="button" data-model-setup-action="reset">Reset</button>
+              ${canInstall ? `<button type="button" data-model-setup-action="install" aria-label="Install the selected local model runtime">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : connection.providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install fallback"}</button>` : ""}
+              ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access" aria-label="${escapeAttribute(hosted ? "Check hosted provider access" : "Check Hugging Face access")}">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
+              ${canCacheModel ? `<button type="button" data-model-setup-action="cache-model" aria-label="Cache the selected model for this runtime">Cache model</button>` : ""}
+              <button type="button" data-model-setup-action="save" aria-label="Save advanced model setup fields">Save setup</button>
+              <button type="button" data-model-setup-action="diagnose" aria-label="Diagnose saved model setup without starting extraction">Diagnose</button>
+              <button type="button" data-model-setup-action="smoke" aria-label="Run model setup smoke proof">Run smoke test</button>
+              <button type="button" data-model-setup-action="view-setup-logs" aria-label="View model setup logs">View logs</button>
+              <button type="button" data-model-setup-action="reset" aria-label="Reset saved model setup fields">Reset</button>
             </div>
           </div>
           <div id="modelSetupJobLog" class="event-log setup-job-log" ${setupJob ? "" : "hidden"}>${setupJobEventsMarkup(setupJob)}</div>
@@ -11840,6 +11903,7 @@ const MotionJSONUI = (() => {
           "model-setup": ["sam2-local", "", "neutral"],
           "model-setup-local": ["sam2-local", "SAM2 runtime is selected. Save checkpoint and model config paths, then diagnose setup.", "warn"],
           "model-setup-hosted-warning": ["sam2-hosted:replicate-sam2-video", "Replicate SAM2 is selected. Save a token and confirm hosted cost/privacy before smoke tests or extraction.", "warn"],
+          "model-setup-capability-error": ["sam3-local", "Runtime capability scan failed before MotionJSON could choose a safe model path.", "bad", "trace_all_objects"],
           "model-setup-trace-all-options": ["sam3-local", "Choose the scene-sweep runtime first, then a fallback only when the runtime is unavailable.", "warn", "trace_all_objects"],
           "model-setup-sam3-local": ["sam3-local", "SAM3 Scene Sweep is selected. Install the sam3-transformers extra, check Hugging Face access if needed, then diagnose setup before running.", "warn", "trace_all_objects"],
           "model-setup-sam2-hf-fallback": ["sam2-hf-auto-masks", "SAM2 HF fallback is selected for scene proposals when SAM3 Scene Sweep is blocked.", "warn", "trace_all_objects"],
@@ -11866,6 +11930,9 @@ const MotionJSONUI = (() => {
           state.modelSetupTone = captureState[2];
           if (capture === "model-setup-trace-all-options" || capture === "model-setup-advanced-local-sam3") state.modelSetupAlternativesOpen = true;
           if (captureState[0] === "sam3-hosted:custom-sam3-compatible") state.modelSetupAlternativesOpen = true;
+          if (capture === "model-setup-capability-error") {
+            state.errors.capabilities = "Capability scan failed: backend runtime diagnostics endpoint was unavailable.";
+          }
           if (captureState[0] === "sam3-local") markCaptureProviderReady("sam3-local");
           if (capture === "model-setup-sam3-missing-runtime") {
             markCaptureCapabilityBlocked("sam3-auto-masks", {
@@ -13811,6 +13878,31 @@ const MotionJSONUI = (() => {
       const confirmed = button.dataset.modelSetupConfirmed === "true";
       if (confirmed) delete button.dataset.modelSetupConfirmed;
       const confirmedSnapshot = confirmed ? state.confirmedModelSetupAction : null;
+      if (action === "rescan-runtime") {
+        button.disabled = true;
+        setModelSetupMessage("Re-scanning runtime, providers, and model recommendation...", "neutral");
+        try {
+          await refreshAll();
+          const scanError = String(state.errors?.capabilities || "").trim();
+          setModelSetupMessage(scanError ? `Runtime scan failed: ${scanError}` : "Runtime scan refreshed. The recommendation is up to date.", scanError ? "bad" : "ready");
+          renderModelSetup();
+          renderWorkflowStepper();
+          renderConfigPreview();
+        } catch (error) {
+          setModelSetupMessage(`Runtime scan failed: ${error.message}`, "bad");
+          renderModelSetup();
+        } finally {
+          button.disabled = false;
+        }
+        return;
+      }
+      if (action === "acknowledge-override") {
+        setModelSetupMessage("Manual override kept. Run validation before extraction; missing runtime, model, hosted opt-in, or proof will still block the run.", "warn");
+        renderModelSetup();
+        renderWorkflowStepper();
+        renderConfigPreview();
+        return;
+      }
       const connection = modelConnectionById(selectedModelSetupConnectionId(state.selectedPreset));
       if (!connection) return;
       const form = $("#modelSetupForm");

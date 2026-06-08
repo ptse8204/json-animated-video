@@ -171,6 +171,8 @@ for (const testId of [
 for (const dynamicTestId of [
   'data-testid="model-choice-',
   'data-testid="model-setup-allow-hosted"',
+  'data-model-setup-action="rescan-runtime"',
+  'data-model-setup-action="acknowledge-override"',
   'data-testid="provider-settings-',
   'data-testid="provider-allow-hosted-',
 ]) {

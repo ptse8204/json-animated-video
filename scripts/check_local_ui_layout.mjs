@@ -53,6 +53,7 @@ const CAPTURE_STATES = [
   "model-setup-sam3-roboflow",
   "model-setup-sam3-custom",
   "model-setup-hosted-warning",
+  "model-setup-capability-error",
   "model-setup-confirm-access",
   "model-setup-confirm-cache",
   "model-setup-cache-running",
@@ -696,14 +697,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
+          modelSetupStatusAria: document.querySelector("#modelSetupStatus")?.getAttribute("aria-label") || "",
           modelSetupGuidedTitle: document.querySelector("#modelSetupPanel .model-setup-recommendation-title")?.textContent?.trim() || "",
           modelSetupKicker: document.querySelector("#modelSetupPanel .model-setup-recommendation-copy .section-kicker")?.textContent?.trim() || "",
           modelSetupChecklistCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item")].filter(visible).length,
+          modelSetupChecklistAriaCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item[aria-label]")].filter(visible).length,
           modelSetupChecklistText: document.querySelector("#modelSetupPanel .model-setup-checklist")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           modelSetupRequiredNowVisible: visible(document.querySelector("#modelSetupPanel .model-setup-required-now")),
           modelSetupRequiredNowText: document.querySelector("#modelSetupPanel .model-setup-required-now")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           modelSetupOptionsOpen: document.querySelector("#modelSetupPanel .model-setup-options")?.open === true,
+          modelSetupOptionsSummaryAria: document.querySelector("#modelSetupPanel .model-setup-options summary")?.getAttribute("aria-label") || "",
           modelSetupAdvancedOpen: document.querySelector("#modelSetupPanel .model-setup-advanced")?.open === true,
+          modelSetupAdvancedSummaryAria: document.querySelector("#modelSetupPanel .model-setup-advanced summary")?.getAttribute("aria-label") || "",
+          modelSetupPrimaryActionAria: document.querySelector("#modelSetupPanel .model-setup-guided-card .primary-action")?.getAttribute("aria-label") || "",
+          modelSetupRescanCount: [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action='rescan-runtime']")].filter(visible).length,
+          modelSetupUseAnywayOutsideAdvancedCount: [...document.querySelectorAll("#modelSetupPanel button")].filter((button) => /Use this anyway/i.test(button.textContent || "") && !button.closest(".model-setup-advanced")).length,
+          modelSetupUseAnywayAdvancedCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-advanced button")].filter((button) => /Use this anyway/i.test(button.textContent || "")).length,
+          modelSetupScanErrorText: document.querySelector("#modelSetupPanel .model-setup-scan-error")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           modelSetupNormalSecretInputCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-guided-card input[type='password'], #modelSetupPanel .model-setup-guided-card [data-model-setup-field='apiKey'], #modelSetupPanel .model-setup-guided-card [data-model-setup-field='hfToken']")].filter(visible).length,
           modelSetupConfirmationVisible: visible(document.querySelector(".model-setup-confirmation")),
           modelSetupConfirmationText: document.querySelector(".model-setup-confirmation")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -905,25 +915,53 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
     }
+    const isModelSetupState = state === "workflow-provider" || state.startsWith("model-setup");
+    const isGuidedModelSetupState = isModelSetupState && state !== "model-setup-capability-error";
     if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: provider step title should focus on the guided runtime recommendation`);
     }
-    if ((state === "workflow-provider" || state.startsWith("model-setup")) && stateValue.modelSetupTitle !== "Recommended model setup") {
+    if (isModelSetupState && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: model setup should use the guided recommendation title`);
     }
-    if ((state === "workflow-provider" || state.startsWith("model-setup")) && !stateValue.modelSetupGuidedTitle) {
+    if (isModelSetupState && !stateValue.modelSetupStatusAria) {
+      failures.push(`${viewport.name}/${state}: model setup status chip should expose an aria-label`);
+    }
+    if (isModelSetupState && stateValue.modelSetupUseAnywayOutsideAdvancedCount > 0) {
+      failures.push(`${viewport.name}/${state}: Use this anyway should only appear inside Advanced controls`);
+    }
+    if (state === "model-setup-advanced-local-sam3" && stateValue.modelSetupUseAnywayAdvancedCount < 1) {
+      failures.push(`${viewport.name}/${state}: manual override should expose Use this anyway only inside Advanced controls`);
+    }
+    if (isModelSetupState && stateValue.modelSetupRescanCount < 1) {
+      failures.push(`${viewport.name}/${state}: model setup should expose a Re-scan runtime action`);
+    }
+    if (state === "model-setup-capability-error") {
+      if (!/Runtime scan failed|could not inspect/i.test(stateValue.modelSetupScanErrorText)) {
+        failures.push(`${viewport.name}/${state}: capability scan failure should explain what failed and why recommendation is blocked`);
+      }
+    }
+    if (isGuidedModelSetupState && !stateValue.modelSetupGuidedTitle) {
       failures.push(`${viewport.name}/${state}: guided model setup card should expose one selected or recommended path title`);
     }
-    if ((state === "workflow-provider" || state.startsWith("model-setup")) && stateValue.modelSetupChecklistCount !== 4) {
+    if (isGuidedModelSetupState && stateValue.modelSetupChecklistCount !== 4) {
       failures.push(`${viewport.name}/${state}: guided model setup should show four status checklist items`);
     }
+    if (isGuidedModelSetupState && stateValue.modelSetupChecklistAriaCount !== 4) {
+      failures.push(`${viewport.name}/${state}: guided model setup checklist items should expose accessible status labels`);
+    }
+    if (isGuidedModelSetupState && !stateValue.modelSetupAdvancedSummaryAria) {
+      failures.push(`${viewport.name}/${state}: Advanced setup disclosure should expose an accessibility label`);
+    }
+    if (isGuidedModelSetupState && !stateValue.modelSetupPrimaryActionAria) {
+      failures.push(`${viewport.name}/${state}: primary model setup CTA should expose an accessibility label`);
+    }
     if (
-      (state === "workflow-provider" || state.startsWith("model-setup")) &&
+      isGuidedModelSetupState &&
       !["Hardware", "Runtime", "Model", "Proof"].every((label) => stateValue.modelSetupChecklistText.toLowerCase().includes(label.toLowerCase()))
     ) {
       failures.push(`${viewport.name}/${state}: guided model setup checklist should cover hardware, runtime, model, and proof`);
     }
-    if ((state === "workflow-provider" || state.startsWith("model-setup")) && (!stateValue.modelSetupRequiredNowVisible || !/Required now/i.test(stateValue.modelSetupRequiredNowText))) {
+    if (isGuidedModelSetupState && (!stateValue.modelSetupRequiredNowVisible || !/Required now/i.test(stateValue.modelSetupRequiredNowText))) {
       failures.push(`${viewport.name}/${state}: guided model setup should show required-now copy in the primary card`);
     }
     if (state === "model-setup-no-model-cpu" && !/No model paths|No extra fields/i.test(stateValue.modelSetupRequiredNowText)) {
