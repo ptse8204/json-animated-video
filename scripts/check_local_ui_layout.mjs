@@ -667,6 +667,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           providerWarningText: document.querySelector("#providerWarning")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
           activeModelChoice: document.querySelector("#modelSetupChoices .model-choice-card.is-active strong")?.textContent?.trim() || "",
+          modelSetupNormalActionCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).length,
+          modelSetupNormalActionText: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).map((item) => item.textContent?.trim() || "").join(" | "),
           maskProviderFieldVisible: visible(document.querySelector("#maskProviderField")),
           deviceFieldVisible: visible(document.querySelector("#deviceField")),
           textPromptVisible: visible(document.querySelector("#textPromptField")),
@@ -710,7 +712,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           modelSetupAdvancedOpen: document.querySelector("#modelSetupPanel .model-setup-advanced")?.open === true,
           modelSetupAdvancedSummaryAria: document.querySelector("#modelSetupPanel .model-setup-advanced summary")?.getAttribute("aria-label") || "",
           modelSetupPrimaryActionAria: document.querySelector("#modelSetupPanel .model-setup-guided-card .primary-action")?.getAttribute("aria-label") || "",
-          modelSetupRescanCount: [...document.querySelectorAll("#modelSetupPanel [data-model-setup-action='rescan-runtime']")].filter(visible).length,
+          modelSetupRescanCount: document.querySelectorAll("#modelSetupPanel [data-model-setup-action='rescan-runtime']").length,
           modelSetupUseAnywayOutsideAdvancedCount: [...document.querySelectorAll("#modelSetupPanel button")].filter((button) => /Use this anyway/i.test(button.textContent || "") && !button.closest(".model-setup-advanced")).length,
           modelSetupUseAnywayAdvancedCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-advanced button")].filter((button) => /Use this anyway/i.test(button.textContent || "")).length,
           modelSetupScanErrorText: document.querySelector("#modelSetupPanel .model-setup-scan-error")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -867,28 +869,28 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 4 || stateValue.advancedTaskPanelOpen)) {
       failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards and keep advanced tasks collapsed`);
     }
-    if (state === "model-setup-sam3-local" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {
-      failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be the active guided model choice`);
+    if (state === "model-setup-sam3-local" && stateValue.modelSetupGuidedTitle !== "SAM3 Scene Sweep") {
+      failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be the guided setup title`);
     }
-    if (state === "model-setup-sam2-hf-fallback" && stateValue.activeModelChoice !== "SAM2 HF automatic masks fallback") {
-      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
+    if (state === "model-setup-sam2-hf-fallback" && stateValue.modelSetupGuidedTitle !== "SAM2 HF automatic masks fallback") {
+      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the guided setup title`);
     }
-    if (state === "model-setup-no-model-cpu" && stateValue.activeModelChoice !== "No-model CPU workflow") {
-      failures.push(`${viewport.name}/${state}: no-model CPU workflow should be the active guided model choice`);
+    if (state === "model-setup-no-model-cpu" && stateValue.modelSetupGuidedTitle !== "No-model CPU workflow") {
+      failures.push(`${viewport.name}/${state}: no-model CPU workflow should be the guided setup title`);
     }
-    if (state === "model-setup-advanced-local-sam3" && stateValue.activeModelChoice !== "Advanced local SAM3 concept/exemplar") {
-      failures.push(`${viewport.name}/${state}: advanced local SAM3 should be the active guided model choice`);
+    if (state === "model-setup-advanced-local-sam3" && stateValue.modelSetupGuidedTitle !== "Advanced local SAM3 concept/exemplar") {
+      failures.push(`${viewport.name}/${state}: advanced local SAM3 should be the guided setup title`);
     }
-    if (state === "model-setup-sam3-roboflow" && stateValue.activeModelChoice !== "Hosted SAM3 text discovery") {
-      failures.push(`${viewport.name}/${state}: hosted SAM3 text discovery should be the active guided model choice`);
+    if (state === "model-setup-sam3-roboflow" && stateValue.modelSetupGuidedTitle !== "Hosted SAM3 text discovery") {
+      failures.push(`${viewport.name}/${state}: hosted SAM3 text discovery should be the guided setup title`);
     }
-    if (state === "model-setup-sam3-custom" && stateValue.activeModelChoice !== "Hosted SAM3 text discovery") {
-      failures.push(`${viewport.name}/${state}: custom hosted SAM3 text discovery should be the active guided model choice`);
+    if (state === "model-setup-sam3-custom" && stateValue.modelSetupGuidedTitle !== "Hosted SAM3 text discovery") {
+      failures.push(`${viewport.name}/${state}: custom hosted SAM3 text discovery should be the guided setup title`);
     }
-    if (state === "model-setup-confirm-cache" && stateValue.activeModelChoice !== "SAM2 HF automatic masks fallback") {
-      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the active guided model choice`);
+    if (state === "model-setup-confirm-cache" && stateValue.modelSetupGuidedTitle !== "SAM2 HF automatic masks fallback") {
+      failures.push(`${viewport.name}/${state}: SAM2 HF fallback should be the guided setup title`);
     }
-    if (state === "model-setup-confirm-access" && stateValue.activeModelChoice !== "SAM3 Scene Sweep") {
+    if (state === "model-setup-confirm-access" && stateValue.modelSetupGuidedTitle !== "SAM3 Scene Sweep") {
       failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be active for the access confirmation`);
     }
     if (state === "model-setup-confirm-access" && (!stateValue.modelSetupConfirmationVisible || !/Check Hugging Face access/.test(stateValue.modelSetupConfirmationText) || !/network/.test(stateValue.modelSetupConfirmationText))) {
@@ -925,6 +927,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (isModelSetupState && !stateValue.modelSetupStatusAria) {
       failures.push(`${viewport.name}/${state}: model setup status chip should expose an aria-label`);
+    }
+    if (isGuidedModelSetupState && stateValue.modelSetupNormalActionCount !== 1) {
+      failures.push(`${viewport.name}/${state}: normal model setup should show exactly one visible primary action`);
+    }
+    if (isGuidedModelSetupState && state !== "model-setup-advanced-local-sam3" && /Cache model|Run smoke test|Run proof|Check Hugging Face access|Diagnose|Re-scan/.test(stateValue.modelSetupNormalActionText)) {
+      failures.push(`${viewport.name}/${state}: normal model setup should not expose internal setup substeps as visible primary actions`);
     }
     if (isModelSetupState && stateValue.modelSetupUseAnywayOutsideAdvancedCount > 0) {
       failures.push(`${viewport.name}/${state}: Use this anyway should only appear inside Advanced controls`);

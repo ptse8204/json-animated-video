@@ -171,6 +171,9 @@ for (const testId of [
 for (const dynamicTestId of [
   'data-testid="model-choice-',
   'data-testid="model-setup-allow-hosted"',
+  'action === "auto-setup"',
+  'action === "save-and-auto-setup"',
+  'action === "use-fallback-now"',
   'data-model-setup-action="rescan-runtime"',
   'data-model-setup-action="acknowledge-override"',
   'data-testid="provider-settings-',

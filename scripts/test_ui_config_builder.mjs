@@ -617,7 +617,7 @@ const sam3NeedsAccessState = ui.modelSetupStateForConnection(
 );
 assert.equal(sam3NeedsAccessState.status, "needs_access");
 assert.notEqual(sam3NeedsAccessState.message, "Ready for this workflow.");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Prepare runtime model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3NeedsAccessState, { providerId: "sam3-local" }).label, "Set up SAM3 Scene Sweep");
 
 const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -642,7 +642,7 @@ const sam3BlockedAccessJobState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3BlockedAccessJobState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Prepare runtime model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3BlockedAccessJobState, { providerId: "sam3-local" }).label, "Set up SAM3 Scene Sweep");
 
 const sam3ActiveAccessJobState = ui.modelSetupStateForConnection(
   { id: "sam3-local", providerId: "sam3-local", locality: "local" },
@@ -681,7 +681,7 @@ const sam3CacheAccessBlockedState = ui.modelSetupStateForConnection(
   },
 );
 assert.equal(sam3CacheAccessBlockedState.status, "needs_access");
-assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Prepare runtime model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam3CacheAccessBlockedState, { providerId: "sam3-local" }).label, "Set up SAM3 Scene Sweep");
 
 const sam2CacheState = ui.modelSetupStateForConnection(
   { id: "sam2-hf-auto-masks", providerId: "sam2-hf-auto-masks", locality: "local" },
@@ -700,7 +700,7 @@ const sam2CacheState = ui.modelSetupStateForConnection(
   null,
 );
 assert.equal(sam2CacheState.status, "needs_download_confirmation");
-assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Prepare runtime model");
+assert.equal(ui.modelSetupPrimaryActionForState(sam2CacheState, { providerId: "sam2-hf-auto-masks" }).label, "Set up SAM2 HF fallback");
 
 const staleNotConfiguredState = ui.modelSetupStateForConnection(
   { id: "sam2-local", providerId: "sam2-local", locality: "local" },
@@ -853,14 +853,14 @@ const cachedNeedsSmokeState = ui.modelSetupDecisionForConnection(
   null,
 );
 assert.equal(cachedNeedsSmokeState.status, "needs_smoke");
-assert.equal(ui.modelSetupPrimaryActionForState(cachedNeedsSmokeState, { providerId: "sam3-local", locality: "local" }).label, "Run smoke test");
+assert.equal(ui.modelSetupPrimaryActionForState(cachedNeedsSmokeState, { providerId: "sam3-local", locality: "local" }).label, "Set up SAM3 Scene Sweep");
 
 const localPrepareState = ui.modelSetupPrimaryActionForState(
   { status: "needs_download_confirmation", nextAction: "cache_model" },
   { providerId: "sam2-hf-auto-masks", locality: "local" },
 );
-assert.equal(localPrepareState.id, "prepare-model");
-assert.equal(localPrepareState.label, "Prepare runtime model");
+assert.equal(localPrepareState.id, "auto-setup");
+assert.equal(localPrepareState.label, "Set up SAM2 HF fallback");
 assert.match(appSource, /useSubprocessSmoke:\s*providerId === "sam3-local"/);
 
 const eventMarkup = ui.eventRowsMarkup([

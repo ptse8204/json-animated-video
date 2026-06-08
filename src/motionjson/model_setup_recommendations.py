@@ -83,6 +83,22 @@ def _runtime_proof(provider: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(proof) if isinstance(proof, Mapping) else {}
 
 
+def _metadata_mapping(provider: Mapping[str, Any] | None, key: str) -> dict[str, Any]:
+    metadata = _metadata(provider)
+    value = metadata.get(key)
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _configured(value: Mapping[str, Any] | None) -> bool:
+    return bool(isinstance(value, Mapping) and value.get("configured"))
+
+
+def _path_ready(value: Mapping[str, Any] | None) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return bool(value.get("exists") or value.get("valid"))
+
+
 def _runtime_badges(
     *,
     runtime: Mapping[str, Any],
@@ -118,12 +134,22 @@ def _runtime_badges(
         },
         {
             "id": "model",
-            "label": "No model required" if no_model else model_label,
+            "label": (
+                "No model required"
+                if no_model
+                else model_label
+                if not model_cache_required or model_cached
+                else f"{model_label} will be cached"
+            ),
             "status": "ok" if no_model or not model_cache_required or model_cached else "missing",
         },
         {
             "id": "proof",
-            "label": "Proof not required" if no_model or not proof_required else proof.get("message") or "Runtime proof required",
+            "label": (
+                "Proof not required"
+                if no_model or not proof_required
+                else proof.get("message") or "Will run proof during setup"
+            ),
             "status": "ok" if no_model or not proof_required or proof_allows else "missing",
         },
     ]
@@ -166,6 +192,18 @@ def _required_input(key: str, label: str, input_type: str = "text", required: bo
         "required": required,
         "when": when,
     }
+
+
+def _local_setup_action(label: str) -> dict[str, str]:
+    return _action("auto_setup", label)
+
+
+def _local_save_and_setup_action(label: str) -> dict[str, str]:
+    return _action("save_and_auto_setup", label)
+
+
+def _fallback_action(label: str = "Use CPU fallback now") -> dict[str, str]:
+    return _action("use_fallback", label)
 
 
 def _base_recommendation(
@@ -235,7 +273,7 @@ def _no_model_recommendation(goal: str, runtime: Mapping[str, Any], *, why: str 
         title=title,
         subtitle="Safe local workflow with no model paths or hosted calls.",
         status="fallback_ready",
-        primary_action=_action("continue", "Run local smoke now"),
+        primary_action=_fallback_action(),
         runtime_badges=_runtime_badges(runtime=runtime, provider=None, model_label="", no_model=True),
         why_this=why or "This workflow can run locally without model setup, GPU runtime, credentials, or network access.",
         warnings=[],
@@ -245,37 +283,73 @@ def _no_model_recommendation(goal: str, runtime: Mapping[str, Any], *, why: str 
 
 
 def _sam3_status_for_trace_all(provider: Mapping[str, Any] | None, classification: str) -> tuple[str, dict[str, str]]:
-    if classification == "cuda_hardware_runtime_missing":
-        return "needs_install", _action("install", "Install runtime")
-    status = _provider_status(provider)
-    proof = _runtime_proof(provider)
-    if not provider or status in {"missing_dependency", "not_configured", "available_cpu_only", "unsupported_runtime"}:
-        return "needs_install", _action("install", "Install runtime")
-    if status == "missing_model":
-        return "needs_model", _action("cache_model", "Cache/download model")
-    if proof.get("proofRequired") is True and proof.get("allowsRun") is not True:
-        return "needs_smoke", _action("run_smoke", "Run proof")
-    if status == "runtime_proof_required":
-        return "needs_smoke", _action("run_smoke", "Run proof")
     if _provider_ready(provider):
         return "ready", _action("continue", "Continue to run")
-    return "needs_install", _action("install", "Install runtime")
+    if classification == "cuda_hardware_runtime_missing":
+        return "needs_setup", _local_setup_action("Set up SAM3 Scene Sweep")
+    status = _provider_status(provider)
+    if not provider or status in {"missing_dependency", "not_configured", "available_cpu_only", "unsupported_runtime", "missing_model", "runtime_proof_required"}:
+        return "needs_setup", _local_setup_action("Set up SAM3 Scene Sweep")
+    proof = _runtime_proof(provider)
+    if proof.get("proofRequired") is True and proof.get("allowsRun") is not True:
+        return "needs_setup", _local_setup_action("Set up SAM3 Scene Sweep")
+    return "needs_setup", _local_setup_action("Set up SAM3 Scene Sweep")
 
 
 def _sam2_hf_status(provider: Mapping[str, Any] | None) -> tuple[str, dict[str, str]]:
-    status = _provider_status(provider)
-    proof = _runtime_proof(provider)
-    if not provider or status in {"missing_dependency", "not_configured", "unsupported_runtime"}:
-        return "needs_install", _action("install", "Install runtime")
-    if status == "missing_model":
-        return "needs_model", _action("cache_model", "Cache/download model")
-    if proof.get("proofRequired") is True and proof.get("allowsRun") is not True:
-        return "needs_smoke", _action("run_smoke", "Run proof")
-    if status == "runtime_proof_required":
-        return "needs_smoke", _action("run_smoke", "Run proof")
     if _provider_ready(provider):
         return "ready", _action("continue", "Continue to run")
-    return "needs_install", _action("install", "Install runtime")
+    status = _provider_status(provider)
+    if not provider or status in {"missing_dependency", "not_configured", "unsupported_runtime", "missing_model", "runtime_proof_required"}:
+        return "needs_setup", _local_setup_action("Set up SAM2 HF fallback")
+    proof = _runtime_proof(provider)
+    if proof.get("proofRequired") is True and proof.get("allowsRun") is not True:
+        return "needs_setup", _local_setup_action("Set up SAM2 HF fallback")
+    return "needs_setup", _local_setup_action("Set up SAM2 HF fallback")
+
+
+def _sam2_local_required_inputs(provider: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    checkpoint = _metadata_mapping(provider, "checkpoint")
+    model_config = _metadata_mapping(provider, "modelConfig")
+    required: list[dict[str, Any]] = []
+    if not _path_ready(checkpoint):
+        required.append(
+            _required_input(
+                "sam2_checkpoint_path",
+                "SAM2 checkpoint path",
+                "path",
+                True,
+                "required for local SAM2 prompt tracking",
+            )
+        )
+    if not _path_ready(model_config):
+        required.append(
+            _required_input(
+                "sam2_model_config_path",
+                "SAM2 model config path",
+                "path",
+                True,
+                "required for local SAM2 prompt tracking",
+            )
+        )
+    return required
+
+
+def _hosted_required_inputs(provider: Mapping[str, Any] | None, *, include_network_opt_in: bool = True) -> list[dict[str, Any]]:
+    metadata = _metadata(provider)
+    auth = metadata.get("authEnv") if isinstance(metadata.get("authEnv"), Mapping) else {}
+    endpoint = metadata.get("endpointEnv") if isinstance(metadata.get("endpointEnv"), Mapping) else {}
+    network_opt_in = bool(metadata.get("networkOptIn"))
+    required: list[dict[str, Any]] = []
+    if not bool(auth.get("configured")):
+        required.append(_required_input("api_key", "API key", "secret", True, "required for the selected hosted provider"))
+    endpoint_required = bool(endpoint.get("required"))
+    endpoint_ready = bool(endpoint.get("configured")) and endpoint.get("valid", True) is not False
+    if endpoint_required and not endpoint_ready:
+        required.append(_required_input("endpoint", "Endpoint URL", "url", True, "required for this hosted profile"))
+    if include_network_opt_in and not network_opt_in:
+        required.append(_required_input("allow_hosted", "Hosted cost/privacy confirmation", "checkbox", True, "required before hosted setup checks"))
+    return required
 
 
 def _trace_all_recommendation(goal: str, report: Mapping[str, Any]) -> dict[str, Any]:
@@ -302,12 +376,12 @@ def _trace_all_recommendation(goal: str, report: Mapping[str, Any]) -> dict[str,
             primary_action=primary_action,
             runtime_badges=_runtime_badges(runtime=runtime, provider=sam3, model_label=SAM3_HF_REPO_ID),
             why_this=why,
-            warnings=[] if status != "needs_install" else ["CUDA hardware is present, but this Python runtime cannot use it yet."],
+            warnings=[] if status != "needs_setup" or classification != "cuda_hardware_runtime_missing" else ["CUDA hardware is present, but this Python runtime cannot use it yet."],
             alternatives=[_no_model_alternative()],
             run_config_mapping={"providerName": "sam3-local", "discoveryMode": "sam3_auto_masks"},
             optional_inputs=[_required_input("hf_token", "Hugging Face token", "secret", False, "model access is gated")],
         )
-    if classification == "mps_ready" and _provider_runtime_configured(sam2_hf):
+    if classification == "mps_ready" and sam2_hf and bool(sam2_hf.get("installed")):
         status, primary_action = _sam2_hf_status(sam2_hf)
         return _base_recommendation(
             goal=goal,
@@ -354,6 +428,28 @@ def _trace_one_recommendation(goal: str, report: Mapping[str, Any]) -> dict[str,
             alternatives=[_no_model_alternative()],
             run_config_mapping={"providerName": "sam2-local", "discoveryMode": "manual_prompt"},
         )
+    if sam2 and bool(sam2.get("installed")):
+        required_inputs = _sam2_local_required_inputs(sam2)
+        primary_action = (
+            _local_save_and_setup_action("Set up SAM2 prompt tracking")
+            if required_inputs
+            else _local_setup_action("Set up SAM2 prompt tracking")
+        )
+        return _base_recommendation(
+            goal=goal,
+            selected_connection_id="sam2-local",
+            selected_provider_id="sam2-local",
+            selected_capability_id="sam2-local",
+            title="SAM2 prompt tracking",
+            subtitle="Local prompt tracking for one selected object.",
+            status="needs_input" if required_inputs else "needs_setup",
+            primary_action=primary_action,
+            required_inputs=required_inputs,
+            runtime_badges=_runtime_badges(runtime=runtime, provider=sam2, model_label="SAM2 checkpoint and config"),
+            why_this="SAM2 runtime support is installed for this machine, but local prompt tracking still needs the checkpoint/config paths and proof handled through guided setup.",
+            alternatives=[_no_model_alternative()],
+            run_config_mapping={"providerName": "sam2-local", "discoveryMode": "manual_prompt"},
+        )
     return _no_model_recommendation(
         goal,
         runtime,
@@ -369,6 +465,8 @@ def _text_detector_recommendation(goal: str, report: Mapping[str, Any], *, mock_
     hosted_metadata = _metadata(hosted)
     network_opt_in = bool(hosted_metadata.get("networkOptIn"))
     hosted_configured = bool(hosted and hosted.get("configured"))
+    hosted_installed = bool(hosted and hosted.get("installed"))
+    required_inputs = _hosted_required_inputs(hosted)
     if hosted and _provider_ready(hosted) and network_opt_in:
         return _base_recommendation(
             goal=goal,
@@ -384,19 +482,19 @@ def _text_detector_recommendation(goal: str, report: Mapping[str, Any], *, mock_
             warnings=["Hosted calls can send frames off-device and may cost money."],
             run_config_mapping={"providerName": "sam3-hosted", "discoveryMode": "sam3_concept"},
         )
-    if hosted_configured and not network_opt_in:
+    if hosted and hosted_installed and (hosted_configured or required_inputs):
         return _base_recommendation(
             goal=goal,
             selected_connection_id="sam3-hosted:roboflow-sam3-pcs",
             selected_provider_id="sam3-hosted",
             selected_capability_id="sam3-hosted",
             title="Hosted SAM3 text discovery",
-            subtitle="Confirm hosted use before text-guided discovery.",
-            status="needs_hosted_opt_in",
-            primary_action=_action("confirm_hosted", "Confirm hosted use"),
-            required_inputs=[_required_input("allow_hosted", "Hosted cost/privacy confirmation", "checkbox", True, "hosted provider is selected")],
+            subtitle="Enter only the hosted fields that are missing, then let MotionJSON verify the setup.",
+            status="needs_input",
+            primary_action=_local_save_and_setup_action("Save key and check access"),
+            required_inputs=required_inputs,
             runtime_badges=_runtime_badges(runtime=runtime, provider=hosted, model_label="Hosted SAM3"),
-            why_this="Credentials are present, but hosted calls remain disabled until you confirm cost and privacy.",
+            why_this="Text-guided discovery uses a hosted SAM3 provider. MotionJSON only needs the missing hosted fields and one opt-in confirmation before it can check setup.",
             warnings=["Hosted calls are opt-in only."],
             alternatives=[_no_model_alternative("ready")],
             run_config_mapping={"providerName": "sam3-hosted", "discoveryMode": "sam3_concept"},

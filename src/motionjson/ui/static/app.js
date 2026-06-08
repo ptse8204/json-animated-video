@@ -3492,54 +3492,45 @@ const MotionJSONUI = (() => {
     const providerId = connection?.providerId || "";
     const advancedLocalSam3 = connection?.productPathId === "advanced_local_sam3_concept_exemplar";
     const localSetupProvider = connection?.locality === "local" || ["sam3-local", "sam2-hf-auto-masks", "sam2-local"].includes(providerId);
+    const hosted = connection?.locality === "hosted";
     if (["checking_environment", "caching_model", "installing_runtime", "preparing_model", "smoke_testing"].includes(status)) {
       return { id: "cancel-setup-job", label: "Cancel setup", primary: false };
     }
-    if (status === "needs_smoke") {
-      return { id: "smoke", label: "Run smoke test", primary: true };
-    }
+    if (connection?.productPathId === "no_model_cpu_workflow") return { id: "use-fallback-now", label: "Use CPU fallback now", primary: true };
     if (advancedLocalSam3 && status !== "ready") {
       return { id: "diagnose", label: "Diagnose advanced setup", primary: true };
-    }
-    if (localSetupProvider && nextAction === "install") {
-      return {
-        id: "install",
-        label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Install advanced SAM3" : "Install scene sweep") : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime",
-        primary: true,
-      };
-    }
-    if (localSetupProvider && nextAction === "choose_model") {
-      return { id: "save", label: "Save setup", primary: true };
-    }
-    if (localSetupProvider && ["needs_access", "needs_download_confirmation", "needs_path", "not_configured"].includes(status)) {
-      return { id: "prepare-model", label: "Prepare runtime model", primary: true };
-    }
-    if (status === "needs_access") {
-      return { id: providerId.includes("hosted") ? "test" : "check-access", label: providerId.includes("hosted") ? "Check access" : "Check Hugging Face access", primary: true };
-    }
-    if (status === "needs_download_confirmation") {
-      return { id: "cache-model", label: "Cache model", primary: true };
-    }
-    if (status === "needs_path") {
-      return { id: nextAction === "cache_model" ? "cache-model" : "diagnose", label: nextAction === "cache_model" ? "Cache model" : "Diagnose", primary: true };
     }
     if (status === "ready") {
       return { id: "continue-to-run", label: "Continue to run", primary: true };
     }
     if (status === "failed_recoverable") {
-      if (nextAction === "check_access") return { id: "check-access", label: "Check Hugging Face access", primary: true };
-      if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
-      return { id: providerId === "sam3-local" || providerId === "sam2-hf-auto-masks" || providerId === "sam2-local" ? "install" : "diagnose", label: "Retry setup", primary: true };
+      return { id: "retry-setup", label: "Retry setup", primary: true };
     }
-    if (nextAction === "cache_model") return { id: "cache-model", label: "Cache model", primary: true };
-    return { id: "install", label: providerId === "sam3-local" ? (advancedLocalSam3 ? "Install advanced SAM3" : "Install scene sweep") : providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install runtime", primary: true };
+    if (hosted) {
+      return { id: "save-and-auto-setup", label: "Save key and check access", primary: true };
+    }
+    if (localSetupProvider && (status === "needs_path" || nextAction === "choose_model")) {
+      return {
+        id: "save-and-auto-setup",
+        label: providerId === "sam2-local" ? "Set up SAM2 prompt tracking" : "Save setup and continue",
+        primary: true,
+      };
+    }
+    if (localSetupProvider) {
+      return {
+        id: "auto-setup",
+        label: providerId === "sam3-local" ? "Set up SAM3 Scene Sweep" : providerId === "sam2-hf-auto-masks" ? "Set up SAM2 HF fallback" : "Set up recommended model",
+        primary: true,
+      };
+    }
+    return { id: "auto-setup", label: "Set up recommended model", primary: true };
   }
 
   function modelSetupToneFromRecommendationStatus(status) {
     const normalized = String(status || "").toLowerCase();
     if (["ready", "fallback_ready"].includes(normalized)) return "ready";
     if (["blocked", "failed", "error"].includes(normalized)) return "bad";
-    if (["needs_install", "needs_model", "needs_smoke", "needs_credentials", "needs_hosted_opt_in"].includes(normalized)) return "warn";
+    if (["needs_setup", "needs_input", "needs_credentials", "needs_hosted_opt_in", "retry_setup"].includes(normalized)) return "warn";
     return "neutral";
   }
 
@@ -3563,19 +3554,16 @@ const MotionJSONUI = (() => {
     const mappedId =
       actionId === "continue"
         ? "continue-to-run"
-        : actionId === "run_smoke"
-          ? "smoke"
-          : actionId === "cache_model"
-            ? "cache-model"
-            : actionId === "save_required_inputs"
-              ? "save"
-              : actionId === "choose_fallback"
-                ? "change-model"
-                : actionId || fallbackAction.id || "install";
-    const label =
-      recommendation?.status === "needs_smoke"
-        ? "Run proof"
-        : action.label || fallbackAction.label || humanizeReviewCode(mappedId);
+        : actionId === "auto_setup"
+          ? "auto-setup"
+          : actionId === "save_and_auto_setup"
+            ? "save-and-auto-setup"
+            : actionId === "use_fallback"
+              ? "use-fallback-now"
+              : actionId === "retry_setup"
+                ? "retry-setup"
+                : actionId || fallbackAction.id || "auto-setup";
+    const label = action.label || fallbackAction.label || humanizeReviewCode(mappedId);
     return {
       id: mappedId,
       label,
@@ -3589,28 +3577,23 @@ const MotionJSONUI = (() => {
     const runtimeBadge = badges.find((badge) => String(badge.id || "") === "runtime");
     const modelBadge = badges.find((badge) => String(badge.id || "") === "model");
     const proofBadge = badges.find((badge) => String(badge.id || "") === "proof");
-    if (status === "needs_install") {
+    if (status === "needs_setup") {
       const label = runtimeBadge?.status !== "ok" ? runtimeBadge?.label : "";
       return label
-        ? `Runtime missing: ${label}. Install the matching runtime, then re-scan.`
-        : setupState.message || "Install the selected runtime, then re-scan before running this workflow.";
+        ? `MotionJSON can finish setup automatically. ${label}. The setup job will handle runtime fixes, model cache, and proof where supported.`
+        : setupState.message || "MotionJSON can finish setup automatically, including model cache and proof where supported.";
     }
-    if (status === "needs_model") {
-      const label = modelBadge?.label || "";
+    if (status === "needs_input") {
+      const label = modelBadge?.status === "missing" ? modelBadge?.label || "" : proofBadge?.label || "";
       return label
-        ? `Model missing: ${label}. Cache or configure that model, then run proof.`
-        : setupState.message || "Cache or configure the selected model, then run proof before extraction.";
+        ? `Enter only the missing fields below. MotionJSON will save them and continue setup automatically. ${label}.`
+        : "Enter only the missing fields below. MotionJSON will save them and continue setup automatically.";
     }
-    if (status === "needs_smoke") {
-      const label = proofBadge?.label || "";
-      return label
-        ? `Proof missing: ${label}. Run proof before extraction so failures stay visible.`
-        : setupState.message || "Run proof before extraction so runtime failures are visible before export.";
-    }
-    if (status === "needs_credentials") return "Credential missing. Save the required token or key before checking access.";
-    if (status === "needs_hosted_opt_in") return "Hosted calls are off until you confirm cost, privacy, and network use.";
+    if (status === "needs_credentials") return "Enter the missing key or token below. MotionJSON will save it and continue setup automatically.";
+    if (status === "needs_hosted_opt_in") return "Confirm hosted cost, privacy, and network use below. MotionJSON will save the setting and continue setup.";
     if (status === "fallback_ready") return "Ready now. This no-model path does not need model paths, credentials, GPU runtime, or hosted opt-in.";
     if (status === "ready") return setupState.message || "Ready for this goal. Continue to prepare the run inputs.";
+    if (status === "blocked") return setupState.message || recommendation.whyThis || "This setup path is blocked. Use the fallback or inspect advanced details.";
     return setupState.message || recommendation.whyThis || "Review setup status before continuing.";
   }
 
@@ -3665,9 +3648,10 @@ const MotionJSONUI = (() => {
     `;
   }
 
-  function modelSetupRequiredNowMarkup(recommendation = {}, connection = null) {
+  function modelSetupRequiredNowMarkup(recommendation = {}, connection = null, options = {}) {
     const requiredInputs = asArray(recommendation.requiredInputs);
     const warnings = asArray(recommendation.warnings);
+    const fieldMarkup = String(options.fields || "");
     const inputRows = requiredInputs
       .map((input) => {
         const required = input.required === true ? "required" : "needed when prompted";
@@ -3686,6 +3670,7 @@ const MotionJSONUI = (() => {
           <strong>Required now</strong>
           <span>${escapeHtml(requiredInputs.length ? "Complete only these inputs before continuing." : fallback)}</span>
         </div>
+        ${fieldMarkup ? `<div class="model-setup-form model-setup-required-fields">${fieldMarkup}</div>` : ""}
         ${inputRows ? `<ul>${inputRows}</ul>` : ""}
         ${warningsMarkup}
       </div>
@@ -3863,15 +3848,7 @@ const MotionJSONUI = (() => {
     if (recommendation?.selectedConnectionId && modelConnectionByConnectionId(recommendation.selectedConnectionId)) {
       return recommendation.selectedConnectionId;
     }
-    const priority = MODEL_CONNECTION_PRIORITY[presetId] || MODEL_CONNECTION_PRIORITY.trace_one_object;
-    const compatible = compatibleModelConnectionsForPreset(presetId);
-    const ordered = compatible
-      .slice()
-      .sort((a, b) => (priority.indexOf(a.id) === -1 ? 99 : priority.indexOf(a.id)) - (priority.indexOf(b.id) === -1 ? 99 : priority.indexOf(b.id)));
-    const ready = ordered.find((connection) => connectionReadiness(connection).tone === "ready");
-    if (ready) return ready.id;
-    const setup = ordered.find((connection) => connectionReadiness(connection).tone !== "bad");
-    return (setup || ordered[0] || modelConnectionById("sam2-local")).id;
+    return "";
   }
 
   function modelConnectorsForSetup(payload = state.modelProviders) {
@@ -6803,8 +6780,7 @@ const MotionJSONUI = (() => {
           </div>
           <details class="advanced-panel model-setup-advanced">
             <summary aria-label="Show advanced manual setup after runtime scan failure">Advanced manual setup</summary>
-            <p class="row-meta">Manual setup can bypass the recommendation, but extraction validation will still block missing runtimes, credentials, model cache, hosted opt-in, or proof failures.</p>
-            <button type="button" data-model-setup-action="change-model" aria-label="Show manual model setup options after runtime scan failure">Show manual options</button>
+            <p class="row-meta">Manual setup is unavailable until MotionJSON can refresh runtime diagnostics. Re-scan first; extraction validation will still block missing runtimes, credentials, model cache, hosted opt-in, or proof failures.</p>
           </details>
         </div>
       `;
@@ -6846,6 +6822,15 @@ const MotionJSONUI = (() => {
         return;
       }
 
+      const recommendation = modelSetupRecommendationForPreset(state.selectedPreset);
+      const hasRecommendation = recommendation?.format === "motionjson.model_setup_recommendation.v0.1";
+      if (!hasRecommendation && state.modelSetupSelectionMode !== "user_override") {
+        setModelSetupStatusChip(status, "Recommendation unavailable", "warn", state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.");
+        choices.innerHTML = "";
+        detail.innerHTML = modelSetupCapabilityScanErrorMarkup(state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.");
+        return;
+      }
+
       const recommendedId = recommendedConnectionIdForPreset();
       if (state.modelSetupSelectionMode !== "user_override" || !state.selectedModelSetupProviderId || state.selectedModelSetupProviderId === "auto") {
         state.selectedModelSetupProviderId = recommendedId;
@@ -6871,54 +6856,15 @@ const MotionJSONUI = (() => {
             ? "bad"
             : "warn";
       setModelSetupStatusChip(status, selectedSetupState.label || selectedReadiness.label, selectedSetupTone, selectedSetupState.message || selectedReadiness.message || "");
-
-      const optionCards = compatibleConnections.map((connection) => {
-          const provider = providerSettingsById(connection.providerId);
-          const readinessSummary = connectionReadiness(connection);
-          const setupState = modelSetupStateForConnection(connection, provider, setupJobForProvider(connection.providerId));
-          const setupReady = setupState.status === "ready";
-          const summary = {
-            label: setupState.label || readinessSummary.label,
-            status: setupState.status || readinessSummary.status,
-            tone: setupReady ? "ready" : setupState.status === "failed_recoverable" ? "bad" : readinessSummary.tone === "bad" ? "bad" : "warn",
-          };
-          const active = connection.id === selected.id;
-          const hosted = provider?.locality === "hosted";
-          const profile = connection.profileId
-            ? asArray(provider?.hostedProfiles).find((item) => item.id === connection.profileId)
-            : null;
-          const productPathId = connection.productPathId || connection.id || "";
-          const metaProviderLabel = productPathId === "advanced_local_sam3_concept_exemplar"
-            ? connection.title
-            : profile?.name || provider?.name || connection.providerId;
-          return `
-            <button class="model-choice-card ${active ? "is-active" : ""} ${hosted ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(connection.id)}" data-testid="model-choice-${escapeAttribute(connection.id)}" aria-pressed="${active}" aria-label="${escapeAttribute(`${connection.displayLabel || connection.title}: ${summary.label}. ${active ? "Selected model setup path." : "Select as a manual model setup option."}`)}">
-              <span class="model-choice-topline">
-                <strong>${escapeHtml(connection.displayLabel || connection.title)}</strong>
-                ${statusChip(summary.label, summary.status, summary.tone === "ready")}
-              </span>
-              <span class="model-choice-copy">${escapeHtml(connection.recommendation)}</span>
-              <span class="model-choice-meta">${escapeHtml(`${connection.workflow} - ${metaProviderLabel}`)}</span>
-            </button>
-          `;
-        })
-        .join("");
       choices.className = "model-setup-options-shell";
-      choices.innerHTML = compatibleConnections.length > 1
-        ? `
-          <details class="model-setup-options" ${state.modelSetupAlternativesOpen || state.workflowDashboard ? "open" : ""}>
-            <summary aria-label="Show other compatible model setup options">Other options</summary>
-            <div class="model-choice-grid" aria-label="Other compatible model setup options">
-              ${optionCards}
-            </div>
-          </details>
-        `
-        : "";
+      choices.innerHTML = "";
 
       detail.innerHTML = renderModelSetupDetail(selected, {
         ...selectedReadiness,
         manualOverrideStale,
         recommendedId,
+        recommendation,
+        compatibleConnections,
       });
     }
 
@@ -6931,6 +6877,10 @@ const MotionJSONUI = (() => {
       const resultMessage = state.modelSetupMessage || summary.message;
       const readiness = settingsProvider?.readiness || {};
       const settings = settingsProvider?.settings || {};
+      const compatibleConnections = asArray(summary.compatibleConnections);
+      const recommendation = summary.recommendation?.format === "motionjson.model_setup_recommendation.v0.1" ? summary.recommendation : null;
+      const hasRecommendation = Boolean(recommendation);
+      const showingRecommendation = Boolean(recommendation && recommendation.selectedConnectionId === connection.id && !summary.manualOverrideStale);
       const credentials = asArray(settingsProvider?.credentials);
       const modelOptions = asArray(settingsProvider?.modelOptions);
       const selectedModel = settings.selectedModel || settingsProvider?.defaultModel || "";
@@ -6955,37 +6905,42 @@ const MotionJSONUI = (() => {
               ${connection.profileId ? `<input type="hidden" data-model-setup-field="hostedProfileId" value="${escapeAttribute(selectedProfile)}" />` : ""}
             </label>`
           : "";
-      const localFields = asArray(settingsProvider?.localConfigFields)
-        .map((field) => {
-          const fieldName = field.name || "";
-          const camelName =
-            fieldName === "sam2_checkpoint_path"
-              ? "sam2CheckpointPath"
-              : fieldName === "sam2_model_config_path"
-                ? "sam2ModelConfigPath"
-                : fieldName === "sam2_device"
-                  ? "sam2Device"
-                  : fieldName === "sam2_hf_device"
-                    ? "sam2HfDevice"
+      const localFieldEntries = asArray(settingsProvider?.localConfigFields).map((field) => {
+        const fieldName = field.name || "";
+        const camelName =
+          fieldName === "sam2_checkpoint_path"
+            ? "sam2CheckpointPath"
+            : fieldName === "sam2_model_config_path"
+              ? "sam2ModelConfigPath"
+              : fieldName === "sam2_device"
+                ? "sam2Device"
+                : fieldName === "sam2_hf_device"
+                  ? "sam2HfDevice"
                   : fieldName === "sam3_model_path"
                     ? "sam3ModelPath"
                     : fieldName === "sam3_device"
                       ? "sam3Device"
                       : fieldName;
-          let value = settings[camelName] || "";
-          if (connection.providerId === "sam3-local" && camelName === "sam3Device" && !value && environmentRecommendationSummary().accelerator === "cuda") {
-            value = "cuda";
-          }
-          const type = fieldName.endsWith("_device") ? "text" : "text";
-          const placeholder = field.placeholder || field.env || "";
-          const helper = field.helpText ? `<span class="field-helper">${escapeHtml(field.helpText)}</span>` : "";
-          return `<label>
-            <span>${escapeHtml(field.label || fieldName)}</span>
-            <input data-model-setup-field="${escapeAttribute(camelName)}" type="${type}" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" />
-            ${helper}
-          </label>`;
-        })
-        .join("");
+        let value = settings[camelName] || "";
+        if (connection.providerId === "sam3-local" && camelName === "sam3Device" && !value && environmentRecommendationSummary().accelerator === "cuda") {
+          value = "cuda";
+        }
+        return {
+          field,
+          fieldName,
+          camelName,
+          value,
+          markup: (() => {
+            const placeholder = field.placeholder || field.env || "";
+            const helper = field.helpText ? `<span class="field-helper">${escapeHtml(field.helpText)}</span>` : "";
+            return `<label>
+              <span>${escapeHtml(field.label || fieldName)}</span>
+              <input data-model-setup-field="${escapeAttribute(camelName)}" type="text" value="${escapeAttribute(value)}" placeholder="${escapeAttribute(placeholder)}" />
+              ${helper}
+            </label>`;
+          })(),
+        };
+      });
       const advancedLocalPath = state.advancedLocalPaths?.[connection.providerId] || {};
       const cachedSceneSweepPath = connection.providerId === "sam3-local" && !advancedLocalSam3
         ? String(advancedLocalPath.cachedSceneSweepModelDir || advancedLocalPath.localModelDirDisplayRaw || "")
@@ -7040,12 +6995,62 @@ const MotionJSONUI = (() => {
             <input data-model-setup-field="endpoint" type="url" value="${escapeAttribute(settings.endpoint || "")}" placeholder="${escapeAttribute(settingsProvider.endpointField.env || "")}" />
           </label>`
         : "";
-      const hfCredential = credentials.find((credential) => credential.name === "hf_token");
-      const showNormalHfAccess = connection.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && hfCredential && !hfCredential.configured;
+      const recommendedRequiredInputs = showingRecommendation ? asArray(recommendation.requiredInputs) : [];
+      const normalFieldNames = new Set();
+      const requiredInputFieldMarkup = (input) => {
+        const key = String(input?.key || "").trim();
+        if (!key) return "";
+        if (key === "api_key") {
+          normalFieldNames.add("apiKey");
+          return credentialInputMarkup({ name: "api_key", label: input.label || "API key" }, { normal: true });
+        }
+        if (key === "hf_token") {
+          normalFieldNames.add("hfToken");
+          return credentialInputMarkup({ name: "hf_token", label: input.label || "Hugging Face token" }, { normal: true });
+        }
+        if (key === "endpoint") {
+          normalFieldNames.add("endpoint");
+          return endpointField;
+        }
+        if (key === "allow_hosted") {
+          normalFieldNames.add("allowHosted");
+          return `<label class="track-toggle model-hosted-toggle">
+            <input data-model-setup-field="allowHosted" data-testid="model-setup-allow-hosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+            <span>${escapeHtml(input.label || "I understand hosted calls can send frames off-device and may cost money")}</span>
+          </label>`;
+        }
+        if (key === "sam2_checkpoint_path") {
+          normalFieldNames.add("sam2CheckpointPath");
+          return `<label>
+            <span>${escapeHtml(input.label || "SAM2 checkpoint path")}</span>
+            <input data-model-setup-field="sam2CheckpointPath" type="text" value="${escapeAttribute(settings.sam2CheckpointPath || "")}" placeholder="SAM2_LOCAL_CHECKPOINT" />
+          </label>`;
+        }
+        if (key === "sam2_model_config_path") {
+          normalFieldNames.add("sam2ModelConfigPath");
+          return `<label>
+            <span>${escapeHtml(input.label || "SAM2 model config path")}</span>
+            <input data-model-setup-field="sam2ModelConfigPath" type="text" value="${escapeAttribute(settings.sam2ModelConfigPath || "")}" placeholder="SAM2_LOCAL_CONFIG" />
+          </label>`;
+        }
+        return "";
+      };
+      const normalRequiredFieldMarkup = recommendedRequiredInputs.map(requiredInputFieldMarkup).filter(Boolean).join("");
+      const localFields = localFieldEntries
+        .filter((entry) => !normalFieldNames.has(entry.camelName))
+        .map((entry) => entry.markup)
+        .join("");
       const credentialField = credentials
-        .filter((credential) => !(showNormalHfAccess && credential.name === "hf_token"))
+        .filter((credential) => !normalFieldNames.has(credentialInputName(credential.name || "")))
         .map((credential) => credentialInputMarkup(credential))
         .join("");
+      const hostedOptInAdvancedField =
+        hosted && !normalFieldNames.has("allowHosted")
+          ? `<label class="track-toggle model-hosted-toggle">
+              <input data-model-setup-field="allowHosted" data-testid="model-setup-allow-hosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
+              <span>I understand hosted calls can send frames off-device and may cost money</span>
+            </label>`
+          : "";
       const setupJob = setupJobForProvider(connection.providerId);
       const setupJobSummary = setupJobStatusSummary(setupJob);
       const setupState = modelSetupStateForConnection(connection, settingsProvider, setupJob);
@@ -7068,15 +7073,6 @@ const MotionJSONUI = (() => {
             <summary aria-label="Show manual setup commands">Manual commands</summary>
             ${commandRows}
           </details>`
-        : "";
-      const normalAccessCard = showNormalHfAccess
-        ? `<div class="model-setup-access-card">
-            <div>
-              <strong>Hugging Face access</strong>
-              <p>facebook/sam3 may require Meta approval. Paste your Hugging Face token here, then use the setup action to check access before downloading weights.</p>
-            </div>
-            ${credentialInputMarkup(hfCredential, { normal: true })}
-          </div>`
         : "";
       const setupProgressCard = setupJobProgressCard(setupJob, setupJobSummary);
       const setupPlaybook = modelSetupPlaybookMarkup(connection, settingsProvider, setupState, setupJob);
@@ -7114,12 +7110,6 @@ const MotionJSONUI = (() => {
       const pendingConfirmation = state.pendingModelSetupConfirmation?.providerId === connection.providerId
         ? state.pendingModelSetupConfirmation
         : null;
-      const overrideNotice = summary.manualOverrideStale
-        ? `<div class="warning-box is-warn">You chose a non-recommended model path for this goal. Recommended: ${escapeHtml(modelConnectionByConnectionId(summary.recommendedId)?.displayLabel || "backend recommendation")}.</div>`
-        : "";
-      const recommendation = modelSetupRecommendationForPreset(state.selectedPreset);
-      const hasRecommendation = recommendation?.format === "motionjson.model_setup_recommendation.v0.1";
-      const showingRecommendation = hasRecommendation && recommendation.selectedConnectionId === connection.id && !summary.manualOverrideStale;
       const guidedTone = showingRecommendation
         ? modelSetupToneFromRecommendationStatus(recommendation.status)
         : setupStateTone;
@@ -7137,16 +7127,6 @@ const MotionJSONUI = (() => {
       const guidedWhy = showingRecommendation ? recommendation.whyThis : connection.recommendation || guide.setupSummary || setupState.message;
       const guidedStatusLabel = showingRecommendation ? humanizeReviewCode(recommendation.status) : setupState.label;
       const guidedStatusMessage = showingRecommendation ? modelSetupStatusMessageFromRecommendation(recommendation, setupState) : resultMessage || setupState.message;
-      const fallbackAlternative = asArray(recommendation?.alternatives)
-        .find((alternative) => alternative?.connectionId && alternative.connectionId !== connection.id);
-      const fallbackConnection = fallbackAlternative ? modelConnectionByConnectionId(fallbackAlternative.connectionId) : null;
-      const fallbackButton = fallbackAlternative
-        ? `<button type="button" data-model-setup-provider="${escapeAttribute(fallbackAlternative.connectionId)}" aria-label="${escapeAttribute(`Switch to fallback setup: ${fallbackAlternative.label || fallbackConnection?.displayLabel || "fallback"}`)}">${escapeHtml(
-            fallbackAlternative.connectionId === "no_model_cpu_workflow"
-              ? "Run no-model smoke now"
-              : `Use ${fallbackAlternative.label || fallbackConnection?.displayLabel || "fallback"}`,
-          )}</button>`
-        : "";
       const confirmationCard = pendingConfirmation
         ? `<div class="model-setup-confirmation" role="alert">
             <div>
@@ -7170,6 +7150,32 @@ const MotionJSONUI = (() => {
             <p>You selected a path that does not match the runtime recommendation. Use it only when you know the runtime, model, and proof requirements are already handled.</p>
             <button type="button" data-model-setup-action="acknowledge-override" aria-label="Use this manual model setup override anyway">Use this anyway</button>
           </div>`
+        : "";
+      const alternativeConnections = compatibleConnections.filter((item) => item?.id && item.id !== connection.id);
+      const alternativeOptionsMarkup = alternativeConnections.length
+        ? alternativeConnections
+            .map((item) => {
+              const provider = providerSettingsById(item.providerId);
+              const readinessSummary = connectionReadiness(item);
+              const itemSetupState = modelSetupStateForConnection(item, provider, setupJobForProvider(item.providerId));
+              const itemReady = itemSetupState.status === "ready";
+              const itemTone = itemReady ? "ready" : itemSetupState.status === "failed_recoverable" ? "bad" : readinessSummary.tone === "bad" ? "bad" : "warn";
+              const profile = item.profileId ? asArray(provider?.hostedProfiles).find((entry) => entry.id === item.profileId) : null;
+              const metaProviderLabel = (item.productPathId || item.id) === "advanced_local_sam3_concept_exemplar"
+                ? item.title
+                : profile?.name || provider?.name || item.providerId;
+              return `
+                <button class="model-choice-card ${provider?.locality === "hosted" ? "is-hosted" : "is-local"}" type="button" data-model-setup-provider="${escapeAttribute(item.id)}" data-testid="model-choice-${escapeAttribute(item.id)}" aria-pressed="false" aria-label="${escapeAttribute(`${item.displayLabel || item.title}: ${itemSetupState.label || readinessSummary.label}. Select as a manual model setup option.`)}">
+                  <span class="model-choice-topline">
+                    <strong>${escapeHtml(item.displayLabel || item.title)}</strong>
+                    ${statusChip(itemSetupState.label || readinessSummary.label, itemSetupState.status || readinessSummary.status, itemTone === "ready")}
+                  </span>
+                  <span class="model-choice-copy">${escapeHtml(item.recommendation)}</span>
+                  <span class="model-choice-meta">${escapeHtml(`${item.workflow} - ${metaProviderLabel}`)}</span>
+                </button>
+              `;
+            })
+            .join("")
         : "";
 
       return `
@@ -7200,26 +7206,26 @@ const MotionJSONUI = (() => {
                 aria-label="${escapeAttribute(modelSetupActionAriaLabel(guidedAction, showingRecommendation ? recommendation : {}, connection))}"
                 ${guidedAction.id === "cancel-setup-job" && setupJob?.id ? `data-setup-job-id="${escapeAttribute(setupJob.id)}"` : ""}
               >${escapeHtml(guidedAction.label)}</button>
-              ${fallbackButton}
-              <button type="button" data-model-setup-action="rescan-runtime" aria-label="Re-scan runtime and refresh the model setup recommendation">Re-scan runtime</button>
-              ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model" aria-label="${escapeAttribute(state.modelSetupAlternativesOpen ? "Hide other model setup options" : "Show other model setup options")}">${state.modelSetupAlternativesOpen ? "Hide options" : "Other options"}</button>` : ""}
             </div>
           </div>
           ${modelSetupRuntimeBadgesMarkup(showingRecommendation ? recommendation : {}, setupState)}
-          ${modelSetupRequiredNowMarkup(showingRecommendation ? recommendation : {}, connection)}
+          ${modelSetupRequiredNowMarkup(showingRecommendation ? recommendation : {}, connection, { fields: normalRequiredFieldMarkup })}
         </div>
         ${confirmationCard}
-        ${overrideNotice}
-        ${setupPlaybook}
-        ${normalAccessCard}
         ${setupProgressCard}
-        ${proofStatusCard}
-        ${cacheStatusCard}
-        ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
         <div id="modelSetupResult" class="model-setup-result is-${escapeAttribute(resultTone)}" role="status" ${resultMessage ? "" : "hidden"}>${escapeHtml(resultMessage)}</div>
         <details class="advanced-panel model-setup-advanced">
           <summary aria-label="Show advanced model setup controls and manual override actions">Advanced</summary>
           ${advancedOverrideNotice}
+          ${alternativeOptionsMarkup ? `<div class="model-choice-grid" aria-label="Other compatible model setup options">${alternativeOptionsMarkup}</div>` : ""}
+          <div class="model-setup-actions">
+            <button type="button" data-model-setup-action="rescan-runtime" aria-label="Re-scan runtime and refresh the model setup recommendation">Re-scan runtime</button>
+            ${hasAlternatives ? `<button type="button" data-model-setup-action="change-model" aria-label="${escapeAttribute(state.modelSetupAlternativesOpen ? "Hide other model setup options" : "Show other model setup options")}">${state.modelSetupAlternativesOpen ? "Hide options" : "Show other options"}</button>` : ""}
+          </div>
+          ${setupPlaybook}
+          ${proofStatusCard}
+          ${cacheStatusCard}
+          ${hosted ? `<div class="warning-box is-warn">${escapeHtml(settingsProvider?.privacy || "Hosted calls can send frames off-device and may cost money.")}</div>` : ""}
           ${manualCommands}
           <div class="model-setup-job is-${escapeAttribute(setupJobSummary.tone)}">
             <div>
@@ -7251,14 +7257,7 @@ const MotionJSONUI = (() => {
             ${localFields}
             ${endpointField}
             ${credentialField}
-            ${
-              hosted
-                ? `<label class="track-toggle model-hosted-toggle">
-                    <input data-model-setup-field="allowHosted" data-testid="model-setup-allow-hosted" type="checkbox" ${settings.allowHosted ? "checked" : ""} />
-                    <span>I understand hosted calls can send frames off-device and may cost money</span>
-                  </label>`
-                : ""
-            }
+            ${hostedOptInAdvancedField}
             <div class="model-setup-actions">
               ${canInstall ? `<button type="button" data-model-setup-action="install" aria-label="Install the selected local model runtime">${local && connection.providerId === "sam3-local" ? "Install scene sweep" : connection.providerId === "sam2-hf-auto-masks" ? "Install SAM2 HF fallback" : "Install fallback"}</button>` : ""}
               ${canCheckAccess ? `<button type="button" data-model-setup-action="check-access" aria-label="${escapeAttribute(hosted ? "Check hosted provider access" : "Check Hugging Face access")}">${hosted ? "Check access" : "Check HF access"}</button>` : ""}
@@ -7844,6 +7843,15 @@ const MotionJSONUI = (() => {
         result.textContent = state.modelSetupMessage;
         result.className = `model-setup-result is-${state.modelSetupTone}`;
       }
+    }
+
+    function selectedCacheModelForSetup(providerId, payload = {}, provider = providerSettingsById(providerId)) {
+      return (
+        cleanPublicModelValue(payload.customModelId) ||
+        (payload.selectedModel === "__custom__" ? "" : cleanPublicModelValue(payload.selectedModel)) ||
+        cleanPublicModelValue(providerEffectiveModel(provider)) ||
+        (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3")
+      );
     }
 
     async function startProviderSetupJob(providerId, action, payload = {}) {
@@ -13853,6 +13861,7 @@ const MotionJSONUI = (() => {
         }
         state.confirmedModelSetupAction = {
           action: pending.action,
+          backendAction: pending.backendAction || pending.action,
           providerId: pending.providerId,
           model: pending.model,
           flags: asArray(pending.flags),
@@ -13917,6 +13926,19 @@ const MotionJSONUI = (() => {
           state.modelSetupAlternativesOpen = !state.modelSetupAlternativesOpen;
           setModelSetupMessage(state.modelSetupAlternativesOpen ? "Choose a different compatible model." : "", "neutral");
           renderModelSetup();
+        } else if (action === "use-fallback-now") {
+          const recommendation = modelSetupRecommendationForPreset(state.selectedPreset);
+          const fallbackConnectionId =
+            connection?.productPathId === "no_model_cpu_workflow"
+              ? connection.id
+              : asArray(recommendation?.alternatives).find((item) => item?.connectionId)?.connectionId || "no_model_cpu_workflow";
+          state.selectedModelSetupProviderId = fallbackConnectionId;
+          state.modelSetupSelectionMode = "user_override";
+          setWorkflowStep("prompt_preview", { focusStep: true });
+          setModelSetupMessage("CPU fallback selected. Prepare the run inputs, then start extraction.", "ready");
+          renderModelSetup();
+          renderConfigPreview();
+          renderWorkflowStepper();
         } else if (action === "continue-to-run" || action === "continue-to-prepare") {
           setWorkflowStep("prompt_preview", { focusStep: true });
           setModelSetupMessage("Model setup is ready. Prepare the run inputs, then start extraction.", "ready");
@@ -13930,6 +13952,43 @@ const MotionJSONUI = (() => {
           }
           const job = setupJobForProvider(providerId);
           setModelSetupMessage(job ? setupJobStatusSummary(job).message : "No setup logs for this provider yet.", job ? setupJobStatusSummary(job).tone : "neutral");
+        } else if (action === "auto-setup" || action === "retry-setup" || action === "save-and-auto-setup") {
+          const provider = providerSettingsById(providerId);
+          const hosted = provider?.locality === "hosted";
+          const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
+          if (hosted) {
+            await startProviderSetupJob(providerId, "test", {
+              settings: formPayload,
+              saveFirst: true,
+            });
+          } else {
+            const selectedCacheModel = selectedCacheModelForSetup(providerId, formPayload, provider);
+            if (!confirmed && !state.health?.mockMode) {
+              const confirmation = modelSetupConfirmationForAction("prepare-model", providerId, {
+                hosted: false,
+                model: selectedCacheModel,
+                settingsPayload: formPayload,
+              });
+              confirmation.action = action;
+              confirmation.backendAction = "prepare-model";
+              state.pendingModelSetupConfirmation = confirmation;
+              setModelSetupMessage("Confirm the guided setup action before continuing.", "warn");
+              renderModelSetup();
+              renderWorkflowStepper();
+              return;
+            }
+            await startProviderSetupJob(providerId, "prepare_model", {
+              allowNetwork: true,
+              allowDisk: true,
+              allowHeavyLocal: true,
+              useSubprocessSmoke: providerId === "sam3-local",
+              dryRun: Boolean(state.health?.mockMode),
+              model: selectedCacheModel,
+              sceneSweep: providerId === "sam3-local",
+              settings: formPayload,
+              saveFirst: true,
+            });
+          }
         } else if (action === "save") {
           if (!form) throw new Error("Select a SAM provider before saving setup.");
           const response = await api("/api/provider-settings", {
@@ -13974,11 +14033,7 @@ const MotionJSONUI = (() => {
         } else if (action === "prepare-model") {
           const provider = providerSettingsById(providerId);
           const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
-          const selectedCacheModel =
-            cleanPublicModelValue(formPayload.customModelId) ||
-            (formPayload.selectedModel === "__custom__" ? "" : cleanPublicModelValue(formPayload.selectedModel)) ||
-            cleanPublicModelValue(providerEffectiveModel(provider)) ||
-            (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3");
+          const selectedCacheModel = selectedCacheModelForSetup(providerId, formPayload, provider);
           if (!confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted: false,
@@ -14021,11 +14076,7 @@ const MotionJSONUI = (() => {
           });
         } else if (action === "cache-model") {
           const formPayload = modelSetupPayloadForAction(form, action, providerId, confirmed);
-          const selectedCacheModel =
-            cleanPublicModelValue(formPayload.customModelId) ||
-            (formPayload.selectedModel === "__custom__" ? "" : cleanPublicModelValue(formPayload.selectedModel)) ||
-            cleanPublicModelValue(providerEffectiveModel(providerSettingsById(providerId))) ||
-            (providerId === "sam2-hf-auto-masks" ? "facebook/sam2.1-hiera-large" : "facebook/sam3");
+          const selectedCacheModel = selectedCacheModelForSetup(providerId, formPayload, providerSettingsById(providerId));
           if (!confirmed && !state.health?.mockMode) {
             state.pendingModelSetupConfirmation = modelSetupConfirmationForAction(action, providerId, {
               hosted: false,

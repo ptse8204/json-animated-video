@@ -104,15 +104,16 @@ def test_trace_all_cuda_hardware_torch_missing_keeps_sam3_setup_path():
         capability_report=report("cuda_hardware_runtime_missing"),
     )
 
-    assert recommendation["status"] == "needs_install"
+    assert recommendation["status"] == "needs_setup"
     assert recommendation["selectedConnectionId"] == "sam3-local"
-    assert recommendation["primaryAction"]["id"] == "install"
+    assert recommendation["primaryAction"]["id"] == "auto_setup"
+    assert recommendation["primaryAction"]["label"] == "Set up SAM3 Scene Sweep"
     assert recommendation["alternatives"][0]["connectionId"] == "no_model_cpu_workflow"
     assert "GPU detected" in recommendation["whyThis"]
     assert "runtime" in recommendation["whyThis"]
 
 
-def test_trace_all_cuda_ready_proof_missing_maps_to_run_proof():
+def test_trace_all_cuda_ready_proof_missing_maps_to_one_setup_action():
     recommendation = model_setup_recommendation_for_goal(
         "trace_all_objects",
         capability_report=report(
@@ -129,10 +130,10 @@ def test_trace_all_cuda_ready_proof_missing_maps_to_run_proof():
         ),
     )
 
-    assert recommendation["status"] == "needs_smoke"
+    assert recommendation["status"] == "needs_setup"
     assert recommendation["selectedConnectionId"] == "sam3-local"
-    assert recommendation["primaryAction"]["id"] == "run_smoke"
-    assert recommendation["primaryAction"]["label"] == "Run proof"
+    assert recommendation["primaryAction"]["id"] == "auto_setup"
+    assert recommendation["primaryAction"]["label"] == "Set up SAM3 Scene Sweep"
 
 
 def test_trace_all_cpu_only_recommends_no_model_cpu_workflow():
@@ -143,7 +144,8 @@ def test_trace_all_cpu_only_recommends_no_model_cpu_workflow():
 
     assert recommendation["status"] == "fallback_ready"
     assert recommendation["selectedConnectionId"] == "no_model_cpu_workflow"
-    assert recommendation["primaryAction"]["id"] == "continue"
+    assert recommendation["primaryAction"]["id"] == "use_fallback"
+    assert recommendation["primaryAction"]["label"] == "Use CPU fallback now"
 
 
 def test_trace_all_mps_ready_does_not_recommend_sam3_primary_when_hf_fallback_missing():
@@ -182,15 +184,60 @@ def test_trace_one_sam2_configured_recommends_sam2_local():
     assert recommendation["requiredInputs"] == []
 
 
-def test_text_detector_without_hosted_opt_in_does_not_default_to_local_detector():
+def test_trace_one_sam2_runtime_missing_paths_requests_only_paths():
     recommendation = model_setup_recommendation_for_goal(
-        "text_detector",
-        capability_report=report("cpu_only"),
+        "trace_one_object",
+        capability_report=report(
+            "cpu_only",
+            provider(
+                "sam2-local",
+                status="not_configured",
+                available=False,
+                configured=False,
+                installed=True,
+                runnable=False,
+                metadata={
+                    "checkpoint": {"configured": False, "exists": False},
+                    "modelConfig": {"configured": False, "exists": False},
+                },
+            ),
+        ),
     )
 
-    assert recommendation["status"] == "fallback_ready"
-    assert recommendation["selectedConnectionId"] == "no_model_cpu_workflow"
-    assert recommendation["selectedCapabilityId"] != "text_detector"
+    assert recommendation["selectedConnectionId"] == "sam2-local"
+    assert recommendation["status"] == "needs_input"
+    assert recommendation["primaryAction"]["id"] == "save_and_auto_setup"
+    assert {item["key"] for item in recommendation["requiredInputs"]} == {
+        "sam2_checkpoint_path",
+        "sam2_model_config_path",
+    }
+
+
+def test_text_detector_missing_hosted_fields_returns_hosted_setup_inputs():
+    recommendation = model_setup_recommendation_for_goal(
+        "text_detector",
+        capability_report=report(
+            "cpu_only",
+            provider(
+                "sam3-hosted",
+                status="not_configured",
+                available=False,
+                configured=False,
+                installed=True,
+                runnable=False,
+                metadata={
+                    "authEnv": {"configured": False},
+                    "endpointEnv": {"required": False, "configured": False},
+                    "networkOptIn": False,
+                },
+            ),
+        ),
+    )
+
+    assert recommendation["selectedConnectionId"] == "sam3-hosted:roboflow-sam3-pcs"
+    assert recommendation["status"] == "needs_input"
+    assert recommendation["primaryAction"]["id"] == "save_and_auto_setup"
+    assert {item["key"] for item in recommendation["requiredInputs"]} == {"api_key", "allow_hosted"}
 
 
 def test_motion_foreground_no_model_required():
