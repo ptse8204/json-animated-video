@@ -1071,6 +1071,78 @@ assert.equal(sam2HfTraceAllConfig.discovery.mode, "sam2_hf_auto_masks");
 assert.equal(sam2HfTraceAllConfig.discovery.config.providerPreference, "sam2-hf-auto-masks");
 assert.equal(sam2HfTraceAllConfig.discovery.config.sam2HfModel, "facebook/sam2.1-hiera-large");
 
+const recommendationContract = (goal, selectedConnectionId, providerName, discoveryMode, status = "ready") => ({
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal,
+  selectedConnectionId,
+  selectedProviderId: providerName,
+  selectedCapabilityId: discoveryMode,
+  title: selectedConnectionId,
+  status,
+  primaryAction: { id: "continue", label: "Continue" },
+  requiredInputs: [],
+  optionalInputs: [],
+  advancedInputs: [],
+  runtimeBadges: [],
+  whyThis: "test recommendation",
+  warnings: [],
+  alternatives: [],
+  runConfigMapping: { providerName, discoveryMode },
+});
+
+const recommendedSam3TraceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "sam3-local",
+  maskProvider: "mock",
+  discoveryMode: "auto_object_proposals",
+  modelSetupRecommendation: recommendationContract("trace_all_objects", "sam3-local", "sam3-local", "sam3_auto_masks", "needs_smoke"),
+});
+assert.equal(recommendedSam3TraceAllConfig.provider.name, "sam3-local");
+assert.equal(recommendedSam3TraceAllConfig.discovery.mode, "sam3_auto_masks");
+assert.equal(recommendedSam3TraceAllConfig.discovery.config.sceneSweep, true);
+
+const recommendedCpuTraceAllConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "no_model_cpu_workflow",
+  maskProvider: "sam3-local",
+  discoveryMode: "sam3_auto_masks",
+  debugMockMode: true,
+  modelSetupRecommendation: recommendationContract("trace_all_objects", "no_model_cpu_workflow", "mock", "auto_object_proposals", "fallback_ready"),
+});
+assert.equal(recommendedCpuTraceAllConfig.provider.name, "mock");
+assert.equal(recommendedCpuTraceAllConfig.discovery.mode, "auto_object_proposals");
+assert.equal(recommendedCpuTraceAllConfig.discovery.config.mock, true);
+
+const recommendedTraceOneFallbackConfig = ui.buildRunConfig({
+  preset: "trace_one_object",
+  modelConnectionId: "no_model_cpu_workflow",
+  modelSetupRecommendation: recommendationContract("trace_one_object", "no_model_cpu_workflow", "mock", "manual_prompt", "fallback_ready"),
+});
+assert.equal(recommendedTraceOneFallbackConfig.provider.name, "mock");
+assert.equal(recommendedTraceOneFallbackConfig.discovery.mode, "manual_prompt");
+assert.deepEqual(recommendedTraceOneFallbackConfig.prompts, []);
+
+const recommendedTextFallbackConfig = ui.buildRunConfig({
+  preset: "text_detector",
+  textDiscoveryProvider: "sam3-hosted",
+  textPrompt: "red ball",
+  debugMockMode: true,
+  modelSetupRecommendation: recommendationContract("text_detector", "no_model_cpu_workflow", "mock", "text_detector", "fallback_ready"),
+});
+assert.equal(recommendedTextFallbackConfig.provider.name, "mock");
+assert.equal(recommendedTextFallbackConfig.discovery.mode, "text_detector");
+assert.equal(recommendedTextFallbackConfig.discovery.config.mock, true);
+assert.equal(recommendedTextFallbackConfig.discovery.config.send_candidates_to_sam, true);
+
+const manualOverrideIgnoresRecommendationConfig = ui.buildRunConfig({
+  preset: "trace_all_objects",
+  modelConnectionId: "sam2-hf-auto-masks",
+  modelSetupSelectionMode: "user_override",
+  modelSetupRecommendation: recommendationContract("trace_all_objects", "sam3-local", "sam3-local", "sam3_auto_masks", "needs_smoke"),
+});
+assert.equal(manualOverrideIgnoresRecommendationConfig.provider.name, "sam2-hf-auto-masks");
+assert.equal(manualOverrideIgnoresRecommendationConfig.discovery.mode, "sam2_hf_auto_masks");
+
 const textPromptDetectorFallback = ui.guidedEnginePlan({
   preset: "text_detector",
   maskProvider: "sam2-local",

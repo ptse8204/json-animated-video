@@ -52,6 +52,11 @@ for (const workflowCase of builderCases) {
       shapeErrors.some((message) => /external masks require a mask directory/i.test(message)),
       `${workflowCase.id}: external mask directory blocker should be visible`,
     );
+  } else if (workflowCase.expectedValidation?.valid === false && ["sam2-hosted", "sam3-hosted"].includes(workflowCase.providerName)) {
+    assert.ok(
+      shapeErrors.some((message) => /hosted cost\/privacy confirmation/i.test(message)),
+      `${workflowCase.id}: hosted opt-in blocker should be visible`,
+    );
   } else {
     assert.deepEqual(shapeErrors, [], `${workflowCase.id}: generated config should pass static shape checks`);
   }
@@ -80,3 +85,45 @@ assert.match(warningTextForCase(sam3ProofBlockedConfig, sam3ProofBlocked), /runt
 const hostedBlocked = builderCases.find((workflowCase) => workflowCase.id === "hosted_configured_no_network");
 const hostedConfig = buildRunConfig({ video: { id: "asset_1" }, outputDir: "out/ui-workflow-matrix", ...hostedBlocked.builderInput });
 assert.match(warningTextForCase(hostedConfig, hostedBlocked), /hosted|network|confirmation/i);
+assert.match(validateRunConfigShape(hostedConfig).join("\n"), /hosted cost\/privacy confirmation/i);
+
+const recommendationContract = (goal, selectedConnectionId, providerName, discoveryMode) => ({
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal,
+  selectedConnectionId,
+  selectedProviderId: providerName,
+  selectedCapabilityId: discoveryMode,
+  title: selectedConnectionId,
+  status: "ready",
+  primaryAction: { id: "continue", label: "Continue" },
+  requiredInputs: [],
+  optionalInputs: [],
+  advancedInputs: [],
+  runtimeBadges: [],
+  whyThis: "matrix recommendation",
+  warnings: [],
+  alternatives: [],
+  runConfigMapping: { providerName, discoveryMode },
+});
+
+const recommendedMatrixConfig = buildRunConfig({
+  presetId: "trace_all_objects",
+  modelConnectionId: "sam3-local",
+  maskProvider: "mock",
+  discoveryMode: "auto_object_proposals",
+  modelSetupRecommendation: recommendationContract("trace_all_objects", "sam3-local", "sam3-local", "sam3_auto_masks"),
+});
+assert.equal(recommendedMatrixConfig.provider.name, "sam3-local");
+assert.equal(recommendedMatrixConfig.discovery.mode, "sam3_auto_masks");
+assert.equal(recommendedMatrixConfig.discovery.config.sceneSweep, true);
+
+const recommendedMatrixFallbackConfig = buildRunConfig({
+  presetId: "trace_all_objects",
+  modelConnectionId: "no_model_cpu_workflow",
+  maskProvider: "sam3-local",
+  discoveryMode: "sam3_auto_masks",
+  debugMockMode: true,
+  modelSetupRecommendation: recommendationContract("trace_all_objects", "no_model_cpu_workflow", "mock", "auto_object_proposals"),
+});
+assert.equal(recommendedMatrixFallbackConfig.provider.name, "mock");
+assert.equal(recommendedMatrixFallbackConfig.discovery.mode, "auto_object_proposals");

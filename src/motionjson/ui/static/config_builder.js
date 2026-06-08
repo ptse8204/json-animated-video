@@ -174,11 +174,34 @@ function executableProviderFromConnectionId(connectionId) {
   return id;
 }
 
+function runConfigMappingFromRecommendation(input, preset) {
+  const recommendation = input.modelSetupRecommendation;
+  if (recommendation?.format !== "motionjson.model_setup_recommendation.v0.1") return null;
+  const goal = String(recommendation.goal || "");
+  if (goal && goal !== String(preset.id || "")) return null;
+  const selectedConnectionId = String(input.modelConnectionId || "").trim();
+  if (
+    input.modelSetupSelectionMode === "user_override" &&
+    selectedConnectionId &&
+    recommendation.selectedConnectionId &&
+    selectedConnectionId !== recommendation.selectedConnectionId
+  ) {
+    return null;
+  }
+  const mapping = recommendation.runConfigMapping || {};
+  const providerName = String(mapping.providerName || "").trim();
+  const discoveryMode = String(mapping.discoveryMode || "").trim();
+  if (!providerName || !discoveryMode) return null;
+  return { providerName, discoveryMode };
+}
+
 function guidedEnginePlan(input, preset) {
   const connectionId = String(input.modelConnectionId || "").trim();
   const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
   const textDiscoveryProvider = executableProviderFromConnectionId(input.textDiscoveryProvider);
   const connectionProvider = executableProviderFromConnectionId(connectionId) || (["sam3-local", "sam3-hosted"].includes(textDiscoveryProvider) ? textDiscoveryProvider : "") || executableProviderFromConnectionId(input.maskProvider) || "";
+  const recommendationMapping = runConfigMappingFromRecommendation(input, preset);
+  if (recommendationMapping) return recommendationMapping;
   if (preset.id === "trace_one_object") {
     if (connectionProvider === "sam3-local" || connectionProvider === "sam3-hosted") {
       return { providerName: connectionProvider, discoveryMode: requestedDiscoveryMode === "manual_prompt" ? "sam3_exemplar" : requestedDiscoveryMode };
@@ -634,6 +657,15 @@ export function validateRunConfigShape(config) {
   if (!Array.isArray(config.objects) || config.objects.length === 0) errors.push("at least one object is required");
   if (config.provider?.name === "external" && !config.provider?.external?.mask_dir && !config.objects?.some((item) => item.mask_dir)) {
     errors.push("external masks require a mask directory");
+  }
+  if (config.provider?.name === "sam2-hosted" && !config.provider?.sam2?.hosted_allow_network) {
+    errors.push("sam2-hosted requires hosted cost/privacy confirmation before extraction can send video frames");
+  }
+  if (
+    config.provider?.name === "sam3-hosted" &&
+    (!config.provider?.sam3?.hosted_allow_network || (config.discovery?.config?.hosted === true && !config.discovery?.config?.allowNetwork))
+  ) {
+    errors.push("sam3-hosted requires hosted cost/privacy confirmation before discovery can send sampled frames");
   }
   for (const prompt of config.prompts || []) {
     if (["point", "positive_point", "negative_point"].includes(prompt.kind)) {

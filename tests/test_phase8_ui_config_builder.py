@@ -46,6 +46,25 @@ const commonAdvanced = {{
   outputMode: "authoring",
 }};
 
+const recommendationContract = (goal, selectedConnectionId, providerName, discoveryMode) => ({{
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal,
+  selectedConnectionId,
+  selectedProviderId: providerName,
+  selectedCapabilityId: discoveryMode,
+  title: selectedConnectionId,
+  status: "fallback_ready",
+  primaryAction: {{ id: "continue", label: "Continue" }},
+  requiredInputs: [],
+  optionalInputs: [],
+  advancedInputs: [],
+  runtimeBadges: [],
+  whyThis: "frontend contract recommendation",
+  warnings: [],
+  alternatives: [],
+  runConfigMapping: {{ providerName, discoveryMode }},
+}});
+
 const cases = [
   {{
     goal: "trace_one_object",
@@ -84,9 +103,11 @@ const cases = [
       objectId: "detected_object",
       discoveryText: "red ball . hand",
       discoveryMaxCandidates: 4,
+      debugMockMode: true,
+      modelSetupRecommendation: recommendationContract("text_detector", "no_model_cpu_workflow", "mock", "text_detector"),
       advanced: commonAdvanced,
     }},
-    expected: {{ provider: "sam3-hosted", discovery: "sam3_concept", prompts: 0 }},
+    expected: {{ provider: "mock", discovery: "text_detector", prompts: 0 }},
   }},
   {{
     goal: "find_objects_from_text_hosted_sam3",

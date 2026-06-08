@@ -472,7 +472,7 @@
         "provider.sam2.hosted_allow_network": false
       },
       "expectedValidation": {
-        "valid": true,
+        "valid": false,
         "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam2-hosted"],
         "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
@@ -510,7 +510,7 @@
         "discovery.config.allowNetwork": false
       },
       "expectedValidation": {
-        "valid": true,
+        "valid": false,
         "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam3-hosted"],
         "messageContainsAnyOf": ["hosted", "network", "opt-in", "cannot run"]
@@ -545,7 +545,7 @@
         "provider.sam2.hosted_config.profile": "replicate-sam2-video"
       },
       "expectedValidation": {
-        "valid": true,
+        "valid": false,
         "blockingWarningCodesAnyOf": ["runtime_proof_settings_not_ready"],
         "blockingProvidersAnyOf": ["sam2-hosted"],
         "messageContainsAnyOf": ["hosted", "disabled", "confirmed", "network"]

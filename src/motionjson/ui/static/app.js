@@ -1177,6 +1177,32 @@ const MotionJSONUI = (() => {
     };
   }
 
+  function runConfigMappingFromRecommendation(input = {}, presetName = state.selectedPreset) {
+    const recommendation = input.modelSetupRecommendation;
+    if (recommendation?.format !== "motionjson.model_setup_recommendation.v0.1") return null;
+    const goal = String(recommendation.goal || "");
+    if (goal && goal !== String(presetName || "")) return null;
+    const selectedConnectionId = String(input.modelConnectionId || "").trim();
+    if (
+      input.modelSetupSelectionMode === "user_override" &&
+      selectedConnectionId &&
+      recommendation.selectedConnectionId &&
+      selectedConnectionId !== recommendation.selectedConnectionId
+    ) {
+      return null;
+    }
+    const mapping = recommendation.runConfigMapping || {};
+    const providerName = String(mapping.providerName || "").trim();
+    const discoveryMode = String(mapping.discoveryMode || "").trim();
+    if (!providerName || !discoveryMode) return null;
+    return {
+      providerName,
+      discoveryMode,
+      connectionId: recommendation.selectedConnectionId || selectedConnectionId,
+      profileId: mapping.profileId || recommendation.profileId || "",
+    };
+  }
+
   function guidedEnginePlan(input = {}) {
     const presetName = input.preset || state.selectedPreset;
     const preset = PRESETS[presetName] || PRESETS.auto_object_proposals;
@@ -1185,6 +1211,16 @@ const MotionJSONUI = (() => {
     const requestedDiscoveryMode = input.discoveryMode || preset.discoveryMode || "manual_prompt";
     let providerId = contract.providerId || "";
     const profileId = contract.profileId || "";
+    const recommendationMapping = runConfigMappingFromRecommendation(input, presetName);
+    if (recommendationMapping) {
+      const mappedConnection = modelConnectionByConnectionId(recommendationMapping.connectionId) || connection;
+      return enginePlanFromContract(contract, input, {
+        providerId: recommendationMapping.providerName,
+        discoveryMode: recommendationMapping.discoveryMode,
+        profileId: recommendationMapping.profileId || (recommendationMapping.providerName === contract.providerId ? profileId : ""),
+        connection: mappedConnection,
+      });
+    }
     const allowLegacyDetector =
       input.textDiscoveryProvider === "detector" ||
       input.allowLegacyTextDetector === true ||
@@ -1383,7 +1419,8 @@ const MotionJSONUI = (() => {
       return objectDiscoveryConfig(input);
     }
     if (input.discoveryMode === "sam2_hf_auto_masks") {
-      const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || "clean");
+      const effortDefaults = effortPresetDefaults(input.effortPreset || "balanced");
+      const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effortDefaults.qualityPreset || "clean");
       return {
         ...objectDiscoveryConfig({ ...input, providerName: "sam2-hf-auto-masks" }),
         providerPreference: "sam2-hf-auto-masks",
@@ -2739,6 +2776,7 @@ const MotionJSONUI = (() => {
       prompts: state.prompts,
       strokes: state.strokes,
       modelConnectionId: selectedModelSetupConnectionId(state.selectedPreset),
+      modelSetupSelectionMode: state.modelSetupSelectionMode,
       modelSetupRecommendation: modelSetupRecommendationForPreset(state.selectedPreset),
       maskProvider: $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold",
       textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "sam3-hosted",
