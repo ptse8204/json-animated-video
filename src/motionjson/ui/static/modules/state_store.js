@@ -12,6 +12,22 @@ export const emptyCorrectionState = (jobId = "") => ({
   persistenceMessage: "Correction state has not been loaded yet.",
 });
 
+export function applyModelSetupRecommendationToState(state, recommendation, options = {}) {
+  if (!state || !recommendation || recommendation.format !== "motionjson.model_setup_recommendation.v0.1") return state;
+  const goal = String(recommendation.goal || options.goal || state.selectedPreset || "");
+  state.modelSetupRecommendations = {
+    ...(state.modelSetupRecommendations || {}),
+    ...(goal ? { [goal]: recommendation } : {}),
+  };
+  const targetGoal = String(options.goal || state.selectedPreset || "");
+  const manualOverride = state.modelSetupSelectionMode === "user_override";
+  if (!manualOverride && goal && goal === targetGoal) {
+    state.selectedModelSetupProviderId = String(recommendation.selectedConnectionId || "");
+    state.modelSetupSelectionMode = "auto";
+  }
+  return state;
+}
+
 export const defaultState = () => ({
   health: null,
   capabilities: null,
@@ -51,7 +67,9 @@ export const defaultState = () => ({
   selectedLibraryCollectionId: "",
   libraryStatus: "Not loaded",
   importStatus: "",
-  selectedModelSetupProviderId: "sam2-local",
+  selectedModelSetupProviderId: "",
+  modelSetupSelectionMode: "auto",
+  modelSetupRecommendations: {},
   modelSetupAlternativesOpen: false,
   providerSetupJobs: {},
   advancedLocalPaths: {},

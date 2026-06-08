@@ -18,7 +18,12 @@ import {
   providerIdFromConnectionId,
   providerLabel,
 } from "./modules/provider_connections.js";
-import { CORRECTION_STATE_FORMAT, defaultState, emptyCorrectionState } from "./modules/state_store.js";
+import {
+  CORRECTION_STATE_FORMAT,
+  applyModelSetupRecommendationToState,
+  defaultState,
+  emptyCorrectionState,
+} from "./modules/state_store.js";
 import {
   WORKFLOW_FRAGMENT_STEP_ALIASES,
   WORKFLOW_PANEL_STEP_ALIASES,
@@ -56,6 +61,7 @@ const MotionJSONUI = (() => {
     "/api/provider-settings/{providerId}/setup/start",
     "/api/provider-settings/setup-jobs/{jobId}",
     "/api/provider-settings/setup-jobs/{jobId}/cancel",
+    "/api/model-setup/recommendation",
     "/api/model-providers",
     "/api/model-providers/{providerId}",
     "/api/model-providers/{providerId}/test",
@@ -223,37 +229,37 @@ const MotionJSONUI = (() => {
     trace_all_objects: {
       label: "Find everything in scene",
       discoveryMode: "sam3_auto_masks",
-      maskProvider: "sam3-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
     auto_object_proposals: {
       label: "Discover objects",
       discoveryMode: "auto_object_proposals",
-      maskProvider: "sam2-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
     trace_one_object: {
       label: "Cut out one object",
       discoveryMode: "manual_prompt",
-      maskProvider: "sam2-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
     text_detector: {
       label: "Find objects from text",
       discoveryMode: "text_detector",
-      maskProvider: "sam3-hosted",
+      maskProvider: "",
       outputMode: "authoring",
     },
     class_detector: {
       label: "Find known classes",
       discoveryMode: "class_detector",
-      maskProvider: "sam2-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
     sam_auto_masks: {
       label: "Propose visible segments",
       discoveryMode: "sam_auto_masks",
-      maskProvider: "sam2-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
     motion_foreground: {
@@ -271,7 +277,7 @@ const MotionJSONUI = (() => {
     review_existing: {
       label: "Review existing result",
       discoveryMode: "manual_prompt",
-      maskProvider: "sam2-local",
+      maskProvider: "",
       outputMode: "authoring",
     },
   };
@@ -1109,7 +1115,7 @@ const MotionJSONUI = (() => {
       );
     }
     if (input.maskProvider || input.textDiscoveryProvider) return null;
-    const connectionId = state.selectedModelSetupProviderId || recommendedConnectionIdForPreset(input.preset || state.selectedPreset);
+    const connectionId = selectedModelSetupConnectionId(input.preset || state.selectedPreset);
     return modelConnectionByConnectionId(connectionId);
   }
 
@@ -2732,7 +2738,8 @@ const MotionJSONUI = (() => {
       keyframes: state.keyframes,
       prompts: state.prompts,
       strokes: state.strokes,
-      modelConnectionId: state.selectedModelSetupProviderId,
+      modelConnectionId: selectedModelSetupConnectionId(state.selectedPreset),
+      modelSetupRecommendation: modelSetupRecommendationForPreset(state.selectedPreset),
       maskProvider: $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold",
       textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "sam3-hosted",
       allowLegacyTextDetector: state.workflowDashboard === true,
@@ -3609,8 +3616,58 @@ const MotionJSONUI = (() => {
     return eventRowsMarkup(events, { source: "setup" });
   }
 
+  function rememberModelSetupRecommendation(recommendation, options = {}) {
+    return applyModelSetupRecommendationToState(state, recommendation, {
+      goal: options.goal || recommendation?.goal || state.selectedPreset,
+    });
+  }
+
+  function modelSetupRecommendationForPreset(presetId = state.selectedPreset) {
+    const goal = String(presetId || state.selectedPreset || "");
+    const cached = state.modelSetupRecommendations?.[goal];
+    if (cached?.format === "motionjson.model_setup_recommendation.v0.1") return cached;
+    const summaryRecommendation = state.capabilities?.summary?.modelSetupRecommendation;
+    if (
+      summaryRecommendation?.format === "motionjson.model_setup_recommendation.v0.1" &&
+      String(summaryRecommendation.goal || "") === goal
+    ) {
+      rememberModelSetupRecommendation(summaryRecommendation, { goal });
+      return summaryRecommendation;
+    }
+    return null;
+  }
+
+  function selectedModelSetupConnectionId(presetId = state.selectedPreset) {
+    const selected = String(state.selectedModelSetupProviderId || "").trim();
+    if (selected && selected !== "auto") return selected;
+    return recommendedConnectionIdForPreset(presetId);
+  }
+
+  async function refreshModelSetupRecommendation(presetId = state.selectedPreset, options = {}) {
+    if (!goalRequiresModel(presetId)) return null;
+    try {
+      const recommendation = await api(`/api/model-setup/recommendation?goal=${encodeURIComponent(presetId)}`);
+      rememberModelSetupRecommendation(recommendation, { goal: presetId });
+      if (options.render) {
+        renderModelSetup();
+        renderModelPlanPanel();
+        renderWorkflowStepper();
+        renderConfigPreview();
+      }
+      return recommendation;
+    } catch (error) {
+      state.modelSetupMessage = `Could not refresh model recommendation: ${error.message}`;
+      state.modelSetupTone = "warn";
+      return modelSetupRecommendationForPreset(presetId);
+    }
+  }
+
   function recommendedConnectionIdForPreset(presetId = state.selectedPreset) {
     if (!goalRequiresModel(presetId)) return "";
+    const recommendation = modelSetupRecommendationForPreset(presetId);
+    if (recommendation?.selectedConnectionId && modelConnectionByConnectionId(recommendation.selectedConnectionId)) {
+      return recommendation.selectedConnectionId;
+    }
     const priority = MODEL_CONNECTION_PRIORITY[presetId] || MODEL_CONNECTION_PRIORITY.trace_one_object;
     const compatible = compatibleModelConnectionsForPreset(presetId);
     const ordered = compatible
@@ -5418,7 +5475,7 @@ const MotionJSONUI = (() => {
       const video = selectedVideo();
       const browserPreview = selectedVideoBrowserPreview(video);
       const enginePlan = guidedEnginePlan(collectFormState($));
-      const connection = selectedConnectionForInput({ modelConnectionId: state.selectedModelSetupProviderId, preset: state.selectedPreset });
+      const connection = selectedConnectionForInput({ modelConnectionId: selectedModelSetupConnectionId(state.selectedPreset), preset: state.selectedPreset });
       const provider = providerSettingsById(connection?.providerId || "");
       const setupJob = connection ? setupJobForProvider(connection.providerId) : null;
       const modelSetupState = modelSetupStateForConnection(connection, provider, setupJob);
@@ -5965,7 +6022,7 @@ const MotionJSONUI = (() => {
     }
 
     async function saveSelectedModelSetupAndContinue() {
-      const connection = modelConnectionById(state.selectedModelSetupProviderId);
+      const connection = modelConnectionById(selectedModelSetupConnectionId(state.selectedPreset));
       const form = $("#modelSetupForm");
       if (!connection || !form) throw new Error("Choose a compatible model connection before continuing.");
       const providerId = form.dataset.providerSettingsId || connection.providerId;
@@ -6551,7 +6608,7 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      const compatibleConnections = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.workflowDashboard || state.modelSetupAlternativesOpen });
+      let compatibleConnections = compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.workflowDashboard || state.modelSetupAlternativesOpen });
       if (!compatibleConnections.length) {
         status.textContent = "Unavailable";
         status.className = "status-chip is-bad";
@@ -6560,10 +6617,21 @@ const MotionJSONUI = (() => {
         return;
       }
 
-      if (!compatibleConnections.some((connection) => connection.id === state.selectedModelSetupProviderId)) {
-        state.selectedModelSetupProviderId = recommendedConnectionIdForPreset();
+      const recommendedId = recommendedConnectionIdForPreset();
+      if (state.modelSetupSelectionMode !== "user_override" || !state.selectedModelSetupProviderId || state.selectedModelSetupProviderId === "auto") {
+        state.selectedModelSetupProviderId = recommendedId;
+        state.modelSetupSelectionMode = "auto";
       }
-      const selected = modelConnectionById(state.selectedModelSetupProviderId);
+      let selected = modelConnectionByConnectionId(state.selectedModelSetupProviderId) || modelConnectionByConnectionId(recommendedId);
+      const manualOverrideStale = state.modelSetupSelectionMode === "user_override" && recommendedId && selected?.id !== recommendedId;
+      if (selected && !compatibleConnections.some((connection) => connection.id === selected.id)) {
+        compatibleConnections = [selected, ...compatibleConnections];
+      }
+      if (!selected) {
+        selected = compatibleConnections[0];
+        state.selectedModelSetupProviderId = selected.id;
+        state.modelSetupSelectionMode = "auto";
+      }
       const selectedReadiness = connectionReadiness(selected);
       const selectedProvider = providerSettingsById(selected.providerId);
       const selectedSetupState = modelSetupStateForConnection(selected, selectedProvider, setupJobForProvider(selected.providerId));
@@ -6576,7 +6644,6 @@ const MotionJSONUI = (() => {
       status.textContent = selectedSetupState.label || selectedReadiness.label;
       status.className = `status-chip is-${selectedSetupTone}`;
 
-      const recommendedId = recommendedConnectionIdForPreset();
       const normalConnections = state.modelSetupAlternativesOpen || state.workflowDashboard
         ? compatibleConnections
         : compatibleConnections.filter((connection) => connection.id === state.selectedModelSetupProviderId || connection.id === recommendedId).slice(0, 1);
@@ -6612,7 +6679,11 @@ const MotionJSONUI = (() => {
         })
         .join("");
 
-      detail.innerHTML = renderModelSetupDetail(selected, selectedReadiness);
+      detail.innerHTML = renderModelSetupDetail(selected, {
+        ...selectedReadiness,
+        manualOverrideStale,
+        recommendedId,
+      });
     }
 
     function renderModelSetupDetail(connection, summary) {
@@ -6814,6 +6885,9 @@ const MotionJSONUI = (() => {
       const pendingConfirmation = state.pendingModelSetupConfirmation?.providerId === connection.providerId
         ? state.pendingModelSetupConfirmation
         : null;
+      const overrideNotice = summary.manualOverrideStale
+        ? `<div class="warning-box is-warn">You chose a non-recommended model path for this goal. Recommended: ${escapeHtml(modelConnectionByConnectionId(summary.recommendedId)?.displayLabel || "backend recommendation")}.</div>`
+        : "";
       const confirmationCard = pendingConfirmation
         ? `<div class="model-setup-confirmation" role="alert">
             <div>
@@ -6857,6 +6931,7 @@ const MotionJSONUI = (() => {
           </div>
         </div>
         ${confirmationCard}
+        ${overrideNotice}
         ${environmentCard}
         ${setupPlaybook}
         ${normalAccessCard}
@@ -7505,6 +7580,7 @@ const MotionJSONUI = (() => {
       if (response.providerSettings) {
         state.providerSettings = response.providerSettings;
         await refreshAdvancedLocalPaths();
+        await refreshModelSetupRecommendation(state.selectedPreset);
       }
       if (job?.id) {
         state.providerSetupJobs[job.id] = job;
@@ -9185,7 +9261,7 @@ const MotionJSONUI = (() => {
         (provider) => debugMock || provider !== "mock",
       );
       const fallbackDefault = debugMock ? "mock" : "sam2-local";
-      const enginePlan = guidedEnginePlan({ preset: state.selectedPreset, modelConnectionId: state.selectedModelSetupProviderId });
+      const enginePlan = guidedEnginePlan({ preset: state.selectedPreset, modelConnectionId: selectedModelSetupConnectionId(state.selectedPreset) });
       const current =
         select.dataset.userSelected === "true"
           ? select.value
@@ -10240,7 +10316,11 @@ const MotionJSONUI = (() => {
       state.selectedPreset = PRESETS[presetName] ? presetName : "auto_object_proposals";
       state.modelSetupAlternativesOpen = false;
       if (goalRequiresModel(state.selectedPreset)) {
-        if (!options.keepProvider) state.selectedModelSetupProviderId = recommendedConnectionIdForPreset(state.selectedPreset);
+        if (!options.keepProvider) {
+          state.selectedModelSetupProviderId = "";
+          state.modelSetupSelectionMode = "auto";
+          refreshModelSetupRecommendation(state.selectedPreset, { render: true });
+        }
       } else if (state.activeWorkflowStep === "provider_settings") {
         state.activeWorkflowStep = "prompt_preview";
       }
@@ -10570,6 +10650,10 @@ const MotionJSONUI = (() => {
         if (key === "libraryPacks") state.libraryPacks = payload?.packs || [];
       }
       state.errors.library = [state.errors.libraryAssets, state.errors.libraryCollections, state.errors.libraryPacks].filter(Boolean).join(" ");
+      rememberModelSetupRecommendation(state.capabilities?.summary?.modelSetupRecommendation, {
+        goal: state.capabilities?.summary?.modelSetupRecommendation?.goal || state.selectedPreset,
+      });
+      await refreshModelSetupRecommendation(state.selectedPreset);
       await refreshAdvancedLocalPaths();
     }
 
@@ -11562,6 +11646,7 @@ const MotionJSONUI = (() => {
         if (captureState) {
           if (captureState[3]) applyPreset(captureState[3], { keepProvider: true });
           state.selectedModelSetupProviderId = captureState[0];
+          state.modelSetupSelectionMode = "user_override";
           state.modelSetupMessage = captureState[1];
           state.modelSetupTone = captureState[2];
           if (capture === "model-setup-trace-all-options" || capture === "model-setup-advanced-local-sam3") state.modelSetupAlternativesOpen = true;
@@ -11702,6 +11787,7 @@ const MotionJSONUI = (() => {
         if (capture === "prepare-sam3-single") {
           applyPreset("trace_one_object", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-local";
+          state.modelSetupSelectionMode = "user_override";
           state.modelSetupAlternativesOpen = true;
           markCaptureProviderReady("sam3-local");
           state.prompts = [
@@ -11711,11 +11797,13 @@ const MotionJSONUI = (() => {
         } else if (capture === "prepare-sam3-text") {
           applyPreset("text_detector", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-hosted:roboflow-sam3-pcs";
+          state.modelSetupSelectionMode = "user_override";
           markCaptureProviderReady("sam3-hosted", { hostedProfileId: "roboflow-sam3-pcs", allowHosted: true });
           $("#textPrompt").value = "red ball";
         } else if (capture === "prepare-sam3-trace-all" || capture === "prepare-sam3-trace-all-runtime-ready" || capture === "prepare-sam3-trace-all-missing-runtime") {
           applyPreset("trace_all_objects", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-local";
+          state.modelSetupSelectionMode = "user_override";
           if (capture === "prepare-sam3-trace-all-missing-runtime") {
             markCaptureCapabilityBlocked("sam3-auto-masks", {
               reasons: ["SAM3 Tracker automatic-mask Transformers classes are not importable."],
@@ -11749,6 +11837,7 @@ const MotionJSONUI = (() => {
         }
         applyPreset(staleRunCapture ? "trace_all_objects" : "trace_one_object", { keepProvider: true });
         state.selectedModelSetupProviderId = staleRunCapture ? "sam3-local" : "sam2-local";
+        state.modelSetupSelectionMode = "user_override";
         markCaptureProviderReady(staleRunCapture ? "sam3-local" : "sam2-local");
         state.selectedProjectId = "project_layout";
         state.projects = [{ id: "project_layout", name: "MotionJSON project" }];
@@ -13416,6 +13505,7 @@ const MotionJSONUI = (() => {
               : providerId === "sam2-hosted"
                 ? `sam2-hosted:${hostedProfileId || "replicate-sam2-video"}`
                 : providerId;
+          state.modelSetupSelectionMode = "user_override";
           state.pendingModelSetupConfirmation = modelSetupConfirmationForAction("smoke", providerId, {
             hosted,
             model: providerEffectiveModel(provider),
@@ -13441,6 +13531,7 @@ const MotionJSONUI = (() => {
       const choice = event.target.closest("[data-model-setup-provider]");
       if (choice) {
         state.selectedModelSetupProviderId = choice.dataset.modelSetupProvider;
+        state.modelSetupSelectionMode = "user_override";
         state.modelSetupAlternativesOpen = false;
         state.modelSetupMessage = "";
         state.modelSetupTone = "neutral";
@@ -13505,7 +13596,7 @@ const MotionJSONUI = (() => {
       const confirmed = button.dataset.modelSetupConfirmed === "true";
       if (confirmed) delete button.dataset.modelSetupConfirmed;
       const confirmedSnapshot = confirmed ? state.confirmedModelSetupAction : null;
-      const connection = modelConnectionById(state.selectedModelSetupProviderId);
+      const connection = modelConnectionById(selectedModelSetupConnectionId(state.selectedPreset));
       if (!connection) return;
       const form = $("#modelSetupForm");
       const providerId = confirmedSnapshot?.providerId || form?.dataset.providerSettingsId || connection.providerId;
@@ -13826,6 +13917,7 @@ const MotionJSONUI = (() => {
     WORKFLOW_STEPS,
     OPTION_HELP_TEXT,
     adaptiveRunDefaultsFromSnapshot,
+    applyModelSetupRecommendationToState,
     effortPresetDefaults,
     objectDiscoveryDefaults,
     applyCorrectionStateToTracks,
@@ -13868,6 +13960,7 @@ const MotionJSONUI = (() => {
     modelSetupPayloadFromValues,
     modelSetupConfirmationForAction,
     modelSetupProviderSummary,
+    modelSetupRecommendationForPreset,
     setupJobProgressSummary,
     setupJobStatusSummary,
     modelSetupDecisionForConnection,
@@ -13900,6 +13993,7 @@ const MotionJSONUI = (() => {
     safeLocalContentUrl,
     runMonitorStageFromSnapshot,
     screenContractFromSnapshot,
+    selectedModelSetupConnectionId,
     slugObjectId,
     timelineMarkersForDisplay,
     trackFrameForDisplay,

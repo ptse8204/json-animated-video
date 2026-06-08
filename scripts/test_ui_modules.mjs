@@ -13,7 +13,12 @@ import {
   normalizedModelConnection,
   providerIdFromConnectionId,
 } from "../src/motionjson/ui/static/modules/provider_connections.js";
-import { CORRECTION_STATE_FORMAT, defaultState, emptyCorrectionState } from "../src/motionjson/ui/static/modules/state_store.js";
+import {
+  CORRECTION_STATE_FORMAT,
+  applyModelSetupRecommendationToState,
+  defaultState,
+  emptyCorrectionState,
+} from "../src/motionjson/ui/static/modules/state_store.js";
 import {
   WORKFLOW_STEPS,
   normalizeWorkflowStepId,
@@ -52,6 +57,32 @@ if (originalLocationDescriptor) {
 } else {
   delete globalThis.location;
 }
+
+const freshState = defaultState();
+assert.equal(freshState.selectedModelSetupProviderId, "");
+assert.equal(freshState.modelSetupSelectionMode, "auto");
+applyModelSetupRecommendationToState(freshState, {
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal: "trace_all_objects",
+  selectedConnectionId: "sam3-local",
+});
+assert.equal(freshState.selectedModelSetupProviderId, freshState.selectedPreset === "trace_all_objects" ? "sam3-local" : "");
+assert.equal(freshState.modelSetupRecommendations.trace_all_objects.selectedConnectionId, "sam3-local");
+freshState.selectedPreset = "trace_all_objects";
+applyModelSetupRecommendationToState(freshState, {
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal: "trace_all_objects",
+  selectedConnectionId: "sam3-local",
+});
+assert.equal(freshState.selectedModelSetupProviderId, "sam3-local");
+freshState.modelSetupSelectionMode = "user_override";
+freshState.selectedModelSetupProviderId = "sam2-hf-auto-masks";
+applyModelSetupRecommendationToState(freshState, {
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal: "trace_all_objects",
+  selectedConnectionId: "sam3-local",
+});
+assert.equal(freshState.selectedModelSetupProviderId, "sam2-hf-auto-masks");
 
 assert.deepEqual(WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
