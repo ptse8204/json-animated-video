@@ -1310,6 +1310,7 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 const compatibleConnectionExpectations = {
   trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
   text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  pick_objects_from_frame: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
@@ -1331,6 +1332,7 @@ assert.deepEqual(
 
 assert.equal(ui.modelPlanGoalForPreset("text_detector"), "find_objects_from_text");
 assert.equal(ui.modelPlanGoalForPreset("motion_foreground"), "find_moving_things");
+assert.equal(ui.modelPlanGoalForPreset("pick_objects_from_frame"), "discover_objects");
 assert.equal(ui.modelPlanGoalForPreset("trace_all_objects"), "discover_objects");
 const modelPlanPayload = ui.modelPlanRequestFromInput(
   {
@@ -1528,6 +1530,26 @@ assert.equal(traceAllConfig.discovery.config.trackSelectedOnly, true);
 assert.equal(traceAllConfig.discovery.config.requireReview, true);
 assert.equal(traceAllConfig.provider.name, "mock");
 assert.equal(ui.buildRunPlan(traceAllConfig, { preset: "trace_all_objects" }).title, "Find everything in scene");
+
+const pickFrameConfig = ui.buildRunConfig({
+  preset: "pick_objects_from_frame",
+  discoveryMode: "sam3_auto_masks",
+  videoPath: "examples/demo_red_ball.mp4",
+  objectId: "object_0",
+  objectLabel: "picked objects",
+  currentFrame: 12,
+  keyframes: new Set([12]),
+  maskProvider: "mock",
+  debugMockMode: true,
+  maxObjects: 6,
+  outputMode: "authoring",
+  qualityPreset: "balanced",
+});
+assert.equal(pickFrameConfig.discovery.config.fastFramePick, true);
+assert.deepEqual(pickFrameConfig.discovery.config.keyframes, [12]);
+assert.equal(pickFrameConfig.discovery.config.maxKeyframes, 1);
+assert.equal(pickFrameConfig.sampling.max_frames, 1);
+assert.equal(ui.buildRunPlan(pickFrameConfig, { preset: "pick_objects_from_frame" }).title, "Pick objects from one frame");
 
 const maximumRecallConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",

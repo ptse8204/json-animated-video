@@ -50,6 +50,7 @@
                 <span>Default goal</span>
                 <select id="preferenceDefaultGoal">
                   <option value="trace_one_object">Cut out one object</option>
+                  <option value="pick_objects_from_frame">Pick objects from one frame</option>
                   <option value="trace_all_objects">Find everything in scene</option>
                   <option value="auto_object_proposals">Discover objects</option>
                   <option value="text_detector">Find objects from text</option>
@@ -141,7 +142,7 @@
           <div class="guided-start-header">
             <div>
               <h2>What do you want to do?</h2>
-              <p class="panel-note">Choose the task. The rest of the flow only shows what that task needs.</p>
+              <p class="panel-note">Choose the task. The rest of the screen follows that choice.</p>
             </div>
             <span id="guidedModeChip" class="status-chip is-neutral">Runtime first</span>
           </div>
@@ -150,13 +151,13 @@
               <span class="goal-card-title">Cut out one object</span>
               <span class="goal-card-copy">Place a point or box, then track that subject.</span>
             </button>
+            <button class="goal-card" type="button" data-preset="pick_objects_from_frame" data-testid="goal-pick-objects-from-frame" aria-pressed="false">
+              <span class="goal-card-title">Pick objects from one frame</span>
+              <span class="goal-card-copy">Scan one frame first, keep what matters, then track only those objects.</span>
+            </button>
             <button class="goal-card" type="button" data-preset="text_detector" data-testid="goal-text-detector" aria-pressed="false">
               <span class="goal-card-title">Find by description</span>
               <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
-            </button>
-            <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
-              <span class="goal-card-title">Find everything in scene</span>
-              <span class="goal-card-copy">Sweep for visible objects, review candidates, then track accepted objects.</span>
             </button>
             <button class="goal-card" type="button" data-preset="review_existing" data-testid="goal-review-existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
@@ -166,6 +167,10 @@
           <details class="advanced-panel advanced-task-panel">
             <summary>Advanced tasks</summary>
             <div class="advanced-goal-list">
+              <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
+                <span class="goal-card-title">Find everything in scene</span>
+                <span class="goal-card-copy">Run a broader scene sweep when one-frame picking is not enough.</span>
+              </button>
               <button class="goal-card" type="button" data-preset="motion_foreground" data-testid="goal-motion-foreground" aria-pressed="false">
                 <span class="goal-card-title">Find moving things</span>
                 <span class="goal-card-copy">Use runtime motion cues without a model.</span>
@@ -258,6 +263,13 @@
                 <button id="mainChooseModelButton" type="button">Choose different model</button>
               </div>
             </section>
+            <section class="compact-panel run-live-preview-panel">
+              <div class="panel-heading compact-heading">
+                <h3>Live output</h3>
+                <span id="mainLivePreviewStatus" class="subtle-chip">Waiting</span>
+              </div>
+              <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
+            </section>
           </div>
           <details id="mainRunLogsDisclosure" class="run-monitor-log-panel">
             <summary>Logs and events</summary>
@@ -267,6 +279,13 @@
                 <span id="mainEventCount" class="subtle-chip">0 events</span>
               </div>
               <div id="mainJobEventLog" class="event-log" aria-live="polite"></div>
+            </section>
+            <section class="compact-panel">
+              <div class="panel-heading compact-heading">
+                <h3>Artifacts</h3>
+                <span id="mainArtifactCount" class="subtle-chip">0 files</span>
+              </div>
+              <div id="mainArtifactBrowser" class="artifact-list"></div>
             </section>
           </details>
         </section>
@@ -290,7 +309,7 @@
             <div>
               <p class="section-kicker">Model setup</p>
               <h2>Recommended model setup</h2>
-              <p class="panel-note">MotionJSON detects the runtime, picks one safe path for this goal, and only asks for what is needed now.</p>
+              <p class="panel-note">MotionJSON picks one safe path for this goal and asks only for what is missing.</p>
             </div>
             <span id="modelSetupStatus" class="status-chip is-muted">Not loaded</span>
           </div>
@@ -371,6 +390,7 @@
               <button id="studioExportSelectedButton" type="button">Export selected</button>
             </div>
             <div id="studioPartialDiagnostic" class="studio-partial-diagnostic" hidden></div>
+            <div id="reviewCandidateSectionSlot" class="review-inline-slot" aria-label="Candidate review"></div>
             <section id="studioTrackInspector" class="studio-track-inspector" aria-label="Selected object diagnostics">
               <div class="studio-inspector-heading">
                 <div>
@@ -415,6 +435,8 @@
               </div>
             </section>
             <div id="studioObjectList" class="studio-object-list" aria-live="polite"></div>
+            <div id="reviewCorrectionSectionSlot" class="review-inline-slot" aria-label="Corrections"></div>
+            <div id="reviewArtifactSectionSlot" class="review-inline-slot" aria-label="Review artifacts"></div>
             <div class="studio-segment-gate">
               <div>
                 <strong>All visible segments is off</strong>
@@ -655,7 +677,7 @@
 
             <details class="advanced-panel" data-workflow-fragment="provider_settings prompt_preview">
               <summary>Advanced parameters</summary>
-              <div class="advanced-parameter-toolbar">
+              <div class="advanced-parameter-summary">
                 <span id="adaptiveOverrideSummary" class="parameter-source">Auto tuning active</span>
                 <button id="resetAutoParametersButton" type="button" data-tooltip="Reset tuned fields back to automatic values" hidden>Reset to auto</button>
               </div>

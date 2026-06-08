@@ -83,6 +83,12 @@ applyModelSetupRecommendationToState(freshState, {
   selectedConnectionId: "sam3-local",
 });
 assert.equal(freshState.selectedModelSetupProviderId, "sam2-hf-auto-masks");
+applyModelSetupRecommendationToState(freshState, {
+  format: "motionjson.model_setup_recommendation.v0.1",
+  goal: "pick_objects_from_frame",
+  selectedConnectionId: "sam3-local",
+});
+assert.equal(freshState.modelSetupRecommendations.pick_objects_from_frame.selectedConnectionId, "sam3-local");
 
 assert.deepEqual(WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",

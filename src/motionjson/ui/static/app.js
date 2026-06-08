@@ -226,6 +226,12 @@ const MotionJSONUI = (() => {
   ];
 
   const PRESETS = {
+    pick_objects_from_frame: {
+      label: "Pick objects from one frame",
+      discoveryMode: "sam3_auto_masks",
+      maskProvider: "",
+      outputMode: "authoring",
+    },
     trace_all_objects: {
       label: "Find everything in scene",
       discoveryMode: "sam3_auto_masks",
@@ -283,6 +289,10 @@ const MotionJSONUI = (() => {
   };
 
   const RUN_PLAN_GOALS = {
+    pick_objects_from_frame: {
+      title: "Pick objects from one frame",
+      summary: "Run a fast first pass on one frame, keep the objects that matter, then track only those through the video.",
+    },
     trace_all_objects: {
       title: "Find everything in scene",
       summary: "Sweep the scene for visible object candidates, track accepted objects, then export reviewed tracks.",
@@ -425,6 +435,7 @@ const MotionJSONUI = (() => {
   function primaryRunLabelForPreset(presetId = "trace_one_object") {
     const labels = {
       trace_one_object: "Run trace",
+      pick_objects_from_frame: "Scan this frame",
       trace_all_objects: "Run scene sweep",
       auto_object_proposals: "Run discovery",
       text_detector: "Run search",
@@ -1093,7 +1104,7 @@ const MotionJSONUI = (() => {
   function selectedConnectionForInput(input = {}) {
     const presetName = input.preset || state.selectedPreset;
     const explicitId = String(input.modelConnectionId || "").trim();
-    if (explicitId === "sam3-local" && !["trace_all_objects", "auto_object_proposals"].includes(presetName)) {
+    if (explicitId === "sam3-local" && !["trace_all_objects", "auto_object_proposals", "pick_objects_from_frame"].includes(presetName)) {
       return modelConnectionByConnectionId("advanced_local_sam3_concept_exemplar");
     }
     const explicit = modelConnectionByConnectionId(explicitId);
@@ -1106,7 +1117,7 @@ const MotionJSONUI = (() => {
     if (input.maskProvider === "sam3_tracker_scene_sweep") return modelConnectionByConnectionId("sam3_tracker_scene_sweep");
     if (input.maskProvider === "no_model_cpu_workflow") return modelConnectionByConnectionId("no_model_cpu_workflow");
     if (input.maskProvider === "sam3-local" || input.textDiscoveryProvider === "sam3-local" || input.textDiscoveryProvider === "advanced_local_sam3_concept_exemplar") {
-      return modelConnectionByConnectionId(["trace_all_objects", "auto_object_proposals"].includes(presetName) ? "sam3-local" : "advanced_local_sam3_concept_exemplar");
+      return modelConnectionByConnectionId(["trace_all_objects", "auto_object_proposals", "pick_objects_from_frame"].includes(presetName) ? "sam3-local" : "advanced_local_sam3_concept_exemplar");
     }
     if (input.maskProvider === "sam3-hosted" || input.textDiscoveryProvider === "sam3-hosted" || input.textDiscoveryProvider === "hosted_sam3_concept_text") {
       return (
@@ -1235,7 +1246,7 @@ const MotionJSONUI = (() => {
       providerId = providerId === "sam2-hosted" ? "sam2-hosted" : providerId || "sam2-local";
       return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "sam3_exemplar" ? "manual_prompt" : requestedDiscoveryMode, profileId, connection });
     }
-    if (presetName === "trace_all_objects") {
+    if (presetName === "trace_all_objects" || presetName === "pick_objects_from_frame") {
       if (providerId === "mock") {
         return enginePlanFromContract(contract, input, { providerId: "mock", discoveryMode: "auto_object_proposals", connection });
       }
@@ -1246,7 +1257,16 @@ const MotionJSONUI = (() => {
         return enginePlanFromContract(contract, input, { providerId: "sam2-local", discoveryMode: requestedDiscoveryMode === "sam3_auto_masks" ? "auto_object_proposals" : requestedDiscoveryMode, connection });
       }
       providerId = providerId === "sam3-hosted" ? "sam3-hosted" : providerId || "sam3-local";
-      return enginePlanFromContract(contract, input, { providerId, discoveryMode: requestedDiscoveryMode === "auto_object_proposals" && providerId?.startsWith("sam3") ? "sam3_auto_masks" : requestedDiscoveryMode, profileId, connection });
+      return enginePlanFromContract(
+        contract,
+        input,
+        {
+          providerId,
+          discoveryMode: requestedDiscoveryMode === "auto_object_proposals" && providerId?.startsWith("sam3") ? "sam3_auto_masks" : requestedDiscoveryMode,
+          profileId,
+          connection,
+        },
+      );
     }
     if (presetName === "text_detector") {
       if (allowLegacyDetector) {
@@ -1287,7 +1307,8 @@ const MotionJSONUI = (() => {
   function objectDiscoveryConfig(input) {
     const useMockProvider = input.providerName === "mock";
     const effort = effortPresetDefaults(input.effortPreset || "balanced");
-    const defaultQualityPreset = input.preset === "trace_all_objects" ? "balanced" : "clean";
+    const fastFramePick = input.preset === "pick_objects_from_frame";
+    const defaultQualityPreset = input.preset === "trace_all_objects" || fastFramePick ? "balanced" : "clean";
     const qualityPreset = input.traceEverythingMode ? "trace_everything" : input.qualityPreset || effort.qualityPreset || defaultQualityPreset;
     const defaults = objectDiscoveryDefaults(qualityPreset);
     const keyframes = parseKeyframes(input.keyframes);
@@ -1302,13 +1323,17 @@ const MotionJSONUI = (() => {
       sam2ModelConfig: input.localSam2ModelConfigPath || null,
       sam2Device: input.localSam2Device || input.device || "auto",
       keyframePolicy: defaults.keyframePolicy,
-      keyframes,
-      maxKeyframes: defaults.maxKeyframes,
+      keyframes: fastFramePick ? (keyframes.length ? [keyframes[0]] : [toInteger(input.currentFrame, 0)]) : keyframes,
+      maxKeyframes: fastFramePick ? 1 : defaults.maxKeyframes,
       frameInterval: defaults.frameInterval,
-      maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
+      maxCandidatesPerKeyframe: fastFramePick ? Math.min(defaults.maxCandidatesPerKeyframe, 8) : defaults.maxCandidatesPerKeyframe,
       maxObjects: toInteger(
         input.maxObjects,
-        qualityPreset === "maximum_recall" && effort.effortPreset === "high_quality" ? effort.maxObjects : defaults.maxObjects,
+        fastFramePick
+          ? Math.min(defaults.maxObjects, 8)
+          : qualityPreset === "maximum_recall" && effort.effortPreset === "high_quality"
+            ? effort.maxObjects
+            : defaults.maxObjects,
       ),
       minMaskArea: defaults.minMaskArea,
       maxMaskAreaRatio: defaults.maxMaskAreaRatio,
@@ -1324,6 +1349,7 @@ const MotionJSONUI = (() => {
       requireReview: true,
       writeRejectedCandidates: true,
       requireExplicitCostWarning: defaults.requireExplicitCostWarning,
+      fastFramePick,
       ...(qualityPreset === "trace_everything" ? { costWarningAcknowledged: input.traceEverythingAcknowledged === true } : {}),
     };
     const adaptiveParameters = adaptiveParametersForConfig(input);
@@ -1591,9 +1617,10 @@ const MotionJSONUI = (() => {
     const outputDirectory = input.outputDirectory || `out/ui-runs/${input.projectId || "local"}`;
     const videoPath = input.videoPath || input.sourcePath || input.previewName || "examples/demo_red_ball.mp4";
     const effort = effortPresetDefaults(input.effortPreset || "balanced");
-    const useEffortSampling = input.preset === "trace_all_objects" || Boolean(input.effortPreset);
-    const defaultSampleFps = useEffortSampling ? effort.sampleFps : 12;
-    const defaultMaxFrames = useEffortSampling ? effort.maxFrames : 48;
+    const fastFramePick = input.preset === "pick_objects_from_frame";
+    const useEffortSampling = input.preset === "trace_all_objects" || fastFramePick || Boolean(input.effortPreset);
+    const defaultSampleFps = fastFramePick ? 1 : useEffortSampling ? effort.sampleFps : 12;
+    const defaultMaxFrames = fastFramePick ? 1 : useEffortSampling ? effort.maxFrames : 48;
     const keyframes = parseKeyframes(input.keyframes);
     const device = input.device && input.device !== "auto" ? input.device : null;
     const modelName = input.modelName && input.modelName !== "auto" ? input.modelName : null;
@@ -1711,6 +1738,7 @@ const MotionJSONUI = (() => {
     if (input.preset && PRESETS[input.preset]) return input.preset;
     const discoveryMode = config?.discovery?.mode;
     const providerName = config?.provider?.name;
+    if (config?.discovery?.config?.fastFramePick === true) return "pick_objects_from_frame";
     if (discoveryMode === "motion_foreground") return "motion_foreground";
     if (discoveryMode === "sam3_concept") return "text_detector";
     if (discoveryMode === "sam3_exemplar") return "trace_one_object";
@@ -1812,6 +1840,7 @@ const MotionJSONUI = (() => {
     return (
       {
         trace_one_object: "trace_one_object",
+        pick_objects_from_frame: "discover_objects",
         trace_all_objects: "discover_objects",
         auto_object_proposals: "trace_one_object",
         text_detector: "find_objects_from_text",
@@ -2918,7 +2947,7 @@ const MotionJSONUI = (() => {
       const promptTypes = asArray(meta?.supportedPromptTypes);
       return (promptTypes.includes("box") || capabilities.has("box")) && meta?.supportsTracking !== false;
     }
-    if (presetId === "trace_all_objects") {
+    if (presetId === "trace_all_objects" || presetId === "pick_objects_from_frame") {
       return meta?.supportsAutoMasks === true || capabilities.has("auto_masks");
     }
     if (presetId === "auto_object_proposals") {
@@ -2950,7 +2979,7 @@ const MotionJSONUI = (() => {
   }
 
   function capabilityForConnection(connection) {
-    if (connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects") {
+    if (connection?.providerId === "sam3-local" && ["trace_all_objects", "pick_objects_from_frame"].includes(state.selectedPreset)) {
       return providerByName("sam3-auto-masks", "discovery_provider") || providerByName("sam3-auto-masks");
     }
     const provider = providerSettingsById(connection.providerId);
@@ -3457,10 +3486,10 @@ const MotionJSONUI = (() => {
     if (smokeReady || (runtimeReady && connection?.locality !== "local")) {
       return { status: "ready", label: "Ready", message: readiness.message || "Model setup is ready for this workflow." };
     }
-    if (runtimeReady && connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && !cached && !hfTokenConfigured) {
+    if (runtimeReady && connection?.providerId === "sam3-local" && ["trace_all_objects", "pick_objects_from_frame"].includes(state.selectedPreset) && !cached && !hfTokenConfigured) {
       return { status: "needs_access", label: "Needs Hugging Face access", message: "Paste a Hugging Face token for facebook/sam3, then check access before caching the model." };
     }
-    if (runtimeReady && connection?.providerId === "sam3-local" && state.selectedPreset === "trace_all_objects" && !cached) {
+    if (runtimeReady && connection?.providerId === "sam3-local" && ["trace_all_objects", "pick_objects_from_frame"].includes(state.selectedPreset) && !cached) {
       return { status: "needs_download_confirmation", label: "Confirm model cache", message: "Cache facebook/sam3 before the first scene sweep so extraction does not download unexpectedly." };
     }
     if (runtimeReady && connection?.providerId === "sam2-hf-auto-masks" && !cached) {
@@ -5780,6 +5809,11 @@ const MotionJSONUI = (() => {
                   title: "Prepare object discovery",
                   note: "Choose the discovery quality and review plan before running mask proposals.",
                 }
+              : state.selectedPreset === "pick_objects_from_frame"
+                ? {
+                    title: "Pick a frame, then scan",
+                    note: "Set the frame you want to inspect, run one fast pass, then keep only the objects worth tracking.",
+                  }
               : state.selectedPreset === "text_detector"
                 ? {
                     title: "Describe what to find",
@@ -6537,7 +6571,7 @@ const MotionJSONUI = (() => {
       if (providerWarn) return { label: "Provider warning", tone: "is-warn" };
       if (diagnostics.length) return { label: `${diagnostics.length} diagnostic${diagnostics.length === 1 ? "" : "s"}`, tone: "is-warn" };
       if (activeCount) return { label: `${activeCount} active run${activeCount === 1 ? "" : "s"}`, tone: "is-neutral" };
-      return { label: shell?.classList.contains("is-rail-collapsed") ? "Details hidden" : "Details open", tone: "is-muted" };
+      return { label: state.workflowDashboard ? "All panels open" : "Focused view", tone: "is-muted" };
     }
 
     function renderShellIndicators() {
@@ -6561,9 +6595,23 @@ const MotionJSONUI = (() => {
         summary.className = `status-chip ${diagnostic.tone}`;
       }
       if (detailsToggle) {
-        detailsToggle.textContent = state.workflowDashboard ? "Simple" : "Advanced";
+        detailsToggle.textContent = state.workflowDashboard ? "Focus view" : "All panels";
         detailsToggle.setAttribute("aria-expanded", String(Boolean(state.workflowDashboard)));
       }
+    }
+
+    function moveInlinePanel(slotSelector, node) {
+      const slot = $(slotSelector);
+      if (!slot || !node || slot.contains(node)) return;
+      node.classList.add("review-inline-panel");
+      slot.appendChild(node);
+    }
+
+    function mountInlineWorkflowPanels() {
+      moveInlinePanel("#reviewCandidateSectionSlot", $("#candidateSummaryList")?.closest("section.compact-panel"));
+      moveInlinePanel("#reviewCorrectionSectionSlot", $("#correctionStatus")?.closest("section.compact-panel"));
+      moveInlinePanel("#reviewCorrectionSectionSlot", $("#correctionHistory")?.closest("section.compact-panel"));
+      moveInlinePanel("#reviewArtifactSectionSlot", $("#fallbackDiagnosticsDisclosure"));
     }
 
     function initShellNavigation() {
@@ -8251,11 +8299,106 @@ const MotionJSONUI = (() => {
       $("#jobEventLog").innerHTML = markup;
       if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
       if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = markup;
+      renderMainRunLivePreview();
+    }
+
+    function previewImageKind(relPath = "") {
+      if (/mask_preview\.(png|webp|jpg|jpeg)$/i.test(relPath)) return "maskPreview";
+      if (/thumbnail\.(png|webp|jpg|jpeg)$/i.test(relPath)) return "thumbnail";
+      if (/\/mask_\d+\.(png|webp|jpg|jpeg)$/i.test(relPath)) return "mask";
+      if (/\/cutout_\d+\.(png|webp|jpg|jpeg)$/i.test(relPath)) return "cutout";
+      if (/spritesheet\.(png|webp)$/i.test(relPath)) return "sprite";
+      return "";
+    }
+
+    function previewObjectIdForArtifact(artifact, relPath = "") {
+      const explicit = String(artifact?.object_id || artifact?.objectId || artifact?.metadata?.objectId || artifact?.metadata?.object_id || "").trim();
+      if (explicit) return explicit;
+      const parts = String(relPath || "").split("/").filter(Boolean);
+      if (parts[0] === "objects" || parts[0] === "masks") return parts[1] || "";
+      if (parts[0] === "discovery" && parts.length >= 3) return parts[2];
+      return "";
+    }
+
+    function previewFrameForArtifact(relPath = "") {
+      const match = String(relPath || "").match(/_(\d{6})\.(?:png|webp|jpg|jpeg)$/i);
+      return match ? Number.parseInt(match[1], 10) : null;
+    }
+
+    function previewLabelForObjectId(objectId = "") {
+      const track = state.reviewTracks.find((item) => trackObjectId(item) === objectId || item.id === objectId);
+      if (track?.label) return track.label;
+      const candidate = reviewCandidates().find((item) => candidateId(item) === objectId || String(item.objectId || item.object_id || "").trim() === objectId);
+      if (candidate?.label) return candidate.label;
+      return objectId || "Object";
+    }
+
+    function livePreviewCards() {
+      const cards = new Map();
+      for (const artifact of state.jobArtifacts.slice().reverse()) {
+        const relPath = String(artifact?.metadata?.rel_path || artifact?.path || artifact?.filename || "");
+        const kind = previewImageKind(relPath);
+        if (!kind) continue;
+        const objectId = previewObjectIdForArtifact(artifact, relPath) || `preview_${cards.size + 1}`;
+        const contentUrl = safeLocalContentUrl(artifact?.contentUrl);
+        if (!contentUrl) continue;
+        const card = cards.get(objectId) || {
+          objectId,
+          label: previewLabelForObjectId(objectId),
+          frame: null,
+          mask: "",
+          cutout: "",
+          thumbnail: "",
+          maskPreview: "",
+          sprite: "",
+        };
+        const frame = previewFrameForArtifact(relPath);
+        if (frame != null && card.frame == null) card.frame = frame;
+        if (!card[kind]) card[kind] = contentUrl;
+        cards.set(objectId, card);
+        if (cards.size >= 6 && [...cards.values()].every((item) => item.mask || item.cutout || item.maskPreview || item.thumbnail)) break;
+      }
+      return [...cards.values()].slice(0, 6);
+    }
+
+    function renderMainRunLivePreview() {
+      const container = $("#mainRunLivePreview");
+      const status = $("#mainLivePreviewStatus");
+      if (!container || !status) return;
+      const cards = livePreviewCards();
+      const job = selectedJob();
+      if (!job) {
+        status.textContent = "Waiting";
+        container.innerHTML = `<div class="empty-state">Start a run to watch masks, cutouts, and previews appear here.</div>`;
+        return;
+      }
+      status.textContent = cards.length ? `${cards.length} visible` : job.status === "running" ? "Running" : "Waiting";
+      container.innerHTML = cards.length
+        ? cards
+            .map((card) => {
+              const frameLabel = Number.isFinite(card.frame) ? `frame ${card.frame}` : "latest";
+              const primaryImage = card.maskPreview || card.cutout || card.thumbnail || card.sprite || card.mask;
+              const secondaryImage = card.mask || (primaryImage !== card.cutout ? card.cutout : "");
+              return `
+                <div class="run-live-preview-card">
+                  <div class="run-live-preview-header">
+                    <strong>${escapeHtml(card.label)}</strong>
+                    <span class="row-meta">${escapeHtml(frameLabel)}</span>
+                  </div>
+                  <div class="run-live-preview-images">
+                    ${primaryImage ? `<img src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(`${card.label} preview`)}" loading="lazy" />` : ""}
+                    ${secondaryImage && secondaryImage !== primaryImage ? `<img src="${escapeAttribute(secondaryImage)}" alt="${escapeAttribute(`${card.label} mask`)}" loading="lazy" />` : ""}
+                  </div>
+                </div>
+              `;
+            })
+            .join("")
+        : `<div class="empty-state">MotionJSON will surface candidate thumbnails, mask previews, and cutouts as the run writes them.</div>`;
     }
 
     function renderArtifactBrowser() {
       $("#artifactCount").textContent = `${state.jobArtifacts.length} file${state.jobArtifacts.length === 1 ? "" : "s"}`;
-      $("#artifactBrowser").innerHTML = state.jobArtifacts.length
+      const markup = state.jobArtifacts.length
         ? state.jobArtifacts
             .map((artifact) => {
               const relPath = artifact.metadata?.rel_path || artifact.path || artifact.filename || artifact.id;
@@ -8283,6 +8426,10 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Artifacts appear here after the worker registers output files.</div>`;
+      $("#artifactBrowser").innerHTML = markup;
+      if ($("#mainArtifactCount")) $("#mainArtifactCount").textContent = `${state.jobArtifacts.length} file${state.jobArtifacts.length === 1 ? "" : "s"}`;
+      if ($("#mainArtifactBrowser")) $("#mainArtifactBrowser").innerHTML = markup;
+      renderMainRunLivePreview();
     }
 
     function libraryAssetRoute() {
@@ -9643,7 +9790,7 @@ const MotionJSONUI = (() => {
     function renderGuidedQualityControls(summary = null) {
       const panel = $("#guidedQualityControls");
       if (!panel) return;
-      const visible = state.selectedPreset === "trace_all_objects";
+      const visible = state.selectedPreset === "trace_all_objects" || state.selectedPreset === "pick_objects_from_frame";
       panel.classList.toggle("is-hidden", !visible);
       panel.setAttribute("aria-hidden", String(!visible));
       if (!visible) return;
@@ -9682,14 +9829,15 @@ const MotionJSONUI = (() => {
       const reviewingExisting = state.selectedPreset === "review_existing";
       const showLegacyTextProvider = state.selectedPreset === "text_detector" && state.workflowDashboard;
       const showAdvancedProviderInternals = Boolean(state.workflowDashboard);
-      const showSceneSweepControls = state.selectedPreset === "trace_all_objects";
+      const showSceneSweepControls = state.selectedPreset === "trace_all_objects" || state.selectedPreset === "pick_objects_from_frame";
+      const showTraceEverythingControls = state.selectedPreset === "trace_all_objects";
       const showPromptFields = state.selectedPreset === "trace_one_object";
       $("#presetSummary").textContent = preset.label;
       $("#presetSummary").className = "status-chip is-neutral";
-      const isObjectDiscovery = state.selectedPreset === "auto_object_proposals" || state.selectedPreset === "trace_all_objects";
+      const isObjectDiscovery = state.selectedPreset === "auto_object_proposals" || state.selectedPreset === "trace_all_objects" || state.selectedPreset === "pick_objects_from_frame";
       $("#qualityPresetField").classList.toggle("is-hidden", !isObjectDiscovery);
       $("#effortPresetField")?.classList.toggle("is-hidden", !isObjectDiscovery);
-      $("#traceEverythingDisclosure").classList.toggle("is-hidden", !isObjectDiscovery);
+      $("#traceEverythingDisclosure").classList.toggle("is-hidden", !showTraceEverythingControls);
       $("#textPromptField").classList.toggle("is-hidden", state.selectedPreset !== "text_detector");
       $("#textDiscoveryProviderField").classList.toggle("is-hidden", !showLegacyTextProvider);
       if (state.selectedPreset === "text_detector" && showLegacyTextProvider) {
@@ -9707,7 +9855,7 @@ const MotionJSONUI = (() => {
       $("#deviceField").classList.toggle("is-hidden", !showAdvancedProviderInternals && !showSceneSweepControls);
       $("#guidedQualityControls")?.classList.toggle("is-hidden", !showSceneSweepControls);
       const sceneSweepDisclosure = $("#traceEverythingDisclosure");
-      if (sceneSweepDisclosure && showSceneSweepControls) sceneSweepDisclosure.open = true;
+      if (sceneSweepDisclosure && showTraceEverythingControls) sceneSweepDisclosure.open = true;
       $("#videoForm")?.classList.toggle("is-hidden", reviewingExisting);
       $("#videoSelect")?.classList.toggle("is-hidden", reviewingExisting);
       $("#videoList")?.classList.toggle("is-hidden", reviewingExisting);
@@ -14253,6 +14401,7 @@ const MotionJSONUI = (() => {
       renderShellIndicators();
     });
 
+    mountInlineWorkflowPanels();
     initShellNavigation();
     initWorkflowController();
     updatePointKind("positive_point");

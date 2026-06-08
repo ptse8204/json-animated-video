@@ -66,9 +66,13 @@ The default Local UI opens in one visible guided workflow:
 canvas offers plain-language choices:
 
 - Cut out one object.
+- Pick objects from one frame.
 - Find by description.
-- Find everything in scene.
 - Review previous result.
+
+`Find everything in scene` remains available under Advanced tasks for cases
+where the user needs a broader scene sweep instead of the faster one-frame
+pick flow.
 
 When a local video is registered, MotionJSON inspects the source codec. If the
 source is already browser-safe, the player uses the source asset directly. If
@@ -101,6 +105,11 @@ shows `Back` plus one explicit primary action such as `Choose video file`, `Cont
 Secondary actions such as demo video, setup state details, `Change model`, or
 review bulk actions stay visually secondary inside the current panel.
 
+The default object-discovery path is now `Pick objects from one frame`. It
+uses the current preview frame as the first review pass, keeps the setup and
+runtime path identical to scene sweep, and is meant to shorten the loop:
+choose a frame, scan once, keep the objects you want, then track only those.
+
 The Video step supports direct local upload. Choosing a video file creates the
 local project when needed, stores the source in the local asset library, and
 prepares the browser preview from that registered source. The advanced local
@@ -109,10 +118,10 @@ browser file picker cannot access the source file.
 
 After a run starts, the Job Center becomes part of the main workspace instead
 of living only in the details rail. It shows the selected job, active/recent
-jobs, normalized status, progress, provider, artifacts, and cancel state.
-Failed runs switch the main screen to Run monitor, open the details rail, and
-surface logs plus fallback diagnostics without requiring an extra discovery
-step.
+jobs, normalized status, progress, provider, live mask/cutout previews,
+artifacts, and cancel state. Failed runs switch the main screen to Run
+monitor and surface logs plus fallback diagnostics without requiring an extra
+discovery step.
 
 The review sequence is explicit: `Candidates` -> `Track selected` -> `Tracks`
 -> `Corrections` -> `Export`. If a run has candidates but no tracks, the
@@ -121,16 +130,19 @@ export, the primary action is `Mark reviewed`. A ready reviewed result uses
 `Export reviewed objects`. Failed or canceled jobs keep the primary action on
 diagnostics/log recovery rather than showing an empty review surface.
 
+Candidate review, selected-track diagnostics, relabel controls, correction
+history, and export gating now live in the same main review surface instead of
+being split across the right rail.
+
 Local project creation is no longer a required early decision in guided mode.
 When a user adds a video, starts from the bundled demo, or opens an existing
 MotionJSON result, the Local UI creates a starter local project automatically
 if one does not already exist. Manual project switching and manual project
 creation remain available under `Project options` and `Show all panels`.
 
-Only the active screen's main panels are shown by default. Advanced settings,
-full diagnostics, raw config JSON, artifact browsing, correction history, and
-export internals now sit behind the top-bar `Advanced` switch instead of
-competing with the normal user path.
+Only the active screen's main panels are shown by default. The top-bar switch
+now expands the workspace into `All panels` mode instead of opening a separate
+diagnostics rail.
 
 The left navigation can collapse to a compact rail with the active goal and a
 Menu button. The right details rail is collapsed by default on the first screen
@@ -151,6 +163,8 @@ hides alternatives behind `Change model`:
 
 - Cut out one object: `sam2-local` prompt tracking when checkpoint/config paths
   are ready, otherwise hosted SAM2 if explicitly selected.
+- Pick objects from one frame: the same recommended path as scene sweep, but
+  optimized for one fast proposal pass before selected tracking.
 - Find everything in scene: `sam3-local` Scene Sweep first. The scene-sweep
   runtime uses `sam3TrackerModel=facebook/sam3` by default or a local Hugging
   Face `from_pretrained` directory. It must not receive a single `sam3.pt`
@@ -229,9 +243,11 @@ The Run monitor shows a process overview before the raw event list: current
 phase, provider, progress, stale-progress warning, and the next recovery action
 when one is known. Each event keeps the backend message visible, then expands
 with stage/provider/model/reason chips, progress bars, suggested fixes, and
-debug metadata. Failures, raster fallback, whole-frame masks, CUDA/model/cache
-problems, and provider errors are visually promoted instead of being hidden in
-raw JSON.
+debug metadata. The event list now uses a terminal-style surface, and the main
+Run monitor shows the latest candidate previews, masks, and cutouts that have
+already been registered for the selected run. Failures, raster fallback,
+whole-frame masks, CUDA/model/cache problems, and provider errors are
+visually promoted instead of being hidden in raw JSON.
 
 Partial object recovery is part of the review contract. During multi-object
 SAM runs, the worker checkpoints each completed object before the final global
@@ -264,6 +280,18 @@ smoke-test logs remain visible with progress, cancellation, blocked state, and
 redacted debug metadata, so users can see whether setup is installing runtime
 packages, checking Hugging Face access, downloading/resolving weights, verifying
 the cache, or recording the resolved model path.
+
+## Automatic Labels
+
+MotionJSON now attempts a small local image-classification pass when a new
+object still has a generic placeholder label such as `selected_object` or
+`Candidate 2`. The current implementation uses the optional
+`classifier` extra (`torch` + `timm`) and a small MobileNetV3 ImageNet model.
+It only replaces placeholder names with a short user-facing object label when
+the prediction is confident enough and maps cleanly to a supported friendly
+class such as `Ball`, `Cup`, `Bottle`, `Phone`, `Plant`, `Car`, `Dog`, or
+`Cat`. User-entered labels still win, and duplicate automatic labels are
+numbered (`Ball 2`, `Ball 3`) for review clarity.
 
 ## Model Planning Connector Contract
 

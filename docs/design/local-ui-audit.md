@@ -258,6 +258,46 @@ Findings and changes:
 - The larger screenshot matrix initially exposed too-narrow model cards at
   1366px. The grid now drops columns before cards fall below the layout gate.
 - Scout review found the hosted warning/error result and actions were too low
+
+## UI-WORKFLOW-11 Evidence
+
+UI-WORKFLOW-11 compresses the guided shell around the actual path users follow:
+choose a goal, set up the model, run, review, correct, and export. The default
+goal set now promotes a faster one-frame selection flow, while the run monitor,
+candidate review, corrections, and export gating are pulled back into the main
+workspace instead of depending on the right diagnostics rail.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-11-focus-before --state first-run,model-setup-sam3-local,workflow-run,candidate-review,correction-tools,workflow-export --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-11-focus --state first-run,model-setup-sam3-local,workflow-run,candidate-review,correction-tools,workflow-export --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920
+```
+
+Representative captures:
+
+- `docs/design/screenshots/ui-workflow-11-focus/desktop-1440-first-run.png`
+- `docs/design/screenshots/ui-workflow-11-focus/laptop-1366-workflow-run.png`
+- `docs/design/screenshots/ui-workflow-11-focus/mobile-390-first-run.png`
+
+Findings and changes:
+
+- The old default shell still asked new users to choose between a broad scene
+  sweep and other advanced discovery modes too early. The normal first screen
+  now promotes `Pick objects from one frame` instead.
+- Review and correction controls were previously split between the main review
+  card and the right rail. Candidate review, correction controls, correction
+  history, and diagnostics now live inline with the main review/export surface.
+- Run monitor previously required users to infer mask output from logs and the
+  artifact browser. The main run screen now includes a live preview strip for
+  candidate previews, masks, and cutouts that have already been registered.
+- The advanced parameter toolbar repeated status that already appeared in the
+  guided summary. It now collapses to a light inline summary plus reset action.
   in the laptop/mobile evidence. The result now appears above the hosted form,
   and desktop/laptop hosted fields use a compact three-column form.
 - The headless layout script now closes Chrome targets between states and waits

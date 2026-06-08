@@ -29,7 +29,7 @@ export const MODEL_CONNECTIONS = [
     workflow: "Find everything fallback",
     title: "SAM2 HF automatic masks fallback",
     capabilities: ["auto_masks", "scene_sweep"],
-    supportedGoals: ["trace_all_objects", "auto_object_proposals"],
+    supportedGoals: ["trace_all_objects", "auto_object_proposals", "pick_objects_from_frame"],
     recommendation: "Fallback for finding everything in scene when SAM3 Scene Sweep is blocked.",
     nextAction: "Install the SAM2 Transformers fallback and cache facebook/sam2.1-hiera-large",
     profileId: "",
@@ -59,7 +59,7 @@ export const MODEL_CONNECTIONS = [
     workflow: "Find everything in scene",
     title: "SAM3 Scene Sweep",
     capabilities: ["scene_sweep", "tracking", "auto_masks"],
-    supportedGoals: ["trace_all_objects", "auto_object_proposals"],
+    supportedGoals: ["trace_all_objects", "auto_object_proposals", "pick_objects_from_frame"],
     recommendation:
       "Recommended CUDA path for scene-wide object proposals and review before export. Text prompts use a separate hosted or advanced local path.",
     nextAction: "Install scene sweep, check Hugging Face access, then cache facebook/sam3",
@@ -106,7 +106,7 @@ export const MODEL_CONNECTIONS = [
     workflow: "Custom SAM3",
     title: "Custom hosted SAM3",
     capabilities: ["concept", "box", "tracking", "auto_masks", "hosted"],
-    supportedGoals: ["trace_one_object", "trace_all_objects", "auto_object_proposals", "text_detector"],
+    supportedGoals: ["trace_one_object", "trace_all_objects", "auto_object_proposals", "pick_objects_from_frame", "text_detector"],
     recommendation: "Use a SAM3-compatible endpoint when it supports the guided workflow you selected.",
     nextAction: "Link endpoint and API key",
   },
@@ -146,7 +146,7 @@ export const MODEL_CONNECTIONS = [
     workflow: "Local fallback",
     title: "No-model CPU workflow",
     capabilities: ["auto_masks", "no_model", "cpu"],
-    supportedGoals: ["trace_all_objects"],
+    supportedGoals: ["trace_all_objects", "pick_objects_from_frame"],
     recommendation: "Fast local smoke checks, simple motion/threshold masks, and imported masks. No hosted cost.",
     nextAction: "Use mock for smoke checks, motion foreground for moving objects, or import external masks",
     profileId: "",
@@ -158,6 +158,7 @@ export const MODEL_FREE_PRESETS = new Set(["motion_foreground", "external_masks"
 export const MODEL_CONNECTION_PRIORITY = {
   trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
   trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
+  pick_objects_from_frame: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
   text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
 };

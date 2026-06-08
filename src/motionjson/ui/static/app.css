@@ -5886,6 +5886,225 @@ body {
   display: none !important;
 }
 
+/* Workflow rescue: keep primary work inline and remove the side diagnostics rail. */
+.app-shell,
+.app-shell.is-rail-collapsed,
+.app-shell:not(.is-rail-collapsed) {
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+
+.app-shell.is-sidebar-collapsed,
+.app-shell.is-sidebar-collapsed.is-rail-collapsed,
+.app-shell.is-sidebar-collapsed:not(.is-rail-collapsed) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.right-rail {
+  display: none !important;
+}
+
+.workspace {
+  max-width: none;
+}
+
+.guided-start .panel-note,
+.model-setup-panel .panel-note,
+.wizard-panel .panel-note,
+.setup-panel .panel-note,
+#postRunGuideNote {
+  max-width: 62ch;
+}
+
+.advanced-parameter-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.main-job-center-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.run-live-preview-panel {
+  min-width: 0;
+}
+
+.run-live-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.run-live-preview-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.run-live-preview-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.run-live-preview-images {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.run-live-preview-images img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #d8e0dd;
+}
+
+.run-monitor-log-panel .compact-panel + .compact-panel {
+  margin-top: 12px;
+}
+
+.event-log {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #1f2b31;
+  border-radius: 8px;
+  background: #12191d;
+  color: #d8e3e7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.event-log .empty-state,
+.event-log .error-state {
+  color: #d8e3e7;
+  background: transparent;
+}
+
+.event-log-overview {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid #304047;
+  border-radius: 8px;
+  background: #182126;
+}
+
+.event-log-overview p,
+.event-log-overview .row-meta,
+.event-row .row-meta,
+.event-time {
+  color: #9db0b8;
+}
+
+.event-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #253239;
+  border-radius: 6px;
+  background: #161f24;
+}
+
+.event-row-main {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+
+.event-row-main .row-meta {
+  grid-column: 1 / -1;
+}
+
+.event-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #243138;
+}
+
+.event-progress-track > span {
+  display: block;
+  height: 100%;
+  width: min(100%, var(--event-progress, 0%));
+  background: #27a58b;
+}
+
+.event-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.event-debug summary {
+  cursor: pointer;
+}
+
+.event-debug pre {
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 6px;
+  background: #0f1518;
+  color: #d8e3e7;
+  overflow: auto;
+}
+
+.review-inline-slot {
+  display: grid;
+  gap: 12px;
+}
+
+.review-inline-panel {
+  margin: 0;
+}
+
+.review-inline-slot .compact-panel,
+.review-inline-slot .nested-rail-disclosure {
+  margin: 0;
+}
+
+.review-inline-slot .nested-rail-disclosure > summary {
+  margin-bottom: 10px;
+}
+
+#reviewCandidateSectionSlot,
+#reviewCorrectionSectionSlot,
+#reviewArtifactSectionSlot {
+  padding-top: 4px;
+}
+
+.studio-review-panel {
+  gap: 16px;
+}
+
+.studio-object-list {
+  margin-top: 4px;
+}
+
+@media (max-width: 1180px) {
+  .main-job-center-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 840px) {
+  .main-job-center-grid,
+  .run-live-preview-images {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Recovery 03 desktop workbench. The review task should live in one primary
    surface: preview on the left, objects in the middle, diagnostics on the
    right, and package tools in a compact bottom strip. */

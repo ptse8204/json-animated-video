@@ -318,3 +318,32 @@ Acceptance:
   recommendations cover the model connector and UI layout work.
 - README and docs match implemented features only.
 - Full available CI or documented equivalent validation has run.
+
+### UI-WORKFLOW-11 - Guided workflow rescue and inline run/review shell
+
+Purpose: simplify the guided workspace around the real user path, move critical
+review and correction surfaces back into the main screen, improve live run
+visibility, and add faster first-pass selection plus automatic object naming.
+
+Expected commit:
+
+```bash
+git commit -m "phase ui-workflow-11: streamline guided run and review workflow"
+```
+
+Acceptance:
+
+- The first-run goal grid favors `Cut out one object`, `Pick objects from one
+  frame`, `Find by description`, and `Review previous result`, while the
+  noisier full-scene sweep remains available as an advanced task.
+- The default run path no longer depends on the right diagnostics rail for
+  candidate review, correction history, or export gating.
+- Run monitor shows inline live previews of masks, cutouts, or candidate
+  previews as soon as they are registered for the active job.
+- Logs/events are readable in a terminal-style surface with stage, progress,
+  and recovery context.
+- Generic placeholder object names are replaced with local automatic labels
+  when the optional lightweight classifier is available, while user labels
+  remain authoritative.
+- The new `Pick objects from one frame` goal uses the current frame as a fast
+  first proposal pass before selected tracking.

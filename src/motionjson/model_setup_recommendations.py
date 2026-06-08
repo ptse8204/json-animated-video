@@ -558,8 +558,23 @@ def model_setup_recommendation_for_goal(
         recommendation["status"] = "ready"
         recommendation["primaryAction"] = _action("continue", "Continue to run")
         return recommendation
-    if normalized_goal in {"trace_all_objects", "auto_object_proposals"}:
-        return _trace_all_recommendation(normalized_goal, capability_report)
+    if normalized_goal in {"trace_all_objects", "auto_object_proposals", "pick_objects_from_frame"}:
+        recommendation = _trace_all_recommendation(normalized_goal, capability_report)
+        if normalized_goal == "pick_objects_from_frame":
+            recommendation["title"] = "Pick objects from one frame"
+            recommendation["subtitle"] = "Fast first pass before full tracking."
+            recommendation["whyThis"] = (
+                "Run one quick object pass on a chosen frame, keep the objects you want, then track only those through the full video."
+            )
+            recommendation["runConfigMapping"] = {
+                "providerName": recommendation["runConfigMapping"]["providerName"],
+                "discoveryMode": "sam3_auto_masks"
+                if recommendation["runConfigMapping"]["providerName"] == "sam3-local"
+                else "sam2_hf_auto_masks"
+                if recommendation["runConfigMapping"]["providerName"] == "sam2-hf-auto-masks"
+                else "auto_object_proposals",
+            }
+        return recommendation
     if normalized_goal == "text_detector":
         return _text_detector_recommendation(normalized_goal, capability_report, mock_mode=mock_mode)
     return _trace_one_recommendation(normalized_goal, capability_report)

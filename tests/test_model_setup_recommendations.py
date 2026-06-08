@@ -185,6 +185,18 @@ def test_trace_all_cpu_only_recommends_no_model_cpu_workflow():
     assert recommendation["primaryAction"]["label"] == "Use CPU fallback now"
 
 
+def test_pick_objects_from_frame_reuses_scene_sweep_setup_path():
+    recommendation = model_setup_recommendation_for_goal(
+        "pick_objects_from_frame",
+        capability_report=report("cuda_ready"),
+    )
+
+    assert recommendation["selectedConnectionId"] == "sam3-local"
+    assert recommendation["title"] == "Pick objects from one frame"
+    assert recommendation["runConfigMapping"]["providerName"] == "sam3-local"
+    assert recommendation["runConfigMapping"]["discoveryMode"] == "sam3_auto_masks"
+
+
 def test_trace_all_mps_ready_does_not_recommend_sam3_primary_when_hf_fallback_missing():
     recommendation = model_setup_recommendation_for_goal(
         "trace_all_objects",

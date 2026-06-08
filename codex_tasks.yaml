@@ -207,6 +207,24 @@ ui_model_connector_phases:
       - "release checklist"
       - "docs link checks"
       - "screenshot freshness check"
+  - id: UI-WORKFLOW-11
+    name: guided workflow rescue and inline run/review shell
+    commit_message: "phase ui-workflow-11: streamline guided run and review workflow"
+    report: docs/roadmap/phase-ui-workflow-11-report.md
+    goals:
+      - Promote the simplified one-frame object pick flow to a first-class goal.
+      - Remove right-rail dependence from the default review/correction/export path.
+      - Show inline live run previews, terminal-style logs, and more precise progress.
+      - Add optional lightweight automatic object naming for placeholder labels.
+    validation:
+      - "npm run build"
+      - "npm test"
+      - "npm run lint"
+      - "python3 -m pytest -q tests/test_image_classifier.py tests/test_model_setup_recommendations.py tests/test_ui_first_run_simplicity.py"
+      - "python3 -m pytest -q tests/test_local_ui_api.py -k 'review or export or provider'"
+      - "python3 -m motionjson.cli --help"
+      - "python3 -m motionjson.cli ui --help"
+      - "git diff --check"
 historical_completed_phases:
   - id: 0
     name: repository discovery and guardrails

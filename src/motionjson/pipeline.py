@@ -15,6 +15,7 @@ from .exporters.lottie import write_silhouette_lottie
 from .exporters.production_assets import export_production_assets
 from .exporters.scene_graph import write_json
 from .exporters.web_manifest import write_web_asset_manifest
+from .image_classifier import classify_image_label, is_generic_object_label, numbered_label
 from .layers import crop_rgba_layer, write_spritesheet
 from .masks import MaskProvider as LegacyMaskProvider
 from .metrics import build_cost_dashboard, build_resource_profile
@@ -197,6 +198,98 @@ def _written_file_metadata(paths: Mapping[str, Path | None], root: Path) -> dict
             continue
         written[label] = {"path": _rel(path, root), "byteSize": path.stat().st_size}
     return written
+
+
+def _candidate_crop_image(video_source: VideoSource, candidate: ObjectCandidate) -> Image.Image | None:
+    if not candidate.box or not video_source.frames:
+        return None
+    frame_index = max(0, min(len(video_source.frames) - 1, int(candidate.frame_index or 0)))
+    frame = video_source.frames[frame_index]
+    rgb = getattr(frame, "rgb", None)
+    if rgb is None:
+        return None
+    height, width = rgb.shape[:2]
+    x = max(0, min(width - 1, int(candidate.box.x)))
+    y = max(0, min(height - 1, int(candidate.box.y)))
+    w = max(1, min(width - x, int(candidate.box.w)))
+    h = max(1, min(height - y, int(candidate.box.h)))
+    crop = rgb[y : y + h, x : x + w]
+    if crop.size <= 0:
+        return None
+    return Image.fromarray(crop, mode="RGB")
+
+
+def _autolabel_candidates(video_source: VideoSource, candidates: Sequence[ObjectCandidate]) -> list[ObjectCandidate]:
+    updated: list[ObjectCandidate] = []
+    used_labels: list[str] = []
+    for candidate in candidates:
+        label = candidate.label or candidate.id
+        metadata = dict(candidate.metadata)
+        prediction = None
+        if is_generic_object_label(label):
+            prediction = classify_image_label(_candidate_crop_image(video_source, candidate))
+            if prediction is not None:
+                metadata["autoLabel"] = prediction.label
+                metadata["autoLabelPrediction"] = prediction.to_dict()
+                label = prediction.label
+        if label:
+            label = numbered_label(label, used_labels)
+            used_labels.append(label)
+        updated.append(
+            ObjectCandidate(
+                id=candidate.id,
+                label=label,
+                source=candidate.source,
+                frame_index=candidate.frame_index,
+                box=candidate.box,
+                point=candidate.point,
+                mask_ref=candidate.mask_ref,
+                score=candidate.score,
+                z_index=candidate.z_index,
+                metadata=metadata,
+            )
+        )
+    return updated
+
+
+def _representative_track_image(track: ObjectTrack, *, feather: int, padding: int) -> Image.Image | None:
+    visible_frames = [frame for frame in track.frames if frame.visible and frame.bbox and frame.rgb is not None and frame.mask is not None]
+    if not visible_frames:
+        return None
+    frame = max(
+        visible_frames,
+        key=lambda item: int(np.count_nonzero(item.mask)) if item.mask is not None else 0,
+    )
+    crop = crop_rgba_layer(
+        frame.rgb,
+        frame.mask,
+        frame.bbox or [0, 0, 1, 1],
+        centroid=frame.centroid,
+        feather=feather,
+        padding=padding,
+    )
+    return Image.fromarray(crop.rgba, mode="RGBA")
+
+
+def _resolved_object_label(
+    *,
+    spec: ObjectExtractionSpec,
+    track: ObjectTrack,
+    feather: int,
+    padding: int,
+    used_labels: list[str],
+) -> tuple[str, dict[str, Any]]:
+    metadata: dict[str, Any] = {}
+    label = str(spec.label or track.label or spec.object_id).strip() or spec.object_id
+    if is_generic_object_label(label):
+        prediction = classify_image_label(_representative_track_image(track, feather=feather, padding=padding))
+        if prediction is not None:
+            label = prediction.label
+            metadata["autoLabel"] = prediction.label
+            metadata["autoLabelPrediction"] = prediction.to_dict()
+    label = numbered_label(label, used_labels)
+    used_labels.append(label)
+    return label, metadata
 
 
 def max_object_cutout_pixels() -> int:
@@ -696,6 +789,7 @@ def _extract_object(
     output_mode: str,
     production_avif: bool,
     rights_context: dict[str, Any] | None,
+    used_labels: list[str],
     job_context: Any | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any], ObjectTrack]:
     object_id = spec.object_id
@@ -763,6 +857,16 @@ def _extract_object(
         "maxCutoutPixels": max_cutout_pixels,
         "reasonCodes": materialization_reason_codes if skip_asset_materialization else [],
     }
+    final_label, auto_label_metadata = _resolved_object_label(
+        spec=spec,
+        track=track,
+        feather=feather,
+        padding=layer_padding,
+        used_labels=used_labels,
+    )
+    track.label = final_label
+    if auto_label_metadata:
+        track.metadata = {**track.metadata, **auto_label_metadata}
     if skip_asset_materialization:
         track.export_status = "rejected"
         track.warnings = list(dict.fromkeys([*track.warnings, *materialization_reason_codes]))
@@ -988,6 +1092,7 @@ def _extract_object(
                 },
                 metadata={"objectId": object_id},
             )
+            _job_checkpoint_object(job_context, object_id, status="running")
 
     quality = build_quality_scores(detailed_frames)
     route = recommended_output(quality)
@@ -1045,7 +1150,7 @@ def _extract_object(
     rights = build_object_rights(object_id=object_id, context=rights_context, fallback_source_uri=rights_context.get("source_uri") if rights_context else None)
     obj = {
         "id": object_id,
-        "label": spec.label,
+        "label": final_label,
         "renderMode": "raster_alpha_sequence",
         "asset": f"objects/{object_id}/cutouts/cutout_%06d.png",
         "mask": f"masks/{object_id}/mask_%06d.png",
@@ -1095,7 +1200,7 @@ def _extract_object(
     object_manifest = {
         "schema": "motionjson.object_manifest.v0.1",
         "objectId": object_id,
-        "label": spec.label,
+        "label": final_label,
         "renderMode": obj["renderMode"],
         "cutouts": [entry["asset"] for entry in motion if entry["asset"]],
         "masks": [entry["mask"] for entry in motion],
@@ -1131,6 +1236,12 @@ def _extract_object(
     track.metadata["discovery"] = discovery
     track.metadata["quality"] = quality
     track.metadata["recommendedOutput"] = route
+    if auto_label_metadata:
+        discovery = {**discovery, **auto_label_metadata}
+        obj["discovery"] = discovery
+        object_manifest["discovery"] = discovery
+        object_motion["discovery"] = discovery
+        layer["discovery"] = discovery
     return obj, layer, object_motion, detailed_frames, provider_performance, track
 
 
@@ -1252,6 +1363,7 @@ def run_multi_object_pipeline(
         metadata={"provider": active_candidate_provider_name},
     )
     candidates = list(active_candidate_provider.propose(video_source, active_candidate_config, run_context))
+    candidates = _autolabel_candidates(video_source, candidates)
     write_json(
         out_dir / "candidates.json",
         _candidate_payload(
@@ -1332,6 +1444,7 @@ def run_multi_object_pipeline(
     first_detailed_frames: list[dict[str, Any]] = []
     provider_performance_objects: list[dict[str, Any]] = []
     object_tracks: list[ObjectTrack] = []
+    used_labels: list[str] = []
     extract_start = time.perf_counter()
     for index, spec in enumerate(object_specs):
         _job_check_cancel(job_context, "extract_objects")
@@ -1353,6 +1466,7 @@ def run_multi_object_pipeline(
                 output_mode=output_mode,
                 production_avif=production_avif,
                 rights_context=rights_payload,
+                used_labels=used_labels,
                 job_context=job_context,
             )
         except Exception as exc:
