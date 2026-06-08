@@ -82,6 +82,7 @@ from motionjson.model_connectors import (
     ModelPlanResult,
     SQLiteModelRunStore,
 )
+from motionjson.model_setup_recommendations import model_setup_recommendation_for_goal
 from motionjson.provider_settings import (
     diagnose_provider_settings,
     hosted_sam3_smoke_test,
@@ -1020,6 +1021,7 @@ class LocalUIApp:
                     "/api/provider-settings/{providerId}/setup/start",
                     "/api/provider-settings/setup-jobs/{jobId}",
                     "/api/provider-settings/setup-jobs/{jobId}/cancel",
+                    "/api/model-setup/recommendation",
                     "/api/model-providers",
                     "/api/model-providers/{providerId}",
                     "/api/model-providers/{providerId}/test",
@@ -1071,6 +1073,14 @@ class LocalUIApp:
         if path == "/api/capabilities" and method == "GET":
             return _public_value(
                 self._capability_report(
+                    video_path=self._query_one(query, "video") or self._query_one(query, "videoPath"),
+                    output_dir=self._query_one(query, "outputDir") or self._query_one(query, "output"),
+                )
+            )
+        if path == "/api/model-setup/recommendation" and method == "GET":
+            return _public_value(
+                self._model_setup_recommendation(
+                    goal=self._query_one(query, "goal") or self._query_one(query, "preset") or "trace_one_object",
                     video_path=self._query_one(query, "video") or self._query_one(query, "videoPath"),
                     output_dir=self._query_one(query, "outputDir") or self._query_one(query, "output"),
                 )
@@ -2532,6 +2542,20 @@ class LocalUIApp:
             if "unexpected keyword argument" not in str(exc):
                 raise
             return build_capability_report()
+
+    def _model_setup_recommendation(
+        self,
+        *,
+        goal: str,
+        video_path: str | Path | None = None,
+        output_dir: str | Path | None = None,
+    ) -> dict[str, Any]:
+        report = self._capability_report(video_path=video_path, output_dir=output_dir)
+        return model_setup_recommendation_for_goal(
+            goal,
+            capability_report=report,
+            mock_mode=self.mock_mode,
+        )
 
     def _provider_settings_response(self) -> dict[str, Any]:
         conn = self.connection()

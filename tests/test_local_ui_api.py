@@ -195,6 +195,7 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "/api/provider-settings/{providerId}/setup/start" in health["routes"]
     assert "/api/provider-settings/setup-jobs/{jobId}" in health["routes"]
     assert "/api/provider-settings/setup-jobs/{jobId}/cancel" in health["routes"]
+    assert "/api/model-setup/recommendation" in health["routes"]
     assert "/api/jobs/{jobId}/run" in health["routes"]
     assert "/api/jobs/{jobId}/review" in health["routes"]
     assert "/api/jobs/{jobId}/exports" in health["routes"]
@@ -235,7 +236,18 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
         "unknown",
     }
     assert capabilities["summary"]["gpuModelRecommendation"]["format"] == "motionjson.gpu_model_recommendation.v0.1"
+    assert capabilities["summary"]["modelSetupRecommendation"]["format"] == "motionjson.model_setup_recommendation.v0.1"
+    assert capabilities["summary"]["modelSetupRecommendation"]["goal"] == "trace_one_object"
     assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
+
+    status, _headers, body = app.handle("GET", "/api/model-setup/recommendation?goal=trace_all_objects")
+    setup_recommendation = decode(body)
+    assert status == 200
+    assert setup_recommendation["format"] == "motionjson.model_setup_recommendation.v0.1"
+    assert setup_recommendation["goal"] == "trace_all_objects"
+    assert setup_recommendation["selectedConnectionId"]
+    assert setup_recommendation["primaryAction"]["id"]
+    assert setup_recommendation["runConfigMapping"]["providerName"]
 
     status, _headers, body = app.handle(
         "GET",

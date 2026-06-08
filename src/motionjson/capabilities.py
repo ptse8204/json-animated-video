@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from motionjson.providers.sam2 import SAM2_HF_AUTO_MASKS_DEFAULT_MODEL
+from motionjson.model_setup_recommendations import model_setup_recommendation_for_goal
 from motionjson.providers.sam3 import (
     SAM3_HF_REPO_ID,
     describe_sam3_model_path,
@@ -2031,7 +2032,7 @@ def build_capability_report(
             "ffmpeg-video",
         }
     ]
-    return {
+    report = {
         "schema": CAPABILITY_SCHEMA,
         "python": {
             "version": platform.python_version(),
@@ -2073,6 +2074,11 @@ def build_capability_report(
             "unavailableRequiredSetup": unavailable_required_setup,
         },
     }
+    report["summary"]["modelSetupRecommendation"] = model_setup_recommendation_for_goal(
+        "trace_one_object",
+        capability_report=report,
+    )
+    return report
 
 
 def capability_report_json(**kwargs: Any) -> str:
