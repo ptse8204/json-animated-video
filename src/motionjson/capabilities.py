@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import platform
+import subprocess
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from motionjson.providers.sam3 import (
 
 CAPABILITY_SCHEMA = "motionjson.provider_diagnostics.v0.1"
 ENVIRONMENT_PROFILE_FORMAT = "motionjson.local_environment_profile.v0.1"
+RUNTIME_ENVIRONMENT_FORMAT = "motionjson.runtime_environment.v0.2"
 GPU_MODEL_RECOMMENDATION_FORMAT = "motionjson.gpu_model_recommendation.v0.1"
 RUNTIME_PROOF_FORMAT = "motionjson.runtime_proof.v0.1"
 
@@ -230,6 +232,13 @@ def cuda_status() -> dict[str, Any]:
             "torchInstalled": False,
             "available": False,
             "device": "cpu",
+            "torchVersion": None,
+            "torchCudaBuild": None,
+            "cudaAvailable": False,
+            "mpsAvailable": False,
+            "mpsBuilt": False,
+            "xpuAvailable": False,
+            "hipVersion": None,
             "reasons": ["torch is not installed; CUDA status cannot be queried."],
             "devices": [{"name": "cpu", "available": True}],
         }
@@ -240,16 +249,48 @@ def cuda_status() -> dict[str, Any]:
             "torchInstalled": False,
             "available": False,
             "device": "cpu",
+            "torchVersion": None,
+            "torchCudaBuild": None,
+            "cudaAvailable": False,
+            "mpsAvailable": False,
+            "mpsBuilt": False,
+            "xpuAvailable": False,
+            "hipVersion": None,
             "reasons": [f"torch import failed: {exc}"],
             "devices": [{"name": "cpu", "available": True}],
         }
 
     cuda_available = bool(torch.cuda.is_available())
-    mps_available = bool(getattr(getattr(torch, "backends", None), "mps", None) and torch.backends.mps.is_available())
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    mps_available = bool(mps_backend and mps_backend.is_available())
+    mps_built_check = getattr(mps_backend, "is_built", None)
+    mps_built = bool(mps_backend and (mps_built_check() if callable(mps_built_check) else False))
+    xpu_backend = getattr(torch, "xpu", None)
+    try:
+        xpu_available = bool(xpu_backend and xpu_backend.is_available())
+    except Exception:
+        xpu_available = False
+    torch_version = getattr(torch, "version", None)
+    cuda_build = getattr(torch_version, "cuda", None)
+    hip_version = getattr(torch_version, "hip", None)
+    cuda_devices: list[dict[str, Any]] = []
+    if cuda_available:
+        try:
+            count = int(torch.cuda.device_count())
+        except Exception:  # pragma: no cover - depends on local torch build
+            count = 0
+        for index in range(max(count, 1)):
+            try:
+                name = torch.cuda.get_device_name(index)
+            except Exception:  # pragma: no cover - depends on local torch build
+                name = "cuda"
+            cuda_devices.append({"name": "cuda", "available": True, "index": index, "deviceName": name})
     devices = [
         {"name": "cpu", "available": True},
         {"name": "cuda", "available": cuda_available},
         {"name": "mps", "available": mps_available},
+        {"name": "xpu", "available": xpu_available},
+        *cuda_devices,
     ]
     reasons: list[str] = []
     if not cuda_available:
@@ -257,62 +298,416 @@ def cuda_status() -> dict[str, Any]:
     return {
         "torchInstalled": True,
         "torchVersion": getattr(torch, "__version__", None),
+        "torchCudaBuild": cuda_build,
+        "cudaAvailable": cuda_available,
+        "mpsAvailable": mps_available,
+        "mpsBuilt": mps_built,
+        "xpuAvailable": xpu_available,
+        "hipVersion": hip_version,
         "available": cuda_available,
-        "device": "cuda" if cuda_available else "cpu",
+        "device": "cuda" if cuda_available else "mps" if mps_available else "xpu" if xpu_available else "cpu",
         "reasons": reasons,
         "devices": devices,
     }
 
 
-def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str, Any]:
+def _host_runtime() -> tuple[str, str]:
+    system = platform.system() or "Unknown"
+    if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
+        return "google_colab", "Google Colab"
+    if os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):
+        return "kaggle", "Kaggle notebook"
+    if os.environ.get("CODESPACES"):
+        return "codespaces", "GitHub Codespaces"
+    if os.environ.get("CI"):
+        return "ci", "CI runner"
+    if system == "Darwin":
+        return "local_mac", "macOS runtime"
+    if system == "Linux":
+        return "local_linux", "Linux runtime"
+    if system == "Windows":
+        return "local_windows", "Windows runtime"
+    return "runtime", f"{system} runtime"
+
+
+def _accelerator(
+    *,
+    kind: str,
+    hardware_detected: bool,
+    visible_to_torch: bool = False,
+    name: str | None = None,
+    memory_mb: int | None = None,
+    driver: str | None = None,
+    source: str = "fallback",
+) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "hardwareDetected": bool(hardware_detected),
+        "visibleToTorch": bool(visible_to_torch),
+        "name": name,
+        "memoryMb": memory_mb,
+        "driver": driver,
+        "source": source,
+    }
+
+
+def _nvidia_smi_accelerators(timeout: float = 1.5) -> list[dict[str, Any]]:
+    executable = shutil.which("nvidia-smi")
+    if not executable:
+        return []
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--query-gpu=name,memory.total,driver_version",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if completed.returncode != 0:
+        return []
+    accelerators: list[dict[str, Any]] = []
+    for line in completed.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if not parts or not parts[0]:
+            continue
+        memory_mb: int | None = None
+        if len(parts) > 1:
+            try:
+                memory_mb = int(float(parts[1]))
+            except ValueError:
+                memory_mb = None
+        accelerators.append(
+            _accelerator(
+                kind="nvidia_cuda",
+                hardware_detected=True,
+                name=parts[0],
+                memory_mb=memory_mb,
+                driver=parts[2] if len(parts) > 2 else None,
+                source="nvidia-smi",
+            )
+        )
+    return accelerators
+
+
+def _proc_nvidia_accelerator() -> dict[str, Any] | None:
+    version_file = Path("/proc/driver/nvidia/version")
+    try:
+        if not version_file.exists():
+            return None
+        text = version_file.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return None
+    return _accelerator(
+        kind="nvidia_cuda",
+        hardware_detected=True,
+        name="NVIDIA GPU",
+        driver=text.splitlines()[0] if text else None,
+        source="/proc/driver/nvidia/version",
+    )
+
+
+def _env_hardware_accelerators() -> list[dict[str, Any]]:
+    accelerators: list[dict[str, Any]] = []
+    if os.environ.get("COLAB_GPU") or os.environ.get("NVIDIA_VISIBLE_DEVICES") or os.environ.get("CUDA_VISIBLE_DEVICES"):
+        accelerators.append(
+            _accelerator(
+                kind="nvidia_cuda",
+                hardware_detected=True,
+                name="NVIDIA GPU",
+                source="env",
+            )
+        )
+    if os.environ.get("HIP_VISIBLE_DEVICES") or os.environ.get("ROCR_VISIBLE_DEVICES") or os.environ.get("ROCM_PATH"):
+        accelerators.append(
+            _accelerator(
+                kind="amd_rocm",
+                hardware_detected=True,
+                name="AMD ROCm accelerator",
+                source="env",
+            )
+        )
+    if os.environ.get("ONEAPI_DEVICE_SELECTOR") or os.environ.get("SYCL_DEVICE_FILTER") or os.environ.get("ZE_AFFINITY_MASK"):
+        accelerators.append(
+            _accelerator(
+                kind="intel_xpu",
+                hardware_detected=True,
+                name="Intel XPU accelerator",
+                source="env",
+            )
+        )
+    return accelerators
+
+
+def _torch_visible_accelerators(cuda_info: Mapping[str, Any]) -> list[dict[str, Any]]:
+    accelerators: list[dict[str, Any]] = []
+    device_records = [device for device in (cuda_info.get("devices") or []) if isinstance(device, Mapping)]
+    for device in cuda_info.get("devices") or []:
+        if not isinstance(device, Mapping):
+            continue
+        name = str(device.get("name") or "").lower()
+        if name != "cuda" or not bool(device.get("available")):
+            continue
+        accelerators.append(
+            _accelerator(
+                kind="nvidia_cuda",
+                hardware_detected=True,
+                visible_to_torch=True,
+                name=str(device.get("deviceName") or "CUDA GPU"),
+                source="torch",
+            )
+        )
+    if bool(cuda_info.get("mpsAvailable")) or any(str(device.get("name") or "").lower() == "mps" and bool(device.get("available")) for device in device_records):
+        accelerators.append(
+            _accelerator(
+                kind="apple_mps",
+                hardware_detected=True,
+                visible_to_torch=True,
+                name="Apple Silicon GPU",
+                source="torch",
+            )
+        )
+    if bool(cuda_info.get("xpuAvailable")):
+        accelerators.append(
+            _accelerator(
+                kind="intel_xpu",
+                hardware_detected=True,
+                visible_to_torch=True,
+                name="Intel XPU",
+                source="torch",
+            )
+        )
+    if cuda_info.get("hipVersion"):
+        accelerators.append(
+            _accelerator(
+                kind="amd_rocm",
+                hardware_detected=True,
+                visible_to_torch=True,
+                name="AMD ROCm accelerator",
+                source="torch",
+            )
+        )
+    return accelerators
+
+
+def _dedupe_accelerators(accelerators: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    for accelerator in accelerators:
+        kind = str(accelerator.get("kind") or "unknown")
+        existing = merged.get(kind)
+        if existing is None:
+            merged[kind] = dict(accelerator)
+            continue
+        existing["hardwareDetected"] = bool(existing.get("hardwareDetected") or accelerator.get("hardwareDetected"))
+        existing["visibleToTorch"] = bool(existing.get("visibleToTorch") or accelerator.get("visibleToTorch"))
+        for key in ("name", "memoryMb", "driver"):
+            if not existing.get(key) and accelerator.get(key):
+                existing[key] = accelerator.get(key)
+        sources = [str(existing.get("source") or ""), str(accelerator.get("source") or "")]
+        existing["source"] = "+".join(source for source in dict.fromkeys(sources) if source)
+    return list(merged.values())
+
+
+def runtime_environment(
+    cuda_info: Mapping[str, Any] | None = None,
+    *,
+    hardware_accelerators: list[Mapping[str, Any]] | None = None,
+    include_platform_hardware: bool = True,
+) -> dict[str, Any]:
+    """Detect hardware separately from Python/PyTorch runtime readiness."""
+
+    cuda = dict(cuda_info or cuda_status())
+    system = platform.system() or "Unknown"
+    machine = platform.machine() or "unknown"
+    host, _host_label = _host_runtime()
+    detected: list[dict[str, Any]] = []
+    if hardware_accelerators is None:
+        detected.extend(_nvidia_smi_accelerators())
+        if not detected:
+            proc_gpu = _proc_nvidia_accelerator()
+            if proc_gpu:
+                detected.append(proc_gpu)
+        detected.extend(_env_hardware_accelerators())
+    else:
+        detected.extend(dict(item) for item in hardware_accelerators)
+    detected.extend(_torch_visible_accelerators(cuda))
+    if include_platform_hardware and system == "Darwin" and machine.lower() in {"arm64", "aarch64"}:
+        detected.append(
+            _accelerator(
+                kind="apple_mps",
+                hardware_detected=True,
+                visible_to_torch=bool(cuda.get("mpsAvailable")),
+                name="Apple Silicon GPU",
+                source="platform",
+            )
+        )
+    accelerators = _dedupe_accelerators(detected)
+    kinds = {str(item.get("kind") or "") for item in accelerators if item.get("hardwareDetected")}
+    device_records = [device for device in (cuda.get("devices") or []) if isinstance(device, Mapping)]
+    cuda_visible = bool(
+        cuda.get("available")
+        or cuda.get("cudaAvailable")
+        or any(str(device.get("name") or "").lower() == "cuda" and bool(device.get("available")) for device in device_records)
+    )
+    mps_visible = bool(
+        cuda.get("mpsAvailable")
+        or any(str(device.get("name") or "").lower() == "mps" and bool(device.get("available")) for device in device_records)
+    )
+    xpu_visible = bool(
+        cuda.get("xpuAvailable")
+        or any(str(device.get("name") or "").lower() == "xpu" and bool(device.get("available")) for device in device_records)
+    )
+    rocm_visible = bool(cuda.get("hipVersion"))
+    reason_codes: list[str] = []
+    messages: list[str] = []
+    recommended_fixes: list[str] = []
+    classification = "unknown"
+    confidence = "low"
+
+    if cuda_visible:
+        classification = "cuda_ready"
+        confidence = "high"
+        reason_codes.append("torch_cuda_available")
+        messages.append("CUDA is available through PyTorch.")
+    elif "nvidia_cuda" in kinds:
+        classification = "cuda_hardware_runtime_missing"
+        confidence = "high"
+        reason_codes.extend(["nvidia_hardware_detected", "torch_cuda_unavailable"])
+        if not cuda.get("torchInstalled"):
+            reason_codes.append("torch_missing")
+        messages.append("GPU detected, but this Python environment cannot use CUDA yet.")
+        recommended_fixes.append("Install a CUDA-enabled PyTorch build for this runtime, or choose the no-model CPU fallback.")
+    elif mps_visible:
+        classification = "mps_ready"
+        confidence = "high"
+        reason_codes.append("torch_mps_available")
+        messages.append("Apple Silicon detected; PyTorch MPS is available.")
+    elif "apple_mps" in kinds:
+        classification = "mps_hardware_runtime_missing"
+        confidence = "high"
+        reason_codes.extend(["apple_silicon_detected", "torch_mps_unavailable"])
+        messages.append("Apple Silicon hardware detected, but PyTorch MPS is not available in this runtime.")
+        recommended_fixes.append("Install a PyTorch build with MPS support, or use CPU/no-model workflows.")
+    elif xpu_visible:
+        classification = "xpu_ready"
+        confidence = "medium"
+        reason_codes.append("torch_xpu_available")
+        messages.append("Intel XPU is available through PyTorch.")
+    elif "intel_xpu" in kinds:
+        classification = "xpu_hardware_runtime_missing"
+        confidence = "medium"
+        reason_codes.extend(["intel_xpu_hardware_detected", "torch_xpu_unavailable"])
+        messages.append("Intel accelerator signals were detected, but PyTorch XPU is not available in this runtime.")
+        recommended_fixes.append("Install an Intel/XPU-capable PyTorch runtime, or use CPU/no-model workflows.")
+    elif rocm_visible:
+        classification = "rocm_ready"
+        confidence = "medium"
+        reason_codes.append("torch_rocm_available")
+        messages.append("ROCm/HIP is visible through PyTorch.")
+    elif "amd_rocm" in kinds:
+        classification = "rocm_hardware_runtime_missing"
+        confidence = "medium"
+        reason_codes.extend(["amd_rocm_hardware_detected", "torch_rocm_unavailable"])
+        messages.append("AMD/ROCm accelerator signals were detected, but PyTorch ROCm is not available in this runtime.")
+        recommended_fixes.append("Install a ROCm-capable PyTorch runtime, or use CPU/no-model workflows.")
+    else:
+        classification = "cpu_only"
+        confidence = "high"
+        reason_codes.append("no_accelerator_hardware_detected")
+        messages.append("No accelerator hardware signals were detected; CPU/no-model workflows can run now.")
+
+    if not accelerators:
+        accelerators = [
+            _accelerator(
+                kind="cpu",
+                hardware_detected=True,
+                visible_to_torch=True,
+                name="CPU",
+                source="fallback",
+            )
+        ]
+    return {
+        "format": RUNTIME_ENVIRONMENT_FORMAT,
+        "host": host,
+        "system": system,
+        "machine": machine,
+        "classification": classification,
+        "confidence": confidence,
+        "hardware": {"accelerators": accelerators},
+        "runtime": {
+            "python": platform.python_version(),
+            "torchInstalled": bool(cuda.get("torchInstalled")),
+            "torchVersion": cuda.get("torchVersion"),
+            "torchCudaBuild": cuda.get("torchCudaBuild"),
+            "cudaAvailable": cuda_visible,
+            "mpsAvailable": mps_visible,
+            "mpsBuilt": bool(cuda.get("mpsBuilt")),
+            "xpuAvailable": xpu_visible,
+            "hipVersion": cuda.get("hipVersion"),
+        },
+        "reasonCodes": reason_codes,
+        "messages": messages,
+        "recommendedFixes": recommended_fixes,
+    }
+
+
+def local_environment_profile(
+    cuda: Mapping[str, Any] | None = None,
+    runtime_env: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Classify the local runtime for UI setup guidance without making network calls."""
 
     cuda_info = dict(cuda or cuda_status())
+    runtime_env = dict(
+        runtime_env
+        or runtime_environment(
+            cuda_info,
+            hardware_accelerators=[] if cuda is not None else None,
+            include_platform_hardware=cuda is None,
+        )
+    )
     system = platform.system() or "Unknown"
     machine = platform.machine() or "unknown"
-    cuda_available = bool(cuda_info.get("available"))
+    runtime_classification = str(runtime_env.get("classification") or "")
+    cuda_available = bool(runtime_env.get("runtime", {}).get("cudaAvailable"))
     devices = list(cuda_info.get("devices") or [])
-    mps_available = any(str(device.get("name") or "").lower() == "mps" and bool(device.get("available")) for device in devices if isinstance(device, Mapping))
-    if cuda_available:
+    mps_available = bool(runtime_env.get("runtime", {}).get("mpsAvailable"))
+    if runtime_classification.startswith("cuda"):
         accelerator = "cuda"
-    elif mps_available:
+    elif runtime_classification.startswith("mps"):
         accelerator = "mps"
+    elif runtime_classification.startswith("xpu"):
+        accelerator = "xpu"
+    elif runtime_classification.startswith("rocm"):
+        accelerator = "rocm"
     else:
         accelerator = "cpu"
 
-    host = "runtime"
-    host_label = f"{system} runtime"
-    if os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("COLAB_GPU"):
-        host = "google_colab"
-        host_label = "Google Colab"
-    elif os.environ.get("KAGGLE_KERNEL_RUN_TYPE"):
-        host = "kaggle"
-        host_label = "Kaggle notebook"
-    elif os.environ.get("CODESPACES"):
-        host = "codespaces"
-        host_label = "GitHub Codespaces"
-    elif os.environ.get("CI"):
-        host = "ci"
-        host_label = "CI runner"
-    elif system == "Darwin":
-        host = "local_mac"
-        host_label = "macOS runtime"
-    elif system == "Linux":
-        host = "local_linux"
-        host_label = "Linux runtime"
-    elif system == "Windows":
-        host = "local_windows"
-        host_label = "Windows runtime"
+    host, host_label = _host_runtime()
 
-    if accelerator == "cuda":
+    if runtime_classification == "cuda_ready":
         label = f"{host_label} with CUDA GPU"
         summary = "CUDA is available through PyTorch, so GPU model setup can target SAM3 Scene Sweep."
-    elif accelerator == "mps":
+    elif runtime_classification == "cuda_hardware_runtime_missing":
+        label = f"{host_label} with GPU runtime not ready"
+        summary = "GPU detected, but this Python environment cannot use CUDA yet. Install CUDA-enabled PyTorch or run the no-model CPU fallback."
+    elif runtime_classification == "mps_ready":
         label = f"{host_label} with Apple MPS"
         summary = "Apple MPS is available through PyTorch. Treat SAM3 Scene Sweep as CUDA-first unless this runtime proves MPS support for the selected model."
+    elif runtime_classification == "mps_hardware_runtime_missing":
+        label = f"{host_label} with Apple Silicon runtime not ready"
+        summary = "Apple Silicon hardware was detected, but PyTorch MPS is not ready in this runtime."
+    elif accelerator in {"xpu", "rocm"}:
+        label = f"{host_label} with {accelerator.upper()} runtime"
+        summary = "Accelerator hardware was detected. Use provider diagnostics to confirm MotionJSON support for the selected model path."
     else:
         label = f"{host_label} CPU"
-        summary = "No CUDA GPU was detected through PyTorch; use CPU-safe workflows, Apple MPS where supported, a CUDA runtime, or a hosted provider."
+        summary = "No accelerator hardware signals were detected; use CPU-safe workflows, Apple MPS where supported, a CUDA runtime, or a hosted provider."
 
     notes: list[str] = []
     if not bool(cuda_info.get("torchInstalled")):
@@ -329,6 +724,7 @@ def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str
         "system": system,
         "machine": machine,
         "accelerator": accelerator,
+        "classification": runtime_classification,
         "label": label,
         "summary": summary,
         "python": platform.python_version(),
@@ -338,6 +734,7 @@ def local_environment_profile(cuda: Mapping[str, Any] | None = None) -> dict[str
         "mpsAvailable": mps_available,
         "devices": devices,
         "notes": notes,
+        "runtimeEnvironment": runtime_env,
     }
 
 
@@ -351,23 +748,30 @@ def gpu_model_recommendation(
     sam3_scene_sweep = providers.get("sam3-auto-masks") or {}
     sam2_hf = providers.get("sam2-hf-auto-masks") or {}
     accelerator = str(environment_profile.get("accelerator") or "cpu")
+    classification = str(environment_profile.get("classification") or "")
     if accelerator == "cuda":
         missing = list(sam3_scene_sweep.get("reasons") or [])
         status = str(sam3_scene_sweep.get("status") or "not_configured")
-        runnable = bool(sam3_scene_sweep.get("runnable"))
+        runtime_missing = classification == "cuda_hardware_runtime_missing"
+        runnable = bool(sam3_scene_sweep.get("runnable")) and not runtime_missing
         return {
             "format": GPU_MODEL_RECOMMENDATION_FORMAT,
             "environmentType": environment_profile.get("type"),
             "accelerator": accelerator,
+            "classification": classification,
             "recommendedProviderId": "sam3_tracker_scene_sweep",
             "recommendedCapability": "sam3-auto-masks",
             "connectionId": "sam3-local",
             "model": SAM3_HF_REPO_ID,
             "label": "SAM3 Scene Sweep on CUDA",
-            "reason": "A CUDA GPU is visible to PyTorch. Use SAM3 Scene Sweep with facebook/sam3 for scene-wide discovery, then review the proposed object tracks before export.",
-            "status": "ready" if runnable else status,
+            "reason": (
+                "GPU detected, but this Python environment cannot use CUDA yet. Keep SAM3 Scene Sweep as the setup path, install a CUDA-enabled PyTorch runtime, then run proof."
+                if runtime_missing
+                else "A CUDA GPU is visible to PyTorch. Use SAM3 Scene Sweep with facebook/sam3 for scene-wide discovery, then review the proposed object tracks before export."
+            ),
+            "status": "needs_install" if runtime_missing else "ready" if runnable else status,
             "runnable": runnable,
-            "missing": missing,
+            "missing": ["CUDA runtime is not ready for PyTorch.", *missing] if runtime_missing else missing,
             "nextActions": [
                 "Install the sam3-transformers runtime if the tracker classes are missing.",
                 "Check Hugging Face access when facebook/sam3 is gated.",
@@ -380,6 +784,7 @@ def gpu_model_recommendation(
             "format": GPU_MODEL_RECOMMENDATION_FORMAT,
             "environmentType": environment_profile.get("type"),
             "accelerator": accelerator,
+            "classification": classification,
             "recommendedProviderId": "sam2-hf-auto-masks",
             "recommendedCapability": "sam2-hf-auto-masks",
             "connectionId": "sam2-hf-auto-masks",
@@ -399,6 +804,7 @@ def gpu_model_recommendation(
         "format": GPU_MODEL_RECOMMENDATION_FORMAT,
         "environmentType": environment_profile.get("type"),
         "accelerator": accelerator,
+        "classification": classification,
         "recommendedProviderId": "no_model_cpu_workflow",
         "recommendedCapability": "motion_foreground",
         "connectionId": "no_model_cpu_workflow",
@@ -1588,7 +1994,8 @@ def build_capability_report(
     )
     provider_records = [provider.to_dict() for provider in providers]
     cuda = cuda_status()
-    environment_profile = local_environment_profile(cuda)
+    runtime_env = runtime_environment(cuda)
+    environment_profile = local_environment_profile(cuda, runtime_env=runtime_env)
     model_recommendation = gpu_model_recommendation(provider_records, environment_profile)
     ready_no_model = [
         provider["name"]
@@ -1634,6 +2041,7 @@ def build_capability_report(
         },
         "environment": {
             "profile": environment_profile,
+            "runtimeEnvironment": runtime_env,
             "dependencies": [dep.to_dict() for dep in deps],
             "cuda": cuda,
             "ffmpeg": ffmpeg_status(),

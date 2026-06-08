@@ -221,6 +221,19 @@ def test_local_ui_api_health_capabilities_and_defaults_are_public(tmp_path):
     assert "mock" in capabilities["summary"]["runnableProviders"]
     assert "mock" in capabilities["summary"]["localFreeRunnableProviders"]
     assert capabilities["environment"]["profile"]["format"] == "motionjson.local_environment_profile.v0.1"
+    assert capabilities["environment"]["runtimeEnvironment"]["format"] == "motionjson.runtime_environment.v0.2"
+    assert capabilities["environment"]["runtimeEnvironment"]["classification"] in {
+        "cuda_ready",
+        "cuda_hardware_runtime_missing",
+        "mps_ready",
+        "mps_hardware_runtime_missing",
+        "xpu_ready",
+        "xpu_hardware_runtime_missing",
+        "rocm_ready",
+        "rocm_hardware_runtime_missing",
+        "cpu_only",
+        "unknown",
+    }
     assert capabilities["summary"]["gpuModelRecommendation"]["format"] == "motionjson.gpu_model_recommendation.v0.1"
     assert capabilities["summary"]["firstRun"]["recommendedCommand"] == "python3 -m motionjson.cli ui --no-open"
 
