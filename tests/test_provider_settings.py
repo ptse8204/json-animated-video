@@ -651,6 +651,64 @@ def test_sam3_setup_jobs_use_saved_hugging_face_token_without_echoing_it(tmp_pat
     assert str(cached_dir) not in progress_text
 
 
+def test_prepare_model_checks_hugging_face_access_before_sam3_download(tmp_path, monkeypatch):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
+    secret = "hf_prepare_token_abcdef123456"
+    calls: list[tuple[str, str, str | None]] = []
+    cached_dir = tmp_path / "hf-cache" / "facebook-sam3"
+    write_fake_from_pretrained_dir(cached_dir)
+
+    fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.__spec__ = ModuleSpec("huggingface_hub", loader=None)
+
+    class FakeHfApi:
+        def model_info(self, repo_id: str, token: str | None = None) -> dict[str, str]:
+            calls.append(("model_info", repo_id, token))
+            return {"id": repo_id}
+
+    def snapshot_download(repo_id: str, token: str | None = None) -> str:
+        calls.append(("snapshot_download", repo_id, token))
+        return str(cached_dir)
+
+    fake_hub.HfApi = FakeHfApi
+    fake_hub.snapshot_download = snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setattr("motionjson.backend.provider_setup_jobs.find_spec", lambda name: object() if name == "huggingface_hub" else None)
+    install_fake_torch(monkeypatch, cuda=True)
+    install_fake_transformers_for_sam3(monkeypatch)
+
+    status, _headers, body = app.handle(
+        "POST",
+        "/api/provider-settings/sam3-local/setup/start",
+        body=json.dumps(
+            {
+                "action": "prepare_model",
+                "runInline": True,
+                "allowNetwork": True,
+                "allowDisk": True,
+                "allowHeavyLocal": True,
+                "settings": {
+                    "selectedModel": "facebook/sam3",
+                    "hfToken": secret,
+                    "sam3Device": "cuda",
+                },
+            }
+        ).encode("utf-8"),
+    )
+    text = body.decode("utf-8")
+    payload = decode(body)
+    job = payload["setupJob"]
+
+    assert status == 200
+    assert job["status"] == "succeeded"
+    assert job["result"]["ready"] is True
+    assert [item[0] for item in calls[:2]] == ["model_info", "snapshot_download"]
+    assert calls[0][1:] == ("facebook/sam3", secret)
+    assert calls[1][1:] == ("facebook/sam3", secret)
+    assert secret not in text
+    assert str(cached_dir) not in text
+
+
 def test_sam_setup_jobs_cache_models_with_confirmation_and_redaction(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=False)
 

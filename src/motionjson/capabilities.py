@@ -1489,6 +1489,8 @@ def provider_capabilities(
             metadata={
                 "model": sam3_model,
                 "runtime": sam3_runtime,
+                "hfTokenConfigured": bool(sam3_local_settings.get("hf_token_configured")),
+                "credentialSource": sam3_local_settings.get("credential_source") or "none",
                 "uiDescription": "Advanced official SAM3 package adapter for concept/exemplar workflows.",
                 "whenToUse": "Use only when the official SAM3 package and a local sam3.pt checkpoint are configured.",
                 "semanticDiscovery": True,
@@ -1637,6 +1639,8 @@ def provider_capabilities(
                 "whenToUse": "Use to find everything visible in the scene with SAM3-only dependencies.",
                 "discoveryMode": "sam3_auto_masks",
                 "requiresSam2": False,
+                "hfTokenConfigured": bool(sam3_local_settings.get("hf_token_configured")),
+                "credentialSource": sam3_local_settings.get("credential_source") or "none",
                 "trackerModel": sam3_tracker_model,
                 "trackerVideo": {
                     **dict(sam3_tracker_video_status),

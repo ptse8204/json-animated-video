@@ -352,14 +352,42 @@ def _hosted_required_inputs(provider: Mapping[str, Any] | None, *, include_netwo
     return required
 
 
+def _sam3_requires_hf_token(scene_sweep_provider: Mapping[str, Any] | None, local_provider: Mapping[str, Any] | None) -> bool:
+    proof = _runtime_proof(scene_sweep_provider)
+    model = proof.get("model") if isinstance(proof.get("model"), Mapping) else {}
+    if bool(model.get("cached")):
+        return False
+    local_metadata = _metadata(local_provider)
+    scene_metadata = _metadata(scene_sweep_provider)
+    if bool(local_metadata.get("hfTokenConfigured")) or bool(scene_metadata.get("hfTokenConfigured")):
+        return False
+    tracker_model = scene_metadata.get("trackerModel") if isinstance(scene_metadata.get("trackerModel"), Mapping) else {}
+    value_kind = str(tracker_model.get("valueKind") or "")
+    return value_kind != "local_model_directory"
+
+
 def _trace_all_recommendation(goal: str, report: Mapping[str, Any]) -> dict[str, Any]:
     providers = _providers(report)
     runtime = _runtime_environment(report)
     classification = str(runtime.get("classification") or "unknown")
     sam3 = providers.get("sam3-auto-masks")
+    sam3_local = providers.get("sam3-local")
     sam2_hf = providers.get("sam2-hf-auto-masks")
     if classification in {"cuda_ready", "cuda_hardware_runtime_missing"}:
         status, primary_action = _sam3_status_for_trace_all(sam3, classification)
+        required_inputs = []
+        if _sam3_requires_hf_token(sam3, sam3_local):
+            status = "needs_input"
+            primary_action = _local_save_and_setup_action("Set up SAM3 Scene Sweep")
+            required_inputs = [
+                _required_input(
+                    "hf_token",
+                    "Hugging Face token",
+                    "secret",
+                    True,
+                    "required before MotionJSON can cache facebook/sam3",
+                )
+            ]
         why = (
             "GPU detected, but the Python runtime is not ready for CUDA. SAM3 Scene Sweep remains the recommended setup path after installing CUDA-enabled PyTorch."
             if classification == "cuda_hardware_runtime_missing"
@@ -374,12 +402,12 @@ def _trace_all_recommendation(goal: str, report: Mapping[str, Any]) -> dict[str,
             subtitle="Best local path for scene-wide object discovery on CUDA.",
             status=status,
             primary_action=primary_action,
+            required_inputs=required_inputs,
             runtime_badges=_runtime_badges(runtime=runtime, provider=sam3, model_label=SAM3_HF_REPO_ID),
             why_this=why,
-            warnings=[] if status != "needs_setup" or classification != "cuda_hardware_runtime_missing" else ["CUDA hardware is present, but this Python runtime cannot use it yet."],
+            warnings=[] if status not in {"needs_setup", "needs_input"} or classification != "cuda_hardware_runtime_missing" else ["CUDA hardware is present, but this Python runtime cannot use it yet."],
             alternatives=[_no_model_alternative()],
             run_config_mapping={"providerName": "sam3-local", "discoveryMode": "sam3_auto_masks"},
-            optional_inputs=[_required_input("hf_token", "Hugging Face token", "secret", False, "model access is gated")],
         )
     if classification == "mps_ready" and sam2_hf and bool(sam2_hf.get("installed")):
         status, primary_action = _sam2_hf_status(sam2_hf)

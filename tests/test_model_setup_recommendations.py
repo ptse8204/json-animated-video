@@ -104,10 +104,11 @@ def test_trace_all_cuda_hardware_torch_missing_keeps_sam3_setup_path():
         capability_report=report("cuda_hardware_runtime_missing"),
     )
 
-    assert recommendation["status"] == "needs_setup"
+    assert recommendation["status"] == "needs_input"
     assert recommendation["selectedConnectionId"] == "sam3-local"
-    assert recommendation["primaryAction"]["id"] == "auto_setup"
+    assert recommendation["primaryAction"]["id"] == "save_and_auto_setup"
     assert recommendation["primaryAction"]["label"] == "Set up SAM3 Scene Sweep"
+    assert {item["key"] for item in recommendation["requiredInputs"]} == {"hf_token"}
     assert recommendation["alternatives"][0]["connectionId"] == "no_model_cpu_workflow"
     assert "GPU detected" in recommendation["whyThis"]
     assert "runtime" in recommendation["whyThis"]
@@ -134,6 +135,42 @@ def test_trace_all_cuda_ready_proof_missing_maps_to_one_setup_action():
     assert recommendation["selectedConnectionId"] == "sam3-local"
     assert recommendation["primaryAction"]["id"] == "auto_setup"
     assert recommendation["primaryAction"]["label"] == "Set up SAM3 Scene Sweep"
+
+
+def test_trace_all_cuda_ready_missing_hf_token_requests_input_before_setup():
+    recommendation = model_setup_recommendation_for_goal(
+        "trace_all_objects",
+        capability_report=report(
+            "cuda_ready",
+            provider(
+                "sam3-auto-masks",
+                status="runtime_proof_required",
+                available=True,
+                configured=True,
+                installed=True,
+                runnable=False,
+                metadata={
+                    "runtimeProof": proof("missing_cache", cached=False),
+                    "trackerModel": {"valueKind": "huggingface_repo_id"},
+                },
+            ),
+            provider(
+                "sam3-local",
+                status="ready",
+                available=True,
+                configured=True,
+                installed=True,
+                runnable=False,
+                metadata={"hfTokenConfigured": False},
+            ),
+        ),
+    )
+
+    assert recommendation["status"] == "needs_input"
+    assert recommendation["selectedConnectionId"] == "sam3-local"
+    assert recommendation["primaryAction"]["id"] == "save_and_auto_setup"
+    assert recommendation["primaryAction"]["label"] == "Set up SAM3 Scene Sweep"
+    assert {item["key"] for item in recommendation["requiredInputs"]} == {"hf_token"}
 
 
 def test_trace_all_cpu_only_recommends_no_model_cpu_workflow():

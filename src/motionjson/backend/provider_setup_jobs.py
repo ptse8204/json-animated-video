@@ -568,14 +568,28 @@ def _prepare_model_action(
             progress_label="Runtime setup needed",
         )
 
-    if provider_id == "sam3-local" and setup_state.get("status") == "needs_access" and not requested_model_is_local_dir:
-        return _prepare_blocked_result(
-            provider_id,
-            message=setup_state.get("message") or "Hugging Face access is needed before caching facebook/sam3.",
-            next_action="check_access",
-            diagnosis=diagnosis,
-            progress_label="Access check needed",
+    if provider_id == "sam3-local" and not requested_model_is_local_dir:
+        if progress:
+            progress("prepare_access_check", "Checking Hugging Face access for facebook/sam3", 18, True)
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id=provider_id, environ=environ)
+        access_result = _check_sam3_hf_access(
+            {
+                **dict(payload),
+                "allowNetwork": True,
+            },
+            token=str(runtime.get("hf_token") or ""),
+            environ=environ,
         )
+        if access_result.get("status") != "succeeded":
+            return _prepare_blocked_result(
+                provider_id,
+                message=str(access_result.get("message") or setup_state.get("message") or "Hugging Face access is needed before caching facebook/sam3."),
+                next_action="check_access",
+                diagnosis=diagnosis,
+                progress_label="Access check needed",
+            )
+        if progress:
+            progress("prepare_access_verified", "Hugging Face access accepted for facebook/sam3", 24, True)
 
     cached_model_cache = diagnosis.get("modelCache") if isinstance(diagnosis.get("modelCache"), Mapping) else {}
     cache_result: dict[str, Any] | None = None
