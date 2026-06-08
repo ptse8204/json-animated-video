@@ -25,7 +25,7 @@ def test_phase03b_local_ui_has_provider_settings_surface():
             "modelSetupChoices",
             "Provider settings",
             "Providers and models",
-            "Choose and install models",
+            "Recommended model setup",
             "textDiscoveryProviderSelect",
         ]:
             assert expected in html

@@ -696,6 +696,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
+          modelSetupGuidedTitle: document.querySelector("#modelSetupPanel .model-setup-recommendation-title")?.textContent?.trim() || "",
+          modelSetupKicker: document.querySelector("#modelSetupPanel .model-setup-recommendation-copy .section-kicker")?.textContent?.trim() || "",
+          modelSetupChecklistCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item")].filter(visible).length,
+          modelSetupChecklistText: document.querySelector("#modelSetupPanel .model-setup-checklist")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          modelSetupRequiredNowVisible: visible(document.querySelector("#modelSetupPanel .model-setup-required-now")),
+          modelSetupRequiredNowText: document.querySelector("#modelSetupPanel .model-setup-required-now")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          modelSetupOptionsOpen: document.querySelector("#modelSetupPanel .model-setup-options")?.open === true,
+          modelSetupAdvancedOpen: document.querySelector("#modelSetupPanel .model-setup-advanced")?.open === true,
+          modelSetupNormalSecretInputCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-guided-card input[type='password'], #modelSetupPanel .model-setup-guided-card [data-model-setup-field='apiKey'], #modelSetupPanel .model-setup-guided-card [data-model-setup-field='hfToken']")].filter(visible).length,
           modelSetupConfirmationVisible: visible(document.querySelector(".model-setup-confirmation")),
           modelSetupConfirmationText: document.querySelector(".model-setup-confirmation")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           modelSetupProgressVisible: visible(document.querySelector(".model-setup-progress-card")),
@@ -898,6 +907,30 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: provider step title should focus on the guided runtime recommendation`);
+    }
+    if ((state === "workflow-provider" || state.startsWith("model-setup")) && stateValue.modelSetupTitle !== "Recommended model setup") {
+      failures.push(`${viewport.name}/${state}: model setup should use the guided recommendation title`);
+    }
+    if ((state === "workflow-provider" || state.startsWith("model-setup")) && !stateValue.modelSetupGuidedTitle) {
+      failures.push(`${viewport.name}/${state}: guided model setup card should expose one selected or recommended path title`);
+    }
+    if ((state === "workflow-provider" || state.startsWith("model-setup")) && stateValue.modelSetupChecklistCount !== 4) {
+      failures.push(`${viewport.name}/${state}: guided model setup should show four status checklist items`);
+    }
+    if (
+      (state === "workflow-provider" || state.startsWith("model-setup")) &&
+      !["Hardware", "Runtime", "Model", "Proof"].every((label) => stateValue.modelSetupChecklistText.toLowerCase().includes(label.toLowerCase()))
+    ) {
+      failures.push(`${viewport.name}/${state}: guided model setup checklist should cover hardware, runtime, model, and proof`);
+    }
+    if ((state === "workflow-provider" || state.startsWith("model-setup")) && (!stateValue.modelSetupRequiredNowVisible || !/Required now/i.test(stateValue.modelSetupRequiredNowText))) {
+      failures.push(`${viewport.name}/${state}: guided model setup should show required-now copy in the primary card`);
+    }
+    if (state === "model-setup-no-model-cpu" && !/No model paths|No extra fields/i.test(stateValue.modelSetupRequiredNowText)) {
+      failures.push(`${viewport.name}/${state}: no-model CPU path should not require model fields`);
+    }
+    if (state === "model-setup-hosted-warning" && stateValue.modelSetupNormalSecretInputCount > 0 && !stateValue.modelSetupAdvancedOpen) {
+      failures.push(`${viewport.name}/${state}: hosted credentials should stay out of the primary guided card`);
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
