@@ -109,6 +109,8 @@ export const defaultState = () => ({
   prompts: [],
   strokes: [],
   keyframes: new Set([0]),
+  scanFrameConfirmed: false,
+  scanFrameIndex: 0,
   selectedPromptId: "",
   pointer: null,
   draftBox: null,

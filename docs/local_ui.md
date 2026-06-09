@@ -139,16 +139,14 @@ Local project creation is no longer a required early decision in guided mode.
 When a user adds a video, starts from the bundled demo, or opens an existing
 MotionJSON result, the Local UI creates a starter local project automatically
 if one does not already exist. Manual project switching and manual project
-creation remain available under `Project options` and `Show all panels`.
-
-Only the active screen's main panels are shown by default. The top-bar switch
-now expands the workspace into `All panels` mode instead of opening a separate
-diagnostics rail.
+creation remain available under `Project options`. Advanced tracing goals are
+visible on the Start screen as compact rows; they no longer require an
+all-panels dashboard.
 
 The left navigation can collapse to a compact rail with the active goal and a
-Menu button. The right details rail is collapsed by default on the first screen
-and can be opened with `Show details`. When closed, hidden regions are removed
-from the focus order. The workflow stepper supports ArrowRight, ArrowDown,
+Menu button. Run monitor, review, corrections, export, logs, artifacts, and
+model setup support are folded into the main workflow panels instead of a
+right details rail. The workflow stepper supports ArrowRight, ArrowDown,
 ArrowLeft, ArrowUp, Home, and End for keyboard navigation.
 
 Diagnostics are quieter on successful runs but are not hidden when they matter.
@@ -659,9 +657,10 @@ The commercial Local UI shell is organized around a stable app frame:
 - collapsible left navigation for tracing goals, workspace, first-run
   readiness, local API, and capabilities;
 - guided main workspace with a stepper, prior-step summaries, video/prompt
-  preview when relevant, and a `Show all panels` dashboard escape hatch;
-- collapsible right details rail for run monitor, review, corrections, export,
-  asset library, logs, artifacts, and route diagnostics.
+  preview when relevant, inline advanced tasks, run monitor, review,
+  corrections, export, asset library, logs, and artifacts;
+- route diagnostics remain debug-only and are not required for the normal
+  workflow.
 
 The default visible workflow is: choose a goal, add or select a video, connect
 one compatible model when needed, prepare the run, then review and export.

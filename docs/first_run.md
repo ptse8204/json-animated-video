@@ -162,8 +162,8 @@ object, and no duplicate-overlap rejection.
 2. Start at the guided stepper: `Start`, `Video`, `Model setup`,
    `Prepare & run`, `Run`, and `Review & export`.
 3. Keep the left menu collapsed when you want more workspace; reopen it with
-   Menu. Open `Show details` only when you need diagnostics, jobs, review,
-   corrections, export, or library panels.
+   Menu. Diagnostics, jobs, review, corrections, export, and library panels
+   stay in the main workflow when they are relevant.
 4. Let Model setup show the one recommended provider for the selected goal.
    Use the primary button to install runtime dependencies, cache models, check
    access, or smoke-test through server-owned allowlisted setup jobs.

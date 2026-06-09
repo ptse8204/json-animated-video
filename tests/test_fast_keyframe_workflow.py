@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from motionjson.backend.assets import list_assets_for_job
+from motionjson.backend.jobs import list_job_events
 from motionjson.ui.server import LocalUIApp
 
 from test_local_ui_api import decode, demo_video, wait_for_job
@@ -63,8 +64,17 @@ def test_keyframe_scan_stops_after_candidates_and_child_tracking_tracks_only_sel
     conn = app.connection()
     try:
         assets = list_assets_for_job(conn, project_id=scan_job["project_id"], source_job_id=scan_job["id"])
+        events = list_job_events(conn, job_id=scan_job["id"])
     finally:
         conn.close()
+    assert any(event["event_type"] == "candidate_artifacts_registered" for event in events)
+    preview_assets = [
+        asset
+        for asset in assets
+        if json.loads(asset["metadata_json"] or "{}").get("rel_path", "").startswith("discovery/")
+        and asset["content_type"].startswith("image/")
+    ]
+    assert preview_assets
     candidate_summary_asset = next(asset for asset in assets if asset["kind"] == "candidate_summary")
     candidate_summary = json.loads(app.storage().load_bytes(candidate_summary_asset["storage_key"]).decode("utf-8"))
     accepted = [item for item in candidate_summary["candidates"] if item["metadata"].get("defaultSelected") is True]

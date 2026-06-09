@@ -771,6 +771,31 @@ input[type="range"] {
   display: none;
 }
 
+.keyframe-scan-chooser {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.keyframe-scan-chooser.is-hidden {
+  display: none;
+}
+
+.keyframe-scan-chooser strong,
+.keyframe-scan-chooser small {
+  display: block;
+}
+
+.keyframe-scan-chooser small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 .guided-control-group {
   display: grid;
   gap: 8px;
@@ -3907,6 +3932,7 @@ button,
   .advanced-grid,
   .adaptive-chip-grid,
   .guided-quality-controls,
+  .keyframe-scan-chooser,
   .inline-form,
   .timeline-controls,
     .guided-start-actions,
@@ -4231,29 +4257,6 @@ body {
 #diagnosticsSummary,
 #refreshButton {
   display: none;
-}
-
-#detailsToggle {
-  min-height: 38px;
-  padding: 0 15px;
-  border-color: #d7dee4;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #283340;
-  font-size: 14px;
-  font-weight: 740;
-}
-
-#detailsToggle::before {
-  content: "";
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  margin-right: 8px;
-  vertical-align: -2px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  opacity: 0.72;
 }
 
 #workflowController {
@@ -5005,6 +5008,9 @@ body {
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-bulk-actions,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-object-list,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-segment-gate,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCandidateSectionSlot,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewArtifactSectionSlot,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportAllButton,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-actions {
   display: none !important;
@@ -5765,8 +5771,23 @@ body {
   background: inherit;
 }
 
-.app-shell:not(.is-workflow-dashboard) .advanced-task-panel {
-  display: none;
+.advanced-task-panel {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.advanced-task-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.advanced-task-heading h3 {
+  margin: 0;
+  font-size: 13px;
 }
 
 .app-shell:not(.is-workflow-dashboard) .model-setup-detail > .model-setup-summary {
@@ -5855,12 +5876,6 @@ body {
   font-size: 12px;
 }
 
-#detailsToggle {
-  min-height: 30px;
-  border-radius: 6px;
-  font-size: 12px;
-}
-
 #workflowController {
   position: static;
   z-index: 18;
@@ -5903,7 +5918,6 @@ body {
   display: none !important;
 }
 
-#detailsToggle,
 #railCloseButton {
   display: none !important;
 }
@@ -6132,10 +6146,6 @@ body {
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail {
-  display: none;
-}
-
-.app-shell.is-result-mode:not(.is-workflow-dashboard) #detailsToggle {
   display: none;
 }
 
@@ -6499,6 +6509,13 @@ body {
       "segment"
       "tools"
       "exportCard";
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "exportCard"
+      "tools";
   }
 }
 

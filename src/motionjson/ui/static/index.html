@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MotionJSON Workspace</title>
-    <!-- Build check labels retained for shell contract: Local release candidate; Platform release candidate; Object tracing workspace; Show details; Start mock job; Debug smoke. -->
+    <!-- Build check labels retained for shell contract: Local release candidate; Platform release candidate; Object tracing workspace; Main workflow; Start mock job; Debug smoke. -->
     <link rel="icon" href="/ui/favicon.svg" />
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
@@ -129,15 +129,7 @@
           </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
-            <span id="diagnosticsSummary" class="status-chip is-muted">Details hidden</span>
-            <button
-              id="detailsToggle"
-              class="shell-toggle"
-              type="button"
-              aria-controls="diagnosticsRail"
-              aria-expanded="false"
-              hidden
-            >Advanced</button>
+            <span id="diagnosticsSummary" class="status-chip is-muted">Main workflow</span>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
           </div>
         </header>
@@ -168,8 +160,11 @@
               <span class="goal-card-copy">Open a prior result and check tracks before export.</span>
             </button>
           </div>
-          <details class="advanced-panel advanced-task-panel">
-            <summary>Advanced tasks</summary>
+          <div class="advanced-task-panel" aria-label="Advanced tracing tasks">
+            <div class="advanced-task-heading">
+              <h3>Advanced tasks</h3>
+              <span class="row-meta">Specialized workflows</span>
+            </div>
             <div class="advanced-goal-list">
               <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
                 <span class="goal-card-title">Find everything in scene</span>
@@ -196,7 +191,7 @@
                 <span class="goal-card-copy">Use configured detector classes.</span>
               </button>
             </div>
-          </details>
+          </div>
         </section>
 
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow" data-testid="workflow-controller">
@@ -207,7 +202,6 @@
             </div>
             <div class="workflow-controller-actions">
               <span id="workflowStatus" class="status-chip is-muted">Not started</span>
-              <button id="workflowDashboardToggle" type="button" aria-pressed="false" hidden>Show all panels</button>
             </div>
           </div>
           <ol
@@ -276,7 +270,7 @@
               <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
             </section>
           </div>
-          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel">
+          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel" open>
             <summary>Logs and events</summary>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
@@ -295,15 +289,15 @@
           </details>
         </section>
 
-        <section id="postRunGuide" class="compact-panel post-run-guide" data-workflow-panel="review_candidates correct_tracks export" aria-label="Post-run review flow">
+        <section id="postRunGuide" class="compact-panel post-run-guide" data-workflow-panel="review_candidates correct_tracks export" aria-label="Export gate status">
           <div class="panel-heading compact-heading">
             <div>
-              <p class="section-kicker">Post-run flow</p>
-              <h2 id="postRunGuideTitle">Review before export</h2>
+              <p class="section-kicker">Export gate</p>
+              <h2 id="postRunGuideTitle">Ready selected objects</h2>
             </div>
             <span id="postRunGuideStatus" class="status-chip is-muted">No run</span>
           </div>
-          <p id="postRunGuideNote" class="panel-note">Start a run, review object tracks, correct mistakes, then export reviewed objects.</p>
+          <p id="postRunGuideNote" class="panel-note">Selected objects, warnings, and export readiness are shown in the main review workspace.</p>
           <div id="postRunGuideList" class="post-run-guide-list" aria-live="polite"></div>
         </section>
 
@@ -665,6 +659,18 @@
                   <button type="button" data-device-preset="cuda" data-tooltip="Request CUDA GPU for SAM3 Scene Sweep.">GPU</button>
                   <button type="button" data-device-preset="cpu" data-tooltip="Use CPU. Slower, but useful when CUDA setup is unstable.">CPU</button>
                 </div>
+              </div>
+            </div>
+
+            <div id="keyframeScanChooser" class="keyframe-scan-chooser is-hidden" data-workflow-fragment="prompt_preview" aria-live="polite">
+              <div>
+                <span class="section-kicker">Scan keyframe</span>
+                <strong id="scanFrameChoice">No scan frame selected</strong>
+                <small id="scanFrameHint">Move the video to the frame you want to inspect, then use it for the scan.</small>
+              </div>
+              <div class="inline-secondary-actions">
+                <button id="useCurrentFrameForScanButton" class="primary-action" type="button">Use current frame</button>
+                <button id="clearScanFrameButton" type="button">Change frame</button>
               </div>
             </div>
 

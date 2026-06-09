@@ -58,10 +58,10 @@ Open the printed local URL. The default workspace is step-by-step:
 8. Correct tracks.
 9. Preview/export.
 
-Use `Start mock job` for a no-model smoke run. The left menu and right details
-rail are collapsible; provider failures, failed runs, and fallback diagnostics
-remain visible when they need attention. `Show all panels` restores the
-advanced dashboard view for debugging.
+Use `Start mock job` for a no-model smoke run. The left menu is collapsible;
+provider failures, failed runs, fallback diagnostics, logs, review controls,
+and export controls remain visible in the main workflow when they need
+attention.
 
 ## 5. Local API
 

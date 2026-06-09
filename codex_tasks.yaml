@@ -242,6 +242,27 @@ ui_model_connector_phases:
       - "python3 -m motionjson.cli --help"
       - "python3 -m motionjson.cli ui --help"
       - "git diff --check"
+  - id: UI-WORKFLOW-13
+    name: correct inline workflow gaps
+    commit_message: "phase ui-workflow-13: correct inline workflow gaps"
+    report: docs/roadmap/phase-ui-workflow-13-report.md
+    goals:
+      - Remove all-panels/right-rail dependence from the default shell.
+      - Show advanced tracing tasks inline by default.
+      - Require explicit scan-frame confirmation for the keyframe-first path.
+      - Register live candidate/object preview artifacts while jobs run.
+      - Keep export gate focused on readiness, included objects, rights, and handoff actions.
+    validation:
+      - "npm run build"
+      - "npm test"
+      - "npm run lint"
+      - "python3 -m pytest -q tests/test_ui_first_run_simplicity.py tests/test_fast_keyframe_workflow.py"
+      - "python3 -m pytest -q tests/test_image_classifier.py tests/test_model_setup_recommendations.py"
+      - "python3 -m pytest -q tests/test_local_ui_api.py tests/test_backend_api_product.py tests/test_backend_jobs_worker.py tests/test_job_artifacts.py tests/test_job_lifecycle.py"
+      - "python3 -m motionjson.cli --help"
+      - "python3 -m motionjson.cli ui --help"
+      - "npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-13 --state first-run,model-setup-sam3-local,prepare-pick-frame,workflow-run,candidate-review,correction-tools,export-gate --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920"
+      - "git diff --check"
 historical_completed_phases:
   - id: 0
     name: repository discovery and guardrails

@@ -193,6 +193,7 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
   const requiresModel = goalRequiresModel(selectedPreset);
   const manualPromptRequired = selectedPreset === "trace_one_object";
   const fastFramePick = selectedPreset === "pick_objects_from_frame";
+  const scanFrameConfirmed = fastFramePick ? snapshot.scanFrameConfirmed === true : true;
   const requiresSam3Box = selectedPreset === "trace_one_object" && /sam3/i.test(String(snapshot.providerName || ""));
   const hasBoxPrompt = Boolean(snapshot.hasBoxPrompt);
   const hasPointPrompt = Boolean(snapshot.hasPointPrompt);
@@ -238,7 +239,9 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
               configBlocked ? "blocked" : configValid ? "ready" : "done",
               configBlocked ? "Run validation failed. Fix the generated config before retrying." : "Run started. MotionJSON will switch to review when results are ready.",
             )
-            : step(
+            : fastFramePick && !scanFrameConfirmed
+              ? step("needs-action", "Choose the exact frame to scan.", { complete: false })
+              : step(
                 "done",
                 fastFramePick
                   ? "This workflow is ready to scan one keyframe."

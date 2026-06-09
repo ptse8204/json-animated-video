@@ -13,7 +13,8 @@ def read(path: str) -> str:
 
 def test_normal_first_run_has_one_goal_picker_and_four_goal_cards():
     html = read("src/motionjson/ui/static/index.html")
-    normal_start = html.split('<details class="advanced-panel advanced-task-panel">', 1)[0]
+    normal_start = html.split('<div class="advanced-task-panel"', 1)[0]
+    advanced_start = html.split('<div class="advanced-task-panel"', 1)[1].split("</section>", 1)[0]
 
     assert 'class="goal-list"' not in html
     assert len(re.findall(r'<button class="goal-card(?:\s|")', normal_start)) == 4
@@ -21,7 +22,9 @@ def test_normal_first_run_has_one_goal_picker_and_four_goal_cards():
     assert 'data-preset="pick_objects_from_frame"' in normal_start
     assert 'data-preset="text_detector"' in normal_start
     assert 'data-preset="review_existing"' in normal_start
-    assert 'data-preset="trace_all_objects"' in html
+    assert 'data-preset="trace_all_objects"' in advanced_start
+    assert 'id="workflowDashboardToggle"' not in html
+    assert 'id="detailsToggle"' not in html
 
 
 def test_model_setup_normal_path_hides_raw_provider_controls_behind_advanced():
@@ -47,8 +50,33 @@ def test_model_setup_renders_one_recommended_card_until_change_model():
     js = read("src/motionjson/ui/static/app.js")
 
     assert "modelSetupAlternativesOpen" in js
-    assert "compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.workflowDashboard || state.modelSetupAlternativesOpen })" in js
+    assert "compatibleModelConnectionsForPreset(state.selectedPreset, { includeAdvanced: state.modelSetupAlternativesOpen })" in js
     assert "modelConnectionByConnectionId(state.selectedModelSetupProviderId) || modelConnectionByConnectionId(recommendedId)" in js
+
+
+def test_model_setup_prioritizes_required_hf_token_in_normal_flow():
+    js = read("src/motionjson/ui/static/app.js")
+    detail_body = js.split("function renderModelSetupDetail", 1)[1].split("function currentModelPlanResult", 1)[0]
+
+    assert "requiredInputPriority" in detail_body
+    assert 'if (key === "hf_token") return 0;' in detail_body
+    assert 'asArray(recommendation.requiredInputs).slice().sort((a, b) => requiredInputPriority(a) - requiredInputPriority(b))' in detail_body
+    assert 'return credentialInputMarkup({ name: "hf_token", label: input.label || "Hugging Face token" }, { normal: true });' in detail_body
+
+
+def test_pick_frame_workflow_has_explicit_scan_frame_gate():
+    html = read("src/motionjson/ui/static/index.html")
+    js = read("src/motionjson/ui/static/app.js")
+    workflow = read("src/motionjson/ui/static/modules/workflow.js")
+
+    assert 'id="keyframeScanChooser"' in html
+    assert 'id="useCurrentFrameForScanButton"' in html
+    assert 'id="clearScanFrameButton"' in html
+    assert 'function fastFrameScanFrameError' in js
+    assert js.count("blockFastFrameScanUntilConfirmed(formState)") >= 4
+    assert "Choose the exact frame to scan before starting the keyframe scan." in js
+    assert "snapshot.scanFrameConfirmed === true" in workflow
+    assert "Choose the exact frame to scan." in workflow
 
 
 def test_storyboard_shell_uses_project_drawer_and_in_flow_cta_in_normal_mode():

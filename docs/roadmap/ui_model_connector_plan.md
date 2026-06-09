@@ -375,3 +375,29 @@ Acceptance:
   selected runtime needs it.
 - Automatic naming uses no-token local public weights and records label
   provenance in review metadata.
+
+### UI-WORKFLOW-13 - Correct inline workflow and live-output gaps
+
+Purpose: finish the corrective UX pass after UI-WORKFLOW-12 by removing the
+remaining all-panels dependency, enforcing explicit keyframe selection, making
+live output visible in the normal run monitor, and tightening the export gate.
+
+Expected commit:
+
+```bash
+git commit -m "phase ui-workflow-13: correct inline workflow gaps"
+```
+
+Acceptance:
+
+- Advanced tracing tasks are visible inline on the Start screen by default;
+  the all-panels/details workflow controls are removed from the normal shell.
+- `Pick objects from one frame` cannot validate or start until the user has
+  confirmed the exact scan frame.
+- Candidate-scan preview artifacts are checkpointed while jobs run, and the
+  run monitor shows live candidate, mask, and cutout previews in the main
+  workflow surface.
+- SAM3 local model setup prioritizes required Hugging Face token/access inputs
+  before optional provider details.
+- Review/export opens as a compact working export gate: package readiness,
+  included objects, rights warnings, then handoff/review tools.

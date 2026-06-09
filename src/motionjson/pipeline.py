@@ -654,6 +654,15 @@ def _job_checkpoint_object(job_context: Any | None, object_id: str, *, status: s
     return {"objectId": object_id, "status": status, "assetCount": 0}
 
 
+def _job_checkpoint_candidates(job_context: Any | None, *, status: str = "running") -> dict[str, Any]:
+    checkpoint = getattr(job_context, "checkpoint_candidate_outputs", None)
+    if callable(checkpoint):
+        result = checkpoint(status=status)
+        if isinstance(result, Mapping):
+            return dict(result)
+    return {"status": status, "assetCount": 0}
+
+
 def _write_object_failure_diagnostic(
     *,
     out_dir: Path,
@@ -1384,6 +1393,21 @@ def run_multi_object_pipeline(
             video_source=video_source,
             candidates=candidates,
         ),
+    )
+    candidate_checkpoint = _job_checkpoint_candidates(job_context, status="candidate_scan")
+    _job_emit(
+        job_context,
+        "candidate_discovery",
+        "running",
+        "candidate preview artifacts checkpointed",
+        event_type="candidate_artifacts_registered",
+        progress={"stageRatio": 0.95, "overallRatio": 0.39 if scan_only else 0.315},
+        metadata={
+            "provider": active_candidate_provider_name,
+            "candidates": len(candidates),
+            "artifactCheckpoint": candidate_checkpoint,
+            "scanOnly": bool(scan_only),
+        },
     )
     if candidate_provider is not None and not candidates:
         fallback = build_raster_fallback(

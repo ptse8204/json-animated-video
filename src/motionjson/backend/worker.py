@@ -1277,7 +1277,31 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
             )
             return {"objectId": object_id, "status": status, "assetCount": len(assets)}
 
+        def checkpoint_candidate_outputs(*, status: str = "running") -> dict[str, Any]:
+            assets = _register_output_tree(
+                conn,
+                storage=storage,
+                project_id=job["project_id"],
+                job_id=job["id"],
+                out_dir=out_dir,
+                source_asset_id=source_asset["id"],
+            )
+            preview_count = 0
+            for asset in assets:
+                rel_path = _asset_rel_path(asset)
+                if rel_path.startswith("discovery/") and Path(rel_path).suffix.lower() in {".png", ".jpg", ".jpeg", ".webp"}:
+                    preview_count += 1
+            record_job_event(
+                conn,
+                job_id=job["id"],
+                event_type="candidate_artifacts_registered",
+                message=f"registered {preview_count} candidate preview artifacts",
+                metadata={"status": status, "assetCount": len(assets), "previewCount": preview_count},
+            )
+            return {"status": status, "assetCount": len(assets), "previewCount": preview_count}
+
         job_run.checkpoint_object_outputs = checkpoint_object_outputs  # type: ignore[attr-defined]
+        job_run.checkpoint_candidate_outputs = checkpoint_candidate_outputs  # type: ignore[attr-defined]
         job_run.initialize(video_path=video_path, output_dir=out_dir)
         job_run.start()
         job_run.emit("validating_config", "succeeded", "backend extraction payload validated", progress={"overallRatio": 0.03}, metadata={"provider": provider_name})

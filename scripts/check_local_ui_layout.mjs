@@ -67,6 +67,7 @@ const CAPTURE_STATES = [
   "prepare-sam3-single",
   "prepare-sam3-text",
   "prepare-sam3-trace-all",
+  "prepare-pick-frame",
   "prepare-sam3-trace-all-runtime-ready",
   "prepare-sam3-trace-all-missing-runtime",
   "model-plan-preview",
@@ -503,11 +504,6 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "real-expanded-shell") {
       await cdp.send("Runtime.evaluate", {
         expression: `
-          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
-            document.querySelector("#detailsToggle")?.click();
-          }
-          const dashboard = document.querySelector("#workflowDashboardToggle");
-          if (dashboard?.getAttribute("aria-pressed") !== "true") dashboard?.click();
           document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
@@ -533,9 +529,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "diagnostics-open") {
       await cdp.send("Runtime.evaluate", {
         expression: `
-          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
-            document.querySelector("#detailsToggle")?.click();
-          }
+          document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
     }
@@ -597,8 +591,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-dashboard") {
       await cdp.send("Runtime.evaluate", {
         expression: `
-          const toggle = document.querySelector("#workflowDashboardToggle");
-          if (toggle?.getAttribute("aria-pressed") !== "true") toggle?.click();
+          document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
     }
@@ -658,8 +651,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           projectDrawerButtonControls: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-controls") || "",
           projectDrawerVisible: visible(document.querySelector("#workspaceSidebar")),
           projectDrawerAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
-          detailsExpanded: document.querySelector("#detailsToggle")?.getAttribute("aria-expanded") || "",
-          detailsControls: document.querySelector("#detailsToggle")?.getAttribute("aria-controls") || "",
+          mainWorkflowOnly: !document.querySelector("#detailsToggle") && !document.querySelector("#workflowDashboardToggle"),
           railCloseControls: document.querySelector("#railCloseButton")?.getAttribute("aria-controls") || "",
           rightRailWidth: Math.round(rightRailBox?.width || 0),
           workflowKeyshortcuts: document.querySelector("#workflowStepper")?.getAttribute("aria-keyshortcuts") || "",
@@ -685,10 +677,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           guidedQualityText: document.querySelector("#guidedQualityControls")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           guidedQualityPresetCount: [...document.querySelectorAll("#guidedQualityControls [data-quality-preset]")].filter(visible).length,
           guidedDevicePresetCount: [...document.querySelectorAll("#guidedQualityControls [data-device-preset]")].filter(visible).length,
+          keyframeScanChooserVisible: visible(document.querySelector("#keyframeScanChooser")),
+          scanFrameChoiceText: document.querySelector("#scanFrameChoice")?.textContent?.trim() || "",
+          scanFrameHintText: document.querySelector("#scanFrameHint")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           autoParameterSourceCount: [...document.querySelectorAll(".parameter-source")].filter(visible).length,
           criticalHelpLabelCount: [...document.querySelectorAll(".help-label[data-tooltip], #adaptiveParameterSummary [data-tooltip]")].filter(visible).length,
           visibleGoalCardCount: [...document.querySelectorAll(".goal-card-grid > .goal-card")].filter(visible).length,
-          advancedTaskPanelOpen: document.querySelector(".advanced-task-panel")?.open === true,
+          advancedTaskPanelVisible: visible(document.querySelector(".advanced-task-panel")),
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
           workflowPrimaryLabel: document.querySelector("#workflowPrimaryButton")?.textContent?.trim() || "",
           workflowPrimaryVisible: visible(document.querySelector("#workflowPrimaryButton")),
@@ -743,6 +738,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           studioInspectorText: document.querySelector("#studioTrackInspector")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioInspectorBox: elementBox("#studioTrackInspector"),
           studioObjectListBox: elementBox("#studioObjectList"),
+          reviewCandidateSlotVisible: visible(document.querySelector("#reviewCandidateSectionSlot")),
+          reviewCandidateSlotText: document.querySelector("#reviewCandidateSectionSlot")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioReviewHeadingBox: elementBox("#studioReviewPanel .studio-review-heading"),
           viewerPanelBox: elementBox(".viewer-panel"),
           reviewToolsVisible: visible(document.querySelector(".review-tools-panel")),
@@ -767,6 +764,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           exportSummaryText: document.querySelector("#exportSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobCenterVisible: visible(document.querySelector("#mainJobCenter")),
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
+          mainLivePreviewStatusText: document.querySelector("#mainLivePreviewStatus")?.textContent?.trim() || "",
+          mainLivePreviewCardCount: document.querySelectorAll("#mainRunLivePreview .run-live-preview-card").length,
+          mainLivePreviewText: document.querySelector("#mainRunLivePreview")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainSelectedJobFactsText: document.querySelector("#mainSelectedJobFacts")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           failedRunActionsText: ((document.querySelector("#failedRunActions")?.textContent || "") + " " + (document.querySelector("#mainFailedRunActions")?.textContent || "")).trim().replace(/\\s+/g, " "),
@@ -804,7 +804,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
             return [...new Set(overlaps)];
           })(),
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
-          workflowDashboard: document.querySelector("#workflowDashboardToggle")?.getAttribute("aria-pressed") === "true",
+          workflowDashboard: false,
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
             const box = element.getBoundingClientRect();
             const style = getComputedStyle(element);
@@ -857,7 +857,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "real-empty-shell" && (stateValue.railAriaHidden !== "true" || !stateValue.railInert)) {
       failures.push(`${viewport.name}/${state}: collapsed diagnostics rail should be hidden from assistive tech and focus order`);
     }
-    if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.projectDrawerButtonControls !== "workspaceSidebar" || stateValue.detailsControls !== "diagnosticsRail" || stateValue.railCloseControls !== "diagnosticsRail") {
+    if (["first-run", "workflow-goal"].includes(state)) {
+      if (!stateValue.mainWorkflowOnly) {
+        failures.push(`${viewport.name}/${state}: all-panels/details controls should be removed from the normal shell`);
+      }
+      if (!stateValue.advancedTaskPanelVisible) {
+        failures.push(`${viewport.name}/${state}: advanced tracing tasks should be visible inline by default`);
+      }
+    }
+    if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.projectDrawerButtonControls !== "workspaceSidebar" || stateValue.railCloseControls !== "diagnosticsRail") {
       failures.push(`${viewport.name}/${state}: shell collapse controls should expose stable aria-controls targets`);
     }
     if (!stateValue.workflowKeyshortcuts.includes("ArrowRight") || !stateValue.workflowKeyshortcuts.includes("ArrowDown") || !stateValue.workflowKeyshortcuts.includes("ArrowLeft") || !stateValue.workflowKeyshortcuts.includes("ArrowUp") || !stateValue.workflowKeyshortcuts.includes("Home") || !stateValue.workflowKeyshortcuts.includes("End")) {
@@ -869,8 +877,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
       failures.push(`${viewport.name}/${state}: goal step should start with Continue to video, no back action, and preview not ready`);
     }
-    if (state === "workflow-goal" && (stateValue.visibleGoalCardCount !== 4 || stateValue.advancedTaskPanelOpen)) {
-      failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards and keep advanced tasks collapsed`);
+    if (state === "workflow-goal" && stateValue.visibleGoalCardCount !== 4) {
+      failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards before advanced tasks`);
+    }
+    if (state === "prepare-pick-frame") {
+      if (!stateValue.keyframeScanChooserVisible) {
+        failures.push(`${viewport.name}/${state}: pick-from-frame workflow should show the scan frame chooser`);
+      }
+      if (!/Frame 36 selected/i.test(stateValue.scanFrameChoiceText)) {
+        failures.push(`${viewport.name}/${state}: scan frame chooser should show the confirmed frame, found "${stateValue.scanFrameChoiceText || "none"}"`);
+      }
     }
     if (state === "model-setup-sam3-local" && stateValue.modelSetupGuidedTitle !== "SAM3 Scene Sweep") {
       failures.push(`${viewport.name}/${state}: SAM3 Scene Sweep should be the guided setup title`);
@@ -1021,6 +1037,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
       failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
     }
+    if (state === "workflow-run" && (!stateValue.mainJobCenterVisible || stateValue.mainLivePreviewCardCount < 1 || !/selected object/i.test(stateValue.mainLivePreviewText))) {
+      failures.push(`${viewport.name}/${state}: run monitor should show live mask/cutout output for the running selected object`);
+    }
     if (state === "workflow-run-stale" && (!/No progress update/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.runMonitorSummaryText}`) || stateValue.mainRunStatusText !== "running")) {
       failures.push(`${viewport.name}/${state}: stale running job should expose a no-progress warning without hiding the run monitor`);
     }
@@ -1083,6 +1102,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible || !/Included objects|Rights note/.test(stateValue.studioExportIncludedText)) {
         failures.push(`${viewport.name}/${state}: export screen should show package readiness, included objects, and rights notes instead of the review object list`);
       }
+      if (stateValue.reviewCandidateSlotVisible && /Track selected|not background|coverage/i.test(stateValue.reviewCandidateSlotText)) {
+        failures.push(`${viewport.name}/${state}: export screen should not show candidate filter/track controls ahead of the export gate`);
+      }
+      if (viewport.width <= 1180 && stateValue.reviewToolsVisible && stateValue.studioExportCardVisible) {
+        const exportTop = stateValue.studioExportCardBox?.top ?? 0;
+        const toolsTop = stateValue.reviewToolsBox?.top ?? 0;
+        if (toolsTop && exportTop && toolsTop < exportTop) {
+          failures.push(`${viewport.name}/${state}: mobile export screen should show the export checklist before review tools`);
+        }
+      }
       if (viewport.width >= 1366) {
         const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
         for (const [label, box] of [
@@ -1092,6 +1121,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           if (!box || box.bottom > bottomLimit || box.top < -2) {
             failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible export workbench`);
           }
+        }
+      }
+    }
+    if (["export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state)) {
+      if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible) {
+        failures.push(`${viewport.name}/${state}: export capture should show the export checklist instead of the review object list`);
+      }
+      if (stateValue.reviewCandidateSlotVisible && /Track selected|not background|coverage/i.test(stateValue.reviewCandidateSlotText)) {
+        failures.push(`${viewport.name}/${state}: export capture should not show candidate filter/track controls ahead of the export gate`);
+      }
+      if (viewport.width <= 1180 && stateValue.reviewToolsVisible && stateValue.studioExportCardVisible) {
+        const exportTop = stateValue.studioExportCardBox?.top ?? 0;
+        const toolsTop = stateValue.reviewToolsBox?.top ?? 0;
+        if (toolsTop && exportTop && toolsTop < exportTop) {
+          failures.push(`${viewport.name}/${state}: mobile export capture should show the export checklist before review tools`);
         }
       }
     }
@@ -1171,20 +1215,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       }
     }
     if (state === "workflow-dashboard") {
-      if (!stateValue.workflowDashboard) {
-        failures.push(`${viewport.name}/${state}: show-all workflow dashboard did not activate`);
+      if (!stateValue.mainWorkflowOnly) {
+        failures.push(`${viewport.name}/${state}: removed dashboard controls are still present`);
       }
-      const hiddenPanels = stateValue.workflowPanels.filter((panel) => panel.hidden || panel.ariaHidden === "true" || panel.inert);
-      const hiddenFragments = stateValue.workflowFragments.filter((fragment) => fragment.hidden || fragment.ariaHidden === "true" || fragment.inert);
       const visiblePanels = stateValue.workflowPanels.filter((panel) => panel.visible);
-      if (hiddenPanels.length) {
-        failures.push(`${viewport.name}/${state}: ${hiddenPanels.length} workflow panel(s) stayed hidden in dashboard mode`);
-      }
-      if (hiddenFragments.length) {
-        failures.push(`${viewport.name}/${state}: ${hiddenFragments.length} workflow fragment(s) stayed hidden in dashboard mode`);
-      }
-      if (visiblePanels.length < 8) {
-        failures.push(`${viewport.name}/${state}: dashboard mode exposed too few workflow panels (${visiblePanels.length})`);
+      if (visiblePanels.length < 2) {
+        failures.push(`${viewport.name}/${state}: main workflow exposed too few inline panels (${visiblePanels.length})`);
       }
     }
     if (screenshotDir) {
@@ -1198,7 +1234,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
-      if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && viewport.name === "mobile-390") {
+      if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && viewport.name === "mobile-390") {
         await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
       }
       if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {

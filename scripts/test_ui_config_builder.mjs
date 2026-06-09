@@ -114,6 +114,25 @@ assert.equal(readyWorkflow.source_video.complete, true);
 assert.equal(readyWorkflow.prompt_preview.complete, true);
 assert.equal(readyWorkflow.run_monitor.status, "done");
 assert.equal(readyWorkflow.review_export.status, "done");
+const fastFrameNeedsChoice = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "pick_objects_from_frame",
+  selectedProjectId: "project_1",
+  selectedVideoId: "video_1",
+  videoPreviewReady: true,
+  providerSummaryTone: "ready",
+  scanFrameConfirmed: false,
+});
+assert.equal(fastFrameNeedsChoice.prompt_preview.complete, false);
+assert.match(fastFrameNeedsChoice.prompt_preview.message, /frame/i);
+const fastFrameReady = ui.workflowReadinessFromSnapshot({
+  selectedPreset: "pick_objects_from_frame",
+  selectedProjectId: "project_1",
+  selectedVideoId: "video_1",
+  videoPreviewReady: true,
+  providerSummaryTone: "ready",
+  scanFrameConfirmed: true,
+});
+assert.equal(fastFrameReady.prompt_preview.complete, true);
 const sam3SingleNeedsBox = ui.workflowReadinessFromSnapshot({
   selectedPreset: "trace_one_object",
   selectedProjectId: "project_1",
@@ -1465,7 +1484,7 @@ const manualPlan = ui.buildRunPlan(manualConfig, {
 });
 assert.equal(manualPlan.title, "Cut out one object");
 assert.equal(manualPlan.privacy, "Frames stay local for this plan");
-assert.ok(manualPlan.steps.some((step) => step.label === "Review gate" && step.status === "ready"));
+assert.ok(manualPlan.steps.some((step) => step.label === "Export gate" && step.value === "Selected objects only" && step.status === "ready"));
 
 const autoObjectConfig = ui.buildRunConfig({
   preset: "auto_object_proposals",
@@ -1540,6 +1559,7 @@ const pickFrameConfig = ui.buildRunConfig({
   objectId: "object_0",
   objectLabel: "picked objects",
   currentFrame: 12,
+  scanFrameIndex: 24,
   keyframes: new Set([12]),
   maskProvider: "mock",
   debugMockMode: true,
@@ -1548,7 +1568,8 @@ const pickFrameConfig = ui.buildRunConfig({
   qualityPreset: "balanced",
 });
 assert.equal(pickFrameConfig.discovery.config.fastFramePick, true);
-assert.deepEqual(pickFrameConfig.discovery.config.keyframes, [12]);
+assert.deepEqual(pickFrameConfig.discovery.config.keyframes, [24]);
+assert.equal(pickFrameConfig.discovery.config.scanFrameIndex, 24);
 assert.equal(pickFrameConfig.discovery.config.maxKeyframes, 1);
 assert.equal(pickFrameConfig.sampling.max_frames, 1);
 assert.equal(ui.buildRunPlan(pickFrameConfig, { preset: "pick_objects_from_frame" }).title, "Pick objects from one frame");
