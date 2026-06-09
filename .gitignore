@@ -23,3 +23,6 @@ out/*
 !out/demo/
 !out/demo/**
 output/
+
+# Codex artifacts
+codex_prompt_pack/

@@ -2025,6 +2025,8 @@ class LocalUIApp:
         ]
         response["warnings"].extend(proof_warnings)
         response["warnings"].extend(hosted_ack_warnings)
+        if hosted_ack_warnings:
+            response["valid"] = False
         self._append_sam3_local_concept_blocker(response, config)
         return response
 
