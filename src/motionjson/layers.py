@@ -24,6 +24,7 @@ def crop_rgba_layer(
     centroid: list[float] | None = None,
     feather: int = 0,
     padding: int = 4,
+    device: str | None = None,
 ) -> LayerCrop:
     """Create a cropped RGBA object layer from a full-frame RGB image and mask."""
     if mask.ndim != 2:
@@ -43,19 +44,86 @@ def crop_rgba_layer(
         empty = np.zeros((1, 1, 4), dtype=np.uint8)
         return LayerCrop(rgba=empty, bbox=[0, 0, 1, 1], anchor=[0.5, 0.5])
 
-    alpha = mask[y0:y1, x0:x1].copy()
-    if feather > 0:
-        k = max(3, int(feather) | 1)
-        alpha = cv2.GaussianBlur(alpha, (k, k), 0)
-
-    crop_rgb = rgb[y0:y1, x0:x1]
-    rgba = np.dstack([crop_rgb, alpha]).astype(np.uint8)
+    rgba = _rgba_crop(rgb, mask, x0=x0, y0=y0, x1=x1, y1=y1, feather=feather, device=device)
     if centroid:
         anchor = [round(float(centroid[0]) - x0, 3), round(float(centroid[1]) - y0, 3)]
     else:
         anchor = [round((x1 - x0) / 2, 3), round((y1 - y0) / 2, 3)]
 
     return LayerCrop(rgba=rgba, bbox=[x0, y0, x1 - x0, y1 - y0], anchor=anchor)
+
+
+def _rgba_crop(
+    rgb: np.ndarray,
+    mask: np.ndarray,
+    *,
+    x0: int,
+    y0: int,
+    x1: int,
+    y1: int,
+    feather: int,
+    device: str | None,
+) -> np.ndarray:
+    torch_device = _torch_device(device)
+    if torch_device is None:
+        alpha = mask[y0:y1, x0:x1].copy()
+        if feather > 0:
+            k = max(3, int(feather) | 1)
+            alpha = cv2.GaussianBlur(alpha, (k, k), 0)
+        crop_rgb = rgb[y0:y1, x0:x1]
+        return np.dstack([crop_rgb, alpha]).astype(np.uint8)
+    try:
+        import torch  # type: ignore
+        import torch.nn.functional as F  # type: ignore
+    except ImportError:
+        alpha = mask[y0:y1, x0:x1].copy()
+        if feather > 0:
+            k = max(3, int(feather) | 1)
+            alpha = cv2.GaussianBlur(alpha, (k, k), 0)
+        crop_rgb = rgb[y0:y1, x0:x1]
+        return np.dstack([crop_rgb, alpha]).astype(np.uint8)
+
+    crop_rgb = torch.as_tensor(rgb[y0:y1, x0:x1], device=torch_device, dtype=torch.uint8)
+    alpha = torch.as_tensor(mask[y0:y1, x0:x1], device=torch_device, dtype=torch.float32)
+    if feather > 0:
+        alpha = _gaussian_blur_alpha(alpha, feather, F)
+    alpha = alpha.clamp(0, 255).to(torch.uint8)
+    rgba = torch.cat([crop_rgb, alpha.unsqueeze(-1)], dim=2)
+    return rgba.cpu().numpy()
+
+
+def _gaussian_blur_alpha(alpha: Any, feather: int, functional: Any) -> Any:
+    import torch  # type: ignore
+
+    radius = max(1, int(feather))
+    kernel_size = max(3, radius * 2 + 1)
+    coords = alpha.new_tensor(np.arange(kernel_size, dtype=np.float32)) - (kernel_size - 1) / 2
+    sigma = max(float(radius) / 2.0, 1.0)
+    kernel_1d = torch.exp(-(coords**2) / (2 * sigma * sigma))
+    kernel_1d = kernel_1d / kernel_1d.sum()
+    kernel_x = kernel_1d.view(1, 1, 1, kernel_size)
+    kernel_y = kernel_1d.view(1, 1, kernel_size, 1)
+    value = alpha.unsqueeze(0).unsqueeze(0)
+    value = functional.pad(value, (kernel_size // 2, kernel_size // 2, 0, 0), mode="reflect")
+    value = functional.conv2d(value, kernel_x)
+    value = functional.pad(value, (0, 0, kernel_size // 2, kernel_size // 2), mode="reflect")
+    value = functional.conv2d(value, kernel_y)
+    return value[0, 0]
+
+
+def _torch_device(device: str | None) -> Any | None:
+    if not device:
+        return None
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        return None
+    normalized = str(device).strip().lower()
+    if normalized.startswith("cuda") and torch.cuda.is_available():
+        return torch.device(device)
+    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
 
 
 def build_raster_motion_layer(*, object_id: str, fps: float, frames: list[dict[str, Any]]) -> dict[str, Any]:

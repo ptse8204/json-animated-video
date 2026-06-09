@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 import threading
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 import numpy as np
 from PIL import Image
 
 
-MOBILENETV3_SMALL_MODEL_ID = "timm/tf_mobilenetv3_small_100.in1k"
+MOBILENETV3_SMALL_MODEL_ID = "torchvision/mobilenet_v3_small"
 
 GENERIC_LABEL_RE = re.compile(
     r"^(?:"
@@ -58,7 +58,6 @@ FRIENDLY_IMAGENET_LABELS = {
     "wine bottle": "Bottle",
     "cellular telephone": "Phone",
     "mobile phone": "Phone",
-    "iPod": "Phone",
     "laptop": "Laptop",
     "notebook": "Laptop",
     "monitor": "Screen",
@@ -68,7 +67,6 @@ FRIENDLY_IMAGENET_LABELS = {
     "mouse": "Mouse",
     "book jacket": "Book",
     "comic book": "Book",
-    "bookshop": "Book",
     "potted plant": "Plant",
     "vase": "Vase",
     "chair": "Chair",
@@ -91,7 +89,6 @@ FRIENDLY_IMAGENET_LABELS = {
     "tabby": "Cat",
     "tiger cat": "Cat",
     "Egyptian cat": "Cat",
-    "birdhouse": "Bird",
     "macaw": "Bird",
     "toucan": "Bird",
     "banana": "Banana",
@@ -121,10 +118,10 @@ class LabelPrediction:
 
 
 class _ClassifierBackend:
-    def __init__(self, *, model: Any, transform: Any, labels: Sequence[str]):
+    def __init__(self, *, model: Any, transform: Any, categories: list[str]):
         self.model = model
         self.transform = transform
-        self.labels = list(labels)
+        self.categories = categories
 
 
 _backend_lock = threading.Lock()
@@ -157,14 +154,12 @@ def classify_image_label(image: Image.Image | np.ndarray | None, *, min_confiden
     tensor = backend.transform(pil_image).unsqueeze(0)
     with torch.inference_mode():
         logits = backend.model(tensor)
-        if not hasattr(logits, "softmax"):
-            return None
         probabilities = logits.softmax(dim=-1)[0]
         confidence, index = probabilities.max(dim=-1)
     confidence_value = float(confidence.item())
     if confidence_value < min_confidence:
         return None
-    raw_label = _label_name(backend.labels, int(index.item()))
+    raw_label = _label_name(backend.categories, int(index.item()))
     friendly = _friendly_label(raw_label)
     if not friendly:
         return None
@@ -202,9 +197,9 @@ def _friendly_label(raw_label: str) -> str | None:
     return None
 
 
-def _label_name(labels: Sequence[str], index: int) -> str:
-    if 0 <= index < len(labels):
-        return str(labels[index])
+def _label_name(categories: list[str], index: int) -> str:
+    if 0 <= index < len(categories):
+        return str(categories[index])
     return ""
 
 
@@ -223,9 +218,7 @@ def _to_rgb_image(image: Image.Image | np.ndarray) -> Image.Image | None:
         background = np.full_like(rgb, 255.0)
         composed = (rgb * alpha) + (background * (1.0 - alpha))
         return Image.fromarray(np.clip(composed, 0, 255).astype(np.uint8), mode="RGB")
-    if array.shape[2] >= 3:
-        return Image.fromarray(array[:, :, :3].astype(np.uint8, copy=False), mode="RGB")
-    return None
+    return Image.fromarray(array[:, :, :3].astype(np.uint8, copy=False), mode="RGB")
 
 
 def _load_backend() -> _ClassifierBackend | None:
@@ -240,24 +233,22 @@ def _load_backend() -> _ClassifierBackend | None:
         if _backend is not False:
             return _backend
         try:
-            import timm  # type: ignore
             import torch  # type: ignore
+            from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small  # type: ignore
         except ImportError:
             _backend = None
             return None
         try:
-            model = timm.create_model(f"hf_hub:{MOBILENETV3_SMALL_MODEL_ID}", pretrained=True)
+            weights = MobileNet_V3_Small_Weights.IMAGENET1K_V1
+            model = mobilenet_v3_small(weights=weights)
             model.eval()
-            labels = (
-                model.pretrained_cfg.get("label_names")
-                or model.pretrained_cfg.get("labels")
-                or []
+            transform = weights.transforms()
+            categories = [str(item) for item in weights.meta.get("categories", [])]
+            backend = _ClassifierBackend(
+                model=model.to(torch.device("cpu")),
+                transform=transform,
+                categories=categories,
             )
-            if not isinstance(labels, Sequence) or isinstance(labels, (str, bytes, bytearray)):
-                labels = []
-            data_config = timm.data.resolve_model_data_config(model)
-            transform = timm.data.create_transform(**data_config, is_training=False)
-            backend = _ClassifierBackend(model=model.to(torch.device("cpu")), transform=transform, labels=[str(item) for item in labels])
         except Exception:
             _backend = None
             return None

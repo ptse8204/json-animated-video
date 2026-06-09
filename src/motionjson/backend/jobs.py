@@ -160,6 +160,45 @@ def enqueue_extract_job(
     return _insert_job(conn, user_id=user_id, project_id=project_id, job_type="extract", payload=payload, priority=priority)
 
 
+def enqueue_selected_tracking_job(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    source_job_id: str,
+    candidate_ids: list[str],
+    track_mode: str,
+    export_review_required: bool = True,
+    candidate_edits: list[dict[str, Any]] | None = None,
+    tracking_run_config: dict[str, Any] | None = None,
+    priority: int = 1,
+) -> dict:
+    source = get_job(conn, user_id=user_id, job_id=source_job_id)
+    source_payload = json.loads(source["payload_json"] or "{}")
+    if not isinstance(source_payload, dict):
+        source_payload = {}
+    payload: dict[str, Any] = {
+        "mode": "selected_tracking",
+        "source_job_id": source_job_id,
+        "parent_job_id": source_job_id,
+        "asset_id": source_payload.get("asset_id"),
+        "run_config": tracking_run_config if isinstance(tracking_run_config, dict) else source_payload.get("run_config"),
+        "candidate_ids": [str(item) for item in candidate_ids if str(item).strip()],
+        "track_mode": str(track_mode or "selected_only"),
+        "export_review_required": bool(export_review_required),
+        "rights_context": source_payload.get("rights_context") or {},
+    }
+    if candidate_edits:
+        payload["candidate_edits"] = [dict(item) for item in candidate_edits if isinstance(item, dict)]
+    return _insert_job(
+        conn,
+        user_id=user_id,
+        project_id=source["project_id"],
+        job_type="extract",
+        payload=payload,
+        priority=priority,
+    )
+
+
 def enqueue_export_job(
     conn: sqlite3.Connection,
     *,

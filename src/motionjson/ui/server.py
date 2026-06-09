@@ -38,7 +38,7 @@ from motionjson.backend.export_workflows import (
     import_motionjson_result,
     validate_motionjson_export_job,
 )
-from motionjson.backend.jobs import enqueue_extract_job, get_job, list_job_events, list_jobs, record_job_event
+from motionjson.backend.jobs import enqueue_extract_job, enqueue_selected_tracking_job, get_job, list_job_events, list_jobs, record_job_event
 from motionjson.backend.job_lifecycle import job_lifecycle_summary, review_lifecycle_summary
 from motionjson.backend.library import (
     add_asset_to_collection,
@@ -980,7 +980,11 @@ class LocalUIApp:
                 finally:
                     conn.close()
             payload = _json_loads(body) if method in {"POST", "PATCH", "PUT", "DELETE"} else {}
-            return _json_response(self._route(method, path, query, payload))
+            route_result = self._route(method, path, query, payload)
+            if isinstance(route_result, tuple) and len(route_result) == 2:
+                status, body_payload = route_result
+                return _json_response(body_payload, status=status)
+            return _json_response(route_result)
         except json.JSONDecodeError as exc:
             return self._error(HTTPStatus.BAD_REQUEST, f"invalid json: {exc}")
         except UnauthorizedError as exc:
@@ -1369,6 +1373,42 @@ class LocalUIApp:
                         "worker": self._start_worker(),
                     }
                 if len(parts) == 4 and parts[3] == "track-selected":
+                    track_mode = str(payload.get("trackMode") or payload.get("track_mode") or "selected_only")
+                    if track_mode == "keyframe_selected_only":
+                        tracking_job = enqueue_selected_tracking_job(
+                            conn,
+                            user_id=user_id,
+                            source_job_id=parts[2],
+                            candidate_ids=[str(item) for item in payload.get("candidateIds", [])] if isinstance(payload.get("candidateIds"), list) else [],
+                            track_mode=track_mode,
+                            export_review_required=bool(payload.get("exportReviewRequired", payload.get("export_review_required", True))),
+                            candidate_edits=payload.get("candidateEdits") if isinstance(payload.get("candidateEdits"), list) else payload.get("candidate_edits"),
+                            tracking_run_config=payload.get("trackingRunConfig") if isinstance(payload.get("trackingRunConfig"), dict) else payload.get("tracking_run_config"),
+                        )
+                        record_job_event(
+                            conn,
+                            job_id=parts[2],
+                            event_type="track_selected_queued",
+                            message="selected-object tracking job queued from keyframe scan",
+                            metadata={"trackingJobId": tracking_job["id"], "trackMode": track_mode},
+                        )
+                        worker = self._start_worker()
+                        return (
+                            HTTPStatus.ACCEPTED,
+                            {
+                                "trackSelected": _public_review_value(
+                                    {
+                                        "format": "motionjson.selected_candidate_tracking.v0.1",
+                                        "jobId": parts[2],
+                                        "candidateIds": payload.get("candidateIds", []),
+                                        "trackMode": track_mode,
+                                        "status": "queued",
+                                    }
+                                ),
+                                "trackingJob": self._public_job_snapshot_for_job(conn, tracking_job),
+                                "worker": worker,
+                            },
+                        )
                     result = track_selected_candidates(
                         conn,
                         storage=self.storage(),

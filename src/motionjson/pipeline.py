@@ -231,7 +231,10 @@ def _autolabel_candidates(video_source: VideoSource, candidates: Sequence[Object
             if prediction is not None:
                 metadata["autoLabel"] = prediction.label
                 metadata["autoLabelPrediction"] = prediction.to_dict()
+                metadata["labelSource"] = "classifier"
                 label = prediction.label
+        elif label:
+            metadata.setdefault("labelSource", "provider")
         if label:
             label = numbered_label(label, used_labels)
             used_labels.append(label)
@@ -267,6 +270,7 @@ def _representative_track_image(track: ObjectTrack, *, feather: int, padding: in
         centroid=frame.centroid,
         feather=feather,
         padding=padding,
+        device="cpu",
     )
     return Image.fromarray(crop.rgba, mode="RGBA")
 
@@ -280,15 +284,19 @@ def _resolved_object_label(
     used_labels: list[str],
 ) -> tuple[str, dict[str, Any]]:
     metadata: dict[str, Any] = {}
+    candidate_metadata = _mapping_or_empty(spec.metadata.get("candidateMetadata"))
     label = str(spec.label or track.label or spec.object_id).strip() or spec.object_id
+    label_source = str(candidate_metadata.get("labelSource") or candidate_metadata.get("label_source") or "").strip() or "provider"
     if is_generic_object_label(label):
         prediction = classify_image_label(_representative_track_image(track, feather=feather, padding=padding))
         if prediction is not None:
             label = prediction.label
             metadata["autoLabel"] = prediction.label
             metadata["autoLabelPrediction"] = prediction.to_dict()
+            label_source = "classifier"
     label = numbered_label(label, used_labels)
     used_labels.append(label)
+    metadata["labelSource"] = label_source
     return label, metadata
 
 
@@ -790,6 +798,7 @@ def _extract_object(
     production_avif: bool,
     rights_context: dict[str, Any] | None,
     used_labels: list[str],
+    raster_device: str | None,
     job_context: Any | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], list[dict[str, Any]], dict[str, Any], ObjectTrack]:
     object_id = spec.object_id
@@ -975,6 +984,7 @@ def _extract_object(
                 centroid=track_frame.centroid,
                 feather=feather,
                 padding=layer_padding,
+                device=raster_device,
             )
             Image.fromarray(layer_crop.rgba, mode="RGBA").save(cutout_path)
             cutout_paths.append(cutout_path)
@@ -1263,6 +1273,8 @@ def run_multi_object_pipeline(
     output_mode: str = "authoring",
     production_avif: bool = False,
     rights_context: dict[str, Any] | None = None,
+    raster_device: str | None = None,
+    scan_only: bool = False,
     job_context: Any | None = None,
 ) -> dict[str, Any]:
     if sprite_format not in {"webp", "png"}:
@@ -1347,7 +1359,7 @@ def run_multi_object_pipeline(
         ],
     }
     video_source = VideoSource(path=video_path, info=info, frames=frames)
-    run_context = RunContext(out_dir=out_dir, job_context=job_context)
+    run_context = RunContext(out_dir=out_dir, job_context=job_context, metadata={"rasterDevice": str(raster_device or "")})
 
     candidate_start = time.perf_counter()
     _job_check_cancel(job_context, "candidate_discovery")
@@ -1389,7 +1401,29 @@ def run_multi_object_pipeline(
         raise ValueError(f"Discovery provider {active_candidate_provider_name!r} produced no candidates")
     if candidate_provider is not None and candidate_to_specs is not None:
         object_specs = candidate_to_specs(candidates)
+        if scan_only:
+            object_specs = []
         if not object_specs:
+            if scan_only:
+                _preview_copy(out_dir)
+                scene = {
+                    "schema": "motionjson.scene_graph.v0.1",
+                    "source": source,
+                    "objects": [],
+                    "layers": [],
+                    "scanOnly": True,
+                    "candidateCount": len(candidates),
+                }
+                write_json(out_dir / "scene_graph.json", scene)
+                _job_emit(
+                    job_context,
+                    "candidate_discovery",
+                    "succeeded",
+                    "keyframe candidate scan complete",
+                    progress={"stageRatio": 1.0, "overallRatio": 0.4},
+                    metadata={"provider": active_candidate_provider_name, "candidates": len(candidates), "scanOnly": True},
+                )
+                return scene
             rejection_counts = _candidate_rejection_counts(candidates)
             fallback = build_raster_fallback(
                 "no_candidates",
@@ -1419,6 +1453,26 @@ def run_multi_object_pipeline(
             )
         _validate_object_specs(object_specs)
     elif candidate_provider is not None and not object_specs:
+        if scan_only:
+            _preview_copy(out_dir)
+            scene = {
+                "schema": "motionjson.scene_graph.v0.1",
+                "source": source,
+                "objects": [],
+                "layers": [],
+                "scanOnly": True,
+                "candidateCount": len(candidates),
+            }
+            write_json(out_dir / "scene_graph.json", scene)
+            _job_emit(
+                job_context,
+                "candidate_discovery",
+                "succeeded",
+                "keyframe candidate scan complete",
+                progress={"stageRatio": 1.0, "overallRatio": 0.4},
+                metadata={"provider": active_candidate_provider_name, "candidates": len(candidates), "scanOnly": True},
+            )
+            return scene
         raise ValueError("candidate_to_specs is required when discovery provides candidates without initial object_specs")
     phase_timings.append(PhaseTiming(phase="candidate_discovery", elapsed_ms=_elapsed_ms(candidate_start), count=len(candidates)).to_dict())
     _job_emit(
@@ -1467,6 +1521,7 @@ def run_multi_object_pipeline(
                 production_avif=production_avif,
                 rights_context=rights_payload,
                 used_labels=used_labels,
+                raster_device=raster_device,
                 job_context=job_context,
             )
         except Exception as exc:
@@ -1656,6 +1711,7 @@ def run_pipeline(
     output_mode: str = "authoring",
     production_avif: bool = False,
     rights_context: dict[str, Any] | None = None,
+    raster_device: str | None = None,
     job_context: Any | None = None,
 ) -> dict[str, Any]:
     return run_multi_object_pipeline(
@@ -1672,5 +1728,6 @@ def run_pipeline(
         output_mode=output_mode,
         production_avif=production_avif,
         rights_context=rights_context,
+        raster_device=raster_device,
         job_context=job_context,
     )

@@ -90,6 +90,7 @@ def _candidate_review_record(
             artifact_ids_by_rel_path,
         ),
         "box": box,
+        "scanFrameIndex": _int(_first_present(candidate, metadata, ("scanFrameIndex", "scan_frame_index")), default=_int(candidate.get("frameIndex", candidate.get("frame_index")), default=0)),
         "areaRatio": _area_ratio(candidate, metadata, box, _mapping(document.get("video"))),
         "stabilityScore": _score(candidate, metadata, ("stabilityScore", "stability_score"), default=confidence),
         "motionScore": _score(candidate, metadata, ("motionScore", "motion_score"), default=None),
@@ -99,6 +100,9 @@ def _candidate_review_record(
         "rejectionReason": rejection_reason,
         "defaultSelected": default_selected,
         "reviewStatus": review_status,
+        "labelSource": _text(_first_present(candidate, metadata, ("labelSource", "label_source"), default="provider")),
+        "autoLabel": _text_or_none(_first_present(candidate, metadata, ("autoLabel", "auto_label"))),
+        "autoLabelConfidence": _score(_mapping(_first_present(candidate, metadata, ("autoLabelPrediction", "auto_label_prediction"))), {}, ("confidence",), default=None),
     }
     return _public_value(record)
 

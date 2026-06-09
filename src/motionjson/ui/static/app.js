@@ -549,6 +549,7 @@ const MotionJSONUI = (() => {
     const jobRunning = jobStatus.running;
     const jobFailed = jobStatus.failed;
     const hasReviewablePartial = jobFailed && Boolean(snapshot.partialSuccess || snapshot.reviewableObjectCount || snapshot.candidateCount || snapshot.trackCount);
+    const fastFramePick = selectedPreset === "pick_objects_from_frame";
     const reviewExportSubscreen = snapshot.reviewExportSubscreen === "export" ? "export" : "review";
     const exportAvailability = workflowExportAvailabilityFromSnapshot(snapshot);
     const reviewFlow = reviewFlowStateFromSnapshot({
@@ -688,14 +689,34 @@ const MotionJSONUI = (() => {
       const blocksNewRun = jobRunning;
       return {
         id: activeStep,
-        primaryLabel: primaryRunLabelForPreset(selectedPreset),
+        primaryLabel: fastFramePick ? "Scan keyframe" : primaryRunLabelForPreset(selectedPreset),
         primaryAction: "run_prepared_workflow",
         enabled: Boolean(activeReadiness.complete) && !blocksNewRun,
         blockedReason: blocksNewRun
           ? "Wait for the current run to finish before starting another guided run."
           : activeReadiness.message || "Finish the required prepare step before running.",
-        successAdvanceTo: "run_monitor",
+        successAdvanceTo: fastFramePick ? "candidate_selection" : "run_monitor",
         backTarget: requiresModel ? "provider_settings" : "source_video",
+      };
+    }
+
+    if (activeStep === "candidate_selection") {
+      const selectedCount = toInteger(snapshot.selectedCandidateCount, 0);
+      const candidateCount = toInteger(snapshot.candidateCount, 0);
+      const trackingBusy = snapshot.candidateTrackingStatus === "tracking" || jobRunning;
+      return {
+        id: activeStep,
+        primaryLabel: trackingBusy ? "Tracking selected" : "Track selected",
+        primaryAction: "track_selected",
+        enabled: candidateCount > 0 && selectedCount > 0 && !trackingBusy,
+        blockedReason:
+          candidateCount <= 0
+            ? "Run the keyframe scan before selecting objects."
+            : selectedCount <= 0
+              ? "Choose at least one object to track."
+              : "",
+        successAdvanceTo: "run_monitor",
+        backTarget: "prompt_preview",
       };
     }
 
@@ -738,11 +759,11 @@ const MotionJSONUI = (() => {
       if (hasReviewData) {
         return {
           id: activeStep,
-          primaryLabel: "Continue to review",
-          primaryAction: "continue_to_review",
+          primaryLabel: fastFramePick && toInteger(snapshot.trackCount, 0) === 0 ? "Select objects" : "Continue to review",
+          primaryAction: fastFramePick && toInteger(snapshot.trackCount, 0) === 0 ? "continue_to_selection" : "continue_to_review",
           enabled: true,
           blockedReason: "",
-          successAdvanceTo: "review_export",
+          successAdvanceTo: fastFramePick && toInteger(snapshot.trackCount, 0) === 0 ? "candidate_selection" : "review_export",
           backTarget: "prompt_preview",
         };
       }
@@ -764,6 +785,7 @@ const MotionJSONUI = (() => {
     const screenId = workflowScreenForStep(activeStep);
     const selectedPreset = snapshot.selectedPreset || "trace_one_object";
     const requiresModel = goalRequiresModel(selectedPreset);
+    const fastFramePick = selectedPreset === "pick_objects_from_frame";
     const previewStatus = String(snapshot.videoPreviewStatus || "");
     const previewReason = snapshot.videoPreviewReason || "";
     const modelSetup = workflowModelSetupStatusFromSnapshot(snapshot);
@@ -869,8 +891,8 @@ const MotionJSONUI = (() => {
     if (screenId === "prepare") {
       const base = workflowStepContractFromSnapshot(snapshot, "prompt_preview");
       return {
-        title: "Prepare",
-        description: "Configure the scene sweep, prompt, or import settings before starting extraction.",
+        title: fastFramePick ? "Scan keyframe" : "Prepare",
+        description: fastFramePick ? "Choose the frame to inspect, then run one quick candidate scan." : "Configure the scene sweep, prompt, or import settings before starting extraction.",
         statusLabel: base.enabled ? "Ready" : "Needs input",
         statusTone: base.enabled ? "is-ready" : "is-warn",
         primaryLabel: base.primaryLabel,
@@ -878,6 +900,20 @@ const MotionJSONUI = (() => {
         blockedReason: base.blockedReason,
         primaryAction: "run_prepared_workflow",
         backTarget: requiresModel ? "provider_settings" : "source_video",
+      };
+    }
+    if (screenId === "select") {
+      const base = workflowStepContractFromSnapshot(snapshot, "candidate_selection");
+      return {
+        title: "Select objects",
+        description: "Inspect the scan frame, rename the right objects, and continue with only those selections.",
+        statusLabel: base.enabled ? "Ready" : "Needs selection",
+        statusTone: base.enabled ? "is-ready" : "is-warn",
+        primaryLabel: base.primaryLabel,
+        enabled: base.enabled,
+        blockedReason: base.blockedReason,
+        primaryAction: base.primaryAction,
+        backTarget: "prompt_preview",
       };
     }
     if (screenId === "run") {
@@ -1514,6 +1550,8 @@ const MotionJSONUI = (() => {
       const hosted = input.providerName === "sam3-hosted";
       const effort = effortPresetDefaults(input.effortPreset || "balanced");
       const defaults = objectDiscoveryDefaults(input.traceEverythingMode ? "trace_everything" : input.qualityPreset || "clean");
+      const fastFramePick = input.preset === "pick_objects_from_frame";
+      const scanKeyframes = fastFramePick ? (keyframes.length ? [keyframes[0]] : [toInteger(input.currentFrame, 0)]) : keyframes;
       const config = {
         sceneSweep: true,
         useTransformersTracker: !hosted && Boolean(input.useTransformersTracker ?? effort.useTransformersTracker),
@@ -1526,14 +1564,17 @@ const MotionJSONUI = (() => {
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" : null,
         sam3Device: input.localSam3Device || input.device || "cuda",
-        keyframes,
-        maxCandidatesPerKeyframe: defaults.maxCandidatesPerKeyframe,
-        maxObjects: toInteger(input.maxObjects, defaults.maxObjects),
+        frameIndex: toInteger(scanKeyframes[0], toInteger(input.currentFrame, 0)),
+        keyframes: scanKeyframes,
+        maxKeyframes: fastFramePick ? 1 : defaults.maxKeyframes,
+        maxCandidatesPerKeyframe: fastFramePick ? Math.min(defaults.maxCandidatesPerKeyframe, 8) : defaults.maxCandidatesPerKeyframe,
+        maxObjects: toInteger(input.maxObjects, fastFramePick ? Math.min(defaults.maxObjects, 8) : defaults.maxObjects),
         minMaskArea: defaults.minMaskArea,
         maxMaskAreaRatio: defaults.maxMaskAreaRatio,
         dedupeIou: defaults.dedupeIou,
         stabilityThreshold: defaults.stabilityThreshold,
         requireReview: true,
+        fastFramePick,
         allowNetwork: hosted ? Boolean(input.hostedSam3AllowHosted) : false,
         acknowledgeCostPrivacy: hosted ? Boolean(input.hostedSam3AllowHosted) : false,
         mock: false,
@@ -1732,6 +1773,15 @@ const MotionJSONUI = (() => {
         commercial_use_status: null,
       },
     };
+  }
+
+  function buildSelectedTrackingRunConfig(input = {}) {
+    if (input.preset !== "pick_objects_from_frame") return buildRunConfig(input);
+    return buildRunConfig({
+      ...input,
+      preset: "trace_all_objects",
+      discoveryMode: input.providerName === "sam2-hf-auto-masks" ? "sam2_hf_auto_masks" : input.discoveryMode === "auto_object_proposals" ? "auto_object_proposals" : "sam3_auto_masks",
+    });
   }
 
   function presetNameForRunPlan(config, input = {}) {
@@ -3297,6 +3347,17 @@ const MotionJSONUI = (() => {
         detail: runtimeReady ? readiness.message || "Runtime diagnostics are ready." : readiness.message || environmentRecommendationSummary().summary,
       },
     ];
+    if (providerId === "sam3-local") {
+      const accessReady = Boolean(hfCredential?.configured) || cache.cached;
+      steps.push({
+        id: "access",
+        label: "Access",
+        status: accessReady ? "done" : setupRunning && ["check_access", "prepare_model"].includes(setupJob.action) ? "running" : status === "needs_access" ? "active" : "pending",
+        detail: accessReady
+          ? "Hugging Face access is configured for gated downloads."
+          : "Paste a Hugging Face token and verify access before caching facebook/sam3 when Meta gating applies.",
+      });
+    }
     if (localCacheProvider) {
       steps.push({
         id: "download",
@@ -3854,20 +3915,24 @@ const MotionJSONUI = (() => {
 
   async function refreshModelSetupRecommendation(presetId = state.selectedPreset, options = {}) {
     if (!goalRequiresModel(presetId)) return null;
+    state.modelSetupRecommendationLoading = {
+      ...(state.modelSetupRecommendationLoading || {}),
+      [presetId]: true,
+    };
     try {
       const recommendation = await api(`/api/model-setup/recommendation?goal=${encodeURIComponent(presetId)}`);
       rememberModelSetupRecommendation(recommendation, { goal: presetId });
-      if (options.render) {
-        renderModelSetup();
-        renderModelPlanPanel();
-        renderWorkflowStepper();
-        renderConfigPreview();
-      }
+      state.modelSetupMessage = "";
       return recommendation;
     } catch (error) {
       state.modelSetupMessage = `Could not refresh model recommendation: ${error.message}`;
       state.modelSetupTone = "warn";
       return modelSetupRecommendationForPreset(presetId);
+    } finally {
+      state.modelSetupRecommendationLoading = {
+        ...(state.modelSetupRecommendationLoading || {}),
+        [presetId]: false,
+      };
     }
   }
 
@@ -4215,6 +4280,9 @@ const MotionJSONUI = (() => {
       exportable: track.exportable !== false,
       demoMode: track.demoMode === true || track.demo_mode === true,
       providerName: track.providerName || track.provider_name || null,
+      labelSource: track.labelSource || track.label_source || track.metadata?.labelSource || null,
+      autoLabel: track.autoLabel || track.auto_label || track.metadata?.autoLabel || null,
+      autoLabelConfidence: toNumber(track.autoLabelConfidence ?? track.auto_label_confidence ?? track.metadata?.autoLabelPrediction?.confidence, Number.NaN),
       trackingProvider: track.trackingProvider || track.tracking_provider || track.discovery?.trackingProvider || track.discovery?.tracking_provider || track.metadata?.trackingProvider || null,
       discovery: track.discovery && typeof track.discovery === "object" ? { ...track.discovery } : {},
       metadata: track.metadata && typeof track.metadata === "object" ? { ...track.metadata } : {},
@@ -4937,6 +5005,11 @@ const MotionJSONUI = (() => {
     return Boolean(candidateId(candidate)) && !candidateRejected(candidate);
   }
 
+  function candidateDisplayLabel(candidate) {
+    const id = candidateId(candidate);
+    return String(state.candidateLabelOverrides?.[id] || candidate?.label || id || "candidate").trim();
+  }
+
   function candidateDefaultSelected(candidate) {
     return candidateSelectable(candidate) && candidate.defaultSelected !== false;
   }
@@ -5051,16 +5124,23 @@ const MotionJSONUI = (() => {
     const jobId = state.selectedJobId || "";
     if (state.candidateSelectionJobId !== jobId) {
       state.candidateSelection = {};
+      state.candidateLabelOverrides = {};
       state.candidateSelectionJobId = jobId;
     }
     const ids = new Set(candidates.map(candidateId).filter(Boolean));
     for (const id of Object.keys(state.candidateSelection)) {
       if (!ids.has(id)) delete state.candidateSelection[id];
     }
+    for (const id of Object.keys(state.candidateLabelOverrides || {})) {
+      if (!ids.has(id)) delete state.candidateLabelOverrides[id];
+    }
     for (const candidate of candidates) {
       const id = candidateId(candidate);
       if (id && state.candidateSelection[id] == null) {
         state.candidateSelection[id] = candidateDefaultSelected(candidate);
+      }
+      if (id && !state.candidateLabelOverrides[id] && candidate.label) {
+        state.candidateLabelOverrides[id] = String(candidate.label);
       }
     }
   }
@@ -5097,11 +5177,15 @@ const MotionJSONUI = (() => {
     return candidates.filter((candidate) => state.candidateSelection[candidateId(candidate)] === true && candidateSelectable(candidate)).map(candidateId);
   }
 
-  function trackSelectedPayload(candidateIds, { exportReviewRequired = true } = {}) {
+  function trackSelectedPayload(candidateIds, { exportReviewRequired = true, input = null } = {}) {
+    const ids = uniqueIds(candidateIds);
+    const formState = input && typeof input === "object" ? input : {};
     return {
-      candidateIds: uniqueIds(candidateIds),
-      trackMode: "selected_only",
+      candidateIds: ids,
+      trackMode: state.selectedPreset === "pick_objects_from_frame" ? "keyframe_selected_only" : "selected_only",
       exportReviewRequired,
+      candidateEdits: ids.map((candidateId) => ({ candidateId, label: state.candidateLabelOverrides?.[candidateId] || candidateId })),
+      trackingRunConfig: state.selectedPreset === "pick_objects_from_frame" ? buildSelectedTrackingRunConfig(formState) : undefined,
     };
   }
 
@@ -5796,7 +5880,12 @@ const MotionJSONUI = (() => {
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
-        screenId === "prepare"
+        screenId === "select"
+          ? {
+              title: "Select only what to track",
+              note: "Review the keyframe objects, rename them if needed, then continue with only the selected objects.",
+            }
+          : screenId === "prepare"
           ? state.selectedPreset === "trace_one_object"
             ? {
                 title: /^sam3-/.test(String(enginePlan.providerName || "")) ? "Trace the object" : "Trace the object",
@@ -6036,7 +6125,7 @@ const MotionJSONUI = (() => {
         const hiddenInSimpleMode =
           !showAll &&
           (
-            ["studioBottomCta", "runPlanAlert", "modelPlanPanel"].includes(panel.id) ||
+            ["studioBottomCta", "runPlanAlert", "modelPlanPanel", "postRunGuide"].includes(panel.id) ||
             (panel.id === "mainJobCenter" && activeStep !== "run_monitor" && !state.selectedJobId) ||
             (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
@@ -6222,6 +6311,14 @@ const MotionJSONUI = (() => {
         if (state.activeWorkflowStep === "source_video") setWorkflowStep("review_export", { focusStep: true });
         return;
       }
+      if (state.selectedPreset === "pick_objects_from_frame" && state.selectedJobId) {
+        const candidateCount = reviewCandidates().length;
+        const trackCount = state.reviewTracks.length;
+        if (!isActiveJobStatus(status) && candidateCount > 0 && trackCount === 0) {
+          setWorkflowStep("candidate_selection", { focusStep: false });
+          return;
+        }
+      }
       if (state.activeWorkflowStep === "prompt_preview" && (status || state.selectedJobId)) {
         setWorkflowStep("run_monitor", { focusStep: true });
       }
@@ -6395,6 +6492,8 @@ const MotionJSONUI = (() => {
           $("#importMotionJsonForm")?.requestSubmit();
         } else if (contract.primaryAction === "continue_to_review") {
           setReviewExportSubscreen("review", { focus: true });
+        } else if (contract.primaryAction === "continue_to_selection") {
+          setWorkflowStep("candidate_selection", { focusStep: true });
         } else if (contract.primaryAction === "save_model_setup") {
           await saveSelectedModelSetupAndContinue();
         } else if (contract.primaryAction === "run_model_setup_action") {
@@ -6608,10 +6707,14 @@ const MotionJSONUI = (() => {
     }
 
     function mountInlineWorkflowPanels() {
+      moveInlinePanel("#modelSetupSupportSlot", $("#providerSettingsPanel")?.closest("details.rail-section"));
+      moveInlinePanel("#modelSetupSupportSlot", $("#commercialReadinessPanel")?.closest("details.rail-section"));
       moveInlinePanel("#reviewCandidateSectionSlot", $("#candidateSummaryList")?.closest("section.compact-panel"));
       moveInlinePanel("#reviewCorrectionSectionSlot", $("#correctionStatus")?.closest("section.compact-panel"));
       moveInlinePanel("#reviewCorrectionSectionSlot", $("#correctionHistory")?.closest("section.compact-panel"));
       moveInlinePanel("#reviewArtifactSectionSlot", $("#fallbackDiagnosticsDisclosure"));
+      moveInlinePanel("#reviewArtifactSectionSlot", $("#exportArtifactsDisclosure"));
+      moveInlinePanel("#reviewLibrarySectionSlot", $("#libraryStatus")?.closest("details.rail-section"));
     }
 
     function initShellNavigation() {
@@ -6872,10 +6975,26 @@ const MotionJSONUI = (() => {
 
       const recommendation = modelSetupRecommendationForPreset(state.selectedPreset);
       const hasRecommendation = recommendation?.format === "motionjson.model_setup_recommendation.v0.1";
+      const recommendationLoading = Boolean(state.modelSetupRecommendationLoading?.[state.selectedPreset]);
       if (!hasRecommendation && state.modelSetupSelectionMode !== "user_override") {
-        setModelSetupStatusChip(status, "Recommendation unavailable", "warn", state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.");
+        if (!recommendationLoading) {
+          refreshModelSetupRecommendation(state.selectedPreset).finally(() => {
+            renderModelSetup();
+            renderModelPlanPanel();
+            renderWorkflowStepper();
+            renderConfigPreview();
+          });
+        }
+        setModelSetupStatusChip(
+          status,
+          recommendationLoading ? "Loading recommendation" : "Recommendation unavailable",
+          "warn",
+          recommendationLoading ? "MotionJSON is loading the safest setup path for this goal." : state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.",
+        );
         choices.innerHTML = "";
-        detail.innerHTML = modelSetupCapabilityScanErrorMarkup(state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.");
+        detail.innerHTML = recommendationLoading
+          ? `<div class="empty-state"><strong>Loading setup recommendation</strong><p>MotionJSON is checking the current runtime and compatible model paths for this goal.</p></div>`
+          : modelSetupCapabilityScanErrorMarkup(state.modelSetupMessage || "MotionJSON could not load an automatic setup recommendation.");
         return;
       }
 
@@ -8632,7 +8751,7 @@ const MotionJSONUI = (() => {
       const trackButton = $("#trackSelectedCandidatesButton");
       const status = $("#candidateActionStatus");
       trackButton.disabled = !state.selectedJobId || selectedCount === 0 || state.candidateTrackingStatus === "tracking";
-      trackButton.textContent = state.candidateTrackingStatus === "tracking" ? "Tracking..." : "Track selected";
+      trackButton.textContent = state.candidateTrackingStatus === "tracking" ? "Tracking..." : state.selectedPreset === "pick_objects_from_frame" ? "Track selected objects" : "Track selected";
       status.textContent =
         state.candidateTrackingStatus && state.candidateTrackingStatus !== "tracking"
           ? state.candidateTrackingStatus
@@ -8694,7 +8813,10 @@ const MotionJSONUI = (() => {
                   <div class="candidate-body">
                     <div class="candidate-topline">
                       <div class="candidate-title-group">
-                        <strong>${escapeHtml(candidate.label || id || "candidate")}</strong>
+                        <label class="candidate-label-field">
+                          <span class="sr-only">Candidate label</span>
+                          <input type="text" value="${escapeAttribute(candidateDisplayLabel(candidate))}" data-candidate-label="${escapeAttribute(id)}" ${candidateSelectable(candidate) ? "" : "disabled"} />
+                        </label>
                         <span class="row-meta">${escapeHtml(sourceDetail || id || "candidate source")}</span>
                       </div>
                       <div class="candidate-status-list">${statuses.map(candidateStatusChip).join("")}</div>
@@ -8779,8 +8901,14 @@ const MotionJSONUI = (() => {
       const snapshot = workflowSnapshot();
       const readiness = workflowReadinessFromSnapshot(snapshot);
       const activeIndex = workflowStepIndex(activeStep);
+      const fastFramePick = state.selectedPreset === "pick_objects_from_frame";
+      const visibleItems = [];
       document.querySelectorAll("#studioProgressStepper [data-studio-step]").forEach((item, index) => {
         const stepId = normalizeWorkflowStepId(item.dataset.studioStep, "choose_goal");
+        const hidden = stepId === "candidate_selection" && !fastFramePick;
+        item.hidden = hidden;
+        if (hidden) return;
+        visibleItems.push(item);
         const stepIndex = workflowStepIndex(stepId);
         const stepReadiness = readiness[stepId] || {};
         const active = index === activeIndex;
@@ -8796,6 +8924,31 @@ const MotionJSONUI = (() => {
           if (active) button.setAttribute("aria-current", "step");
           else button.removeAttribute("aria-current");
           button.setAttribute("title", stepReadiness.message || "");
+        }
+      });
+      visibleItems.forEach((item, index) => {
+        const stepId = item.dataset.studioStep || "";
+        const button = item.querySelector("[data-workflow-step]");
+        const number = String(index + 1);
+        const label =
+          fastFramePick && stepId === "prompt_preview"
+            ? "Scan"
+            : fastFramePick && stepId === "run_monitor"
+              ? "Track"
+              : fastFramePick && stepId === "candidate_selection"
+                ? "Select"
+                : fastFramePick && stepId === "review_export"
+                  ? "Review & export"
+                  : stepId === "prompt_preview"
+                    ? "Prepare & run"
+                    : stepId === "review_export"
+                      ? "Review & export"
+                      : button?.querySelector("strong")?.textContent || "";
+        if (button) {
+          const span = button.querySelector("span");
+          const strong = button.querySelector("strong");
+          if (span) span.textContent = number;
+          if (strong) strong.textContent = label;
         }
       });
     }
@@ -8854,7 +9007,7 @@ const MotionJSONUI = (() => {
           kind: "candidate",
           id: candidateId(candidate),
           objectId,
-          label: candidate.label || objectId || `Candidate ${index + 1}`,
+          label: candidateDisplayLabel(candidate) || objectId || `Candidate ${index + 1}`,
           confidence: candidateConfidenceScore(candidate),
           frameCount: toInteger(candidate.frameCount ?? candidate.frame_count, 0) || toInteger(state.jobReview?.source?.frameCount ?? state.jobReview?.source?.frame_count, 0) || 450,
           color: TRACK_COLORS[index % TRACK_COLORS.length],
@@ -8872,6 +9025,7 @@ const MotionJSONUI = (() => {
       const list = $("#studioObjectList");
       const summary = $("#studioReviewSummary");
       if (!list || !summary) return;
+      const candidateSelectionMode = state.activeWorkflowStep === "candidate_selection";
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
@@ -8882,8 +9036,10 @@ const MotionJSONUI = (() => {
         movingReviewedCount,
       });
       if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = reviewExportScreen.kicker;
-      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = reviewExportScreen.title;
-      summary.textContent = reviewExportScreen.summary;
+      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : reviewExportScreen.title;
+      summary.textContent = candidateSelectionMode
+        ? "Keep the objects you want, rename them if needed, then track only those selections through the full video."
+        : reviewExportScreen.summary;
       const job = selectedJob();
       const lifecycle = job ? normalizeJobLifecycle(job, { events: state.jobEvents }) : null;
       const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
@@ -8919,8 +9075,9 @@ const MotionJSONUI = (() => {
       const canExport = !exportAction.disabled;
       $("#studioExportAllButton").disabled = !canExport;
       $("#studioExportAllButton").textContent = exportAction.label || "Export MotionJSON";
-      $("#studioExportSelectedButton").disabled = !canValidate;
-      $("#studioExportSelectedButton").textContent = status ? "Validate again" : "Validate selected";
+      $("#studioExportAllButton").hidden = candidateSelectionMode;
+      $("#studioExportSelectedButton").disabled = candidateSelectionMode ? selectedCandidateIds().length === 0 : !canValidate;
+      $("#studioExportSelectedButton").textContent = candidateSelectionMode ? "Track selected objects" : status ? "Validate again" : "Validate selected";
       $("#studioCreatePackageButton").disabled = !canExport;
       if ($("#studioValidateExportButton")) {
         $("#studioValidateExportButton").disabled = !canValidate;
@@ -8936,7 +9093,9 @@ const MotionJSONUI = (() => {
         $("#studioExportStatus").className = `status-chip ${!job ? "is-muted" : status?.ok === true ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       }
       if ($("#studioExportChecklistNote")) {
-        $("#studioExportChecklistNote").textContent = status?.ok === true
+        $("#studioExportChecklistNote").textContent = candidateSelectionMode
+          ? "Tracking starts only for the selected keyframe objects."
+          : status?.ok === true
           ? "Moving tracks are validated for MotionJSON export."
           : decision.detail || exportAction.reason || "Validate moving tracks before writing MotionJSON.";
       }
@@ -9063,6 +9222,21 @@ const MotionJSONUI = (() => {
             })
             .join("")
         : `<div class="empty-state">Start a run to review objects before export.</div>`;
+      const candidateSection = $("#reviewCandidateSectionSlot");
+      const correctionSection = $("#reviewCorrectionSectionSlot");
+      const artifactSection = $("#reviewArtifactSectionSlot");
+      const trackInspector = $("#studioTrackInspector");
+      const exportCard = $("#studioExportCard");
+      const reviewTools = $(".review-tools-panel");
+      const segmentGate = $(".studio-segment-gate");
+      if (candidateSection) candidateSection.hidden = false;
+      if (trackInspector) trackInspector.hidden = candidateSelectionMode;
+      if (exportCard) exportCard.hidden = candidateSelectionMode;
+      if (reviewTools) reviewTools.hidden = candidateSelectionMode;
+      if (correctionSection) correctionSection.hidden = candidateSelectionMode;
+      if (artifactSection) artifactSection.hidden = candidateSelectionMode;
+      if (segmentGate) segmentGate.hidden = candidateSelectionMode;
+      if (list) list.hidden = candidateSelectionMode;
     }
 
     function renderStudioShell(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
@@ -9163,6 +9337,7 @@ const MotionJSONUI = (() => {
         <dl class="track-detail-grid">
           <dt>Object ID</dt><dd>${escapeHtml(track.objectId || track.id)}</dd>
           <dt>Source</dt><dd>${escapeHtml(track.source || track.providerName || "not reported")}</dd>
+          <dt>Label source</dt><dd>${escapeHtml(track.labelSource || (track.autoLabel ? "classifier" : "provider"))}</dd>
           <dt>Coverage</dt><dd>${escapeHtml(trackCoverageLabel(track))}</dd>
           <dt>Geometry</dt><dd>${escapeHtml(polygonFrames ? `${polygonFrames} real outline frame${polygonFrames === 1 ? "" : "s"}` : `outline missing (${missingOutlineFrames || frames.length} bbox diagnostic${(missingOutlineFrames || frames.length) === 1 ? "" : "s"})`)}</dd>
           <dt>Motion</dt><dd>${escapeHtml(motionSummary)}</dd>
@@ -10223,6 +10398,14 @@ const MotionJSONUI = (() => {
       ctx.restore();
     }
 
+    function drawCandidateBox(candidate, view) {
+      if (!candidate?.box) return;
+      const id = candidateId(candidate);
+      const selected = state.candidateSelection[id] === true;
+      const label = candidateDisplayLabel(candidate);
+      drawBox(candidate.box, selected ? "#1fb7a9" : "#e5be5f", label, view);
+    }
+
     function drawStroke(stroke, view) {
       if (!stroke.points.length) return;
       ctx.save();
@@ -10266,6 +10449,12 @@ const MotionJSONUI = (() => {
 
       if (state.draftBox) {
         drawBox(state.draftBox.data, "#e5be5f", "box draft", view);
+      }
+
+      if (state.activeWorkflowStep === "candidate_selection") {
+        reviewCandidates()
+          .filter(candidateSelectable)
+          .forEach((candidate) => drawCandidateBox(candidate, view));
       }
 
       state.reviewTracks.forEach((track, index) => {
@@ -10753,7 +10942,12 @@ const MotionJSONUI = (() => {
         if (!options.keepProvider) {
           state.selectedModelSetupProviderId = "";
           state.modelSetupSelectionMode = "auto";
-          refreshModelSetupRecommendation(state.selectedPreset, { render: true });
+          refreshModelSetupRecommendation(state.selectedPreset).finally(() => {
+            renderModelSetup();
+            renderModelPlanPanel();
+            renderWorkflowStepper();
+            renderConfigPreview();
+          });
         }
       } else if (state.activeWorkflowStep === "provider_settings") {
         state.activeWorkflowStep = "prompt_preview";
@@ -12894,10 +13088,31 @@ const MotionJSONUI = (() => {
       state.candidateTrackingStatus = "tracking";
       renderCandidateSummary();
       try {
-        const response = await api(trackSelectedRoute(state.selectedJobId), {
+        const sourceJobId = state.selectedJobId;
+        const response = await api(trackSelectedRoute(sourceJobId), {
           method: "POST",
-          body: JSON.stringify(trackSelectedPayload(ids)),
+          body: JSON.stringify(trackSelectedPayload(ids, { input: collectFormState($) })),
         });
+        if (response?.trackingJob) {
+          const trackingJob = response.trackingJob;
+          const trackingJobId = jobIdentifier(trackingJob);
+          state.pendingTrackingSourceJobId = sourceJobId;
+          state.selectedJobId = trackingJobId;
+          state.selectedJob = trackingJob;
+          state.jobs = [trackingJob, ...state.jobs.filter((item) => jobIdentifier(item) !== trackingJobId)];
+          state.jobReview = null;
+          state.jobArtifacts = [];
+          state.jobEvents = [];
+          state.reviewTracks = [];
+          state.correctionState = emptyCorrectionState(trackingJobId);
+          state.candidateTrackingStatus = `Tracking ${ids.length} selected object${ids.length === 1 ? "" : "s"}.`;
+          renderJobs();
+          renderJobReview();
+          await refreshProjectData({ quiet: true });
+          startPolling();
+          setWorkflowStep("run_monitor", { focusStep: true });
+          return;
+        }
         if (response?.review) state.jobReview = response.review;
         if (response?.artifacts) state.jobArtifacts = asArray(response.artifacts);
         if (response?.job) {
@@ -13523,11 +13738,25 @@ const MotionJSONUI = (() => {
     });
 
     $("#candidateSummaryList").addEventListener("change", (event) => {
+      const labelInput = event.target.closest("[data-candidate-label]");
+      if (labelInput) {
+        const candidateId = labelInput.dataset.candidateLabel;
+        state.candidateLabelOverrides[candidateId] = labelInput.value.trim() || candidateId;
+        renderCandidateSummary();
+        return;
+      }
       const checkbox = event.target.closest("[data-candidate-select]");
       if (!checkbox) return;
       state.candidateSelection[checkbox.dataset.candidateSelect] = checkbox.checked;
       state.candidateTrackingStatus = "";
       renderCandidateSummary();
+    });
+
+    $("#candidateSummaryList").addEventListener("input", (event) => {
+      const labelInput = event.target.closest("[data-candidate-label]");
+      if (!labelInput) return;
+      const candidateId = labelInput.dataset.candidateLabel;
+      state.candidateLabelOverrides[candidateId] = labelInput.value.trim() || candidateId;
     });
 
     $("#candidateSummaryList").addEventListener("click", (event) => {
@@ -13640,7 +13869,13 @@ const MotionJSONUI = (() => {
       disclosure.scrollIntoView({ behavior: "smooth", block: "center" });
     });
 
-    $("#studioExportSelectedButton").addEventListener("click", validateSelectedExport);
+    $("#studioExportSelectedButton").addEventListener("click", () => {
+      if (state.activeWorkflowStep === "candidate_selection") {
+        trackSelectedCandidatesWithApi();
+        return;
+      }
+      validateSelectedExport();
+    });
     $("#studioExportAllButton").addEventListener("click", exportSelectedMotionJson);
     $("#studioCreatePackageButton").addEventListener("click", exportSelectedMotionJson);
     $("#studioValidateExportButton").addEventListener("click", validateSelectedExport);

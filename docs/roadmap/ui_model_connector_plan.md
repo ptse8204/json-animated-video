@@ -347,3 +347,31 @@ Acceptance:
   remain authoritative.
 - The new `Pick objects from one frame` goal uses the current frame as a fast
   first proposal pass before selected tracking.
+
+### UI-WORKFLOW-12 - Finish fast keyframe workflow and compact editor shell
+
+Purpose: complete the keyframe-first object-pick workflow so it no longer
+behaves like scene sweep, tighten model setup around required inputs, and
+finish the compact editor direction across run/review/export.
+
+Expected commit:
+
+```bash
+git commit -m "phase ui-workflow-12: finish keyframe-first tracking workflow"
+```
+
+Acceptance:
+
+- `Pick objects from one frame` is a real two-stage path:
+  scan keyframe, inspect/select/rename objects, then track selected objects
+  only in a child job.
+- The scan job writes one-frame candidate artifacts only and does not
+  precompute full candidate mask sequences.
+- `POST /api/jobs/{jobId}/track-selected` accepts
+  `trackMode: "keyframe_selected_only"` and returns a queued child tracking job.
+- The compact editor shell no longer depends on the diagnostics rail for the
+  normal workflow.
+- Model setup shows required Hugging Face access before cache/smoke when the
+  selected runtime needs it.
+- Automatic naming uses no-token local public weights and records label
+  provenance in review metadata.

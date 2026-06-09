@@ -17,8 +17,9 @@ class ContourResult:
     contour_points: int = 0
 
 
-def mask_to_largest_polygon(mask: np.ndarray, min_area: float = 100.0, simplify_ratio: float = 0.006) -> ContourResult:
+def mask_to_largest_polygon(mask: np.ndarray, min_area: float = 100.0, simplify_ratio: float = 0.006, *, device: str | None = None) -> ContourResult:
     """Extract the largest external contour from a mask and simplify it."""
+    mask = _prepared_contour_mask(mask, device=device)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return ContourResult(False, [], None, None, 0.0, 0)
@@ -66,6 +67,38 @@ def polygon_to_lottie_shape(polygon: list[list[float]]) -> dict[str, Any]:
     vertices = [[round(float(x), 3), round(float(y), 3)] for x, y in polygon]
     tangents = [[0, 0] for _ in vertices]
     return {"i": tangents, "o": tangents, "v": vertices, "c": True}
+
+
+def _prepared_contour_mask(mask: np.ndarray, *, device: str | None = None) -> np.ndarray:
+    torch_device = _torch_device(device)
+    normalized = np.where(np.asarray(mask, dtype=np.uint8) > 127, 255, 0).astype(np.uint8)
+    if torch_device is None:
+        return normalized
+    try:
+        import torch  # type: ignore
+        import torch.nn.functional as F  # type: ignore
+    except ImportError:
+        return normalized
+    value = torch.as_tensor(normalized, device=torch_device, dtype=torch.float32).unsqueeze(0).unsqueeze(0) / 255.0
+    # GPU-side denoise/edge-preserve pre-pass before final CPU contour extraction.
+    value = F.max_pool2d(value, kernel_size=3, stride=1, padding=1)
+    value = -F.max_pool2d(-value, kernel_size=3, stride=1, padding=1)
+    return (value[0, 0].clamp(0, 1) * 255.0).to(torch.uint8).cpu().numpy()
+
+
+def _torch_device(device: str | None) -> Any | None:
+    if not device:
+        return None
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        return None
+    normalized = str(device).strip().lower()
+    if normalized.startswith("cuda") and torch.cuda.is_available():
+        return torch.device(device)
+    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
 
 
 def _clamp01(value: float) -> float:

@@ -95,6 +95,7 @@ assert.deepEqual(WORKFLOW_STEPS.map((step) => step.id), [
   "source_video",
   "provider_settings",
   "prompt_preview",
+  "candidate_selection",
   "run_monitor",
   "review_export",
 ]);
@@ -103,6 +104,8 @@ assert.equal(workflowNextStepId("review_export", 1), "review_export");
 assert.equal(workflowNextStepId("choose_goal", -1), "choose_goal");
 assert.equal(workflowScreenForStep("provider_settings"), "model");
 assert.equal(workflowStepForScreen("review"), "review_export");
+assert.equal(workflowScreenForStep("candidate_selection"), "select");
+assert.equal(workflowStepForScreen("select"), "candidate_selection");
 
 const hostedConnection = modelConnectionByConnectionId("sam3-hosted:roboflow-sam3-pcs");
 assert.equal(hostedConnection.providerId, "sam3-hosted");

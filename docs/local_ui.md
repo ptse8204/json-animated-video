@@ -106,9 +106,10 @@ Secondary actions such as demo video, setup state details, `Change model`, or
 review bulk actions stay visually secondary inside the current panel.
 
 The default object-discovery path is now `Pick objects from one frame`. It
-uses the current preview frame as the first review pass, keeps the setup and
-runtime path identical to scene sweep, and is meant to shorten the loop:
-choose a frame, scan once, keep the objects you want, then track only those.
+uses the current preview frame as the first review pass, then pauses for a real
+selection step before any full-video tracking begins. The flow is: choose a
+frame, run a one-frame scan, keep and rename the objects you want, then start
+a child tracking job for those selected objects only.
 
 The Video step supports direct local upload. Choosing a video file creates the
 local project when needed, stores the source in the local asset library, and
@@ -286,7 +287,8 @@ the cache, or recording the resolved model path.
 MotionJSON now attempts a small local image-classification pass when a new
 object still has a generic placeholder label such as `selected_object` or
 `Candidate 2`. The current implementation uses the optional
-`classifier` extra (`torch` + `timm`) and a small MobileNetV3 ImageNet model.
+`classifier` extra (`torch` + `torchvision`) and
+`torchvision.models.MobileNet_V3_Small_Weights.IMAGENET1K_V1`.
 It only replaces placeholder names with a short user-facing object label when
 the prediction is confident enough and maps cleanly to a supported friendly
 class such as `Ball`, `Cup`, `Bottle`, `Phone`, `Plant`, `Car`, `Dog`, or

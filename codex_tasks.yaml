@@ -225,6 +225,23 @@ ui_model_connector_phases:
       - "python3 -m motionjson.cli --help"
       - "python3 -m motionjson.cli ui --help"
       - "git diff --check"
+  - id: UI-WORKFLOW-12
+    name: finish keyframe-first tracking workflow
+    commit_message: "phase ui-workflow-12: finish keyframe-first tracking workflow"
+    report: docs/roadmap/phase-ui-workflow-12-report.md
+    goals:
+      - Split keyframe scan from full selected tracking.
+      - Add the queued selected-only child job flow.
+      - Tighten the compact editor shell and model-setup gating.
+      - Switch automatic naming to no-token local public weights.
+    validation:
+      - "npm run build"
+      - "npm test"
+      - "npm run lint"
+      - "python3 -m pytest -q tests/test_fast_keyframe_workflow.py tests/test_image_classifier.py tests/test_model_setup_recommendations.py tests/test_ui_first_run_simplicity.py tests/test_local_ui_api.py -k 'track_selected or export or provider or preview_file_route_serves_imported_result_directories or keyframe_scan'"
+      - "python3 -m motionjson.cli --help"
+      - "python3 -m motionjson.cli ui --help"
+      - "git diff --check"
 historical_completed_phases:
   - id: 0
     name: repository discovery and guardrails

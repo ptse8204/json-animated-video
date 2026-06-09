@@ -8,7 +8,11 @@ import tempfile
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+import shutil
+
+import numpy as np
+from PIL import Image
 
 from motionjson.config import (
     ExtractionRunConfig,
@@ -26,7 +30,7 @@ from motionjson.exporters.remotion import write_remotion_plan
 from motionjson.exporters.website_package import export_website_package
 from motionjson.job_artifacts import JobCanceled, LocalJobRun, artifact_kind_for_rel_path
 from motionjson.masks import ExternalMaskProvider, MotionMaskProvider, ThresholdMaskProvider
-from motionjson.pipeline import run_multi_object_pipeline, run_pipeline
+from motionjson.pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline
 from motionjson.provider_settings import provider_runtime_settings
 from motionjson.providers.base import ProviderConfigError, StorageProvider
 from motionjson.providers.discovery import (
@@ -40,17 +44,32 @@ from motionjson.providers.discovery import (
     SAM3ExemplarDiscoveryProvider,
     SamAutoMasksDiscoveryProvider,
     TextDetectorDiscoveryProvider,
+    _template_match_mask_sequence,
+    _write_single_mask_frame,
     object_specs_from_candidates,
 )
 from motionjson.providers.mocks import MockSegmentationProvider
-from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2HFAutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
+from motionjson.providers.sam2 import HostedSAM2SegmentationProvider, LocalSAM2AutomaticMaskProposalBackend, LocalSAM2HFAutomaticMaskProposalBackend, LocalSAM2SegmentationProvider
+from motionjson.providers.sam3 import LocalSAM3DiscoveryBackend
 from motionjson.providers.segmentation import SegmentationMaskProvider
+from motionjson.tracks import Box, VideoSource
+from motionjson.video import iter_sampled_frames
 
 from .assets import _asset_row, list_assets_for_job, register_generated_asset, register_generated_asset_once
 from .db import connect
 from .partial_review import synthesize_partial_review_payload
 from .sam3_discovery_subprocess import SubprocessSAM3AutoMasksDiscoveryProvider
-from .jobs import record_job_event
+from .selected_tracking import (
+    _candidate_documents,
+    _candidate_id,
+    _candidate_label_overrides,
+    _latest_candidate_document,
+    _mark_export_review_pending,
+    _selected_external_mask_objects,
+    _write_selection_manifest,
+    _write_selection_review,
+)
+from .jobs import get_job, record_job_event
 from .models import validate_extract_provider_policy
 from .queue import claim_next, mark_canceled, mark_failed, mark_running, mark_succeeded
 from .readiness import job_readiness
@@ -897,8 +916,303 @@ def _ui_discovery_provider(mode: str, config: dict[str, Any] | None = None) -> t
     return None
 
 
+def _raster_device_for_run(run_config: ExtractionRunConfig | None, runtime_proof: Mapping[str, Any] | None = None) -> str | None:
+    runtime = runtime_proof if isinstance(runtime_proof, Mapping) else {}
+    actual = str(runtime.get("deviceActual") or "").strip()
+    if actual:
+        return actual
+    if run_config is None:
+        return None
+    provider_name = str(run_config.provider.name or "")
+    if provider_name == "sam3-local":
+        return str(run_config.provider.sam3.device or "").strip() or None
+    if provider_name in {"sam2-local", "sam2-hf-auto-masks", "sam2-hosted"}:
+        return str(run_config.provider.sam2.device or "").strip() or None
+    return None
+
+
+def _selected_tracking_mode(payload: dict[str, Any]) -> str:
+    return str(payload.get("mode") or "").strip().lower()
+
+
+def _scan_mask_path(mask_dir: Path, frame_index: int) -> Path:
+    preferred = mask_dir / f"mask_{int(frame_index) + 1:06d}.png"
+    if preferred.exists():
+        return preferred
+    matches = sorted(mask_dir.glob("mask_*.png"))
+    if not matches:
+        raise FileNotFoundError(f"no scan mask exists in {mask_dir}")
+    return matches[0]
+
+
+def _load_binary_mask(path: Path) -> np.ndarray:
+    image = Image.open(path).convert("L")
+    return np.where(np.asarray(image, dtype=np.uint8) > 127, 255, 0).astype(np.uint8)
+
+
+def _candidate_box(candidate: Mapping[str, Any], width: int, height: int) -> Box:
+    raw_box = candidate.get("box") or candidate.get("bbox") or {}
+    if isinstance(raw_box, Mapping):
+        x = int(raw_box.get("x", 0))
+        y = int(raw_box.get("y", 0))
+        w = int(raw_box.get("w", raw_box.get("width", width)))
+        h = int(raw_box.get("h", raw_box.get("height", height)))
+        x = max(0, min(max(0, width - 1), x))
+        y = max(0, min(max(0, height - 1), y))
+        w = max(1, min(max(1, width - x), w))
+        h = max(1, min(max(1, height - y), h))
+        return Box(x, y, w, h)
+    return Box(0, 0, max(1, width), max(1, height))
+
+
+def _write_mask_sequence_dir(mask_dir: Path, masks: list[np.ndarray]) -> None:
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    for stale in mask_dir.glob("mask_*.png"):
+        stale.unlink()
+    for index, mask in enumerate(masks, start=1):
+        Image.fromarray(np.where(mask > 127, 255, 0).astype(np.uint8)).save(mask_dir / f"mask_{index:06d}.png")
+
+
+def _constant_box_mask_sequence(video_source: VideoSource, box: Box) -> list[np.ndarray]:
+    masks: list[np.ndarray] = []
+    width = int(getattr(video_source.info, "width", 0))
+    height = int(getattr(video_source.info, "height", 0))
+    for _frame in video_source.frames:
+        mask = np.zeros((height, width), dtype=np.uint8)
+        mask[box.y : box.y + box.h, box.x : box.x + box.w] = 255
+        masks.append(mask)
+    return masks
+
+
+def _selected_tracking_masks_for_candidate(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    candidate: Mapping[str, Any],
+    video_source: VideoSource,
+    scan_mask: np.ndarray,
+    box: Box,
+) -> tuple[list[np.ndarray], str]:
+    metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), Mapping) else {}
+    provider_name = str(candidate.get("providerName") or metadata.get("providerName") or "").strip()
+    source = str(candidate.get("source") or "").strip()
+    frame_index = int(candidate.get("frameIndex", candidate.get("frame_index", metadata.get("scanFrameIndex", 0))) or 0)
+    object_id = str(candidate.get("candidateId") or candidate.get("id") or candidate.get("objectId") or "candidate").strip() or "candidate"
+
+    if provider_name == "sam3-local" or source == "sam3_auto_masks":
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam3-local")
+        backend = LocalSAM3DiscoveryBackend(
+            model_path=str(runtime.get("runtime_model") or runtime.get("selected_model") or ""),
+            device=str(runtime.get("sam3_device") or "cuda"),
+        )
+        try:
+            masks = list(
+                backend.track_candidate(
+                    video_source,
+                    frame_index=frame_index,
+                    object_id=object_id,
+                    box=(box.x, box.y, box.w, box.h),
+                    mask=scan_mask,
+                    config={"sam3Device": str(runtime.get("sam3_device") or "cuda"), "useTransformersTracker": True},
+                )
+            )
+            return [np.where(np.asarray(mask) > 127, 255, 0).astype(np.uint8) for mask in masks], "sam3-local"
+        except Exception:
+            fallback = _template_match_mask_sequence(
+                video_source,
+                frame_index=frame_index,
+                mask=scan_mask,
+                box=box,
+                config={"templateTrackPadding": max(4, int(max(box.w, box.h) * 0.75))},
+            )
+            return fallback or _constant_box_mask_sequence(video_source, box), "template_match_fallback"
+
+    if provider_name == "sam2-hf-auto-masks":
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam2-hf-auto-masks")
+        backend = LocalSAM2HFAutomaticMaskProposalBackend(
+            model=str(runtime.get("runtime_model") or runtime.get("selected_model") or ""),
+            device=str(runtime.get("sam2_hf_device") or "cpu"),
+        )
+        masks = list(
+            backend.track_candidate(
+                video_source,
+                frame_index=frame_index,
+                object_id=object_id,
+                box=(box.x, box.y, box.w, box.h),
+                mask=scan_mask,
+                config={"sam2HfDevice": str(runtime.get("sam2_hf_device") or "cpu")},
+            )
+        )
+        return [np.where(np.asarray(mask) > 127, 255, 0).astype(np.uint8) for mask in masks], "sam2-hf-auto-masks"
+
+    if provider_name == "sam2-local" or source == "sam_auto_masks":
+        runtime = provider_runtime_settings(conn, user_id=user_id, provider_id="sam2-local")
+        backend = LocalSAM2AutomaticMaskProposalBackend(
+            checkpoint=str(runtime.get("sam2_checkpoint_path") or ""),
+            model_config=str(runtime.get("sam2_model_config_path") or ""),
+            device=str(runtime.get("sam2_device") or "cpu"),
+        )
+        masks = list(
+            backend.track_candidate(
+                video_source,
+                frame_index=frame_index,
+                object_id=object_id,
+                box=(box.x, box.y, box.w, box.h),
+                mask=scan_mask,
+                config={"sam2Device": str(runtime.get("sam2_device") or "cpu")},
+            )
+        )
+        return [np.where(np.asarray(mask) > 127, 255, 0).astype(np.uint8) for mask in masks], "sam2-local"
+
+    return _constant_box_mask_sequence(video_source, box), "box_seed_sequence"
+
+
+def _run_selected_tracking_extract(
+    conn: sqlite3.Connection,
+    *,
+    storage: StorageProvider,
+    job: dict[str, Any],
+    payload: dict[str, Any],
+    video_path: Path,
+    out_dir: Path,
+    source_asset: Mapping[str, Any],
+    rights_context: dict[str, Any],
+    job_run: LocalJobRun,
+) -> dict[str, Any]:
+    source_job_id = str(payload.get("source_job_id") or payload.get("parent_job_id") or "").strip()
+    if not source_job_id:
+        raise ValueError("selected_tracking extract payload requires source_job_id")
+    candidate_ids = [str(item).strip() for item in payload.get("candidate_ids", []) if str(item).strip()]
+    if not candidate_ids:
+        raise ValueError("selected_tracking extract payload requires candidate_ids")
+    track_mode = str(payload.get("track_mode") or "selected_only")
+    export_review_required = bool(payload.get("export_review_required", True))
+    label_overrides = _candidate_label_overrides(payload)
+    source_job = get_job(conn, user_id=job["created_by_user_id"], job_id=source_job_id)
+
+    with tempfile.TemporaryDirectory(prefix="motionjson_selected_tracking_source_") as temp_name:
+        source_dir = Path(temp_name)
+        _materialize_job_assets(conn, storage=storage, project_id=job["project_id"], source_job_id=source_job_id, out_dir=source_dir)
+        candidate_asset, candidate_doc = _latest_candidate_document(conn, storage=storage, project_id=job["project_id"], job_id=source_job_id)
+        candidates_by_id = {_candidate_id(candidate): candidate for candidate in _candidate_documents(candidate_doc)}
+        missing = [candidate_id for candidate_id in candidate_ids if candidate_id not in candidates_by_id]
+        if missing:
+            raise ValueError(f"candidateIds do not belong to source job: {', '.join(missing)}")
+
+        selected_objects = _selected_external_mask_objects(
+            candidates_by_id,
+            candidate_ids,
+            source_dir=source_dir,
+            label_overrides=label_overrides,
+        )
+
+        run_config = _stored_run_config(payload) or _stored_run_config(json.loads(source_job.get("payload_json") or "{}"))
+        sample_fps = run_config.sampling.sample_fps if run_config is not None else float(payload.get("sample_fps") or 12.0)
+        max_frames = run_config.sampling.max_frames if run_config is not None else payload.get("max_frames")
+        info, frame_iter = iter_sampled_frames(video_path, sample_fps=sample_fps, max_frames=max_frames)
+        frames = list(frame_iter)
+        video_source = VideoSource(path=video_path, info=info, frames=frames)
+
+        selected_tracking_root = out_dir / "selected_tracking"
+        selected_tracking_root.mkdir(parents=True, exist_ok=True)
+        object_specs = []
+        for index, selected in enumerate(selected_objects):
+            candidate_id = str(selected["object_id"])
+            candidate = candidates_by_id[candidate_id]
+            metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), Mapping) else {}
+            relative_mask_dir = Path(str(metadata.get("maskDir") or metadata.get("mask_dir") or ""))
+            absolute_mask_dir = source_dir / relative_mask_dir
+            scan_frame_index = int(candidate.get("frameIndex", candidate.get("frame_index", metadata.get("scanFrameIndex", 0))) or 0)
+            scan_mask = _load_binary_mask(_scan_mask_path(absolute_mask_dir, scan_frame_index))
+            box = _candidate_box(candidate, int(getattr(info, "width", 0)), int(getattr(info, "height", 0)))
+            job_run.emit(
+                "selected_tracking",
+                "running",
+                f"tracking selected object {candidate_id}",
+                progress={"overallRatio": round(0.22 + (index / max(1, len(selected_objects))) * 0.08, 4)},
+                metadata={"objectId": candidate_id, "scanFrameIndex": scan_frame_index, "trackMode": track_mode},
+            )
+            masks, tracking_provider = _selected_tracking_masks_for_candidate(
+                conn,
+                user_id=job["created_by_user_id"],
+                candidate=candidate,
+                video_source=video_source,
+                scan_mask=scan_mask,
+                box=box,
+            )
+            runtime_mask_dir = selected_tracking_root / candidate_id / "masks"
+            _write_mask_sequence_dir(runtime_mask_dir, masks)
+            object_specs.append(
+                ObjectExtractionSpec(
+                    object_id=candidate_id,
+                    label=str(label_overrides.get(candidate_id) or selected["label"] or candidate_id),
+                    mask_provider=ExternalMaskProvider(runtime_mask_dir),
+                    z_index=int(selected.get("z_index") or 10 + index * 10),
+                    metadata={
+                        "candidateId": candidate_id,
+                        "candidateMetadata": {
+                            **dict(metadata),
+                            "source": str(candidate.get("source") or metadata.get("source") or "track_selected"),
+                            "providerName": str(candidate.get("providerName") or metadata.get("providerName") or tracking_provider),
+                            "reviewStatus": "selected",
+                            "selectedForTracking": True,
+                            "defaultSelected": True,
+                            "trackingProvider": tracking_provider,
+                            "labelSource": "user" if candidate_id in label_overrides else metadata.get("labelSource") or metadata.get("label_source") or "provider",
+                        },
+                        "source": str(candidate.get("source") or metadata.get("source") or "track_selected"),
+                    },
+                )
+            )
+            job_run.emit(
+                "selected_tracking",
+                "running",
+                f"tracked selected object {candidate_id}",
+                progress={"overallRatio": round(0.24 + ((index + 1) / max(1, len(selected_objects))) * 0.08, 4)},
+                metadata={"objectId": candidate_id, "trackingProvider": tracking_provider, "maskFrames": len(masks)},
+            )
+
+        scene = run_multi_object_pipeline(
+            video_path=video_path,
+            out_dir=out_dir,
+            object_specs=object_specs,
+            sample_fps=sample_fps,
+            max_frames=max_frames,
+            min_area=run_config.filters.min_area if run_config is not None else 100.0,
+            simplify_ratio=run_config.filters.simplify_ratio if run_config is not None else 0.006,
+            feather=run_config.export.feather if run_config is not None else 0,
+            layer_padding=run_config.export.layer_padding if run_config is not None else 4,
+            sprite_format=run_config.export.sprite_format if run_config is not None else "webp",
+            output_mode=run_config.export.output_mode if run_config is not None else "authoring",
+            production_avif=run_config.export.production_avif if run_config is not None else False,
+            rights_context=rights_context,
+            raster_device=_raster_device_for_run(run_config),
+            job_context=job_run,
+        )
+        _write_selection_review(
+            out_dir,
+            source_candidate_doc=candidate_doc,
+            selected_ids=set(candidate_ids),
+            track_mode=track_mode,
+            export_review_required=export_review_required,
+            label_overrides=label_overrides,
+        )
+        if export_review_required:
+            _mark_export_review_pending(out_dir, selected_ids=set(candidate_ids))
+        _write_selection_manifest(
+            out_dir,
+            candidate_asset_id=candidate_asset["id"],
+            selected_ids=candidate_ids,
+            track_mode=track_mode,
+            export_review_required=export_review_required,
+            scene=scene,
+        )
+        return scene
+
+
 def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dict[str, Any]) -> dict[str, Any]:
     payload = _json(job, "payload_json")
+    selected_tracking_job = _selected_tracking_mode(payload) == "selected_tracking"
     run_config = _stored_run_config(payload)
     requested_provider = run_config.provider.name if run_config is not None else payload.get("mask_provider") or "threshold"
     provider_name = validate_extract_provider_policy(str(requested_provider))
@@ -1012,7 +1326,19 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                         discovery_mode=discovery_mode,
                         discovery_config=discovery_config,
                     )
-            if hosted_sam3_backend is not None and discovery_mode == "sam3_concept":
+            if selected_tracking_job:
+                scene = _run_selected_tracking_extract(
+                    conn,
+                    storage=storage,
+                    job=job,
+                    payload=payload,
+                    video_path=video_path,
+                    out_dir=out_dir,
+                    source_asset=source_asset,
+                    rights_context=rights_context,
+                    job_run=job_run,
+                )
+            elif hosted_sam3_backend is not None and discovery_mode == "sam3_concept":
                 discovery_provider = (
                     SAM3ConceptDiscoveryProvider(backend=hosted_sam3_backend),
                     "SAM3 hosted concept discovery configured",
@@ -1034,7 +1360,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                 discovery_provider = cached_runtime_discovery_provider
             else:
                 discovery_provider = _ui_discovery_provider(discovery_mode or "", discovery_config)
-            if discovery_provider is not None:
+            if not selected_tracking_job and discovery_provider is not None:
                 provider, message, requires_mock = discovery_provider[:3]
                 provider_metadata = dict(discovery_provider[3]) if len(discovery_provider) > 3 and isinstance(discovery_provider[3], dict) else {}
                 runtime_proof = _merge_runtime_proof(
@@ -1080,13 +1406,15 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     output_mode=run_config.export.output_mode,
                     production_avif=run_config.export.production_avif,
                     rights_context=rights_context,
+                    raster_device=_raster_device_for_run(run_config, runtime_proof),
+                    scan_only=bool(discovery_config.get("fastFramePick") or discovery_config.get("fast_frame_pick")),
                     job_context=job_run,
                 )
-            elif discovery_mode not in {None, "manual_prompt"}:
+            elif not selected_tracking_job and discovery_mode not in {None, "manual_prompt"}:
                 raise RuntimeError(
                     f"workspace worker does not support discovery mode {discovery_mode!r} yet; use the CLI or a mock text-detector run"
                 )
-            elif provider_name == "external":
+            elif not selected_tracking_job and provider_name == "external":
                 mask_dir = payload.get("mask_dir")
                 if not mask_dir:
                     raise ValueError("mask_dir is required for external mask provider")
@@ -1098,9 +1426,10 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     mask_provider=mask_provider,
                     **_single_object_pipeline_options(run_config, payload),
                     rights_context=rights_context,
+                    raster_device=_raster_device_for_run(run_config, runtime_proof),
                     job_context=job_run,
                 )
-            else:
+            elif not selected_tracking_job:
                 if provider_name == "mock":
                     mask_provider = SegmentationMaskProvider(MockSegmentationProvider())
                 elif provider_name == "sam2-local" and run_config is not None:
@@ -1189,6 +1518,7 @@ def _run_extract(conn: sqlite3.Connection, *, storage: StorageProvider, job: dic
                     mask_provider=mask_provider,
                     **_single_object_pipeline_options(run_config, payload),
                     rights_context=rights_context,
+                    raster_device=_raster_device_for_run(run_config, runtime_proof),
                     job_context=job_run,
                 )
         except JobCanceled as exc:

@@ -59,19 +59,20 @@ if (originalLocationDescriptor) {
 } else {
   delete globalThis.location;
 }
-assert.equal(ui.WORKFLOW_STEPS.length, 6);
+assert.equal(ui.WORKFLOW_STEPS.length, 7);
 assert.deepEqual(ui.WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
   "source_video",
   "provider_settings",
   "prompt_preview",
+  "candidate_selection",
   "run_monitor",
   "review_export",
 ]);
 assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
 assert.equal(ui.workflowNextStepId("source_video", 1), "provider_settings");
 assert.equal(ui.workflowNextStepId("source_video", -1), "choose_goal");
-assert.equal(ui.workflowNextStepId("prompt_preview", 1), "run_monitor");
+assert.equal(ui.workflowNextStepId("prompt_preview", 1), "candidate_selection");
 assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "choose_goal");
 assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "choose_goal");
 assert.equal(
@@ -813,7 +814,8 @@ const cachedPlaybookSteps = ui.modelSetupPlaybookSteps(
   { status: "ready", message: "Model setup is ready." },
   null,
 );
-assert.deepEqual(cachedPlaybookSteps.map((step) => step.label), ["Environment", "Download", "Prove accelerator", "Warm up", "Ready to run"]);
+assert.deepEqual(cachedPlaybookSteps.map((step) => step.label), ["Environment", "Access", "Download", "Prove accelerator", "Warm up", "Ready to run"]);
+assert.equal(cachedPlaybookSteps.find((step) => step.id === "access").status, "done");
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "download").status, "done");
 assert.match(cachedPlaybookSteps.find((step) => step.id === "download").detail, /server-side/);
 assert.equal(cachedPlaybookSteps.find((step) => step.id === "load_gpu").status, "done");
@@ -1830,6 +1832,11 @@ assert.deepEqual(ui.trackSelectedPayload(["cand_1", "cand_1", "cand_2"]), {
   candidateIds: ["cand_1", "cand_2"],
   trackMode: "selected_only",
   exportReviewRequired: true,
+  candidateEdits: [
+    { candidateId: "cand_1", label: "cand_1" },
+    { candidateId: "cand_2", label: "cand_2" },
+  ],
+  trackingRunConfig: undefined,
 });
 const candidateStatuses = ui.candidateStatusItems(
   { candidateId: "cand_review", confidence: 0.32, reviewStatus: "needs_review", warnings: ["low_confidence"] },

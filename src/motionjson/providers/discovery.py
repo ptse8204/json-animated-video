@@ -463,6 +463,25 @@ def _write_mask_sequence(
         )
 
 
+def _write_single_mask_frame(
+    video: VideoSource,
+    mask_dir: Path,
+    mask: np.ndarray,
+    *,
+    frame_index: int,
+) -> Path:
+    mask_dir.mkdir(parents=True, exist_ok=True)
+    for stale in mask_dir.glob("mask_*.png"):
+        stale.unlink()
+    safe_index = max(0, min(len(video.frames) - 1, int(frame_index))) if video.frames else max(0, int(frame_index))
+    frame = video.frames[safe_index] if video.frames else None
+    frame_number = int(getattr(frame, "out_index", safe_index)) + 1 if frame is not None else safe_index + 1
+    path = mask_dir / f"mask_{frame_number:06d}.png"
+    image = Image.fromarray(np.where(normalize_binary_mask(mask) > 127, 255, 0).astype(np.uint8))
+    image.save(path)
+    return path
+
+
 def _write_box_mask_sequence(video: VideoSource, candidate: ObjectCandidate, mask_dir: Path) -> None:
     height = int(getattr(video.info, "height", 0))
     width = int(getattr(video.info, "width", 0))
@@ -1003,6 +1022,7 @@ class SAM2AutomaticProposalDiscoveryProvider:
         reject_background_like = _bool_config_any(config, ("rejectBackgroundLike", "reject_background_like", "reject_background"), True)
         write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
         quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
+        fast_frame_pick = _bool_config_any(config, ("fastFramePick", "fast_frame_pick"), False)
 
         accepted_boxes: list[Box] = []
         accepted_count = 0
@@ -1050,7 +1070,7 @@ class SAM2AutomaticProposalDiscoveryProvider:
                         continue
 
                 object_id = f"{self.name}_{'cand' if accepted else 'rejected'}_{index_for_id:03d}"
-                if accepted:
+                if accepted and not fast_frame_pick:
                     mask_sequence, tracking_warning = self._mask_sequence_for_candidate(
                         backend,
                         video,
@@ -1061,15 +1081,19 @@ class SAM2AutomaticProposalDiscoveryProvider:
                         config=config,
                     )
                 else:
-                    mask_sequence = [mask.copy() for _frame in video.frames]
+                    mask_sequence = [mask.copy()] if fast_frame_pick else [mask.copy() for _frame in video.frames]
                     tracking_warning = None
                 if tracking_warning:
                     warnings.append(tracking_warning)
                 mask_dir, mask_dir_rel = _relative_mask_dir(ctx, self.name, object_id)
-                _write_mask_sequence(video, mask_dir, mask_sequence)
+                if fast_frame_pick:
+                    scan_mask_path = _write_single_mask_frame(video, mask_dir, mask, frame_index=frame_index)
+                else:
+                    _write_mask_sequence(video, mask_dir, mask_sequence)
+                    scan_mask_path = None
                 score = _proposal_score(record)
                 confidence = round((score * 0.65) + (stability * 0.35), 4)
-                frame_coverage = _mask_sequence_coverage(mask_sequence)
+                frame_coverage = _mask_sequence_coverage(mask_sequence) if not fast_frame_pick else round(1.0 / max(1, len(video.frames)), 4)
                 candidate = ObjectCandidate(
                     id=object_id,
                     label=f"SAM2 proposal {index_for_id}" if accepted else f"Rejected SAM2 proposal {index_for_id}",
@@ -1100,7 +1124,15 @@ class SAM2AutomaticProposalDiscoveryProvider:
                             "rejectionReason": rejection_reason,
                             "maskDir": mask_dir_rel,
                             "maskFiles": len(mask_sequence),
-                            "trackingProvider": self.provider_name if tracking_warning is None else "keyframe_seed_sequence",
+                            "trackingProvider": (
+                                "deferred_selected_tracking"
+                                if fast_frame_pick and accepted
+                                else self.provider_name if tracking_warning is None else "keyframe_seed_sequence"
+                            ),
+                            "scanFrameIndex": frame_index,
+                            "fastFramePick": fast_frame_pick,
+                            "fullVideoTrackingDeferred": bool(fast_frame_pick and accepted),
+                            "scanMaskArtifactPath": str(scan_mask_path.relative_to(ctx.out_dir)).replace("\\", "/") if fast_frame_pick and scan_mask_path and ctx.out_dir else None,
                         },
                     ),
                 )
@@ -1215,6 +1247,21 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
     return round(visible / len(masks), 4)
 
 
+def _torch_device(device: str | None) -> Any | None:
+    if not device:
+        return None
+    try:
+        import torch  # type: ignore
+    except ImportError:
+        return None
+    normalized = str(device).strip().lower()
+    if normalized.startswith("cuda") and torch.cuda.is_available():
+        return torch.device(device)
+    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return None
+
+
 def _translate_mask(mask: np.ndarray, *, dx: int, dy: int) -> np.ndarray:
     source = normalize_binary_mask(mask)
     height, width = source.shape[:2]
@@ -1268,6 +1315,20 @@ def _template_match_mask_sequence(
     if template.size <= 0 or float(np.std(template)) < 1.0:
         return None
     minimum_score = _ratio_config_any(config, ("templateTrackMinScore", "template_track_min_score"), 0.12)
+    torch_device = _torch_device(str(config.get("templateTrackDevice") or config.get("sam3Device") or config.get("device") or ""))
+    if torch_device is not None and str(torch_device).startswith("cuda"):
+        tracked = _template_match_mask_sequence_torch(
+            frames,
+            seed_index=seed_index,
+            seed_mask=seed_mask,
+            x0=x0,
+            y0=y0,
+            template=template,
+            minimum_score=minimum_score,
+            device=torch_device,
+        )
+        if tracked is not None:
+            return tracked
     masks: list[np.ndarray] = []
     scores: list[float] = []
     for index, frame in enumerate(frames):
@@ -1286,6 +1347,58 @@ def _template_match_mask_sequence(
             return None
         scores.append(float(max_value))
         masks.append(_translate_mask(seed_mask, dx=int(max_location[0] - x0), dy=int(max_location[1] - y0)))
+    if scores and float(np.mean(scores)) < minimum_score:
+        return None
+    return masks
+
+
+def _template_match_mask_sequence_torch(
+    frames: Sequence[Any],
+    *,
+    seed_index: int,
+    seed_mask: np.ndarray,
+    x0: int,
+    y0: int,
+    template: np.ndarray,
+    minimum_score: float,
+    device: Any,
+) -> list[np.ndarray] | None:
+    try:
+        import torch  # type: ignore
+        import torch.nn.functional as F  # type: ignore
+    except ImportError:
+        return None
+    template_tensor = torch.as_tensor(template.astype(np.float32), device=device).unsqueeze(0).unsqueeze(0)
+    template_zero_mean = template_tensor - template_tensor.mean()
+    template_energy = torch.sum(template_zero_mean * template_zero_mean).clamp_min(1e-6)
+    kernel_h, kernel_w = template.shape[:2]
+    kernel_area = float(kernel_h * kernel_w)
+    masks: list[np.ndarray] = []
+    scores: list[float] = []
+    for index, frame in enumerate(frames):
+        if index == seed_index:
+            masks.append(seed_mask.copy())
+            continue
+        rgb = np.asarray(frame.rgb, dtype=np.uint8)
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        if gray.shape[0] < kernel_h or gray.shape[1] < kernel_w:
+            return None
+        image = torch.as_tensor(gray.astype(np.float32), device=device).unsqueeze(0).unsqueeze(0)
+        numerator = F.conv2d(image, template_zero_mean)
+        local_sum = F.avg_pool2d(image, kernel_size=(kernel_h, kernel_w), stride=1) * kernel_area
+        local_sq_sum = F.avg_pool2d(image * image, kernel_size=(kernel_h, kernel_w), stride=1) * kernel_area
+        variance_sum = (local_sq_sum - (local_sum * local_sum) / kernel_area).clamp_min(1e-6)
+        denominator = torch.sqrt(template_energy * variance_sum)
+        normalized = numerator / denominator
+        best_value = float(torch.max(normalized).item())
+        if not np.isfinite(best_value):
+            return None
+        scores.append(best_value)
+        best_index = int(torch.argmax(normalized).item())
+        width = normalized.shape[-1]
+        top = best_index // width
+        left = best_index % width
+        masks.append(_translate_mask(seed_mask, dx=int(left - x0), dy=int(top - y0)))
     if scores and float(np.mean(scores)) < minimum_score:
         return None
     return masks
@@ -1541,6 +1654,7 @@ def _sam3_records_to_candidates(
     dedupe_iou = _ratio_config_any(config, ("dedupeIou", "dedupe_iou", "overlap_threshold"), 0.78 if source == "sam3_auto_masks" else 1.0)
     write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
     quality_preset = str(config.get("qualityPreset") or config.get("quality_preset") or "custom")
+    fast_frame_pick = source == "sam3_auto_masks" and _bool_config_any(config, ("fastFramePick", "fast_frame_pick"), False)
     provider_name = str(getattr(backend, "provider_name", "sam3-local") or "sam3-local")
     hosted_backend = provider_name.startswith("sam3-hosted")
     frame_area = max(1, width * height)
@@ -1723,7 +1837,7 @@ def _sam3_records_to_candidates(
                 ),
             },
         )
-        if accepted:
+        if accepted and not fast_frame_pick:
             mask_sequence, tracking_warning, tracking_provider = _sam3_track_or_seed_sequence(
                 backend,
                 video,
@@ -1737,9 +1851,9 @@ def _sam3_records_to_candidates(
                 config=config,
             )
         else:
-            mask_sequence = [mask.copy() for _frame in video.frames]
+            mask_sequence = [mask.copy()] if fast_frame_pick else [mask.copy() for _frame in video.frames]
             tracking_warning = None
-            tracking_provider = "not_tracked_rejected_candidate"
+            tracking_provider = "deferred_selected_tracking" if fast_frame_pick and accepted else "not_tracked_rejected_candidate"
         if tracking_warning:
             warnings.append(tracking_warning)
         mask_dir, mask_dir_rel = _relative_mask_dir(ctx, source, object_id)
@@ -1771,7 +1885,11 @@ def _sam3_records_to_candidates(
                 ),
             },
         )
-        _write_mask_sequence(video, mask_dir, mask_sequence, ctx=ctx, object_id=object_id, operation_id=mask_write_operation_id)
+        if fast_frame_pick:
+            scan_mask_path = _write_single_mask_frame(video, mask_dir, mask, frame_index=frame_index)
+        else:
+            _write_mask_sequence(video, mask_dir, mask_sequence, ctx=ctx, object_id=object_id, operation_id=mask_write_operation_id)
+            scan_mask_path = None
         ctx.emit(
             "candidate_discovery",
             "running",
@@ -1845,7 +1963,7 @@ def _sam3_records_to_candidates(
                     "stabilityScore": round(stability, 4),
                     "motionScore": None,
                     "confidence": confidence,
-                    "frameCoverageEstimate": _mask_sequence_coverage(mask_sequence),
+                    "frameCoverageEstimate": _mask_sequence_coverage(mask_sequence) if not fast_frame_pick else round(1.0 / max(1, len(video.frames)), 4),
                     "defaultSelected": accepted,
                     "reviewStatus": "pending" if accepted else "rejected",
                     "warnings": warnings,
@@ -1853,6 +1971,10 @@ def _sam3_records_to_candidates(
                     "maskDir": mask_dir_rel,
                     "maskFiles": len(mask_sequence),
                     "trackingProvider": tracking_provider,
+                    "scanFrameIndex": frame_index,
+                    "fastFramePick": fast_frame_pick,
+                    "fullVideoTrackingDeferred": bool(fast_frame_pick and accepted),
+                    "scanMaskArtifactPath": str(scan_mask_path.relative_to(ctx.out_dir)).replace("\\", "/") if fast_frame_pick and scan_mask_path and ctx.out_dir else None,
                 },
             ),
         )
@@ -2091,13 +2213,14 @@ class MockObjectDiscoveryProvider:
         candidate_cap = max(1, _int_config_any(config, ("maxCandidatesPerKeyframe", "max_candidates", "maxCandidates"), preset["accepted"] + preset["rejected"]))
         object_cap = max(1, _int_config_any(config, ("maxObjects", "max_objects"), preset["accepted"]))
         write_rejected = _bool_config_any(config, ("writeRejectedCandidates", "write_rejected_candidates"), True)
+        fast_frame_pick = _bool_config_any(config, ("fastFramePick", "fast_frame_pick"), False)
         accepted_count = min(preset["accepted"], object_cap, candidate_cap)
         rejected_count = min(preset["rejected"], max(0, candidate_cap - accepted_count)) if write_rejected else 0
         candidates: list[ObjectCandidate] = []
         for index in range(accepted_count):
-            candidates.append(self._candidate(video, config, ctx, index=index, accepted=True, quality_preset=quality_preset))
+            candidates.append(self._candidate(video, config, ctx, index=index, accepted=True, quality_preset=quality_preset, fast_frame_pick=fast_frame_pick))
         for index in range(rejected_count):
-            candidates.append(self._candidate(video, config, ctx, index=index, accepted=False, quality_preset=quality_preset))
+            candidates.append(self._candidate(video, config, ctx, index=index, accepted=False, quality_preset=quality_preset, fast_frame_pick=fast_frame_pick))
         return candidates
 
     def _candidate(
@@ -2109,6 +2232,7 @@ class MockObjectDiscoveryProvider:
         index: int,
         accepted: bool,
         quality_preset: str,
+        fast_frame_pick: bool,
     ) -> ObjectCandidate:
         width = int(getattr(video.info, "width", 64))
         height = int(getattr(video.info, "height", 64))
@@ -2151,21 +2275,35 @@ class MockObjectDiscoveryProvider:
                     "stabilityScore": stability,
                     "motionScore": motion,
                     "confidence": confidence,
-                    "frameCoverageEstimate": 1.0 if accepted else round(max(0.15, 0.35 - index * 0.03), 4),
+                    "frameCoverageEstimate": round(1.0 / frame_count, 4) if fast_frame_pick else (1.0 if accepted else round(max(0.15, 0.35 - index * 0.03), 4)),
                     "defaultSelected": accepted,
                     "reviewStatus": "pending" if accepted else "rejected",
                     "warnings": warnings,
                     "rejectionReason": rejection_reason,
                     "maskDir": mask_dir_rel,
-                    "maskFiles": frame_count,
+                    "maskFiles": 1 if fast_frame_pick else frame_count,
+                    "trackingProvider": "deferred_selected_tracking" if fast_frame_pick and accepted else "mock",
+                    "scanFrameIndex": 0,
+                    "fastFramePick": fast_frame_pick,
+                    "fullVideoTrackingDeferred": bool(fast_frame_pick and accepted),
                 },
             ),
         )
-        _write_box_mask_sequence(video, candidate, mask_dir)
+        if fast_frame_pick:
+            mask = _box_mask(video, candidate)
+            scan_mask_path = _write_single_mask_frame(video, mask_dir, mask, frame_index=0)
+        else:
+            _write_box_mask_sequence(video, candidate, mask_dir)
+            scan_mask_path = None
         artifact_paths = _write_mock_candidate_previews(video, candidate, mask_dir)
         metadata = {
             **candidate.metadata,
             **artifact_paths,
+            **(
+                {"scanMaskArtifactPath": str(scan_mask_path.relative_to(ctx.out_dir)).replace("\\", "/")}
+                if fast_frame_pick and scan_mask_path and ctx.out_dir
+                else {}
+            ),
         }
         ctx.emit(
             "candidate_discovery",

@@ -302,18 +302,18 @@ h2 {
 .panel,
 .compact-panel {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--surface);
 }
 
 .panel {
-  padding: 16px;
-  box-shadow: var(--shadow);
+  padding: 12px;
+  box-shadow: none;
 }
 
 .compact-panel {
-  padding: 12px;
-  margin-bottom: 14px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
 }
 
 .panel-heading {
@@ -321,7 +321,7 @@ h2 {
   gap: 12px;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .secondary-heading {
@@ -5903,6 +5903,11 @@ body {
   display: none !important;
 }
 
+#detailsToggle,
+#railCloseButton {
+  display: none !important;
+}
+
 .workspace {
   max-width: none;
 }
@@ -6063,6 +6068,18 @@ body {
 .review-inline-slot {
   display: grid;
   gap: 12px;
+}
+
+.review-inline-slot .rail-section {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.review-inline-slot .rail-section > summary {
+  min-height: 34px;
+  padding: 8px 10px;
+  font-weight: 700;
 }
 
 .review-inline-panel {
@@ -6531,9 +6548,9 @@ body {
 }
 
 .guided-start {
-  min-height: min(560px, calc(100vh - 184px));
+  min-height: min(500px, calc(100vh - 184px));
   align-content: center;
-  padding: 28px 44px;
+  padding: 18px 24px;
   border: 0;
   background: #ffffff;
   box-shadow: none;
@@ -6551,50 +6568,41 @@ body {
 .goal-card-grid {
   grid-template-columns: repeat(2, minmax(210px, 1fr));
   max-width: 720px;
-  margin: 8px auto 0;
-  gap: 14px;
+  margin: 6px auto 0;
+  gap: 8px;
 }
 
 .goal-card {
-  position: relative;
-  grid-template-columns: 54px minmax(0, 1fr);
-  min-height: 132px;
-  padding: 22px 22px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 88px;
+  padding: 12px 14px;
   border-color: #d5dee7;
   border-radius: 7px;
   background: #ffffff;
-}
-
-.goal-card::before {
-  content: "";
-  display: block;
-  width: 34px;
-  height: 34px;
-  align-self: center;
-  border: 2px solid #0b63ce;
-  border-radius: 999px;
-  background: #f4f8ff;
-  grid-row: 1 / span 2;
-}
-
-.goal-card::after {
-  content: ">";
-  position: absolute;
-  right: 18px;
-  bottom: 14px;
-  color: #667085;
-  font-weight: 800;
+  text-align: left;
 }
 
 .goal-card.is-active {
   border-color: #0b63ce;
   background: #f8fbff;
-  box-shadow: inset 3px 0 0 #0b63ce;
 }
 
 .goal-card-title,
 .goal-card-copy {
-  grid-column: 2;
+  grid-column: 1;
+}
+
+.goal-card-title {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.goal-card-copy {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .model-setup-panel,

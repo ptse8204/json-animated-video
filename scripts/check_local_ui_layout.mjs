@@ -565,22 +565,25 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       "source_video",
       "provider_settings",
       "prompt_preview",
+      "candidate_selection",
       "run_monitor",
       "review_export",
     ];
-      const workflowPanelAliases = {
+    const workflowPanelAliases = {
       choose_goal: ["choose_goal"],
       source_video: ["project_video", "source_video"],
       provider_settings: ["provider_settings"],
       prompt_preview: ["prompt_preview", "validate_run"],
+      candidate_selection: ["review_candidates"],
       run_monitor: ["run_monitor"],
-      review_export: ["review_candidates", "correct_tracks", "export"],
+      review_export: ["correct_tracks", "export"],
     };
     const workflowScreenAliases = {
       choose_goal: ["choose_goal"],
       source_video: ["source_video"],
       provider_settings: ["provider_settings"],
       prompt_preview: ["prompt_preview"],
+      candidate_selection: ["candidate_selection"],
       run_monitor: ["run_monitor"],
       review_export: ["review_export"],
     };

@@ -298,6 +298,7 @@ class ContourVectorizer:
                     frame.mask,
                     min_area=float(config.get("min_area", self.min_area)),
                     simplify_ratio=float(config.get("simplify_ratio", self.simplify_ratio)),
+                    device=str(ctx.metadata.get("rasterDevice") or ""),
                 )
                 frame.visible = bool(contour.visible and contour.bbox)
                 frame.area = contour.area

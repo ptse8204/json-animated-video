@@ -43,6 +43,13 @@ export const WORKFLOW_STEPS = [
     nextHint: "Add the required prompt or run the prepared workflow.",
   },
   {
+    id: "candidate_selection",
+    title: "Select objects",
+    label: "Select",
+    description: "Inspect the keyframe scan, rename the right objects, and choose only what should be tracked.",
+    nextHint: "Choose the objects to track through the video.",
+  },
+  {
     id: "run_monitor",
     title: "Run monitor",
     label: "Run",
@@ -63,8 +70,9 @@ export const WORKFLOW_PANEL_STEP_ALIASES = {
   source_video: ["project_video", "source_video"],
   provider_settings: ["provider_settings"],
   prompt_preview: ["prompt_preview", "validate_run"],
+  candidate_selection: ["review_candidates"],
   run_monitor: ["run_monitor"],
-  review_export: ["review_candidates", "correct_tracks", "export"],
+  review_export: ["correct_tracks", "export"],
 };
 
 export const WORKFLOW_FRAGMENT_STEP_ALIASES = {
@@ -72,8 +80,9 @@ export const WORKFLOW_FRAGMENT_STEP_ALIASES = {
   source_video: ["source_video"],
   provider_settings: ["provider_settings"],
   prompt_preview: ["prompt_preview"],
+  candidate_selection: ["review_candidates"],
   run_monitor: ["run_monitor"],
-  review_export: ["review_candidates", "correct_tracks", "export"],
+  review_export: ["correct_tracks", "export"],
 };
 
 export const SCREEN_STEPS = [
@@ -81,6 +90,7 @@ export const SCREEN_STEPS = [
   { id: "video", label: "Video", workflowSteps: ["source_video"] },
   { id: "model", label: "Model", workflowSteps: ["provider_settings"] },
   { id: "prepare", label: "Prepare", workflowSteps: ["prompt_preview"] },
+  { id: "select", label: "Select", workflowSteps: ["candidate_selection"] },
   { id: "run", label: "Run", workflowSteps: ["run_monitor"] },
   { id: "review", label: "Review", workflowSteps: ["review_export"] },
 ];
@@ -132,6 +142,16 @@ export function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = 
   if (selectedPreset === "review_existing") {
     return snapshot.selectedJobId ? "review_export" : "choose_goal";
   }
+  if (selectedPreset === "pick_objects_from_frame") {
+    const candidateCount = toInteger(snapshot.candidateCount, 0);
+    const trackCount = toInteger(snapshot.trackCount, 0);
+    const selectedJobStatus = String(snapshot.selectedJobStatus || "").toLowerCase();
+    if (candidateCount > 0 && trackCount === 0 && !isActiveJobStatus(selectedJobStatus)) {
+      if (workflowStepIndex(requestedStep) > workflowStepIndex("candidate_selection")) {
+        return "candidate_selection";
+      }
+    }
+  }
   if (!hasRunData) {
     if (!snapshot.selectedVideoId) return "choose_goal";
   }
@@ -172,6 +192,7 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
   const exportOk = Boolean(snapshot.exportOk);
   const requiresModel = goalRequiresModel(selectedPreset);
   const manualPromptRequired = selectedPreset === "trace_one_object";
+  const fastFramePick = selectedPreset === "pick_objects_from_frame";
   const requiresSam3Box = selectedPreset === "trace_one_object" && /sam3/i.test(String(snapshot.providerName || ""));
   const hasBoxPrompt = Boolean(snapshot.hasBoxPrompt);
   const hasPointPrompt = Boolean(snapshot.hasPointPrompt);
@@ -213,18 +234,35 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
         : manualPromptRequired && !requiresSam3Box && !hasBoxPrompt && !hasPointPrompt
           ? step("needs-action", "Add at least one point or box prompt for this goal.", { complete: false })
           : hasJob && !jobFailed
-            ? step(
-                configBlocked ? "blocked" : configValid ? "ready" : "done",
-                configBlocked ? "Run validation failed. Fix the generated config before retrying." : "Run started. MotionJSON will switch to review when results are ready.",
-              )
-            : step("done", promptCount ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"} ready.` : "This workflow is ready to run without manual prompts."),
+          ? step(
+              configBlocked ? "blocked" : configValid ? "ready" : "done",
+              configBlocked ? "Run validation failed. Fix the generated config before retrying." : "Run started. MotionJSON will switch to review when results are ready.",
+            )
+            : step(
+                "done",
+                fastFramePick
+                  ? "This workflow is ready to scan one keyframe."
+                  : promptCount
+                    ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"} ready.`
+                    : "This workflow is ready to run without manual prompts.",
+              ),
+    candidate_selection:
+      !fastFramePick
+        ? step("done", "This workflow does not use a separate selection gate.")
+        : candidateCount > 0 && trackCount === 0
+          ? step("needs-action", "Inspect the keyframe scan and track only the objects you keep.", { complete: false })
+          : trackCount > 0
+            ? step("done", "Selected objects have been sent to full tracking.")
+            : jobRunning
+              ? step("needs-action", "The keyframe scan is still running.", { tone: "is-neutral", complete: false })
+              : step("needs-action", "Run the keyframe scan before selecting objects.", { complete: false }),
     run_monitor: jobFailed && !hasReviewablePartial
       ? step("blocked", "Run failed or was canceled. Open logs, change setup, run again, or choose a different model.", { complete: false })
       : jobRunning
         ? step("needs-action", "Run is in progress. Watch progress and logs before review.", { tone: "is-neutral", complete: false })
-        : jobSucceeded || hasRunData
+        : jobSucceeded || trackCount > 0 || (hasRunData && !fastFramePick)
           ? step("done", hasReviewablePartial ? "Partial objects are reviewable. Continue to review before retrying failed frames." : "Run finished. Continue to review and export.")
-          : step("needs-action", "Start a run before review.", { complete: false }),
+          : step("needs-action", fastFramePick ? "Track selected objects before review." : "Start a run before review.", { complete: false }),
     review_export:
       (jobSucceeded || hasRunData) && (!jobFailed || hasReviewablePartial)
         ? exportOk
@@ -260,6 +298,7 @@ export function workflowSummaryCardsFromSnapshot(snapshot = {}, activeStep = "ch
       : promptCount
         ? `${promptCount} prompt mark${promptCount === 1 ? "" : "s"}`
         : "Ready to run",
+    candidate_selection: candidateCount ? `${candidateCount} candidate${candidateCount === 1 ? "" : "s"}` : "No candidates yet",
     run_monitor: snapshot.selectedJobStatus ? humanizeReviewCode(snapshot.selectedJobStatus) : "No run yet",
     review_export: snapshot.exportOk
       ? "Exported"

@@ -678,3 +678,40 @@ Findings and changes:
 - Layout checks now fail if SAM3 trace-all prepare loses the guided
   mask/runtime controls, if segmented labels clip on tablet, or if the mobile
   project action clips a long project name.
+
+## UI-WORKFLOW-12 Evidence
+
+UI-WORKFLOW-12 completes the keyframe-first fast workflow and pushes the shell
+ further toward a compact editor. The key visible changes are a real 7-step
+ fast-flow stepper (`Start -> Video -> Model -> Scan -> Select -> Track ->
+ Review & export`), denser surfaces with flatter framing, and a dedicated
+ selection stage before full selected-only tracking begins.
+
+Before evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-12-before --state first-run,model-setup-sam3-local,workflow-run --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920
+```
+
+After evidence:
+
+```bash
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-12 --state first-run,model-setup-sam3-local,workflow-run --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920
+```
+
+Representative captures:
+
+- `docs/design/screenshots/ui-workflow-12/desktop-1440-first-run.png`
+- `docs/design/screenshots/ui-workflow-12/laptop-1366-model-setup-sam3-local.png`
+- `docs/design/screenshots/ui-workflow-12/mobile-390-workflow-run.png`
+
+Findings and changes:
+
+- The previous fast-flow implementation still looked and behaved too much like
+  scene sweep. The stepper and workflow copy now show explicit `Scan`, `Select`,
+  and `Track` stages.
+- Goal selection, model setup, and run/review surfaces are denser and flatter,
+  with less padding and lower visual framing, so the screen reads like a tool
+  surface instead of a stack of product cards.
+- The model-setup playbook now includes `Access` as a first-class stage when a
+  gated local SAM3 path needs Hugging Face approval before caching.

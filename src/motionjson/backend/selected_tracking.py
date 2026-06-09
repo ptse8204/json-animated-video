@@ -11,7 +11,6 @@ from motionjson.backend.assets import get_asset, list_assets_for_job
 from motionjson.backend.export_workflows import materialize_job_assets
 from motionjson.backend.jobs import get_job, record_job_event
 from motionjson.backend.models import NotFoundError
-from motionjson.backend.worker import _register_output_tree
 from motionjson.config import ExtractionRunConfig
 from motionjson.pipeline import run_multi_object_pipeline
 from motionjson.providers.base import StorageProvider
@@ -44,6 +43,7 @@ def track_selected_candidates(
     if track_mode != "selected_only":
         raise ValueError("trackMode must be selected_only")
     export_review_required = _bool_payload(payload.get("exportReviewRequired", payload.get("export_review_required")), default=True)
+    label_overrides = _candidate_label_overrides(payload)
 
     with tempfile.TemporaryDirectory(prefix="motionjson_track_selected_") as tmp:
         tmp_dir = Path(tmp)
@@ -54,6 +54,7 @@ def track_selected_candidates(
             candidates_by_id,
             candidate_ids,
             source_dir=source_dir,
+            label_overrides=label_overrides,
         )
         video_path = _write_source_video(storage, source_asset, tmp_dir)
         output_dir = tmp_dir / "tracked"
@@ -74,6 +75,7 @@ def track_selected_candidates(
             selected_ids=set(candidate_ids),
             track_mode=track_mode,
             export_review_required=export_review_required,
+            label_overrides=label_overrides,
         )
         if export_review_required:
             _mark_export_review_pending(output_dir, selected_ids=set(candidate_ids))
@@ -113,6 +115,7 @@ def track_selected_candidates(
         "candidateIds": candidate_ids,
         "trackMode": track_mode,
         "exportReviewRequired": export_review_required,
+        "candidateEdits": [{"candidateId": key, "label": value} for key, value in sorted(label_overrides.items())],
         "trackedObjectIds": [item["object_id"] for item in selected_objects],
         "candidateAssetId": candidate_asset["id"],
         "assetIds": [asset["id"] for asset in assets],
@@ -167,13 +170,30 @@ def _candidate_ids(payload: Mapping[str, Any]) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+def _candidate_label_overrides(payload: Mapping[str, Any]) -> dict[str, str]:
+    edits = payload.get("candidateEdits") or payload.get("candidate_edits") or []
+    if not isinstance(edits, list):
+        return {}
+    overrides: dict[str, str] = {}
+    for item in edits:
+        if not isinstance(item, Mapping):
+            continue
+        candidate_id = str(item.get("candidateId") or item.get("candidate_id") or "").strip()
+        label = str(item.get("label") or "").strip()
+        if candidate_id and label:
+            overrides[candidate_id] = label
+    return overrides
+
+
 def _selected_external_mask_objects(
     candidates_by_id: Mapping[str, Mapping[str, Any]],
     candidate_ids: Sequence[str],
     *,
     source_dir: Path,
+    label_overrides: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     objects: list[dict[str, Any]] = []
+    overrides = dict(label_overrides or {})
     for index, candidate_id in enumerate(candidate_ids):
         candidate = candidates_by_id[candidate_id]
         metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), Mapping) else {}
@@ -206,7 +226,7 @@ def _selected_external_mask_objects(
         objects.append(
             {
                 "object_id": candidate_id,
-                "label": str(candidate.get("label") or candidate_id),
+                "label": str(overrides.get(candidate_id) or candidate.get("label") or candidate_id),
                 "mask_dir": str(absolute_mask_dir),
                 "z_index": int(candidate.get("zIndex") or candidate.get("z_index") or 10 + index * 10),
                 "source": candidate_metadata["source"],
@@ -215,6 +235,12 @@ def _selected_external_mask_objects(
             }
         )
     return objects
+
+
+def _register_output_tree(*args, **kwargs):
+    from motionjson.backend.worker import _register_output_tree as register_tree
+
+    return register_tree(*args, **kwargs)
 
 
 def _candidate_rejected(candidate: Mapping[str, Any], metadata: Mapping[str, Any]) -> bool:
@@ -277,7 +303,9 @@ def _write_selection_review(
     selected_ids: set[str],
     track_mode: str,
     export_review_required: bool,
+    label_overrides: Mapping[str, str] | None = None,
 ) -> None:
+    overrides = dict(label_overrides or {})
     document = copy.deepcopy(dict(source_candidate_doc))
     document["format"] = source_candidate_doc.get("format") or "motionjson.candidates.v0.1"
     config = document.get("config") if isinstance(document.get("config"), dict) else {}
@@ -299,10 +327,16 @@ def _write_selection_review(
         metadata = candidate.get("metadata") if isinstance(candidate.get("metadata"), dict) else {}
         selected = candidate_id in selected_ids
         candidate["objectId"] = candidate_id if selected else candidate.get("objectId")
+        if candidate_id in overrides:
+            candidate["label"] = overrides[candidate_id]
         candidate["defaultSelected"] = selected
         candidate["reviewStatus"] = "selected" if selected else "ignored"
         candidate["selectedForTracking"] = selected
-        candidate["metadata"] = {**metadata, "selectedForTracking": selected}
+        candidate["metadata"] = {
+            **metadata,
+            "selectedForTracking": selected,
+            **({"labelSource": "user"} if candidate_id in overrides else {}),
+        }
         candidates.append(candidate)
     document["candidates"] = candidates
     (output_dir / "candidates.json").write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
