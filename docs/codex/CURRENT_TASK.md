@@ -1,37 +1,44 @@
 # Current Task
 
-ID: `DOC-HARNESS-01`
+ID: `UI-V3`
 
-Goal: contract the active documentation corpus after `b47c4ec2` so Codex context is smaller, old prompt/spec/design docs are gone, and future bloat is blocked by checks.
+Goal: redesign the MotionJSON Local UI into a workflow-first object extraction
+tool for less technical users while preserving backend contracts, tests, local
+safety invariants, and review/export truth.
+
+Current phase: `UI-V3-00` repo audit and task alignment.
 
 Likely files:
 
-- `docs/codex/*.md`
-- `docs/codex/CONTEXT_MANIFEST.yaml`
-- `docs/product/ui_redesign_brief.md`
-- `docs/local_ui.md`
-- `docs/index.md`, `README.md`, `CONTRIBUTING.md`
-- `docs/archive/README.md`, `docs/archive/phase_reports/README.md`
-- `scripts/check_codex_context_budget.py`
-- `tests/test_docs_links.py`
-- `docs/roadmap/phase-doc-harness-01-report.md`
+- `src/motionjson/ui/static/index.html`
+- `src/motionjson/ui/static/app.css`
+- `src/motionjson/ui/static/app.js`
+- `src/motionjson/ui/static/modules/workflow.js`
+- `src/motionjson/ui/static/ui_selectors.js`
+- `scripts/check_local_ui_layout.mjs`
+- UI tests listed in `docs/codex/CONTEXT_MANIFEST.yaml`
+- compact docs only when needed for the new workflow
 
 Validation:
 
 ```bash
-python3 scripts/check_codex_context_budget.py
-python3 -m pytest -q tests/test_docs_links.py
-python3 -m pytest -q tests/test_docs_assets.py
+npm run build
+npm test
+npm run lint
+npm run ui:layout
 git diff --check
 ```
 
 Done when:
 
-- default read set is <= 350 lines and <= 25,000 chars;
-- `ui_redesign` route has <= 3 compact docs and no old UI/design/roadmap/archive docs;
-- tracked Markdown lines decrease from the before metric;
-- stale archived prompt/spec copies and old phase reports are removed or summarized;
-- phase report records before/after metrics;
-- commit message is `phase doc-harness-01: contract active documentation corpus`.
-
-Future tasks should replace this file, not expand root prompts.
+- the old card/dashboard/right-rail hierarchy is replaced by a workflow shell;
+- the journey covers Goal, Source, Target, Model, Preflight, Run, Review,
+  Correct, Export, and Reuse;
+- the Run step has a readable extraction cockpit with usage, health, phase
+  progress, visual evidence, grouped events, and contextual diagnostics;
+- provider/model readiness and hosted opt-in remain truthful and safe;
+- review, correction, and export gates clearly separate completed, reviewable,
+  reusable, and export-ready states;
+- partial failures stay recoverable and completed objects remain visible;
+- raw logs/config/JSON are available but secondary;
+- safety invariants and no-hosted-call defaults remain intact.
