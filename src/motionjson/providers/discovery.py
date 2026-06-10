@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 
 from ..masks import ExternalMaskProvider
+from ..raster_accel import resolve_raster_acceleration, resolve_torch_device
 from ..tracks import Box, ObjectCandidate, Point, RunContext, VideoSource
 from .base import ProviderConfigError
 from .mask_cache import normalize_binary_mask
@@ -1247,21 +1248,6 @@ def _mask_sequence_coverage(masks: Sequence[np.ndarray]) -> float:
     return round(visible / len(masks), 4)
 
 
-def _torch_device(device: str | None) -> Any | None:
-    if not device:
-        return None
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        return None
-    normalized = str(device).strip().lower()
-    if normalized.startswith("cuda") and torch.cuda.is_available():
-        return torch.device(device)
-    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
-
-
 def _translate_mask(mask: np.ndarray, *, dx: int, dy: int) -> np.ndarray:
     source = normalize_binary_mask(mask)
     height, width = source.shape[:2]
@@ -1315,8 +1301,10 @@ def _template_match_mask_sequence(
     if template.size <= 0 or float(np.std(template)) < 1.0:
         return None
     minimum_score = _ratio_config_any(config, ("templateTrackMinScore", "template_track_min_score"), 0.12)
-    torch_device = _torch_device(str(config.get("templateTrackDevice") or config.get("sam3Device") or config.get("device") or ""))
-    if torch_device is not None and str(torch_device).startswith("cuda"):
+    template_device = str(config.get("templateTrackDevice") or config.get("sam3Device") or config.get("device") or "")
+    acceleration = resolve_raster_acceleration(template_device)
+    torch_device = resolve_torch_device(template_device)
+    if acceleration.backend == "cuda" and torch_device is not None:
         tracked = _template_match_mask_sequence_torch(
             frames,
             seed_index=seed_index,

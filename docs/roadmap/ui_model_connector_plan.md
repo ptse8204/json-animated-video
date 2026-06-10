@@ -401,3 +401,29 @@ Acceptance:
   before optional provider details.
 - Review/export opens as a compact working export gate: package readiness,
   included objects, rights warnings, then handoff/review tools.
+
+### UI-WORKFLOW-14 - Add raster acceleration progress and benchmarks
+
+Purpose: complete the Phase 6 runtime slice by making raster/vector acceleration
+capability-gated, observable in job progress, and covered by CPU-safe tests.
+
+Expected commit:
+
+```bash
+git commit -m "phase ui-workflow-14: add raster acceleration telemetry"
+```
+
+Acceptance:
+
+- Raster alpha prep, crop extraction, feathering, cutout generation,
+  template-match fallback, and vector pre-contour maps share one CPU/CUDA/MPS
+  capability resolver.
+- CPU fallback remains unchanged and records the requested device, actual
+  device, backend, operations, and fallback reason.
+- Run events expose runtime acceleration status, per-object tracking,
+  vectorization, raster prep, and spritesheet elapsed timings.
+- `providerPerformance` and `benchmark_report.json` include raster acceleration
+  provenance and CPU-vs-selected-path benchmark markers.
+- Final polygon contour extraction remains CPU/OpenCV for stable vector output.
+- Tests cover CPU fallback, benchmark payloads, and extraction event metadata
+  without requiring GPU hardware.

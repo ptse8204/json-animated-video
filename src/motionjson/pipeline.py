@@ -26,6 +26,7 @@ from .providers.pipeline_adapters import (
     ObjectSpecInitialMaskProvider,
     PerFrameMaskVideoTracker,
 )
+from .raster_accel import raster_acceleration_message, resolve_raster_acceleration
 from .rights import build_object_rights, build_rights_manifest, normalize_rights_context, write_rights_manifest
 from .track_filters import TrackFilterConfig, build_raster_fallback, evaluate_track, filter_and_dedupe_tracks
 from .tracks import InitialMask, ObjectCandidate, ObjectTrack, RunContext, VideoSource
@@ -827,24 +828,55 @@ def _extract_object(
     detailed_frames: list[dict[str, Any]] = []
     motion: list[dict[str, Any]] = []
     cutout_paths: list[Path] = []
+    raster_acceleration = run_context.metadata.get("rasterAcceleration")
+    if not isinstance(raster_acceleration, dict):
+        raster_acceleration = resolve_raster_acceleration(raster_device).to_metadata()
+    raster_backend = str(raster_acceleration.get("backend") or "cpu")
+    raster_device_actual = str(raster_acceleration.get("actualDevice") or raster_device or "cpu")
 
     object_initial_masks = [mask for mask in initial_masks if mask.object_id == object_id]
     initial = object_initial_masks[0] if object_initial_masks else None
     tracker = PerFrameMaskVideoTracker([spec])
+    tracking_start = time.perf_counter()
     track = tracker.track(
         video_source,
         object_initial_masks,
         {},
         run_context,
     )[0]
-    _job_emit(job_context, "propagation", "succeeded", f"tracking completed for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.66}, metadata={"objectId": object_id})
+    tracking_elapsed_ms = _elapsed_ms(tracking_start)
+    _job_emit(
+        job_context,
+        "propagation",
+        "succeeded",
+        f"tracking completed for {object_id}",
+        progress={"stageRatio": 1.0, "overallRatio": 0.66},
+        metadata={"objectId": object_id, "frames": len(track.frames), "elapsedMs": tracking_elapsed_ms},
+    )
     vectorizer = ContourVectorizer(min_area=min_area, simplify_ratio=simplify_ratio)
+    vectorization_start = time.perf_counter()
     track = vectorizer.vectorize(
         [track],
         {"min_area": min_area, "simplify_ratio": simplify_ratio},
         run_context,
     )[0]
-    _job_emit(job_context, "vectorization", "succeeded", f"contours vectorized for {object_id}", progress={"stageRatio": 1.0, "overallRatio": 0.7}, metadata={"objectId": object_id})
+    vectorization_elapsed_ms = _elapsed_ms(vectorization_start)
+    _job_emit(
+        job_context,
+        "vectorization",
+        "succeeded",
+        f"contours vectorized for {object_id}",
+        progress={"stageRatio": 1.0, "overallRatio": 0.7},
+        metadata={
+            "objectId": object_id,
+            "frames": len(track.frames),
+            "elapsedMs": vectorization_elapsed_ms,
+            "rasterBackend": raster_backend,
+            "rasterDeviceActual": raster_device_actual,
+            "vectorPrepassBackend": raster_acceleration.get("vectorPrepassBackend", "cpu"),
+            "finalContourBackend": raster_acceleration.get("finalContourBackend", "cpu-opencv"),
+        },
+    )
     pre_export_decision = evaluate_track(
         track,
         width=info.width,
@@ -900,6 +932,9 @@ def _extract_object(
                 "decision": pre_export_payload,
                 "estimatedCutoutPixels": estimated_cutout_pixels,
                 "maxCutoutPixels": max_cutout_pixels,
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
+                "rasterAcceleration": dict(raster_acceleration),
             },
         )
     else:
@@ -909,12 +944,22 @@ def _extract_object(
             "running",
             f"preparing raster assets for {object_id}",
             progress={"overallRatio": 0.705},
-            metadata={"objectId": object_id, "frames": len(track.frames)},
+            metadata={
+                "objectId": object_id,
+                "frames": len(track.frames),
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
+                "rasterAcceleration": dict(raster_acceleration),
+            },
         )
     provider_performance = dict(track.metadata.get("providerPerformance") or {})
+    provider_performance["trackingElapsedMs"] = tracking_elapsed_ms
+    provider_performance["vectorizationElapsedMs"] = vectorization_elapsed_ms
+    provider_performance["rasterAcceleration"] = dict(raster_acceleration)
 
     total_track_frames = len(track.frames)
     progress_stride = max(1, total_track_frames // 4)
+    asset_prep_start = time.perf_counter()
     for position, track_frame in enumerate(_iter_with_optional_tqdm(track.frames, desc=f"processing {object_id}"), start=1):
         _job_check_cancel(job_context, "export")
         frame_start = time.perf_counter()
@@ -966,6 +1011,8 @@ def _extract_object(
                 "sourceBbox": source_bbox,
                 "maskArea": mask_area,
                 "maskShape": mask_shape,
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
                 "contourPoints": track_frame.contour_points,
                 "outlineStatus": outline_status,
                 "outlineSource": outline_source,
@@ -1081,6 +1128,8 @@ def _extract_object(
                 "sourceBbox": track_frame.bbox,
                 "maskArea": mask_area,
                 "maskShape": mask_shape,
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
                 "contourPoints": track_frame.contour_points,
                 "outlineStatus": outline_status,
                 "outlineSource": outline_source,
@@ -1109,7 +1158,11 @@ def _extract_object(
                     "stageRatio": round(position / total_track_frames, 4) if total_track_frames else 1.0,
                     "overallRatio": round(0.705 + ((position / total_track_frames) if total_track_frames else 1.0) * 0.02, 4),
                 },
-                metadata={"objectId": object_id},
+                metadata={
+                    "objectId": object_id,
+                    "rasterBackend": raster_backend,
+                    "rasterDeviceActual": raster_device_actual,
+                },
             )
             _job_checkpoint_object(job_context, object_id, status="running")
 
@@ -1138,6 +1191,7 @@ def _extract_object(
         }
     sprite_path = object_dir / f"spritesheet.{sprite_format}"
     sprite_meta = None
+    spritesheet_elapsed_ms: float | None = None
     if not skip_asset_materialization:
         _job_emit(
             job_context,
@@ -1145,13 +1199,20 @@ def _extract_object(
             "running",
             f"writing spritesheet for {object_id}",
             progress={"overallRatio": 0.728},
-            metadata={"objectId": object_id, "cutouts": len(cutout_paths)},
+            metadata={
+                "objectId": object_id,
+                "cutouts": len(cutout_paths),
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
+            },
         )
+        spritesheet_start = time.perf_counter()
         sprite_meta = write_spritesheet(
             cutout_paths=cutout_paths,
             output_path=sprite_path,
             format="WEBP" if sprite_format == "webp" else "PNG",
         )
+        spritesheet_elapsed_ms = _elapsed_ms(spritesheet_start)
     if sprite_meta:
         sprite_meta["path"] = _rel(sprite_path, out_dir)
         for entry, sprite_frame in zip((m for m in motion if m["asset"]), sprite_meta["frames"]):
@@ -1163,8 +1224,19 @@ def _extract_object(
             "succeeded",
             f"raster assets prepared for {object_id}",
             progress={"stageRatio": 1.0, "overallRatio": 0.73},
-            metadata={"objectId": object_id, "cutouts": len(cutout_paths), "spritesheet": bool(sprite_meta)},
+            metadata={
+                "objectId": object_id,
+                "cutouts": len(cutout_paths),
+                "spritesheet": bool(sprite_meta),
+                "elapsedMs": _elapsed_ms(asset_prep_start),
+                "spritesheetElapsedMs": spritesheet_elapsed_ms,
+                "rasterBackend": raster_backend,
+                "rasterDeviceActual": raster_device_actual,
+                "rasterAcceleration": dict(raster_acceleration),
+            },
         )
+    provider_performance["assetPreparationElapsedMs"] = _elapsed_ms(asset_prep_start)
+    provider_performance["spritesheetElapsedMs"] = spritesheet_elapsed_ms
 
     rights = build_object_rights(object_id=object_id, context=rights_context, fallback_source_uri=rights_context.get("source_uri") if rights_context else None)
     obj = {
@@ -1368,7 +1440,26 @@ def run_multi_object_pipeline(
         ],
     }
     video_source = VideoSource(path=video_path, info=info, frames=frames)
-    run_context = RunContext(out_dir=out_dir, job_context=job_context, metadata={"rasterDevice": str(raster_device or "")})
+    raster_probe_start = time.perf_counter()
+    raster_acceleration = resolve_raster_acceleration(raster_device)
+    raster_acceleration_metadata = raster_acceleration.to_metadata()
+    phase_timings.append(PhaseTiming(phase="raster_acceleration_probe", elapsed_ms=_elapsed_ms(raster_probe_start), count=1).to_dict())
+    _job_emit(
+        job_context,
+        "runtime_acceleration",
+        "succeeded",
+        raster_acceleration_message(raster_acceleration),
+        progress={"stageRatio": 1.0, "overallRatio": 0.305},
+        metadata=raster_acceleration_metadata,
+    )
+    run_context = RunContext(
+        out_dir=out_dir,
+        job_context=job_context,
+        metadata={
+            "rasterDevice": raster_acceleration.actual_device,
+            "rasterAcceleration": raster_acceleration_metadata,
+        },
+    )
 
     candidate_start = time.perf_counter()
     _job_check_cancel(job_context, "candidate_discovery")
@@ -1437,6 +1528,7 @@ def run_multi_object_pipeline(
                     "layers": [],
                     "scanOnly": True,
                     "candidateCount": len(candidates),
+                    "providerPerformance": {"rasterAcceleration": raster_acceleration_metadata},
                 }
                 write_json(out_dir / "scene_graph.json", scene)
                 _job_emit(
@@ -1486,6 +1578,7 @@ def run_multi_object_pipeline(
                 "layers": [],
                 "scanOnly": True,
                 "candidateCount": len(candidates),
+                "providerPerformance": {"rasterAcceleration": raster_acceleration_metadata},
             }
             write_json(out_dir / "scene_graph.json", scene)
             _job_emit(
@@ -1545,7 +1638,7 @@ def run_multi_object_pipeline(
                 production_avif=production_avif,
                 rights_context=rights_payload,
                 used_labels=used_labels,
-                raster_device=raster_device,
+                raster_device=raster_acceleration.actual_device,
                 job_context=job_context,
             )
         except Exception as exc:
@@ -1656,6 +1749,7 @@ def run_multi_object_pipeline(
     }
     provider_performance = {
         "schema": "motionjson.provider_performance.v0.1",
+        "rasterAcceleration": raster_acceleration_metadata,
         "objects": provider_performance_objects,
         "trackFilter": track_filter_payload,
         "fallbackDiagnostics": fallback_diagnostics,

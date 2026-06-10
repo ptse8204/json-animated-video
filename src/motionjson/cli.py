@@ -503,6 +503,23 @@ def build_rights_context_from_args(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _raster_device_for_cli_run(args: argparse.Namespace, run_config: Any) -> str | None:
+    for value in (
+        getattr(args, "sam2_device", None),
+        getattr(getattr(run_config.provider, "sam3", None), "device", None),
+        getattr(getattr(run_config.provider, "sam2", None), "device", None),
+    ):
+        if value:
+            return str(value)
+    if str(getattr(run_config.provider, "name", "") or "") == "sam2-local":
+        return os.environ.get("SAM2_LOCAL_DEVICE", "cpu")
+    if getattr(args, "discovery_provider", None) in {"auto_object_proposals", "sam_auto_masks"}:
+        return os.environ.get("SAM2_LOCAL_DEVICE")
+    if getattr(args, "discovery_provider", None) == "sam2_hf_auto_masks":
+        return os.environ.get("SAM2_HF_DEVICE")
+    return None
+
+
 def run_extract(args: argparse.Namespace) -> dict:
     try:
         run_config = build_extraction_run_config_from_args(args)
@@ -521,6 +538,7 @@ def run_extract(args: argparse.Namespace) -> dict:
     )
     job_run.start()
     job_run.emit("validating_config", "succeeded", "extraction run config validated", progress={"overallRatio": 0.03}, metadata={"provider": run_config.provider.name})
+    raster_device = _raster_device_for_cli_run(args, run_config)
     specs: list[ObjectExtractionSpec] = []
     try:
         if args.discovery_provider:
@@ -546,6 +564,7 @@ def run_extract(args: argparse.Namespace) -> dict:
                 output_mode=run_config.export.output_mode,
                 production_avif=run_config.export.production_avif,
                 rights_context=build_rights_context_from_args(args),
+                raster_device=raster_device,
                 job_context=job_run,
             )
         elif args.object_mask_dir:
@@ -564,6 +583,7 @@ def run_extract(args: argparse.Namespace) -> dict:
                 output_mode=run_config.export.output_mode,
                 production_avif=run_config.export.production_avif,
                 rights_context=build_rights_context_from_args(args),
+                raster_device=raster_device,
                 job_context=job_run,
             )
         else:
@@ -584,6 +604,7 @@ def run_extract(args: argparse.Namespace) -> dict:
                 output_mode=run_config.export.output_mode,
                 production_avif=run_config.export.production_avif,
                 rights_context=build_rights_context_from_args(args),
+                raster_device=raster_device,
                 job_context=job_run,
             )
     except JobCanceled as exc:
@@ -611,6 +632,7 @@ def run_extract(args: argparse.Namespace) -> dict:
             out_dir=out,
             scene=scene,
             iterations=run_config.debug.benchmark_iterations,
+            raster_device=raster_device,
         )
         write_json(out / "benchmark_report.json", report)
         write_profiled_outputs(

@@ -6,6 +6,8 @@ from typing import Any
 import cv2
 import numpy as np
 
+from .raster_accel import resolve_torch_device
+
 
 @dataclass(frozen=True)
 class ContourResult:
@@ -70,7 +72,7 @@ def polygon_to_lottie_shape(polygon: list[list[float]]) -> dict[str, Any]:
 
 
 def _prepared_contour_mask(mask: np.ndarray, *, device: str | None = None) -> np.ndarray:
-    torch_device = _torch_device(device)
+    torch_device = resolve_torch_device(device)
     normalized = np.where(np.asarray(mask, dtype=np.uint8) > 127, 255, 0).astype(np.uint8)
     if torch_device is None:
         return normalized
@@ -84,21 +86,6 @@ def _prepared_contour_mask(mask: np.ndarray, *, device: str | None = None) -> np
     value = F.max_pool2d(value, kernel_size=3, stride=1, padding=1)
     value = -F.max_pool2d(-value, kernel_size=3, stride=1, padding=1)
     return (value[0, 0].clamp(0, 1) * 255.0).to(torch.uint8).cpu().numpy()
-
-
-def _torch_device(device: str | None) -> Any | None:
-    if not device:
-        return None
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        return None
-    normalized = str(device).strip().lower()
-    if normalized.startswith("cuda") and torch.cuda.is_available():
-        return torch.device(device)
-    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
 
 
 def _clamp01(value: float) -> float:

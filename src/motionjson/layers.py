@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from .raster_accel import resolve_torch_device
+
 
 @dataclass(frozen=True)
 class LayerCrop:
@@ -64,7 +66,7 @@ def _rgba_crop(
     feather: int,
     device: str | None,
 ) -> np.ndarray:
-    torch_device = _torch_device(device)
+    torch_device = resolve_torch_device(device)
     if torch_device is None:
         alpha = mask[y0:y1, x0:x1].copy()
         if feather > 0:
@@ -109,21 +111,6 @@ def _gaussian_blur_alpha(alpha: Any, feather: int, functional: Any) -> Any:
     value = functional.pad(value, (0, 0, kernel_size // 2, kernel_size // 2), mode="reflect")
     value = functional.conv2d(value, kernel_y)
     return value[0, 0]
-
-
-def _torch_device(device: str | None) -> Any | None:
-    if not device:
-        return None
-    try:
-        import torch  # type: ignore
-    except ImportError:
-        return None
-    normalized = str(device).strip().lower()
-    if normalized.startswith("cuda") and torch.cuda.is_available():
-        return torch.device(device)
-    if normalized.startswith("mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return torch.device("mps")
-    return None
 
 
 def build_raster_motion_layer(*, object_id: str, fps: float, frames: list[dict[str, Any]]) -> dict[str, Any]:

@@ -201,7 +201,8 @@ def test_multi_object_pipeline_checkpoints_completed_object_before_later_failure
         "asset_preparation_object_finished",
         "asset_preparation_object_failed",
     }.issubset(event_types)
-    assert context.checkpoints == [{"objectId": "object_a", "status": "finished"}, {"objectId": "object_b", "status": "failed"}]
+    assert any(checkpoint == {"objectId": "object_a", "status": "running"} for checkpoint in context.checkpoints)
+    assert context.checkpoints[-2:] == [{"objectId": "object_a", "status": "finished"}, {"objectId": "object_b", "status": "failed"}]
     assert (out / "objects" / "object_a" / "object_manifest.json").exists()
     assert json.loads((out / "objects" / "object_b" / "failure.json").read_text(encoding="utf-8"))["reasonCode"] == "object_extraction_failed"
 

@@ -263,6 +263,22 @@ ui_model_connector_phases:
       - "python3 -m motionjson.cli ui --help"
       - "npm run ui:layout -- --screenshot-dir docs/design/screenshots/ui-workflow-13 --state first-run,model-setup-sam3-local,prepare-pick-frame,workflow-run,candidate-review,correction-tools,export-gate --viewport mobile-390,tablet-768,tablet-1024,laptop-1366,desktop-1440,desktop-1920"
       - "git diff --check"
+  - id: UI-WORKFLOW-14
+    name: add raster acceleration progress and benchmarks
+    commit_message: "phase ui-workflow-14: add raster acceleration telemetry"
+    report: docs/roadmap/phase-ui-workflow-14-report.md
+    goals:
+      - Use one capability-gated CPU/CUDA/MPS resolver for raster/vector acceleration.
+      - Expose requested device, actual device, backend, fallback reason, and elapsed timings in job progress and providerPerformance.
+      - Add a raster/vector microbenchmark to extraction benchmark reports.
+      - Preserve CPU fallback and final CPU/OpenCV contour extraction.
+    validation:
+      - "python3 -m pytest -q tests/test_raster_acceleration.py"
+      - "python3 -m pytest -q tests/test_provider_pipeline.py tests/test_benchmark.py"
+      - "python3 -m pytest -q tests/test_job_artifacts.py tests/test_production_asset_formats.py"
+      - "python3 -m motionjson.cli --help"
+      - "python3 -m motionjson.cli benchmark --help"
+      - "git diff --check"
 historical_completed_phases:
   - id: 0
     name: repository discovery and guardrails

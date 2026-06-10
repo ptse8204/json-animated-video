@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from .raster_accel import benchmark_raster_operations
+
 
 EVALUATION_FIXTURES = (
     "red_ball",
@@ -120,6 +122,7 @@ def benchmark_scene(
     out_dir: str | Path,
     scene: dict[str, Any],
     iterations: int = 3,
+    raster_device: str | None = None,
 ) -> dict[str, Any]:
     """Measure naive full-video frame processing against cached layer compositing."""
     video_path = Path(video_path)
@@ -130,6 +133,12 @@ def benchmark_scene(
 
     naive_ms, naive_pixels = _benchmark_naive_video_decode(video_path, wanted_indices, iterations)
     layer_load_ms, layer_composite_ms, layer_pixels = _benchmark_layer_composite(out_dir, scene, layer_frames, iterations)
+    raster_ops = benchmark_raster_operations(
+        width=int(scene.get("canvas", {}).get("width") or 96),
+        height=int(scene.get("canvas", {}).get("height") or 64),
+        iterations=iterations,
+        device=raster_device,
+    )
 
     sampled_frames = max(1, len(wanted_indices))
     layer_frame_count = max(1, len(layer_frames))
@@ -155,10 +164,12 @@ def benchmark_scene(
             "hot_composite_ms_per_frame": _round_ms(layer_hot_per_frame),
             "composited_layer_pixels": layer_pixels,
         },
+        "raster_acceleration": raster_ops,
         "comparison": {
             "hot_preview_speedup_vs_naive_decode": round(speedup, 3) if speedup is not None else None,
             "layer_pixel_ratio_vs_full_frame": round(pixel_ratio, 4) if pixel_ratio is not None else None,
             "layer_pixel_reduction_vs_full_frame": round(1 - pixel_ratio, 4) if pixel_ratio is not None else None,
+            "raster_selected_vs_cpu_speedup": raster_ops["comparison"]["selectedVsCpuSpeedup"],
         },
         "notes": [
             "This benchmark isolates playback/edit preview after extraction; it does not include neural segmentation time.",

@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 import cv2
 
 from ..providers.base import BatchSegmentationRequest, ProviderAttempt
+from ..raster_accel import resolve_raster_acceleration
 from ..tracks import Box, InitialMask, ObjectCandidate, ObjectTrack, RunContext, TrackFrame, VideoSource
 from ..vectorize import mask_to_largest_polygon
 
@@ -288,17 +289,22 @@ class ContourVectorizer:
         ctx: RunContext,
     ) -> Sequence[ObjectTrack]:
         output: list[ObjectTrack] = []
+        raster_device = str(ctx.metadata.get("rasterDevice") or "")
+        raster_acceleration = ctx.metadata.get("rasterAcceleration")
+        if not isinstance(raster_acceleration, dict):
+            raster_acceleration = resolve_raster_acceleration(raster_device).to_metadata()
         for track in tracks:
             total = len(track.frames)
             for position, frame in enumerate(track.frames, start=1):
                 ctx.check_cancel("vectorization")
                 if frame.mask is None:
                     continue
+                frame_start = time.perf_counter()
                 contour = mask_to_largest_polygon(
                     frame.mask,
                     min_area=float(config.get("min_area", self.min_area)),
                     simplify_ratio=float(config.get("simplify_ratio", self.simplify_ratio)),
-                    device=str(ctx.metadata.get("rasterDevice") or ""),
+                    device=raster_device,
                 )
                 frame.visible = bool(contour.visible and contour.bbox)
                 frame.area = contour.area
@@ -316,7 +322,15 @@ class ContourVectorizer:
                         "stageRatio": round(position / total, 4) if total else 1.0,
                         "overallRatio": round(0.66 + ((position / total) if total else 1.0) * 0.04, 4),
                     },
-                    metadata={"objectId": track.object_id, "visible": frame.visible},
+                    metadata={
+                        "objectId": track.object_id,
+                        "visible": frame.visible,
+                        "elapsedMs": _elapsed_ms(frame_start),
+                        "rasterBackend": raster_acceleration.get("backend", "cpu"),
+                        "rasterDeviceActual": raster_acceleration.get("actualDevice", "cpu"),
+                        "vectorPrepassBackend": raster_acceleration.get("vectorPrepassBackend", "cpu"),
+                        "finalContourBackend": raster_acceleration.get("finalContourBackend", "cpu-opencv"),
+                    },
                 )
             track.metadata["vectorizedBy"] = self.name
             output.append(track)
