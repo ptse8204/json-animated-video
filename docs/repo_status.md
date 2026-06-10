@@ -30,15 +30,14 @@ remains optional, environment-dependent, or future work.
 | Model connector contract | Server-side model connector routes support provider listing, readiness, estimates, deterministic fake runs, run events, cancellation, and model-plan attachment without browser-side credentials. |
 | Optional OpenAI planning connector | The OpenAI planner is server-side, settings-backed, hosted-call gated, tested with mocked transport, and validates model output as a proposed plan before extraction enqueue. It is not a segmentation provider. |
 | Export handoff | The Local UI offers Website package, MotionJSON scene, Runtime snippet, Remotion plan, and Developer handoff cards; validated exports default to reviewed selected objects. |
-| Codex documentation harness | `docs/codex/START_HERE.md`, `docs/codex/CURRENT_TASK.md`, `docs/codex/SAFETY_INVARIANTS.md`, `docs/codex/CURRENT_ARCHITECTURE.md`, and `docs/codex/CONTEXT_MANIFEST.yaml` define the compact default read set. `docs/codex/SCOUT_PROTOCOL.md` captures read-only scout guardrails. |
+| Codex documentation harness | `docs/codex/START_HERE.md`, `docs/codex/CURRENT_TASK.md`, `docs/codex/SAFETY_INVARIANTS.md`, `docs/codex/CURRENT_ARCHITECTURE.md`, and `docs/codex/CONTEXT_MANIFEST.yaml` define the compact default read set. |
 | Trace Everything safeguards | Trace Everything remains expert/experimental, requires explicit acknowledgement, stays capped, writes rejected candidates, and blocks export until review. |
 | Public README and docs index | The root README is user-facing, includes no-model quick start commands, real screenshots, provider boundaries, system requirements, troubleshooting links, and current launch risks. `docs/index.md` links first-run, system requirements, local UI, runtime, provider, benchmark, release, limitations, and final audit docs. |
 | Screenshot and demo assets | Real local mock-UI screenshots and deterministic red-ball preview/GIF assets exist under `docs/assets/`, with regeneration commands in `docs/assets/README_ASSETS.md`. |
 | Free and low-install run paths | Codespaces, Colab UI and CLI demos, and Hugging Face Space planning docs exist. The Colab paths are checked-in notebooks; Hugging Face remains a documented plan, not a production hosted service. |
 | License metadata | Root `LICENSE`, Python project metadata, and npm workspace/package metadata declare Apache-2.0. Generated asset rights still depend on source-media rights and recorded export metadata. |
-| Advanced Phase 11 slices | Text-guided mock discovery, automatic proposal mocks, motion-only discovery, detector class presets, export quality routing, rights lineage warnings, and local Asset Library workflows are implemented with CPU/mock tests and phase reports. |
-| OD roadmap reports | `docs/roadmap/phase-od-00-report.md` through `docs/roadmap/phase-od-14-report.md` record the API-first object discovery work. |
-| Prior implementation reports | `docs/roadmap/phase-0-report.md` through `docs/roadmap/phase-14-report.md` and `docs/roadmap/final-qa-release-report.md` exist. |
+| Advanced Phase 11 slices | Text-guided mock discovery, automatic proposal mocks, motion-only discovery, detector class presets, export quality routing, rights lineage warnings, and local Asset Library workflows are implemented with CPU/mock tests. |
+| Historical phase evidence | Full completed phase reports were removed from the working tree in favor of `docs/archive/phase_reports/README.md` plus git history. |
 
 ## Partially Implemented
 

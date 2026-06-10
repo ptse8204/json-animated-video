@@ -89,9 +89,9 @@ def test_public_docs_state_current_roadmap_and_apache_license_boundary() -> None
     repo_status = read("docs/repo_status.md")
     release_notes = read("docs/release_notes.md")
 
-    assert "docs/roadmap/ui_model_connector_plan.md" in readme
-    assert "docs/roadmap/ui_model_connector_plan.md` before making Local UI" in readme
-    assert "Treat `docs/codex_future_plan.md` as historical context" in readme
+    assert "docs/codex/START_HERE.md" in readme
+    assert "docs/codex/CONTEXT_MANIFEST.yaml" in readme
+    assert "Old Codex planning packets and completed phase reports were removed" in readme
     assert "Apache License, Version 2.0" in readme
     assert "[LICENSE](LICENSE)" in readme
     assert "source-media rights" in normalized(readme)

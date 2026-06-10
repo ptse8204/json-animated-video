@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -87,6 +89,30 @@ def parse_top_level_list(text: str, key: str) -> list[str]:
     return values
 
 
+def parse_subsystem_docs(text: str) -> dict[str, list[str]]:
+    routes: dict[str, list[str]] = {}
+    current: str | None = None
+    in_docs = False
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if raw_line.startswith("  ") and not raw_line.startswith("    ") and stripped.endswith(":"):
+            current = stripped[:-1]
+            routes[current] = []
+            in_docs = False
+            continue
+        if current and raw_line.startswith("    ") and not raw_line.startswith("      "):
+            in_docs = stripped == "docs:"
+            continue
+        if current and in_docs:
+            if raw_line.startswith("      - "):
+                routes[current].append(raw_line.split("      - ", 1)[1].strip().strip('"'))
+            elif raw_line.startswith("    ") and stripped:
+                in_docs = False
+    return routes
+
+
 def iter_local_links(source: Path):
     text = source.read_text(encoding="utf-8")
     for match in MARKDOWN_LINK_RE.finditer(text):
@@ -158,11 +184,33 @@ def test_codex_default_context_is_small_explicit_and_non_archive():
         total_lines += text.count("\n") + 1
         total_chars += len(text)
 
-    assert total_lines <= 1500
-    assert total_chars <= 60000
+    assert total_lines <= 350
+    assert total_chars <= 25000
 
-    assert len(read("AGENTS.md").splitlines()) <= 80
-    assert len(read("CODEX_MASTER_PROMPT.md").splitlines()) <= 80
+    assert len(read("AGENTS.md").splitlines()) + len(read("CODEX_MASTER_PROMPT.md").splitlines()) <= 70
+
+
+def test_codex_context_budget_script_passes_and_blocks_old_ui_docs():
+    result = subprocess.run(
+        [sys.executable, "scripts/check_codex_context_budget.py"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    assert "default_docs_lines=" in result.stdout
+    assert "tracked_md_lines=" in result.stdout
+
+    manifest = read("docs/codex/CONTEXT_MANIFEST.yaml")
+    routes = parse_subsystem_docs(manifest)
+    ui_docs = routes["ui_redesign"]
+
+    assert len(ui_docs) <= 3
+    assert "docs/local_ui.md" not in ui_docs
+    assert "docs/design/local-ui-audit.md" not in ui_docs
+    assert "docs/design/design-system.md" not in ui_docs
+    assert all(not doc.startswith("docs/archive/") for docs in routes.values() for doc in docs)
+    assert all("phase-" not in doc for docs in routes.values() for doc in docs)
 
 
 def test_codex_docs_are_linked_from_human_index_without_becoming_default_map():
@@ -174,7 +222,6 @@ def test_codex_docs_are_linked_from_human_index_without_becoming_default_map():
         "codex/SAFETY_INVARIANTS.md",
         "codex/CURRENT_ARCHITECTURE.md",
         "codex/CONTEXT_MANIFEST.yaml",
-        "codex/SCOUT_PROTOCOL.md",
         "product/ui_redesign_brief.md",
     ]:
         assert link in index
@@ -270,7 +317,7 @@ def test_od14_object_discovery_release_docs_cover_workflow():
         "API-first object discovery",
         "Selected-candidate tracking",
         "Review-gated exports",
-        "OD roadmap reports",
+        "Historical phase evidence",
     ):
         assert phrase in repo_status
 

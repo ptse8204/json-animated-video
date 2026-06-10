@@ -316,11 +316,10 @@ def test_huggingface_space_plan_is_cpu_basic_no_secret_no_gpu() -> None:
         assert expected in plan
 
 
-def test_canonical_phase10_report_matches_free_hosted_demo_phase() -> None:
-    report = read("docs/roadmap/phase-10-report.md")
-    older_report = read("docs/roadmap/phase-10-correction-workflows-report.md")
+def test_phase_report_history_is_summarized_without_large_reports() -> None:
+    index = read("docs/archive/phase_reports/README.md")
 
-    assert "Free Hosted Demo Paths" in report
-    assert "Colab notebook" in report
-    assert "Hugging Face Space" in report
-    assert "local UI correction workflows" in older_report
+    assert "Full completed phase reports were removed" in index
+    assert "original phases 0-14" in index
+    assert "UI model/workflow phases" in index
+    assert "git history" in index

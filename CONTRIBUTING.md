@@ -46,10 +46,9 @@ docker compose config
 For roadmap work, read `AGENTS.md` as a shim, then start from
 `docs/codex/START_HERE.md`, `docs/codex/CURRENT_TASK.md`, and
 `docs/codex/CONTEXT_MANIFEST.yaml`. Use the manifest route for task-specific
-docs and tests instead of loading old roadmap packets by default. Treat older
-roadmaps such as `docs/codex_future_plan.md` as historical context unless a
-maintainer explicitly selects that track. Work phase by phase, write the
-required phase report, and commit at the end of each phase.
+docs and tests instead of loading old roadmap packets or phase reports. Work
+phase by phase when requested, write the required compact phase report, and
+commit at the end of each phase.
 
 Do not remove or rewrite unrelated local changes. If the tree is dirty, record
 what is unrelated in the phase report and stage only the files owned by the

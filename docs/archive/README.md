@@ -1,25 +1,11 @@
 # Documentation Archive
 
-Archived docs are historical evidence, not current instruction. Do not use this folder as default Codex context.
+Git history is the archive for full historical docs.
 
-Use current Codex docs under `docs/codex/` and task routes in `docs/codex/CONTEXT_MANIFEST.yaml` before consulting archive material.
+This directory keeps only compact indexes/summaries for material removed from the working tree:
 
-## Categories
+- `phase_reports/README.md`: phase-report family index.
 
-- Old root docs: `root_docs/`
-- Old Codex prompts/plans: `codex_prompts/`
-- Historical Codex task data: `codex_tasks_history.yaml`
-- Completed phase reports: see `phase_reports/README.md`
-- Old UI/card-shell design docs: mostly retained in `docs/design/` as evidence and marked non-default by the manifest
-- Old roadmap material: retained in place when public docs or tests depend on existing paths, and routed out of default context by the manifest
+Old root docs, prompt packets, future plans, old Codex specs, and old UI design audits were removed from the working tree in `DOC-HARNESS-01`.
 
-## Use Cases
-
-Read archived material only when:
-
-- the user asks for history;
-- a release audit needs historical evidence;
-- a broken link or migration needs provenance;
-- a task explicitly selects an archived roadmap.
-
-Do not copy archive instructions back into root prompts or default Codex context.
+Do not add full historical docs here. Link to git history or write a short summary instead.

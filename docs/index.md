@@ -42,8 +42,8 @@ MotionJSON output:
   Recall and Trace Everything are advanced/noisy paths, not first-run defaults.
 - [Examples](examples.md) shows the red-ball demo, UI screenshots, expected
   output folders, and browser preview links.
-- [Local UI](local_ui.md) explains projects, videos, extraction presets, prompt
-  tools, job review, corrections, and export.
+- [Local UI](local_ui.md) gives launch commands, source paths, API route
+  categories, and validation commands.
 - [Extraction run config](run_config.md) documents the typed config model behind
   CLI and UI runs.
 - [Discovery providers](discovery_providers.md) explains when to use manual
@@ -112,9 +112,8 @@ vectorization, or export providers:
   contract, setup-only checks, explicit smoke-test opt-in, and redaction rules.
 - [AI provider architecture](ai_provider_architecture.md) explains provider
   interfaces and local-first boundaries for optional AI integrations.
-- [Benchmark fixtures](benchmark_fixtures.md) and
-  [Quality, testing, and benchmark plan](codex_motionjson_quality_benchmarks.md)
-  show deterministic fixture coverage and quality gates.
+- [Benchmark fixtures](benchmark_fixtures.md) shows deterministic fixture
+  coverage and quality gates.
 
 Provider rule of thumb: missing optional packages, model weights, CUDA, FFmpeg,
 or credentials should appear in diagnostics and logs. They should not break the
@@ -122,7 +121,7 @@ base CPU/mock install.
 
 ## I Want To Use Codex To Contribute
 
-Use this path when continuing the phase-based roadmap:
+Use this path when contributing with Codex:
 
 - [Codex Start Here](codex/START_HERE.md) is the current agent entrypoint.
 - [Current Codex task](codex/CURRENT_TASK.md) identifies the active work.
@@ -132,13 +131,8 @@ Use this path when continuing the phase-based roadmap:
   command surfaces, optional providers, and validation commands.
 - [Context manifest](codex/CONTEXT_MANIFEST.yaml) routes task-specific docs,
   source paths, and tests without broad doc scans.
-- [Scout protocol](codex/SCOUT_PROTOCOL.md) keeps read-only reviews bounded.
 - [UI redesign brief](product/ui_redesign_brief.md) states product behavior
   requirements without preserving old cards, right rails, steppers, or panels.
-- [UI model connector roadmap](roadmap/ui_model_connector_plan.md) is
-  historical/current-track reference material, not default Codex context.
-- [Codex future plan](codex_future_plan.md) preserves the completed
-  public-onboarding phase plan and remains useful historical context.
 - [Repository status](repo_status.md) records what is implemented, partial, or
   planned.
 - [Phase commit checklist](phase_commit_checklist.md) summarizes phase hygiene.
@@ -151,10 +145,12 @@ Use this path when continuing the phase-based roadmap:
   [Changelog](../CHANGELOG.md) are the root contributor-facing files.
 - [Roadmap](roadmap.md) and [Product requirements](product_requirements.md)
   preserve the broader product direction.
+- [Phase report archive index](archive/phase_reports/README.md) summarizes
+  removed historical phase-report families. Full reports are available through
+  git history.
 
-Phase reports live under `docs/roadmap/` and are historical unless a task
-explicitly routes to them. Each new phase should record changed files, tests,
-screenshots or demos, known limitations, and follow-up tasks.
+Each new phase should record changed files, tests, screenshots or demos, known
+limitations, and follow-up tasks in a compact report.
 
 ## Reference
 
