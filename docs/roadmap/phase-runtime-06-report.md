@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-06: SAM3 scene sweep in-flight diagnostics
 
 ## Summary

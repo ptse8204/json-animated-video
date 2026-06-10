@@ -1,5 +1,9 @@
 # MotionJSON / json-animated-video — Codex Future Plan
 
+> Historical reference. Do not use this as default Codex context. Start with
+> `docs/codex/START_HERE.md` and use `docs/codex/CONTEXT_MANIFEST.yaml` for
+> current task routing.
+
 This file is written as a Codex-processable implementation brief. It is intended to be copied into the repository root or into `docs/codex_future_plan.md`, then used with Codex from the repo root.
 
 Repository: `https://github.com/ptse8204/json-animated-video`

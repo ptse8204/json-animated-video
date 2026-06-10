@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-UX-01 Report: UX Regression Gates And Baseline Evidence
 
 ## Summary

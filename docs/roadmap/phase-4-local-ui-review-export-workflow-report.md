@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 4 Report: Review, Corrections, and Export UX Consolidation
 
 ## Summary

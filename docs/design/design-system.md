@@ -1,5 +1,9 @@
 # MotionJSON Local UI Design System
 
+Historical implementation evidence: this file describes the current static UI
+shell and layout checks. It is not a redesign requirement. Use
+`docs/product/ui_redesign_brief.md` for current form-agnostic UI redesign work.
+
 Phase 03A establishes a small static design system for the local product shell.
 The implementation lives in `src/motionjson/ui/static/app.css`.
 

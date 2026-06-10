@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 5 Report: Local UI Workflow Helper Refactor
 
 ## Summary

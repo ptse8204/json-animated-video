@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11D Report: Detector Class Presets
 
 Date: 2026-05-17

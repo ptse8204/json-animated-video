@@ -1,5 +1,10 @@
 # Local UI Audit
 
+Historical implementation evidence: this audit records earlier layout phases
+and screenshots. It is not default Codex context and does not require future UI
+redesigns to keep cards, right rails, steppers, or panel layouts. Use
+`docs/product/ui_redesign_brief.md` for current redesign behavior requirements.
+
 Phase 03A captured the pre-redesign Local UI with the existing docs asset
 script, then replaced the shell with a commercial product layout and a repeatable
 Chrome layout gate.

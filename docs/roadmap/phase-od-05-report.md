@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-05 Report - API-Rendered Object Discovery Browser
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-UX-05 Report: UI Selector Extraction And Context Reduction
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase report: license-colab 03 - Colab companion notebooks
 
 ## Summary

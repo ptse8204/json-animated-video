@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase report: license and Colab notebook onboarding
 
 ## Purpose

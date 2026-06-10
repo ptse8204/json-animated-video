@@ -49,6 +49,14 @@ REQUIRED_USER_DOCS = [
     "docs/privacy.md",
 ]
 
+CODEX_ALWAYS_READ = [
+    "docs/codex/START_HERE.md",
+    "docs/codex/CURRENT_TASK.md",
+    "docs/codex/SAFETY_INVARIANTS.md",
+    "docs/codex/CURRENT_ARCHITECTURE.md",
+    "docs/codex/CONTEXT_MANIFEST.yaml",
+]
+
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]+\]\(([^)]+)\)")
 
 
@@ -58,6 +66,25 @@ def read(path: str) -> str:
 
 def normalized(text: str) -> str:
     return " ".join(text.split())
+
+
+def parse_top_level_list(text: str, key: str) -> list[str]:
+    values: list[str] = []
+    in_section = False
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if not raw_line.startswith(" ") and line.endswith(":"):
+            in_section = line[:-1] == key
+            continue
+        if in_section:
+            if raw_line.startswith("  - "):
+                values.append(raw_line.split("  - ", 1)[1].strip().strip('"'))
+                continue
+            if raw_line and not raw_line.startswith(" "):
+                break
+    return values
 
 
 def iter_local_links(source: Path):
@@ -110,6 +137,49 @@ def test_required_user_docs_exist_and_are_linked_from_index():
         "privacy.md",
     ]:
         assert link in index
+
+
+def test_codex_default_context_is_small_explicit_and_non_archive():
+    manifest = read("docs/codex/CONTEXT_MANIFEST.yaml")
+    always_read = parse_top_level_list(manifest, "always_read")
+    never_default = parse_top_level_list(manifest, "never_default_read")
+
+    assert always_read == CODEX_ALWAYS_READ
+    assert "docs/archive/" in never_default
+    assert "docs/roadmap/phase-*-report.md" in never_default
+
+    total_lines = 0
+    total_chars = 0
+    for relative in always_read:
+        assert "archive" not in Path(relative).parts
+        path = ROOT / relative
+        assert path.exists(), relative
+        text = path.read_text(encoding="utf-8")
+        total_lines += text.count("\n") + 1
+        total_chars += len(text)
+
+    assert total_lines <= 1500
+    assert total_chars <= 60000
+
+    assert len(read("AGENTS.md").splitlines()) <= 80
+    assert len(read("CODEX_MASTER_PROMPT.md").splitlines()) <= 80
+
+
+def test_codex_docs_are_linked_from_human_index_without_becoming_default_map():
+    index = read("docs/index.md")
+
+    for link in [
+        "codex/START_HERE.md",
+        "codex/CURRENT_TASK.md",
+        "codex/SAFETY_INVARIANTS.md",
+        "codex/CURRENT_ARCHITECTURE.md",
+        "codex/CONTEXT_MANIFEST.yaml",
+        "codex/SCOUT_PROTOCOL.md",
+        "product/ui_redesign_brief.md",
+    ]:
+        assert link in index
+
+    assert "default Codex read map" in index
 
 
 def test_readme_links_to_core_docs_spine():

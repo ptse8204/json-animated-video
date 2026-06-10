@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-09 Report: Hosted SAM3 Adapter
 
 ## Summary

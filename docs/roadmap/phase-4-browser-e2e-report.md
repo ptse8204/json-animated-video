@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 4 Browser E2E Report
 
 ## Summary

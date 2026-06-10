@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-06 Report: Optional SAM2 Automatic Proposal Adapter
 
 ## Summary

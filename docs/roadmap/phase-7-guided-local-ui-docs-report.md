@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 7 Report: Guided Local UI Documentation Update
 
 ## Summary

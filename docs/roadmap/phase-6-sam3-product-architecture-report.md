@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 6 Report: SAM3 Product Architecture
 
 ## Summary

@@ -1,5 +1,9 @@
 # MotionJSON UI Specification
 
+> Historical/reference UI spec. It may describe older screens and panel shapes.
+> Use `docs/product/ui_redesign_brief.md` for current redesign behavior
+> requirements.
+
 ## 1. UI objective
 
 The UI should make object tracing feel like a guided visual workflow, not a CLI flag puzzle. It should expose the right concepts: project, video, goal, extraction mode, provider readiness, prompts, candidates, tracks, corrections, and exports.

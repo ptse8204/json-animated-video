@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-LAYOUT-01 Report - Local UI Readability
 
 ## Summary

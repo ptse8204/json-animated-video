@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 03A Report - Commercial Local UI Redesign
 
 ## Summary

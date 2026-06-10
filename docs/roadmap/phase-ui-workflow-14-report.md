@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-WORKFLOW-14 Phase Report - Raster Acceleration Telemetry
 
 ## Summary

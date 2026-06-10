@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-CACHE-RUNTIME-01 Report
 
 ## Summary

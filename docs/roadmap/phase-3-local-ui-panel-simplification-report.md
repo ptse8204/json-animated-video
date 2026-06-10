@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 3 Local UI Panel Simplification Report
 
 ## Summary

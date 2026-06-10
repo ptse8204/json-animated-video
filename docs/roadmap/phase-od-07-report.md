@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-07 Report: Optional SAM3 Provider Diagnostics And Mocks
 
 ## Summary

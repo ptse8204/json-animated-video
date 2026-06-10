@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Platform Runtime Mask Sync Report
 
 ## Summary

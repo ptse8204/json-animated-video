@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # SAM3 Scene Sweep Flow Repair Report
 
 ## Summary

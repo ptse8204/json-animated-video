@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-UX-03 Report: Adaptive Run Parameters
 
 ## Summary

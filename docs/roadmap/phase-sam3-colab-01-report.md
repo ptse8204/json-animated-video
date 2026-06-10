@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase SAM3 Colab 01 Report: Local SAM3 Checkpoint Path Notebook Flow
 
 ## Summary

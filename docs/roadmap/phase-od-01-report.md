@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-01 Report: Object Discovery Quality Presets
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Colab UI-First Model Setup Report
 
 ## Summary

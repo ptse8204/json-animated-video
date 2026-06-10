@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11H Report: Commercial Workspace Mode
 
 ## Summary

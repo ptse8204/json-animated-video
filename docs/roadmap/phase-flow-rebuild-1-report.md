@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 1 Report - Authoritative Job Lifecycle Contract
 
 ## Summary

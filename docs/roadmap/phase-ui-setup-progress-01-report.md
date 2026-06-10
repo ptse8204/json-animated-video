@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-SETUP-PROGRESS-01 Report
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-02 Report - API-First Candidate Review Schema
 
 ## Summary

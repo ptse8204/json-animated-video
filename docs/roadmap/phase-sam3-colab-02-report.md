@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase SAM3 Colab 02 Report: SAM3 Local Checkpoint Path Docs
 
 ## Summary

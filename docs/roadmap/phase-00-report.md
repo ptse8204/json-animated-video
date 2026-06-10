@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 00 Report - Repo Archaeology and Truthful Status Baseline
 
 ## Summary

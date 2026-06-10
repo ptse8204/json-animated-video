@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-WORKFLOW-11 Phase Report - Streamline Guided Run And Review Workflow
 
 ## Summary

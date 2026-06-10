@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 5 Report: Provider Runtime Proof Gating
 
 ## Summary

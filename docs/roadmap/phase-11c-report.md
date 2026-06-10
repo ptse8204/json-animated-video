@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11C Report: Motion-Only Discovery Workflow
 
 Date: 2026-05-17

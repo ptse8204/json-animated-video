@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase real-colab-sam-local-model-verification report
 
 ## Summary

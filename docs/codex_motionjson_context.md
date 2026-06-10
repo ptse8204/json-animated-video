@@ -1,5 +1,8 @@
 # Conversation Context for Codex
 
+> Historical reference. Do not use this as default Codex context. Start with
+> `docs/codex/START_HERE.md`.
+
 ## What happened
 
 A user attempted to run a multiline PowerShell command for MotionJSON extraction using Bash-style backslash line continuations. After correcting the command to PowerShell syntax, the command ran, but object identification failed: the output identified the whole video/frame as a raster instead of tracing the intended object.

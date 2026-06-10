@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-RUN-MONITOR-LOGS-01 Report
 
 ## Summary

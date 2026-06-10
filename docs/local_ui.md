@@ -1,5 +1,10 @@
 # Local UI
 
+This page documents the current Local UI behavior. It is not a requirement to
+preserve current cards, right rails, steppers, dashboards, or panel layout
+during a full redesign. For redesign work, use
+`docs/product/ui_redesign_brief.md` plus the safety invariants.
+
 The dependency-light local UI lets you inspect MotionJSON provider readiness,
 create local projects, register source videos, draw prompts, start jobs, review
 tracks, correct extraction results, export validated MotionJSON, and save

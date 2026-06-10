@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-07 Report - Guided Review And Correction UX
 
 ## Summary

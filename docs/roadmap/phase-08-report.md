@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 08 Report: Runtime, SDK, And Website Embed Adoption
 
 Date: 2026-05-17

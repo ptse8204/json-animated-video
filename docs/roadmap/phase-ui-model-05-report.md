@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-MODEL-05 Phase Report - Model Setup Wizard
 
 ## Summary

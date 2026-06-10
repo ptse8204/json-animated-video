@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-08 Report: Optional Local SAM3 Adapter
 
 ## Summary

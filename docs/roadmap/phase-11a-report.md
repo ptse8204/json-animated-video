@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11A Report: Text-Guided Discovery Workflow
 
 Date: 2026-05-17

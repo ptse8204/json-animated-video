@@ -1,5 +1,9 @@
 # MotionJSON Quality, Testing, and Benchmark Plan
 
+> Reference-only testing plan. It remains linked for release history, but it is
+> not default Codex context. Use `docs/codex/CONTEXT_MANIFEST.yaml` for current
+> validation routing.
+
 ## 1. Testing philosophy
 
 The project must be testable without a GPU or large model downloads. Real ML providers should have smoke tests that can be skipped when unavailable, while the core pipeline, config, UI, exports, and diagnostics remain fully testable with mock/simple providers.

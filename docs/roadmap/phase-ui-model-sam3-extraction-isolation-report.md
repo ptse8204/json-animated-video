@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI Model SAM3 Extraction Isolation Report
 
 ## Summary

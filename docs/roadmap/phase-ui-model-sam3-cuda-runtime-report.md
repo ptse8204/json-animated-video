@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-SAM3-CUDA-RUNTIME Report
 
 ## Summary

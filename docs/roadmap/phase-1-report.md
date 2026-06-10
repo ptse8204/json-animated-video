@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 1 Report - Typed Extraction Run Configuration
 
 ## Summary

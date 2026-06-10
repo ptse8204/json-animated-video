@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Report: UI Redesign and Hugging Face Access Setup
 
 ## Summary

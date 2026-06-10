@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Report: Colab SAM3 Non-HF Token Path
 
 ## Summary

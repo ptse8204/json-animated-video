@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 06 Report: Provider Integrations And Fallback Coverage
 
 Date: 2026-05-17

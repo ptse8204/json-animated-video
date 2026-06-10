@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 02 Report - First-run Scripts and Free Instance Docs
 
 ## Summary

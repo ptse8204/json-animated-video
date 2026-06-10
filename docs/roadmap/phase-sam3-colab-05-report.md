@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase SAM3 Colab 05 Report: Model Connections SAM3 Path Helper
 
 ## Summary

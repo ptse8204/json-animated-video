@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase SAM3 Colab 04 Report: Notebook Workflow Regression Tests
 
 ## Summary

@@ -1,5 +1,9 @@
 # UI Model Connector Roadmap
 
+> Route-only reference. This roadmap is not default Codex context. Start with
+> `docs/codex/START_HERE.md`; use `docs/codex/CONTEXT_MANIFEST.yaml` to decide
+> whether this file is needed for a specific task.
+
 This is the active Codex roadmap for turning MotionJSON's local UI into a
 nontechnical, guided object-tracing workflow with a safe server-side model
 planning connector. It builds on, and does not erase, the completed Phase 0-14

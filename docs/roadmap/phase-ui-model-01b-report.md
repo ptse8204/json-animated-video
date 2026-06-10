@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-01B Report - First-Run Notebook Unblock
 
 ## Summary

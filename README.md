@@ -475,6 +475,10 @@ More docs:
 The active roadmap for the guided Local UI, server-side model planning
 connector, provider setup, review, export handoff, and Codex operations is
 [`docs/roadmap/ui_model_connector_plan.md`](docs/roadmap/ui_model_connector_plan.md).
+Current Codex agents should start with
+[`docs/codex/START_HERE.md`](docs/codex/START_HERE.md) and use
+[`docs/codex/CONTEXT_MANIFEST.yaml`](docs/codex/CONTEXT_MANIFEST.yaml) to route
+task-specific context instead of loading every roadmap and phase report.
 The earlier public-onboarding roadmap in `docs/codex_future_plan.md` and the
 completed implementation history under `docs/roadmap/` remain useful
 historical context. The latest launch-readiness summary is
@@ -496,8 +500,11 @@ Current release-candidate boundaries:
 
 ## Contributing with Codex
 
-Read `AGENTS.md`, `CODEX_MASTER_PROMPT.md`, `codex_tasks.yaml`, and
-`docs/roadmap/ui_model_connector_plan.md` before making Local UI, model
+Read `AGENTS.md` as a compatibility shim, then use
+`docs/codex/START_HERE.md`, `docs/codex/CURRENT_TASK.md`, and
+`docs/codex/CONTEXT_MANIFEST.yaml` to select the smallest current context for
+the task. If a maintainer explicitly selects the historical UI/model roadmap,
+read `docs/roadmap/ui_model_connector_plan.md` before making Local UI, model
 connector, provider setup, guided review, export handoff, or Codex operational
 changes. Treat `docs/codex_future_plan.md` as historical context unless a
 maintainer explicitly selects that track. Work phase by phase, run the relevant
@@ -510,8 +517,8 @@ Contributor, release, and security docs:
 - [Changelog](CHANGELOG.md)
 - [Release checklist](docs/release_checklist.md)
 
-The old root README planning packet was preserved at
-`docs/codex/planning_packet.md` so Codex instructions are not lost.
+Old Codex planning packets were preserved under `docs/archive/codex_prompts/`
+so history is not lost, but they are not default Codex context.
 
 ## License
 

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 07 Report: Review, Correction, And Export Recovery
 
 Date: 2026-05-17

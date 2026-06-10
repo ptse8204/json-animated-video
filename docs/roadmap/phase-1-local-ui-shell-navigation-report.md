@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 1 Local UI Shell Navigation Report
 
 ## Summary

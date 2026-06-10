@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 01 Report - Rewrite Public README
 
 ## Summary

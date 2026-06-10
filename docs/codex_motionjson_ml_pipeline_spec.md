@@ -1,5 +1,9 @@
 # MotionJSON Multi-Object ML Pipeline Specification
 
+> Historical/reference spec. Current extraction and provider truth lives in
+> `docs/codex/CURRENT_ARCHITECTURE.md`, `src/motionjson/pipeline.py`, and
+> `src/motionjson/providers/`.
+
 ## 1. Core insight
 
 SAM2-style video segmentation is excellent for “given this object, track it.” It is not, by itself, a complete answer to “find every object in this video.” MotionJSON needs explicit object discovery modes before segmentation/tracking.

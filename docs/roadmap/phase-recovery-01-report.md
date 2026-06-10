@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase RECOVERY-01 Report - Truthful Readiness And Effort Controls
 
 ## Summary

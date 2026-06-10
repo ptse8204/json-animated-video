@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-04: Truthful adaptive effort reporting
 
 ## Summary

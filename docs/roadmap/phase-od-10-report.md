@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-10 Report: Trace Everything Expert Mode
 
 ## Summary

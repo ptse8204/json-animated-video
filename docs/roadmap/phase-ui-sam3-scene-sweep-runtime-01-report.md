@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-SAM3-SCENE-SWEEP-RUNTIME-01 Report
 
 ## Summary

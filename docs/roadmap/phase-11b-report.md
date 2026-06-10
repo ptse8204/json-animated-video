@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11B Report: Automatic Object Proposal Workflow
 
 Date: 2026-05-17

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-LAYOUT-02 Report - Studio Review Redesign
 
 ## Summary

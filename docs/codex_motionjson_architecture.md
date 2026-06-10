@@ -1,5 +1,8 @@
 # MotionJSON Architecture Plan
 
+> Historical/reference architecture. Current architecture truth lives in
+> `docs/codex/CURRENT_ARCHITECTURE.md` and source code.
+
 ## 1. Desired architecture
 
 ```text

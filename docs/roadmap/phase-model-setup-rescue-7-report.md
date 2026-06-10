@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Model Setup Rescue 7 Report
 
 ## Summary

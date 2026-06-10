@@ -1,5 +1,8 @@
 # MotionJSON Roadmap for Codex Execution
 
+> Historical roadmap. Do not use this as default Codex context. Start with
+> `docs/codex/START_HERE.md` and the current task file.
+
 ## Roadmap policy
 
 - Execute phases in order.

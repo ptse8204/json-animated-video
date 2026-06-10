@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-UX-02 Report: Contextual Project Drawer
 
 ## Summary

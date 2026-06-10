@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-WORKFLOW-13 Phase Report - Correct Inline Workflow Gaps
 
 ## Summary

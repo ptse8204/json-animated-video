@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 2 Report - Provider Capability Registry And Diagnostics
 
 ## Summary

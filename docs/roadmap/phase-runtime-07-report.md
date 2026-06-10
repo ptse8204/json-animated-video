@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-07: SAM3 diagnostic hardening
 
 ## Summary

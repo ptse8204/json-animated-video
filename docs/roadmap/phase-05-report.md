@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 05 Report: First-Run Diagnostics
 
 Date: 2026-05-16

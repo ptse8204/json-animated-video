@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-11 Report - Discovery Metadata Schema
 
 ## Summary

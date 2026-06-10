@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Report - SAM3 Normal Flow Diagnostics and UI Alignment
 
 ## Summary

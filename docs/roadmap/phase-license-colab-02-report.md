@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase report: license-colab 02 - Colab UI demo
 
 ## Summary

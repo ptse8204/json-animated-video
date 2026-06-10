@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Report: SAM3 Export Validation For Moving Tracks
 
 ## Summary

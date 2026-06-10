@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 7 Report - Local API Server And UI Shell
 
 ## Summary

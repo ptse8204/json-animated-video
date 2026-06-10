@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 04 Report: Documentation Information Architecture
 
 Date: 2026-05-16

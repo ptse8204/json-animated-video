@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-ENV-LOGS-01 Report
 
 ## Summary

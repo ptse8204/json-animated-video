@@ -1,5 +1,8 @@
 # MotionJSON Product Requirements — UI + Multi-Object Video Tracing
 
+> Historical product reference. Use `docs/product/ui_redesign_brief.md` and
+> `docs/codex/SAFETY_INVARIANTS.md` for current UI redesign/product guardrails.
+
 ## 1. Product vision
 
 MotionJSON should let users turn a video into structured, inspectable object motion data without needing to memorize model-specific CLI flags. Users should be able to load a video, choose what they want to trace, run an extraction method, review the result, correct mistakes, and export MotionJSON plus useful debug artifacts.

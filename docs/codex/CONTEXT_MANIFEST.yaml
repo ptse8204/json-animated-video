@@ -1,0 +1,169 @@
+version: 1
+purpose: "Route Codex context without broad doc scans."
+
+always_read:
+  - docs/codex/START_HERE.md
+  - docs/codex/CURRENT_TASK.md
+  - docs/codex/SAFETY_INVARIANTS.md
+  - docs/codex/CURRENT_ARCHITECTURE.md
+  - docs/codex/CONTEXT_MANIFEST.yaml
+
+never_default_read:
+  - docs/archive/
+  - docs/archive/root_docs/
+  - docs/archive/codex_prompts/
+  - docs/archive/phase_reports/
+  - docs/archive/codex_tasks_history.yaml
+  - docs/roadmap/phase-*-report.md
+  - docs/roadmap/final-*.md
+  - docs/roadmap/flow-rebuild-final-audit.md
+  - docs/roadmap/ui_model_connector_plan.md
+  - docs/codex_future_plan.md
+  - docs/archive/codex_prompts/MOTIONJSON_CODEX_FUTURE_PLAN.legacy.md
+  - docs/archive/codex_prompts/MOTIONJSON_CODEX_FUTURE_PLAN.commercial.md
+  - docs/codex_motionjson_roadmap.md
+  - docs/codex_motionjson_prd.md
+  - docs/codex_motionjson_architecture.md
+  - docs/codex_motionjson_context.md
+  - docs/codex_motionjson_ui_spec.md
+  - docs/codex_motionjson_ml_pipeline_spec.md
+  - docs/codex_motionjson_quality_benchmarks.md
+  - docs/design/local-ui-audit.md
+  - docs/design/design-system.md
+  - codex_prompt_pack/
+  - docs/archive/root_docs/AGENTS_old.md
+  - docs/archive/root_docs/README_old.md
+
+subsystems:
+  ui_redesign:
+    docs:
+      - docs/product/ui_redesign_brief.md
+      - docs/local_ui.md
+      - docs/design/local-ui-contract.md
+      - docs/design/local-ui-product-principles.md
+      - docs/pipeline_ui_stability_guide.md
+    source_paths:
+      - src/motionjson/ui/server.py
+      - src/motionjson/ui/static/index.html
+      - src/motionjson/ui/static/app.js
+      - src/motionjson/ui/static/config_builder.js
+      - src/motionjson/ui/static/app.css
+      - src/motionjson/ui/static/ui_selectors.js
+      - scripts/check_local_ui_layout.mjs
+      - scripts/test_ui_config_builder.mjs
+      - scripts/test_ui_modules.mjs
+      - scripts/test_ui_workflow_matrix.mjs
+    commands:
+      - npm run build
+      - npm test
+      - npm run lint
+      - npm run ui:layout
+
+  provider_security:
+    docs:
+      - docs/security/api_keys.md
+      - docs/privacy.md
+      - docs/provider_capabilities.md
+      - docs/provider_pipeline.md
+      - docs/ai_provider_architecture.md
+    source_paths:
+      - src/motionjson/provider_settings.py
+      - src/motionjson/provider_registry.py
+      - src/motionjson/capabilities.py
+      - src/motionjson/backend/api_keys.py
+      - src/motionjson/backend/api.py
+      - src/motionjson/model_connectors/contracts.py
+      - src/motionjson/providers/
+    commands:
+      - python3 -m pytest -q tests/test_provider_settings.py tests/test_provider_registry.py tests/test_capabilities.py tests/test_model_connectors.py tests/test_openrouter_provider.py
+      - python3 -m motionjson.cli backend diagnostics --json
+
+  extraction_pipeline:
+    docs:
+      - docs/run_config.md
+      - docs/provider_pipeline.md
+      - docs/discovery_providers.md
+      - docs/sam2_segmentation.md
+      - docs/sam3_local.md
+      - docs/sam3_hosted.md
+      - docs/track_filtering.md
+      - docs/job_artifacts.md
+      - docs/pipeline_ui_stability_guide.md
+    source_paths:
+      - src/motionjson/config.py
+      - src/motionjson/pipeline.py
+      - src/motionjson/candidate_review.py
+      - src/motionjson/job_artifacts.py
+      - src/motionjson/track_filters.py
+      - src/motionjson/providers/
+      - src/motionjson/adapters/
+      - src/motionjson/backend/worker.py
+      - src/motionjson/backend/jobs.py
+    commands:
+      - python3 -m pytest -q tests/test_config.py tests/test_provider_pipeline.py tests/test_discovery_providers.py tests/test_track_filtering.py tests/test_job_artifacts.py
+      - python3 -m motionjson.cli extract --help
+
+  runtime_export:
+    docs:
+      - docs/runtime.md
+      - docs/final_export.md
+      - docs/schemas.md
+      - docs/rights_and_lineage.md
+      - docs/privacy.md
+    source_paths:
+      - src/motionjson/exporters/
+      - src/motionjson/schemas/
+      - src/motionjson/rights.py
+      - src/motionjson/backend/export_workflows.py
+      - packages/motionjson-runtime/
+      - packages/motionjson-sdk/
+    commands:
+      - python3 -m pytest -q tests/test_final_export.py tests/test_schema_validation.py tests/test_rights_metadata.py
+      - npm test
+      - npm run lint
+
+  release:
+    docs:
+      - docs/index.md
+      - docs/release_checklist.md
+      - docs/release_notes.md
+      - docs/migration_and_known_limitations.md
+      - docs/repo_status.md
+      - README.md
+      - CHANGELOG.md
+      - SECURITY.md
+      - CONTRIBUTING.md
+    source_paths:
+      - pyproject.toml
+      - package.json
+      - packages/motionjson-runtime/package.json
+      - packages/motionjson-sdk/package.json
+      - .github/
+    commands:
+      - python3 -m pytest -q tests/test_docs_links.py tests/test_phase10_release_hardening.py tests/test_phase14_release_candidate.py
+      - npm test
+      - npm run build
+      - git diff --check
+
+  docs_harness:
+    docs:
+      - docs/codex/START_HERE.md
+      - docs/codex/CURRENT_TASK.md
+      - docs/codex/SAFETY_INVARIANTS.md
+      - docs/codex/CURRENT_ARCHITECTURE.md
+      - docs/codex/CONTEXT_MANIFEST.yaml
+      - docs/codex/SCOUT_PROTOCOL.md
+      - docs/archive/README.md
+      - docs/archive/phase_reports/README.md
+      - docs/product/ui_redesign_brief.md
+      - docs/index.md
+    source_paths:
+      - AGENTS.md
+      - CODEX_MASTER_PROMPT.md
+      - codex_tasks.yaml
+      - scripts/check_codex_context_budget.py
+      - tests/test_docs_links.py
+    commands:
+      - python3 scripts/check_codex_context_budget.py
+      - python3 -m pytest -q tests/test_docs_links.py
+      - git diff --check

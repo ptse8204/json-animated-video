@@ -5,6 +5,9 @@ by JSON while keeping photoreal objects as cached raster/alpha assets. Start
 with the no-model path if you are new: it runs on CPU and does not require
 SAM2, CUDA, detector weights, hosted services, or provider credentials.
 
+For Codex agents, start with [Codex Start Here](codex/START_HERE.md). Do not
+use this human-facing docs index as the default Codex read map.
+
 ## I Just Want To Try It Locally
 
 1. [First run setup](first_run.md) explains the base install, diagnostics, the
@@ -121,12 +124,19 @@ base CPU/mock install.
 
 Use this path when continuing the phase-based roadmap:
 
-- [UI model connector roadmap](roadmap/ui_model_connector_plan.md) is the
-  active phase plan for the guided Local UI, browser-verified layout work, safe
-  server-side model planning connector, guided review, and export handoff.
-- [UI/model Codex operational prompts](codex/ui_model_operational_prompts.md)
-  provides copy-ready master-agent, screenshot review, model connector review,
-  release audit, and read-only scout prompts for continuing that roadmap safely.
+- [Codex Start Here](codex/START_HERE.md) is the current agent entrypoint.
+- [Current Codex task](codex/CURRENT_TASK.md) identifies the active work.
+- [Safety invariants](codex/SAFETY_INVARIANTS.md) are stable across UI and
+  provider changes.
+- [Current architecture](codex/CURRENT_ARCHITECTURE.md) maps source paths,
+  command surfaces, optional providers, and validation commands.
+- [Context manifest](codex/CONTEXT_MANIFEST.yaml) routes task-specific docs,
+  source paths, and tests without broad doc scans.
+- [Scout protocol](codex/SCOUT_PROTOCOL.md) keeps read-only reviews bounded.
+- [UI redesign brief](product/ui_redesign_brief.md) states product behavior
+  requirements without preserving old cards, right rails, steppers, or panels.
+- [UI model connector roadmap](roadmap/ui_model_connector_plan.md) is
+  historical/current-track reference material, not default Codex context.
 - [Codex future plan](codex_future_plan.md) preserves the completed
   public-onboarding phase plan and remains useful historical context.
 - [Repository status](repo_status.md) records what is implemented, partial, or
@@ -142,8 +152,9 @@ Use this path when continuing the phase-based roadmap:
 - [Roadmap](roadmap.md) and [Product requirements](product_requirements.md)
   preserve the broader product direction.
 
-Phase reports live under `docs/roadmap/`. Each new phase should record changed
-files, tests, screenshots or demos, known limitations, and follow-up tasks.
+Phase reports live under `docs/roadmap/` and are historical unless a task
+explicitly routes to them. Each new phase should record changed files, tests,
+screenshots or demos, known limitations, and follow-up tasks.
 
 ## Reference
 

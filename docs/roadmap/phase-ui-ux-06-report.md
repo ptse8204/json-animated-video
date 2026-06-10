@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-UX-06 Report: Completion Reconciliation And Guided Refinement Controls
 
 ## Summary

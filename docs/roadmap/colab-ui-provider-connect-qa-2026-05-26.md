@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Colab UI provider-connect QA - 2026-05-26
 
 ## Summary

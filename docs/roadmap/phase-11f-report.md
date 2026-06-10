@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 11F Report: Rights And Lineage Export Warnings
 
 ## Summary

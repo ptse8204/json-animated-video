@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # UI-WORKFLOW-12 Phase Report - Finish Keyframe-First Tracking Workflow
 
 ## Summary

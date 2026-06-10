@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-05: Video-aware adaptive scene sweep tuning
 
 ## Summary

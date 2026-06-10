@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Report: SAM3 Scene Sweep Extraction Contract
 
 ## Summary

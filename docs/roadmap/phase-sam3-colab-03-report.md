@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase SAM3 Colab 03 Report: SAM3 Local Path Diagnostics
 
 ## Summary

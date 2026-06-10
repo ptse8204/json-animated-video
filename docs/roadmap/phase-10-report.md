@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 10 Report: Free Hosted Demo Paths
 
 Date: 2026-05-17

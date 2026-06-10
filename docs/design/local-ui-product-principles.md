@@ -32,16 +32,16 @@ one safe path obvious before it exposes expert controls.
 
 ## Layout Rules
 
-- The desktop shell uses stable regions: left goal rail, main workspace, right
-  inspector.
-- Main workspace owns the video viewer, project/video setup, extraction settings,
-  and run preview.
-- Right inspector owns run monitor, review, artifacts/export, corrections,
-  library, and route diagnostics.
-- At 1024px and below, the inspector moves below the workspace and the content
-  becomes one column.
-- Panels must not require horizontal scrolling at 1366x768, 1440x900,
-  1920x1080, or 1024x768.
+- A redesign may change the shell, navigation, cards, right rails, steppers,
+  dashboards, and panel layout.
+- Preserve source identity, goal clarity, provider readiness, hosted-call
+  consent, run progress, failure recovery, review truth, export readiness, and
+  rights visibility.
+- Keep the normal path readable before exposing advanced diagnostics, raw JSON,
+  logs, routes, or artifacts.
+- Layout must avoid horizontal scrolling, overlapping controls, hidden primary
+  actions, and clipped status/error text at supported viewports.
+- Use `docs/product/ui_redesign_brief.md` as the current redesign brief.
 
 ## State Rules
 

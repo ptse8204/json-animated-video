@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase OD-00 Report: API-First Object Discovery Architecture Audit
 
 ## Summary

@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Flow Rebuild 7 Report: Guided Lifecycle And Job Center Coverage
 
 ## Summary

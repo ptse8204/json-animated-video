@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-02: Partial review payload synthesis
 
 ## Summary

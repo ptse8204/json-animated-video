@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Runtime 08 Report: SAM3 Text Workflow Routing Guard
 
 Generated: 2026-06-05T22:56:38-07:00

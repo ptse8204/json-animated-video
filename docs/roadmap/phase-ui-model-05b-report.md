@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-05B Report - First-Class SAM3 Guided Flow
 
 ## Summary

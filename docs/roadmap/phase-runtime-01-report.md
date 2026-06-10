@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase runtime-01: Worker heartbeat and safe stale diagnostics
 
 ## Summary

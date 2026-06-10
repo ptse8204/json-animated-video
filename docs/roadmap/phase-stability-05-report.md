@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase Stability 05 Report
 
 ## Summary

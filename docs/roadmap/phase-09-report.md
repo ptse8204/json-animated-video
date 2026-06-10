@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 09 Report: CI, Packaging, And Release Readiness
 
 Date: 2026-05-17

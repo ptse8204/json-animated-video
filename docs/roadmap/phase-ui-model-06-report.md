@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase UI-MODEL-06 Report - Model Plan To Extraction Run
 
 ## Summary

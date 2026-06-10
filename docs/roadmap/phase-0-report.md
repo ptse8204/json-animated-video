@@ -1,3 +1,8 @@
+---
+historical: true
+default_context: false
+---
+
 # Phase 0 Report - Repository Discovery and Guardrails
 
 ## Summary
