@@ -819,7 +819,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           cutoutPreviewText: document.querySelector("[data-testid='cutout-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           candidateListText: document.querySelector("[data-testid='candidate-list']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runEventsText: document.querySelector("[data-testid='run-events']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runEventsSectionBox: elementBox(".run-events-section"),
+          runEventsListBox: elementBox("[data-testid='run-events']"),
           runTemporalTimelineVisible: visible(document.querySelector("#runTemporalTimeline")),
+          runTemporalTimelineBox: elementBox("#runTemporalTimeline"),
           runPreflightSummaryText: document.querySelector("#runPreflightSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           railContextTitle: document.querySelector("#railContextTitle")?.textContent?.trim() || "",
           usageDrawerText: document.querySelector("[data-testid='usage-drawer']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -866,6 +869,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
             }
             return [...new Set(overlaps)];
           })(),
+          commandFooterBox: elementBox("[data-testid='command-footer']"),
           workflowActiveStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
           workflowDashboard: false,
           workflowPanels: [...document.querySelectorAll("[data-workflow-panel]")].map((element) => {
@@ -1149,6 +1153,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         !/sam2-local|SAM2 local|SAM2/i.test(stateValue.runPreflightSummaryText))
     ) {
       failures.push(`${viewport.name}/${state}: run cockpit should show temporal timeline and compact preflight summary`);
+    }
+    if (state === "workflow-run" && viewport.width >= 1200) {
+      const footerTop = stateValue.commandFooterBox?.top || stateValue.viewportHeight;
+      if (!stateValue.runEventsSectionBox || stateValue.runEventsSectionBox.top >= footerTop - 24) {
+        failures.push(`${viewport.name}/${state}: run events should be visible above the command footer in the first viewport`);
+      }
+      if (!stateValue.runEventsListBox || stateValue.runEventsListBox.top >= footerTop - 24) {
+        failures.push(`${viewport.name}/${state}: run event rows should be readable above the command footer in the first viewport`);
+      }
+      if (!stateValue.runTemporalTimelineBox || stateValue.runTemporalTimelineBox.top >= footerTop - 24) {
+        failures.push(`${viewport.name}/${state}: run timeline should be visible above the command footer in the first viewport`);
+      }
     }
     if (state === "workflow-run" && (!stateValue.mainJobCenterVisible || stateValue.mainLivePreviewCardCount < 1 || !/selected object/i.test(stateValue.mainLivePreviewText))) {
       failures.push(`${viewport.name}/${state}: run monitor should show live mask/cutout output for the running selected object`);

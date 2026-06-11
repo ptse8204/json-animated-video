@@ -7454,6 +7454,128 @@ summary.advanced-task-heading::after {
   display: block !important;
 }
 
+@media (min-width: 1181px) {
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit {
+    display: grid;
+    grid-template-columns: minmax(420px, 1.25fr) minmax(230px, 0.55fr) minmax(250px, 0.62fr);
+    grid-template-areas:
+      "heading heading heading"
+      "phases phases phases"
+      "activity activity activity"
+      "source evidence candidates"
+      "preflight timeline candidates"
+      "events events candidates"
+      "details details details"
+      "logs logs logs";
+    gap: 9px 14px;
+    padding-bottom: 82px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-heading {
+    grid-area: heading;
+    margin-bottom: 0;
+    padding-bottom: 8px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-heading h2 {
+    font-size: 23px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-phase-timeline {
+    grid-area: phases;
+    padding: 4px 0 2px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-current-row {
+    grid-area: activity;
+    min-height: 34px;
+    padding-bottom: 0;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-current-activity {
+    font-size: 16px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-layout {
+    display: contents;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-preview {
+    grid-area: source;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-stack {
+    grid-area: evidence;
+    gap: 8px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-candidate-column {
+    grid-area: candidates;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-events-section {
+    grid-area: events;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-preflight-summary {
+    grid-area: preflight;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-temporal-strip {
+    grid-area: timeline;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-job-details-disclosure {
+    grid-area: details;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-monitor-log-panel {
+    grid-area: logs;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-preview,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-stack,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-candidate-column,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-events-section,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-preflight-summary,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-temporal-strip {
+    padding-top: 8px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-shell,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-placeholder {
+    min-height: 0;
+    height: clamp(188px, 23vh, 230px);
+    aspect-ratio: auto;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-image {
+    min-height: 76px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-image img {
+    max-height: 96px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-event-list {
+    max-height: 96px;
+    overflow: auto;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-event-row {
+    min-height: 34px;
+    padding: 6px 0;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-preflight-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-temporal-marker-track {
+    height: 28px;
+  }
+}
+
 @media (max-width: 1120px) {
   .run-cockpit-layout {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
@@ -7938,6 +8060,7 @@ body {
 .topbar-actions {
   gap: 8px;
   flex-wrap: nowrap;
+  min-width: 0;
 }
 
 #apiStatus.status-chip,
@@ -7992,11 +8115,25 @@ body {
 }
 
 .command-icon-button {
+  flex: 0 0 auto;
   justify-content: center;
   min-width: 36px;
   padding: 0 10px;
   color: #263445;
   background: #f7f9fb;
+}
+
+#apiStatus.status-chip,
+#diagnosticsSummary.status-chip {
+  flex: 0 0 auto;
+}
+
+#providerIdentityChip.status-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: min(320px, 28vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar {
@@ -9958,10 +10095,14 @@ body {
     grid-template-rows: auto minmax(0, 1fr) !important;
   }
 
-  .sidebar,
-  .app-shell:not(.is-sidebar-collapsed) .sidebar,
   .app-shell.is-sidebar-collapsed .sidebar {
     display: none !important;
+  }
+
+  .app-shell:not(.is-sidebar-collapsed) .sidebar {
+    display: grid !important;
+    width: min(360px, calc(100vw - 20px)) !important;
+    max-width: calc(100vw - 20px) !important;
   }
 
   .journey-nav {
