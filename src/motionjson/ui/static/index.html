@@ -92,10 +92,30 @@
         </div>
       </aside>
 
-      <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1">
-        <header class="topbar studio-topbar">
+      <nav id="journeyNav" class="journey-nav" aria-label="Extraction journey" data-testid="journey-nav">
+        <div class="journey-nav-header">
+          <span class="journey-kicker">Journey</span>
+          <button id="journeyNavToggle" class="journey-collapse" type="button" aria-controls="journeyNavList" aria-expanded="true">Collapse</button>
+        </div>
+        <ol id="journeyNavList" class="journey-nav-list">
+          <li><button type="button" data-workflow-step="choose_goal" data-journey-phase="goal"><span class="journey-dot" aria-hidden="true"></span><strong>Goal</strong><small>Choose the job</small></button></li>
+          <li><button type="button" data-workflow-step="source_video" data-journey-phase="source"><span class="journey-dot" aria-hidden="true"></span><strong>Source</strong><small>Add video</small></button></li>
+          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="target"><span class="journey-dot" aria-hidden="true"></span><strong>Target</strong><small>Define object</small></button></li>
+          <li><button type="button" data-workflow-step="provider_settings" data-journey-phase="model"><span class="journey-dot" aria-hidden="true"></span><strong>Model</strong><small>Prepare provider</small></button></li>
+          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="preflight"><span class="journey-dot" aria-hidden="true"></span><strong>Preflight</strong><small>Confirm run</small></button></li>
+          <li><button type="button" data-workflow-step="run_monitor" data-journey-phase="run"><span class="journey-dot" aria-hidden="true"></span><strong>Run</strong><small>Watch output</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="review" data-journey-phase="review"><span class="journey-dot" aria-hidden="true"></span><strong>Review</strong><small>Keep tracks</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="review" data-journey-phase="correct"><span class="journey-dot" aria-hidden="true"></span><strong>Correct</strong><small>Refine results</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="export" data-journey-phase="export"><span class="journey-dot" aria-hidden="true"></span><strong>Export</strong><small>Create layer</small></button></li>
+        </ol>
+      </nav>
+
+      <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1" data-testid="workflow-stage">
+        <header class="topbar studio-topbar" data-testid="app-command-bar">
           <div class="studio-brand-group">
             <strong class="studio-wordmark">Motion<span>JSON</span></strong>
+          </div>
+          <div class="command-identity" aria-label="Current project and source">
             <button
               id="projectDrawerToggle"
               class="studio-project-pill project-drawer-trigger"
@@ -103,8 +123,12 @@
               aria-controls="workspaceSidebar"
               aria-expanded="false"
             >Project</button>
+            <span id="sourceIdentityChip" class="command-identity-chip">
+              <small>Source</small>
+              <strong>No video selected</strong>
+            </span>
           </div>
-          <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
+          <ol id="studioProgressStepper" class="studio-progress sr-workflow-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
             <li class="is-active" data-studio-step="choose_goal">
               <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Start</strong></button>
             </li>
@@ -129,8 +153,11 @@
           </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
-            <span id="diagnosticsSummary" class="status-chip is-muted">Main workflow</span>
+            <span id="providerIdentityChip" class="status-chip is-muted">Provider pending</span>
+            <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer-toggle" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
+            <button class="command-icon-button" type="button" aria-label="Help">?</button>
+            <button class="command-icon-button" type="button" aria-label="Settings">Settings</button>
           </div>
         </header>
 
@@ -146,52 +173,62 @@
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" data-testid="goal-trace-one-object" aria-pressed="true">
               <span class="goal-card-title">Cut out one object</span>
               <span class="goal-card-copy">Place a point or box, then track that subject.</span>
+              <span class="goal-card-meta">Best for one named object · SAM2/SAM3 prompt path · review required</span>
             </button>
             <button class="goal-card" type="button" data-preset="pick_objects_from_frame" data-testid="goal-pick-objects-from-frame" aria-pressed="false">
               <span class="goal-card-title">Pick objects from one frame</span>
               <span class="goal-card-copy">Scan one frame first, keep what matters, then track only those objects.</span>
+              <span class="goal-card-meta">Best for busy scenes · automatic proposals · lower cost after selection</span>
             </button>
             <button class="goal-card" type="button" data-preset="text_detector" data-testid="goal-text-detector" aria-pressed="false">
               <span class="goal-card-title">Find by description</span>
               <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
+              <span class="goal-card-meta">Needs detector/open-vocabulary provider · hosted paths require consent</span>
             </button>
             <button class="goal-card" type="button" data-preset="review_existing" data-testid="goal-review-existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
               <span class="goal-card-copy">Open a prior result and check tracks before export.</span>
+              <span class="goal-card-meta">No model needed · validates existing tracks · export gate still applies</span>
             </button>
           </div>
-          <div class="advanced-task-panel" aria-label="Advanced tracing tasks">
-            <div class="advanced-task-heading">
+          <details class="advanced-task-panel" aria-label="Advanced tracing tasks">
+            <summary class="advanced-task-heading">
               <h3>Advanced tasks</h3>
               <span class="row-meta">Specialized workflows</span>
-            </div>
+            </summary>
             <div class="advanced-goal-list">
               <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
                 <span class="goal-card-title">Find everything in scene</span>
                 <span class="goal-card-copy">Run a broader scene sweep when one-frame picking is not enough.</span>
+                <span class="goal-card-meta">SAM3 scene sweep recommended · noisier · review-gated</span>
               </button>
               <button class="goal-card" type="button" data-preset="motion_foreground" data-testid="goal-motion-foreground" aria-pressed="false">
                 <span class="goal-card-title">Find moving things</span>
                 <span class="goal-card-copy">Use runtime motion cues without a model.</span>
+                <span class="goal-card-meta">CPU/no-model path · good for stable clips · false motion possible</span>
               </button>
               <button class="goal-card" type="button" data-preset="auto_object_proposals" data-testid="goal-auto-object-proposals" aria-pressed="false">
                 <span class="goal-card-title">Discover objects</span>
                 <span class="goal-card-copy">Generate automatic proposals before tracking.</span>
+                <span class="goal-card-meta">Proposal first · review required · caps noisy results</span>
               </button>
               <button class="goal-card" type="button" data-preset="sam_auto_masks" data-testid="goal-sam-auto-masks" aria-pressed="false">
                 <span class="goal-card-title">Propose all visible segments</span>
                 <span class="goal-card-copy">Use noisier segmentation for expert review.</span>
+                <span class="goal-card-meta">Expert mode · high noise/cost risk · never export-ready automatically</span>
               </button>
               <button class="goal-card" type="button" data-preset="external_masks" data-testid="goal-external-masks" aria-pressed="false">
                 <span class="goal-card-title">Import masks</span>
                 <span class="goal-card-copy">Bring prepared masks into review.</span>
+                <span class="goal-card-meta">No model needed · mask frame alignment required · review before export</span>
               </button>
               <button class="goal-card" type="button" data-preset="class_detector" data-testid="goal-class-detector" aria-pressed="false">
                 <span class="goal-card-title">Find known classes</span>
                 <span class="goal-card-copy">Use configured detector classes.</span>
+                <span class="goal-card-meta">Detector setup required · class list driven · review uncertain matches</span>
               </button>
             </div>
-          </div>
+          </details>
         </section>
 
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow" data-testid="workflow-controller">
@@ -221,7 +258,7 @@
             <li><button type="button" data-workflow-step="review_export"><span>7</span><strong>Review</strong><small>Correct and export</small></button></li>
           </ol>
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
-          <div class="workflow-footer">
+          <div class="workflow-footer" data-testid="command-footer">
             <div class="workflow-footer-actions">
               <button id="workflowBackButton" type="button" data-testid="workflow-back">Back</button>
               <button id="workflowPrimaryButton" class="primary-action" type="button" data-testid="workflow-primary">Continue to video</button>
@@ -231,53 +268,128 @@
           </div>
         </section>
 
-        <section id="mainJobCenter" class="job-center-panel panel" data-workflow-panel="run_monitor" aria-label="Job center">
-          <div class="job-center-heading">
+        <section id="mainJobCenter" class="job-center-panel run-cockpit panel" data-workflow-panel="run_monitor" aria-label="Extraction cockpit" data-testid="run-cockpit">
+          <div class="job-center-heading run-cockpit-heading">
             <div>
               <p class="section-kicker">Job Center</p>
-              <h2>Run monitor</h2>
+              <h2>Extraction cockpit</h2>
+              <p id="runCockpitSubtitle" class="panel-note">Start a run to trace reusable motion objects from the source video.</p>
             </div>
-            <span id="mainJobSummary" class="subtle-chip">0 active</span>
+            <div class="run-cockpit-heading-actions">
+              <span id="mainJobSummary" class="subtle-chip">0 active</span>
+              <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
+            </div>
           </div>
-          <div id="mainRunMonitorSummary" class="status-summary-grid" aria-live="polite"></div>
-          <div class="main-job-center-grid">
-            <section class="compact-panel">
-              <div class="panel-heading compact-heading">
-                <h3>Jobs</h3>
-                <span id="mainRunStatus" class="status-chip is-muted">No run</span>
+
+          <ol id="runPhaseTimeline" class="run-phase-timeline" data-testid="phase-timeline" aria-label="Extraction phases"></ol>
+
+          <div class="run-current-row">
+            <p id="runCurrentActivity" class="run-current-activity" data-testid="current-activity" aria-live="polite">No run selected.</p>
+            <div id="mainRunStatusChips" class="run-status-chips" data-testid="run-status-chips">
+              <span id="mainRunStatus" class="status-chip is-muted">No run</span>
+            </div>
+          </div>
+
+          <div id="mainRunMonitorSummary" class="status-summary-grid run-monitor-summary" aria-live="polite"></div>
+
+          <div class="run-cockpit-layout">
+            <section class="run-source-preview" aria-label="Source frame preview" data-testid="source-frame-preview">
+              <div class="run-source-frame-shell" id="runSourceFramePreview">
+                <video id="runSourceFrameVideo" class="run-source-frame-video" muted playsinline preload="metadata"></video>
+                <div id="runSourceFramePlaceholder" class="run-source-frame-placeholder">Source frame preview appears after a video is readable.</div>
+                <div id="runObjectOverlay" class="run-object-overlay" data-testid="object-overlay" aria-hidden="true"></div>
               </div>
-              <div id="mainJobList" class="artifact-list"></div>
+              <div class="run-source-frame-caption">
+                <strong id="runSourceFrameLabel">Source frame</strong>
+                <span id="runSourceFrameMeta" class="row-meta">No frame data yet.</span>
+              </div>
             </section>
-            <section class="compact-panel">
-              <div class="panel-heading compact-heading">
+
+            <section class="run-evidence-stack" aria-label="Latest output evidence">
+              <article class="run-evidence-preview" data-testid="mask-preview">
+                <div class="run-evidence-heading">
+                  <strong>Mask preview</strong>
+                  <span id="runMaskPreviewStatus" class="row-meta">Waiting</span>
+                </div>
+                <div id="runMaskPreview" class="run-evidence-image"></div>
+              </article>
+              <article class="run-evidence-preview" data-testid="cutout-preview">
+                <div class="run-evidence-heading">
+                  <strong>Cutout preview</strong>
+                  <span id="runCutoutPreviewStatus" class="row-meta">Waiting</span>
+                </div>
+                <div id="runCutoutPreview" class="run-evidence-image"></div>
+              </article>
+              <div class="run-live-preview-panel">
+                <div class="run-evidence-heading">
+                  <strong>Latest artifacts</strong>
+                  <span id="mainLivePreviewStatus" class="subtle-chip">Waiting</span>
+                </div>
+                <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
+              </div>
+            </section>
+
+            <section class="run-candidate-column" aria-label="Candidates and tracks">
+              <div class="run-evidence-heading">
+                <strong>Candidates and tracks</strong>
+                <span id="runCandidateSummary" class="row-meta">No candidates yet.</span>
+              </div>
+              <div id="mainJobList" class="run-candidate-list" data-testid="candidate-list"></div>
+            </section>
+          </div>
+
+          <section class="run-events-section" aria-label="Readable run events">
+            <div class="run-evidence-heading">
+              <strong>Run events</strong>
+              <span id="mainEventCount" class="subtle-chip">0 events</span>
+            </div>
+            <div id="mainJobEventLog" class="run-event-list" data-testid="run-events" aria-live="polite"></div>
+          </section>
+
+          <div id="runPreflightSummary" class="run-preflight-summary" aria-label="Preflight summary"></div>
+
+          <section id="runTemporalTimeline" class="run-temporal-strip" aria-label="Run timeline" data-testid="temporal-timeline">
+            <div class="run-temporal-heading">
+              <strong>Timeline</strong>
+              <span id="runTemporalSummary" class="row-meta">No temporal markers yet.</span>
+            </div>
+            <div id="runTemporalMarkerTrack" class="run-temporal-marker-track" role="list" aria-label="Run timeline markers"></div>
+          </section>
+
+          <details id="runJobDetailsDisclosure" class="run-job-details-disclosure">
+            <summary>Job details and recovery actions</summary>
+            <div class="run-job-details-grid">
+              <section>
                 <h3>Selected run</h3>
-                <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
-              </div>
-              <dl id="mainSelectedJobFacts" class="facts"></dl>
-              <div id="mainFailedRunActions" class="inline-actions" hidden>
-                <button id="mainOpenLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
-                <button id="mainCopyRunDebugReportButton" type="button">Copy debug report</button>
-                <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
-                <button id="mainChangeSetupButton" type="button">Change setup</button>
-                <button id="mainChooseModelButton" type="button">Choose different model</button>
-              </div>
-            </section>
-            <section class="compact-panel run-live-preview-panel">
-              <div class="panel-heading compact-heading">
-                <h3>Live output</h3>
-                <span id="mainLivePreviewStatus" class="subtle-chip">Waiting</span>
-              </div>
-              <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
-            </section>
-          </div>
-          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel" open>
-            <summary>Logs and events</summary>
+                <dl id="mainSelectedJobFacts" class="facts"></dl>
+              </section>
+              <section>
+                <h3>Actions</h3>
+                <div id="mainFailedRunActions" class="inline-actions" hidden>
+                  <button id="mainOpenLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
+                  <button id="mainCopyRunDebugReportButton" type="button">Copy debug report</button>
+                  <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
+                  <button id="mainChangeSetupButton" type="button">Change setup</button>
+                  <button id="mainChooseModelButton" type="button">Choose different model</button>
+                </div>
+              </section>
+            </div>
+          </details>
+
+          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel">
+            <summary>Raw logs and artifacts</summary>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
-                <h3>Logs</h3>
-                <span id="mainEventCount" class="subtle-chip">0 events</span>
+                <h3>Raw log stream</h3>
               </div>
-              <div id="mainJobEventLog" class="event-log" aria-live="polite"></div>
+              <div class="raw-log-tools">
+                <label>
+                  <span>Search logs</span>
+                  <input id="mainRawLogSearch" type="search" placeholder="stage, object, error" />
+                </label>
+                <button id="mainCopyRawLogsButton" type="button">Copy redacted logs</button>
+              </div>
+              <div id="mainRawJobEventLog" class="event-log" aria-live="polite"></div>
             </section>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
@@ -365,7 +477,7 @@
               <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
               <button id="markKeyframeButton" type="button" aria-keyshortcuts="M" title="Mark current frame as a keyframe">Mark keyframe</button>
             </div>
-            <div class="timeline-review" aria-label="Review timeline">
+            <div class="timeline-review" aria-label="Review timeline" data-testid="temporal-timeline">
               <div id="timelineMarkerTrack" class="timeline-marker-track" role="list" aria-label="API review timeline markers"></div>
               <div class="timeline-keyframe-row">
                 <span id="timelineSummary" class="row-meta">No API timeline loaded.</span>
@@ -385,11 +497,12 @@
               <button id="studioExportAllButton" type="button">Export all reviewed</button>
             </div>
             <div class="studio-bulk-actions" role="toolbar" aria-label="Bulk review actions">
-              <button id="studioRejectBackgroundButton" type="button">Reject background-like</button>
+              <button id="studioRejectBackgroundButton" type="button">Reject background</button>
               <button id="studioMergeDuplicatesButton" type="button">Merge duplicates</button>
               <button id="studioExportSelectedButton" type="button">Export selected</button>
             </div>
             <div id="studioPartialDiagnostic" class="studio-partial-diagnostic" hidden></div>
+            <div id="studioReadinessStrip" class="studio-readiness-strip" data-testid="export-readiness" aria-live="polite"></div>
             <div id="reviewCandidateSectionSlot" class="review-inline-slot" aria-label="Candidate review"></div>
             <section id="studioTrackInspector" class="studio-track-inspector" aria-label="Selected object diagnostics">
               <div class="studio-inspector-heading">
@@ -412,6 +525,7 @@
               </div>
               <div id="studioExportDecision" class="export-decision-slot" aria-live="polite"></div>
               <div id="studioExportIncludedObjects" class="studio-export-included-list" aria-live="polite"></div>
+              <div id="studioExportReuseGuide" class="studio-export-reuse-guide" aria-live="polite" hidden></div>
               <div id="studioExportChecklist" class="studio-export-checklist" aria-live="polite"></div>
               <div class="studio-export-actions">
                 <button id="studioValidateExportButton" type="button">Validate again</button>
@@ -421,8 +535,8 @@
             <section class="review-tools-panel" aria-label="Review tools">
               <div class="review-tools-heading">
                 <div>
-                  <strong>Review tools</strong>
-                  <p class="row-meta">Open package previews for playback, prompt correction, and timeline checks.</p>
+                  <strong>Layer reuse checks</strong>
+                  <p class="row-meta">Open playback, object selection, and timeline views before sharing the object layer.</p>
                 </div>
                 <a id="reviewToolOpenLink" class="mini-action" href="#" target="_blank" rel="noopener noreferrer" hidden>Open full view</a>
               </div>
@@ -829,11 +943,11 @@
         </section>
       </section>
 
-      <aside id="diagnosticsRail" class="right-rail" aria-label="Jobs and diagnostics">
+      <aside id="diagnosticsRail" class="right-rail" aria-label="Context inspector" data-testid="context-inspector-drawer">
         <div class="rail-heading">
           <div>
-            <p class="section-kicker">Details</p>
-            <strong>Run, review, diagnostics</strong>
+            <p class="section-kicker">Inspector</p>
+            <strong id="railContextTitle">Context details</strong>
           </div>
           <button
             id="railCloseButton"
@@ -843,6 +957,25 @@
             aria-expanded="true"
           >Hide details</button>
         </div>
+
+        <details id="usageInspectorDisclosure" class="rail-section usage-inspector-section" open data-testid="usage-drawer">
+          <summary>Usage</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Job usage</h2>
+              <span id="jobUsageStatus" class="status-chip is-muted">No run</span>
+            </div>
+            <dl id="jobUsageFacts" class="facts usage-facts" data-testid="job-usage"></dl>
+            <div id="jobUsageNotes" class="diagnostic-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Workspace usage</h2>
+              <span id="workspaceUsageStatus" class="status-chip is-muted">Local</span>
+            </div>
+            <dl id="workspaceUsageFacts" class="facts usage-facts" data-testid="workspace-usage"></dl>
+          </section>
+        </details>
 
         <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Provider settings</summary>
@@ -867,7 +1000,7 @@
           </section>
         </details>
 
-        <details class="rail-section" data-workflow-panel="validate_run review_candidates" open>
+        <details class="rail-section" data-workflow-panel="run_monitor validate_run review_candidates" open>
           <summary>Run monitor</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
@@ -914,6 +1047,13 @@
               <div class="panel-heading compact-heading">
                 <h2>Logs</h2>
                 <span id="eventCount" class="subtle-chip">0 events</span>
+              </div>
+              <div class="raw-log-tools">
+                <label>
+                  <span>Search logs</span>
+                  <input id="rawLogSearch" type="search" placeholder="stage, object, error" />
+                </label>
+                <button id="copyRawLogsButton" type="button">Copy redacted logs</button>
               </div>
               <div id="jobEventLog" class="event-log" data-testid="job-event-log" aria-live="polite"></div>
             </section>

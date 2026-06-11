@@ -103,6 +103,7 @@ export const defaultState = () => ({
   applyingAdaptiveParameters: false,
   reviewExportSubscreen: "review",
   activeWorkflowStep: "choose_goal",
+  activeJourneyPhase: "",
   workflowDashboard: false,
   activeTool: "point",
   pointKind: "positive_point",

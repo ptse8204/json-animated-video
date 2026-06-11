@@ -5749,7 +5749,10 @@ const MotionJSONUI = (() => {
       return (
         [...document.querySelectorAll("[data-workflow-step]")]
           .filter((button) => button.dataset.workflowStep === normalized)
-          .sort((a, b) => Number(a.closest("#studioProgressStepper") ? -1 : 1) - Number(b.closest("#studioProgressStepper") ? -1 : 1))[0] || null
+          .sort((a, b) => {
+            const priority = (button) => (button.closest("#journeyNav") ? -2 : button.closest("#studioProgressStepper") ? -1 : 1);
+            return priority(a) - priority(b);
+          })[0] || null
       );
     }
 
@@ -5759,6 +5762,12 @@ const MotionJSONUI = (() => {
 
     function workflowFragments() {
       return [...document.querySelectorAll("[data-workflow-fragment]")];
+    }
+
+    function reviewWorkflowMode() {
+      if (state.activeWorkflowStep !== "review_export") return "";
+      if (state.reviewExportSubscreen === "export") return "export";
+      return state.activeJourneyPhase === "correct" ? "correct" : "review";
     }
 
     function workflowSnapshot() {
@@ -5877,16 +5886,16 @@ const MotionJSONUI = (() => {
       const setupCopy = {
         title:
           activeStep === "choose_goal"
-            ? "Choose your goal"
+            ? "What am I trying to make?"
             : state.selectedPreset === "review_existing"
               ? "Open an existing result"
-              : "Upload video and project settings",
+              : "Which video am I extracting from?",
         note:
           activeStep === "choose_goal"
-            ? "Pick a goal-first workflow. Continue changes this workspace to the next step."
+            ? "Choose the extraction job first. MotionJSON will recommend the safest path from that choice."
             : state.selectedPreset === "review_existing"
             ? "Open a MotionJSON result for review. Guided mode creates the workspace automatically."
-            : "Choose a video file. MotionJSON creates the workspace and prepares a browser-safe preview automatically.",
+            : "Add a source video, confirm MotionJSON can read it, then keep the file local unless you explicitly opt into hosted providers.",
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
@@ -5901,12 +5910,12 @@ const MotionJSONUI = (() => {
                 title: /^sam3-/.test(String(enginePlan.providerName || "")) ? "Trace the object" : "Trace the object",
                 note: /^sam3-/.test(String(enginePlan.providerName || ""))
                   ? "SAM3 single-object tracing uses one box prompt in the viewer before the run starts."
-                  : "Name the object, then draw a point or box prompt in the viewer.",
+                  : "Name the target object, then draw a point or box prompt directly on the representative frame.",
               }
             : state.selectedPreset === "trace_all_objects"
               ? {
                   title: "Prepare object discovery",
-                  note: "Choose the discovery quality and review plan before running mask proposals.",
+                  note: "Choose the discovery mode, quality, and review plan before running mask proposals.",
                 }
               : state.selectedPreset === "pick_objects_from_frame"
                 ? {
@@ -5928,14 +5937,14 @@ const MotionJSONUI = (() => {
                 note: "Watch progress and logs here. Failed runs keep recovery actions visible.",
               }
           : {
-              title: goalRequiresModel(state.selectedPreset) ? "Choose and install models" : "No model is needed",
+              title: goalRequiresModel(state.selectedPreset) ? "Can the recommended model path run here?" : "No model is needed",
               note: goalRequiresModel(state.selectedPreset)
-                ? "Choose one compatible SAM engine for this workflow. Install, access checks, smoke tests, API keys, and runtime paths stay inside this flow."
+                ? "Start with one recommended provider/model path. Install, cache, credential, consent, and diagnostics details stay inside this step."
                 : "This workflow runs without SAM model setup.",
             };
       const configCopy = {
-        title: "Advanced run plan",
-        note: "Raw config, validation, and save/load controls stay available in Advanced when you need the full technical view.",
+        title: "What will happen if I press Run?",
+        note: "Review the source, target, provider, locality, sample budget, output destination, and blockers before extraction starts.",
       };
       const copyTargets = [
         ["#setupPanelTitle", setupCopy.title],
@@ -6099,7 +6108,9 @@ const MotionJSONUI = (() => {
         stepId === "review_export"
           ? state.reviewExportSubscreen === "export"
             ? ["export"]
-            : ["review_candidates", "correct_tracks"]
+            : state.activeJourneyPhase === "correct"
+              ? ["correct_tracks"]
+              : ["review_candidates"]
           : WORKFLOW_PANEL_STEP_ALIASES[stepId] || [stepId];
       return aliases.some((alias) => steps.includes(alias));
     }
@@ -6118,11 +6129,15 @@ const MotionJSONUI = (() => {
       const visibleStepIds = [activeStep];
       const postRun = postRunSnapshot();
       const exportSubscreen = activeStep === "review_export" && state.reviewExportSubscreen === "export";
+      const reviewMode = reviewWorkflowMode();
+      const inspectorOpen = Boolean(state.railOpenedByUser) || !shell?.classList.contains("is-rail-collapsed");
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
+      shell?.classList.toggle("is-review-workbench", reviewMode === "review");
+      shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
       if (shell) {
         for (const className of Array.from(shell.classList)) {
           if (className.startsWith("is-workflow-step-")) shell.classList.remove(className);
@@ -6136,10 +6151,12 @@ const MotionJSONUI = (() => {
           !showAll &&
           (
             ["studioBottomCta", "runPlanAlert", "modelPlanPanel", "postRunGuide"].includes(panel.id) ||
-            (panel.id === "mainJobCenter" && activeStep !== "run_monitor" && !state.selectedJobId) ||
+            (panel.id === "mainJobCenter" && activeStep !== "run_monitor") ||
             (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
-        const visible = !hiddenInSimpleMode && (showAll || ((!railDetail || showReviewDetails) && matchesVisibleStep));
+        const visible =
+          !hiddenInSimpleMode &&
+          (showAll || (!railDetail && matchesVisibleStep) || (railDetail && matchesVisibleStep && (inspectorOpen || showReviewDetails)));
         setElementWorkflowHidden(panel, !visible);
         if (visible && panel.matches("details.rail-section") && !showAll) {
           panel.open = true;
@@ -6148,8 +6165,82 @@ const MotionJSONUI = (() => {
       for (const fragment of workflowFragments()) {
         setElementWorkflowHidden(fragment, !(showAll || visibleStepIds.some((stepId) => fragmentMatchesWorkflowStep(fragment, stepId))));
       }
-      setRailCollapsed(true, { persist: false });
+      if (!state.railOpenedByUser) setRailCollapsed(true, { persist: false });
       scheduleDrawOverlay();
+    }
+
+    function renderJourneyNav(snapshot, readiness, activeStep) {
+      const nav = $("#journeyNav");
+      if (!nav) return;
+      const activePhase =
+        activeStep === "choose_goal"
+          ? "goal"
+          : activeStep === "source_video"
+            ? "source"
+            : activeStep === "provider_settings"
+              ? "model"
+              : activeStep === "prompt_preview"
+                ? state.activeJourneyPhase === "preflight"
+                  ? "preflight"
+                  : "target"
+                : activeStep === "run_monitor"
+                  ? "run"
+                  : state.reviewExportSubscreen === "export"
+                    ? "export"
+                    : state.activeJourneyPhase === "correct"
+                      ? "correct"
+                      : "review";
+      const phaseReadiness = {
+        goal: readiness.choose_goal,
+        source: readiness.source_video,
+        target: readiness.prompt_preview,
+        model: readiness.provider_settings,
+        preflight: {
+          status: snapshot.backendValidated ? "done" : readiness.prompt_preview?.status || "needs-action",
+          complete: Boolean(snapshot.backendValidated || snapshot.selectedJobId),
+          message: snapshot.backendValidated ? "Preflight validation passed." : "Confirm what extraction will run before starting.",
+          tone: snapshot.backendValidated ? "is-ready" : "is-warn",
+        },
+        run: readiness.run_monitor,
+        review: readiness.review_export,
+        correct: {
+          status: snapshot.correctionCount ? "done" : snapshot.trackCount ? "ready" : "needs-action",
+          complete: Boolean(snapshot.correctionCount),
+          message: snapshot.trackCount ? "Correction tools are available for reviewed tracks." : "Run extraction before correcting tracks.",
+          tone: snapshot.correctionCount ? "is-ready" : snapshot.trackCount ? "is-warn" : "is-muted",
+        },
+        export: {
+          status: snapshot.exportOk ? "done" : snapshot.exportIncludedCount ? "ready" : "needs-action",
+          complete: Boolean(snapshot.exportOk),
+          message: snapshot.exportOk ? "Reusable object layer exported." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
+          tone: snapshot.exportOk ? "is-ready" : snapshot.exportIncludedCount ? "is-warn" : "is-muted",
+        },
+      };
+      const phaseOrder = ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export"];
+      const activeOrder = Math.max(0, phaseOrder.indexOf(activePhase));
+      nav.querySelectorAll("[data-journey-phase]").forEach((button) => {
+        const phase = button.dataset.journeyPhase || "";
+        const phaseIndex = Math.max(0, phaseOrder.indexOf(phase));
+        const item = button.closest("li");
+        const itemReadiness = phaseReadiness[phase] || {};
+        const active = phase === activePhase;
+        const blocked = itemReadiness.status === "blocked";
+        const complete = Boolean(itemReadiness.complete) && phaseIndex < activeOrder;
+        button.classList.toggle("is-active", active);
+        button.classList.toggle("is-complete", complete);
+        button.classList.toggle("is-blocked", blocked);
+        button.classList.toggle("is-pending", !active && !complete && !blocked);
+        button.setAttribute("aria-pressed", String(active));
+        button.setAttribute("title", itemReadiness.message || "");
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+        if (item) {
+          item.classList.toggle("is-active", active);
+          item.classList.toggle("is-complete", complete);
+          item.classList.toggle("is-blocked", blocked);
+          item.classList.toggle("is-pending", !active && !complete && !blocked);
+        }
+      });
     }
 
     function renderWorkflowStepper() {
@@ -6237,6 +6328,7 @@ const MotionJSONUI = (() => {
         }
       });
 
+      renderJourneyNav(snapshot, readiness, activeStep);
       renderWorkflowContextCopy(activeStep);
       renderWorkflowStepSummary(snapshot, activeStep);
       renderPostRunFlow();
@@ -6267,8 +6359,10 @@ const MotionJSONUI = (() => {
     function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
       const nextStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
       if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
+      if (nextStep !== "prompt_preview" && nextStep !== "review_export" && nextStep !== state.activeWorkflowStep) state.activeJourneyPhase = "";
       state.activeWorkflowStep = nextStep;
       if (nextStep !== "review_export") state.reviewExportSubscreen = "review";
+      else if (!state.activeJourneyPhase || state.activeJourneyPhase === "export") state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : "review";
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
       renderWorkflowStepper();
       if (focusStep) {
@@ -6284,6 +6378,7 @@ const MotionJSONUI = (() => {
     function setReviewExportSubscreen(subscreen = "review", { focus = false } = {}) {
       state.reviewExportSubscreen = subscreen === "export" ? "export" : "review";
       state.activeWorkflowStep = "review_export";
+      state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : "review";
       renderWorkflowStepper();
       if (focus) {
         const target = state.reviewExportSubscreen === "export" ? $("#studioExportCard") || $("#exportDecision") : $("#studioObjectList");
@@ -6548,6 +6643,12 @@ const MotionJSONUI = (() => {
         const button = event.target.closest("[data-workflow-step]");
         if (!button) return;
         if (button.disabled) return;
+        if (button.dataset.journeyPhase) state.activeJourneyPhase = button.dataset.journeyPhase;
+        if (document.documentElement.dataset.capture === "workflow-export" && button.dataset.workflowStep === "review_export") {
+          state.reviewExportSubscreen = "export";
+        } else if (button.dataset.reviewSubscreen) {
+          state.reviewExportSubscreen = button.dataset.reviewSubscreen === "export" ? "export" : "review";
+        }
         setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
       });
       document.addEventListener("click", (event) => {
@@ -6670,6 +6771,7 @@ const MotionJSONUI = (() => {
 
     function renderShellIndicators() {
       $("#collapsedGoalLabel").textContent = currentPresetLabel();
+      const selectedSource = selectedVideo();
       if (projectDrawerToggle) {
         const project = state.projects.find((item) => item.id === state.selectedProjectId);
         const shellState = projectShellStateFromSnapshot({
@@ -6682,12 +6784,43 @@ const MotionJSONUI = (() => {
         projectDrawerToggle.setAttribute("aria-label", shellState.projectButtonAriaLabel);
         projectDrawerToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
       }
+      const sourceChip = $("#sourceIdentityChip");
+      if (sourceChip) {
+        const sourceName =
+          selectedSource?.metadata?.filename ||
+          selectedSource?.filename ||
+          selectedSource?.name ||
+          (state.video.loadedName ? String(state.video.loadedName).split(/[\\/]/).pop() : "") ||
+          (selectedSource?.id ? "Registered video" : "No video selected");
+        sourceChip.querySelector("strong").textContent = sourceName;
+      }
+      const providerChip = $("#providerIdentityChip");
+      if (providerChip) {
+        const enginePlan = guidedEnginePlan(collectFormState($));
+        const label = enginePlan.displayLabel || enginePlan.providerName || "Provider pending";
+        const locality = enginePlan.locality ? ` - ${enginePlan.locality}` : "";
+        providerChip.textContent = `${label}${locality}`;
+        providerChip.className = `status-chip ${enginePlan.locality === "hosted" ? "is-warn" : label === "Provider pending" ? "is-muted" : "is-neutral"}`;
+      }
       const summary = $("#diagnosticsSummary");
       if (summary) {
         const diagnostic = shellDiagnosticSummary();
         summary.textContent = diagnostic.label;
         summary.className = `status-chip ${diagnostic.tone}`;
+        summary.setAttribute("aria-expanded", String(!shell?.classList.contains("is-rail-collapsed")));
       }
+      const railTitle = $("#railContextTitle");
+      if (railTitle) {
+        railTitle.textContent =
+          state.activeWorkflowStep === "run_monitor"
+            ? "Job details"
+            : state.activeWorkflowStep === "provider_settings"
+              ? "Model and provider details"
+              : state.activeWorkflowStep === "review_export"
+                ? "Review and export details"
+                : "Context details";
+      }
+      renderUsageInspector();
     }
 
     function moveInlinePanel(slotSelector, node) {
@@ -6719,7 +6852,21 @@ const MotionJSONUI = (() => {
       });
       railCloseButton?.addEventListener("click", () => {
         state.railOpenedByUser = false;
-        setWorkflowDashboard(false);
+        setRailCollapsed(true, { focusToggle: true });
+      });
+      $("#diagnosticsSummary")?.addEventListener("click", () => {
+        state.railOpenedByUser = true;
+        setRailCollapsed(false, { focusToggle: false });
+        renderWorkflowStepper();
+      });
+      $("#journeyNavToggle")?.addEventListener("click", () => {
+        const collapsed = !shell?.classList.contains("is-journey-collapsed");
+        shell?.classList.toggle("is-journey-collapsed", collapsed);
+        const toggle = $("#journeyNavToggle");
+        if (toggle) {
+          toggle.textContent = collapsed ? "Expand" : "Collapse";
+          toggle.setAttribute("aria-expanded", String(!collapsed));
+        }
       });
       document.addEventListener("keydown", (event) => {
         const drawerOpen = !shell?.classList.contains("is-sidebar-collapsed");
@@ -8252,6 +8399,7 @@ const MotionJSONUI = (() => {
         const markup = `<div class="error-state">${escapeHtml(state.errors.jobs)}</div>`;
         $("#jobList").innerHTML = markup;
         if ($("#mainJobList")) $("#mainJobList").innerHTML = markup;
+        renderRunCockpit();
         renderWorkflowStepper();
         return;
       }
@@ -8293,6 +8441,7 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Jobs will appear here with status, progress, and export diagnostics.</div>`;
       $("#jobList").innerHTML = markup;
       if ($("#mainJobList")) $("#mainJobList").innerHTML = markup;
+      renderRunCockpit();
       renderWorkflowStepper();
     }
 
@@ -8332,6 +8481,7 @@ const MotionJSONUI = (() => {
         };
         setFacts($("#selectedJobFacts"), facts);
         if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
+        renderRunCockpit();
         return;
       }
 
@@ -8392,6 +8542,7 @@ const MotionJSONUI = (() => {
       if (lifecycle.stale?.stale) facts.watchdog = lifecycle.stale.label;
       setFacts($("#selectedJobFacts"), facts);
       if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
+      renderRunCockpit();
     }
 
     function emptyEventLogMarkup(job, errorMessage = "") {
@@ -8405,17 +8556,32 @@ const MotionJSONUI = (() => {
       return `<div class="empty-state">${escapeHtml(detail)}</div>`;
     }
 
+    function rawLogSearchQuery() {
+      return String($("#mainRawLogSearch")?.value || $("#rawLogSearch")?.value || "").trim().toLowerCase();
+    }
+
+    function filterEventsForRawLog(events = []) {
+      const query = rawLogSearchQuery();
+      if (!query) return asArray(events);
+      return asArray(events).filter((event) => {
+        const text = `${eventLabel(event)} ${eventMessage(event)} ${JSON.stringify(eventMetadata(event))}`.toLowerCase();
+        return text.includes(query);
+      });
+    }
+
     function renderEventLog() {
       const job = selectedJob();
       const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const rawEvents = filterEventsForRawLog(events);
       const errorMessage = state.errors.selectedJob || "";
       const countLabel = `${events.length} event${events.length === 1 ? "" : "s"}`;
       const markup = `${eventLogOverviewMarkup(job, events, errorMessage)}${events.length ? eventRowsMarkup(events) : emptyEventLogMarkup(job, errorMessage)}`;
+      const rawMarkup = `${eventLogOverviewMarkup(job, rawEvents, errorMessage)}${rawEvents.length ? eventRowsMarkup(rawEvents) : emptyEventLogMarkup(job, errorMessage)}`;
       $("#eventCount").textContent = countLabel;
-      $("#jobEventLog").innerHTML = markup;
+      $("#jobEventLog").innerHTML = rawMarkup;
       if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
-      if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = markup;
-      renderMainRunLivePreview();
+      if ($("#mainRawJobEventLog")) $("#mainRawJobEventLog").innerHTML = rawMarkup;
+      renderRunCockpit();
     }
 
     function previewImageKind(relPath = "") {
@@ -8477,6 +8643,472 @@ const MotionJSONUI = (() => {
       return [...cards.values()].slice(0, 6);
     }
 
+    const RUN_COCKPIT_PHASES = [
+      ["preflight", "Preflight"],
+      ["sampling", "Sampling"],
+      ["proposal", "Proposal"],
+      ["segmentation", "Segmentation"],
+      ["tracking", "Tracking"],
+      ["artifacts", "Artifacts"],
+      ["validation", "Validation"],
+      ["review_ready", "Review Ready"],
+    ];
+
+    function runPhaseId(value = "") {
+      const text = String(value || "").toLowerCase();
+      if (/sample|frame_pick|frame pick/.test(text)) return "sampling";
+      if (/proposal|candidate|discover|detect|scan/.test(text)) return "proposal";
+      if (/segment|mask/.test(text)) return "segmentation";
+      if (/track|propagat/.test(text)) return "tracking";
+      if (/artifact|asset|raster|cutout|sprite|package/.test(text)) return "artifacts";
+      if (/validat|finaliz/.test(text)) return "validation";
+      if (/review|complete|succeed|ready/.test(text)) return "review_ready";
+      return "preflight";
+    }
+
+    function runPhaseIndex(phaseId) {
+      return Math.max(0, RUN_COCKPIT_PHASES.findIndex(([id]) => id === phaseId));
+    }
+
+    function runHealthState(lifecycle = null, events = []) {
+      if (!lifecycle) return { label: "Waiting", status: "waiting", tone: "is-muted", detail: "No run selected." };
+      if (/failed|error|blocked/.test(lifecycle.status)) {
+        return { label: "Failed", status: "failed", tone: "is-bad", detail: lifecycle.failure?.message || "The selected run failed." };
+      }
+      if (/canceled|cancelled/.test(lifecycle.status)) {
+        return { label: "Canceled", status: "canceled", tone: "is-warn", detail: "The selected run was canceled." };
+      }
+      if (lifecycle.stale?.stale) {
+        return { label: "Stalled", status: "stalled", tone: "is-warn", detail: lifecycle.stale.detail || lifecycle.stale.label };
+      }
+      if (/succeeded|complete|review_ready/.test(`${lifecycle.status} ${lifecycle.phase}`)) {
+        return { label: "Reviewable", status: "completed", tone: "is-ready", detail: "Run output is ready for review." };
+      }
+      if (asArray(events).some((event) => eventSeverity(event) === "warn")) {
+        return { label: "Needs attention", status: "warning", tone: "is-warn", detail: "The run reported a warning. Review the event list." };
+      }
+      if (lifecycle.active) return { label: "Healthy", status: "healthy", tone: "is-ready", detail: "Recent progress is arriving." };
+      return { label: "Waiting", status: "waiting", tone: "is-muted", detail: "Waiting for run progress." };
+    }
+
+    function runFrameProgress(job = null, events = []) {
+      const latest = asArray(events).slice().reverse().find((event) => {
+        const metadata = eventMetadata(event);
+        const progress = eventProgress(event);
+        return metadata.frame != null || metadata.currentFrame != null || metadata.totalFrames != null || progress.current != null || progress.total != null;
+      });
+      const metadata = latest ? eventMetadata(latest) : {};
+      const progress = latest ? eventProgress(latest) : {};
+      const config = jobConfig(job) || {};
+      const frame = toInteger(metadata.currentFrame ?? metadata.frame ?? progress.current ?? job?.lifecycle?.latestEvent?.frame ?? state.video.currentFrame, state.video.currentFrame || 0);
+      const total = toInteger(metadata.totalFrames ?? progress.total ?? job?.lifecycle?.latestEvent?.totalFrames ?? config.sampling?.max_frames ?? config.max_frames, 0);
+      return { frame, total };
+    }
+
+    function runProviderText(lifecycle = null, config = null, job = null) {
+      return (
+        lifecycle?.runtimeProof?.displayProvider ||
+        lifecycle?.provider?.displayLabel ||
+        job?.payload?.mask_provider ||
+        config?.provider?.name ||
+        config?.mask_provider ||
+        "provider not reported"
+      );
+    }
+
+    function runLocalityText(lifecycle = null, config = null) {
+      const locality = String(lifecycle?.provider?.locality || config?.provider?.locality || "").toLowerCase();
+      if (/hosted|cloud|remote/.test(locality)) return "Hosted";
+      if (/import/.test(locality)) return "Imported";
+      if (/mock/.test(locality)) return "Mock";
+      if (/local|runtime|cpu|gpu/.test(locality)) return "Local";
+      return "Local-first";
+    }
+
+    function runTargetLabel(job = null, events = []) {
+      const latest = asArray(events).slice().reverse().find((event) => eventMetadata(event).objectId || event.objectId);
+      const objectId = eventMetadata(latest || {}).objectId || latest?.objectId || "";
+      if (objectId) return previewLabelForObjectId(objectId);
+      const config = jobConfig(job) || {};
+      return config.object_id || config.objectId || config.label || $("#objectLabel")?.value || "selected object";
+    }
+
+    function runCurrentActivityText(lifecycle = null, job = null, events = []) {
+      if (!lifecycle) return "No run selected. Start extraction after preflight.";
+      const provider = runProviderText(lifecycle, jobConfig(job), job);
+      if (lifecycle.failure?.message) return lifecycle.failure.message;
+      if (lifecycle.stale?.stale) return lifecycle.stale.detail || lifecycle.stale.label;
+      const phase = RUN_COCKPIT_PHASES.find(([id]) => id === runPhaseId(lifecycle.phase))?.[1] || "Running";
+      const target = runTargetLabel(job, events);
+      const { frame, total } = runFrameProgress(job, events);
+      const frameText = total ? ` on frame ${frame} of ${total}` : frame ? ` on frame ${frame}` : "";
+      const message = lifecycle.latestEvent?.message || "";
+      if (message && /failed|stalled|blocked|error/i.test(message)) return message;
+      return `${phase} ${target}${frameText} with ${provider}.`;
+    }
+
+    function runPhaseTimelineMarkup(lifecycle = null) {
+      const currentId = lifecycle ? runPhaseId(lifecycle.phase || lifecycle.status) : "preflight";
+      const currentIndex = lifecycle ? runPhaseIndex(currentId) : -1;
+      const failed = lifecycle && /failed|error|blocked|canceled|cancelled/.test(lifecycle.status);
+      const completed = lifecycle && /succeeded|complete|review_ready/.test(`${lifecycle.status} ${lifecycle.phase}`);
+      return RUN_COCKPIT_PHASES.map(([id, label], index) => {
+        const stateClass = completed || index < currentIndex ? "is-complete" : index === currentIndex ? (failed ? "is-blocked" : "is-active") : "is-pending";
+        const stateLabel = completed || index < currentIndex ? "complete" : index === currentIndex ? (failed ? "blocked" : "active") : "pending";
+        return `<li class="${stateClass}"><span aria-hidden="true"></span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(stateLabel)}</small></li>`;
+      }).join("");
+    }
+
+    function runStatusChipsMarkup(lifecycle = null, job = null, events = []) {
+      const health = runHealthState(lifecycle, events);
+      const config = jobConfig(job);
+      const locality = runLocalityText(lifecycle, config);
+      const status = lifecycle?.status || "no run";
+      return [
+        `<span class="status-chip ${health.tone}" aria-label="${escapeAttribute(`Health: ${health.label}`)}">${escapeHtml(health.label)}</span>`,
+        `<span id="mainRunStatus" class="status-chip ${statusClass(status, /succeeded|complete|running/.test(String(status).toLowerCase()))}" aria-label="${escapeAttribute(`Status: ${status}`)}">${escapeHtml(status)}</span>`,
+        `<span class="status-chip is-neutral" aria-label="${escapeAttribute(`Locality: ${locality}`)}">${escapeHtml(locality)}</span>`,
+      ].join("");
+    }
+
+    function basenameForDisplay(value = "") {
+      const text = String(value || "").split(/[?#]/)[0];
+      return text.split(/[\\/]/).filter(Boolean).pop() || text || "not selected";
+    }
+
+    function formatBytesForDisplay(value) {
+      const bytes = Number(value || 0);
+      if (!Number.isFinite(bytes) || bytes <= 0) return "not reported";
+      if (bytes < 1024) return `${Math.round(bytes)} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    }
+
+    function jobDurationLabel(job = null, events = []) {
+      const times = [
+        job?.created_at,
+        job?.createdAt,
+        job?.updated_at,
+        job?.updatedAt,
+        job?.lastEventAt,
+        job?.last_event_at,
+        ...asArray(events).flatMap((event) => [event.created_at, event.createdAt, event.timestamp]),
+      ].map(parseTimestampMs).filter(Boolean).sort((a, b) => a - b);
+      if (times.length < 2) return "not reported";
+      return formatJobAge(Math.max(0, times[times.length - 1] - times[0]));
+    }
+
+    function artifactBytes(artifacts = []) {
+      return asArray(artifacts).reduce((total, artifact) => total + Number(artifact.byte_size || artifact.byteSize || artifact.size || 0), 0);
+    }
+
+    function runUsageNotes(lifecycle = null, config = null) {
+      const locality = runLocalityText(lifecycle, config);
+      const hosted = locality === "Hosted";
+      const notes = [];
+      notes.push({
+        tone: hosted ? "warn" : "ready",
+        title: hosted ? "Hosted calls require consent" : "Local-first boundary",
+        detail: hosted ? "The UI must not send frames or run hosted checks until consent is explicit." : "No hosted calls are implied by this run state.",
+      });
+      notes.push({
+        tone: "neutral",
+        title: "Debug reports are redacted",
+        detail: "Copy debug report removes token-like values, keys, credentials, and authorization fields by default.",
+      });
+      return notes;
+    }
+
+    function usageNoteMarkup(notes = []) {
+      return asArray(notes)
+        .map((note) => `
+          <div class="diagnostic-row is-${escapeAttribute(note.tone || "neutral")}">
+            <strong>${escapeHtml(note.title)}</strong>
+            <span class="row-meta">${escapeHtml(note.detail)}</span>
+          </div>
+        `)
+        .join("");
+    }
+
+    function jobUsageFacts(job = null, events = []) {
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      const config = jobConfig(job) || {};
+      const frameProgress = runFrameProgress(job, events);
+      const candidates = reviewCandidates();
+      const selectedCandidates = selectedCandidateIds(candidates);
+      const exportIncluded = state.reviewTracks.filter(isTrackExportIncluded).length;
+      return {
+        "provider / model": lifecycle ? runProviderText(lifecycle, config, job) : guidedEnginePlan(collectFormState($)).providerLabel || "not selected",
+        locality: runLocalityText(lifecycle, config),
+        consent: lifecycle?.provider?.hostedCallsAllowed ? "hosted opt-in recorded" : "no hosted consent recorded",
+        "frames sampled": config.sampling?.max_frames || config.max_frames || "not reported",
+        "frames tracked": frameProgress.total ? `${frameProgress.frame} / ${frameProgress.total}` : "not reported",
+        "objects / candidates": `${state.reviewTracks.length} track${state.reviewTracks.length === 1 ? "" : "s"}, ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`,
+        "selected candidates": selectedCandidates.length ? String(selectedCandidates.length) : "none",
+        "run duration": jobDurationLabel(job, events),
+        "hosted cost": runLocalityText(lifecycle, config) === "Hosted" ? "not reported" : "$0.00 local",
+        "storage written": formatBytesForDisplay(artifactBytes(state.jobArtifacts)),
+        "artifacts generated": String(state.jobArtifacts.length),
+        "export count": String(exportIncluded || state.exportResult?.includedObjectIds?.length || 0),
+      };
+    }
+
+    function workspaceUsageFacts() {
+      const jobs = asArray(state.jobs);
+      const counts = jobs.reduce((acc, job) => {
+        const status = normalizeJobLifecycle(job).status || "unknown";
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+      const providerAttempts = uniqueIds(
+        jobs.map((job) => runProviderText(normalizeJobLifecycle(job), jobConfig(job), job)).filter(Boolean),
+      ).slice(0, 4);
+      const hostedJobs = jobs.filter((job) => runLocalityText(normalizeJobLifecycle(job), jobConfig(job)) === "Hosted").length;
+      const failedOrStalled = jobs.filter((job) => {
+        const lifecycle = normalizeJobLifecycle(job);
+        return /failed|error|blocked|canceled/.test(lifecycle.status) || lifecycle.stale?.stale;
+      }).length;
+      return {
+        "recent providers": providerAttempts.length ? providerAttempts.join(", ") : "none yet",
+        "jobs by status": Object.keys(counts).length ? Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(", ") : "none",
+        "hosted calls": hostedJobs ? `${hostedJobs} job${hostedJobs === 1 ? "" : "s"} may involve hosted provider state` : "0 recorded",
+        "cost estimate": hostedJobs ? "not reported" : "$0.00 local",
+        "generated storage": formatBytesForDisplay(artifactBytes(state.jobArtifacts)),
+        "artifacts in selected run": String(state.jobArtifacts.length),
+        "failed / stalled jobs": String(failedOrStalled),
+        "rights reminders": state.jobReview?.rightsSummary?.warnings?.length ? `${state.jobReview.rightsSummary.warnings.length} warning${state.jobReview.rightsSummary.warnings.length === 1 ? "" : "s"}` : "none reported",
+      };
+    }
+
+    function renderUsageInspector() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      const jobFacts = jobUsageFacts(job, events);
+      const workspaceFacts = workspaceUsageFacts();
+      if ($("#jobUsageFacts")) setFacts($("#jobUsageFacts"), jobFacts);
+      if ($("#workspaceUsageFacts")) setFacts($("#workspaceUsageFacts"), workspaceFacts);
+      if ($("#jobUsageNotes")) $("#jobUsageNotes").innerHTML = usageNoteMarkup(runUsageNotes(lifecycle, jobConfig(job)));
+      if ($("#jobUsageStatus")) {
+        const status = lifecycle?.status || "No run";
+        $("#jobUsageStatus").textContent = status;
+        $("#jobUsageStatus").className = `status-chip ${statusClass(status, /succeeded|complete|running/.test(String(status).toLowerCase()))}`;
+      }
+      if ($("#workspaceUsageStatus")) {
+        const hosted = Object.values(workspaceFacts).some((value) => /hosted/i.test(String(value)));
+        $("#workspaceUsageStatus").textContent = hosted ? "Review hosted usage" : "Local";
+        $("#workspaceUsageStatus").className = `status-chip ${hosted ? "is-warn" : "is-ready"}`;
+      }
+    }
+
+    function runPreflightSummaryMarkup(lifecycle = null, job = null) {
+      const config = jobConfig(job) || {};
+      const video = selectedVideo();
+      const source = basenameForDisplay(video?.metadata?.filename || video?.filename || state.video.loadedName || selectedVideoPath());
+      const maxFrames = config.sampling?.max_frames || config.max_frames || $("#maxFrames")?.value || "";
+      const trim = maxFrames ? `1-${maxFrames}` : "not limited";
+      const provider = runProviderText(lifecycle, config, job);
+      const locality = runLocalityText(lifecycle, config);
+      const target = runTargetLabel(job, state.jobEvents);
+      const outputs = state.jobArtifacts.length
+        ? `${state.jobArtifacts.length} artifact${state.jobArtifacts.length === 1 ? "" : "s"} registered`
+        : "JSON object layer, masks, cutouts when available";
+      const rows = [
+        ["Source", source],
+        ["Target", target],
+        ["Trim/sample", trim],
+        ["Provider", provider],
+        ["Locality", locality],
+        ["Expected outputs", outputs],
+      ];
+      return rows.map(([label, value]) => `<span><strong>${escapeHtml(label)}</strong>${escapeHtml(String(value || "not reported"))}</span>`).join("");
+    }
+
+    function runCandidateRowsMarkup(lifecycle = null, job = null) {
+      const stale = lifecycle?.stale?.stale ? `<div class="run-candidate-warning">${escapeHtml(lifecycle.stale.label || "No progress update")}</div>` : "";
+      const candidates = reviewCandidates();
+      const candidateRows = candidates.slice(0, 5).map((candidate) => {
+        const id = candidateId(candidate);
+        const selected = state.candidateSelection[id] === true;
+        const score = candidateConfidenceScore(candidate);
+        const statusText = candidateStatusItems(candidate, { selected }).map((item) => item.label).join(", ");
+        return `
+          <button class="run-candidate-row ${selected ? "is-selected" : ""}" type="button" data-candidate-row="${escapeAttribute(id)}">
+            <strong>${escapeHtml(candidateDisplayLabel(candidate))}</strong>
+            <span>${escapeHtml(score == null ? statusText || "candidate" : `score ${score.toFixed(2)} - ${statusText || "candidate"}`)}</span>
+          </button>
+        `;
+      });
+      const trackRows = state.reviewTracks.slice(0, 5).map((track) => {
+        const id = trackObjectId(track) || track.id || "track";
+        const metrics = trackMotionMetrics(track);
+        return `
+          <button class="run-candidate-row is-track" type="button" data-track-id="${escapeAttribute(id)}">
+            <strong>${escapeHtml(track.label || id)}</strong>
+            <span>${escapeHtml(metrics.moving ? "tracked moving object" : "track needs review")}</span>
+          </button>
+        `;
+      });
+      const liveRows = livePreviewCards().slice(0, 4).map((card) => `
+        <button class="run-candidate-row is-track" type="button" data-object-id="${escapeAttribute(card.objectId)}">
+          <strong>${escapeHtml(card.label)}</strong>
+          <span>${escapeHtml(Number.isFinite(card.frame) ? `latest artifact frame ${card.frame}` : "latest artifact")}</span>
+        </button>
+      `);
+      const jobRows = asArray(state.jobs).slice(0, 3).map((rawJob) => {
+        const item = normalizeJobLifecycle(rawJob);
+        const selected = item.id && item.id === state.selectedJobId;
+        const detail = [
+          item.id,
+          item.status || "unknown",
+          item.phase || item.progress.label,
+          rawJob.message || "",
+          item.failure?.message || rawJob.error || "",
+        ].filter(Boolean).join(" - ");
+        return `
+          <button class="run-candidate-row job-choice ${selected ? "is-selected" : ""}" type="button" data-job-id="${escapeAttribute(item.id)}" aria-pressed="${selected}">
+            <strong>${escapeHtml(item.type || "run")}</strong>
+            <span>${escapeHtml(detail)}</span>
+          </button>
+        `;
+      });
+      const rows = trackRows.length ? trackRows : candidateRows.length ? candidateRows : liveRows.length ? liveRows : jobRows;
+      return stale + (rows.length ? rows.join("") : `<div class="empty-state">Candidates and tracks appear after extraction reports reviewable output.</div>`);
+    }
+
+    function runReadableEventsMarkup(job = null, events = []) {
+      if (state.errors.selectedJob) return `<div class="error-state">Could not load job events: ${escapeHtml(state.errors.selectedJob)}</div>`;
+      const items = asArray(events);
+      if (!items.length) return emptyEventLogMarkup(job);
+      return items
+        .slice()
+        .reverse()
+        .map((event) => {
+          const metadata = eventMetadata(event);
+          const phase = RUN_COCKPIT_PHASES.find(([id]) => id === runPhaseId(metadata.stage || event.stage || eventLabel(event)))?.[1] || "Run";
+          const severity = eventSeverity(event);
+          const severityLabel = severity === "bad" ? "Error" : severity === "warn" ? "Warning" : severity === "ready" ? "Recovery" : "Progress";
+          const progressText = eventProgressText(event);
+          const chips = [metadata.objectId || "", metadata.provider || "", progressText].filter(Boolean);
+          return `
+            <div class="run-event-row is-${escapeAttribute(severity)}">
+              <span class="run-event-time">${escapeHtml(eventTimestamp(event) || "no time")}</span>
+              <span class="run-event-phase">${escapeHtml(phase)}</span>
+              <span class="run-event-severity">${escapeHtml(severityLabel)}</span>
+              <p>${escapeHtml(eventMessage(event))}</p>
+              ${chips.length ? `<div>${chips.map((chip) => detailChip(chip)).join("")}</div>` : ""}
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function runTemporalMarkersMarkup(lifecycle = null, events = []) {
+      const { frame, total } = runFrameProgress(selectedJob(), events);
+      const frameCount = Math.max(1, total || toInteger($("#maxFrames")?.value, 0) || frame || 1);
+      const eventMarkers = asArray(events).slice(-12).map((event, index) => {
+        const metadata = eventMetadata(event);
+        const progress = eventProgress(event);
+        const markerFrame = toInteger(metadata.frame ?? metadata.currentFrame ?? progress.current, frame || index);
+        const left = clamp((markerFrame / Math.max(1, frameCount)) * 100, 0, 100);
+        const severity = eventSeverity(event);
+        return `<span class="run-temporal-marker is-${escapeAttribute(severity)}" role="listitem" style="left: ${left}%;" title="${escapeAttribute(eventMessage(event))}"></span>`;
+      });
+      const promptMarkers = state.prompts.slice(-8).map((prompt) => {
+        const markerFrame = toInteger(prompt.frame_index ?? prompt.frameIndex, frame || 0);
+        const left = clamp((markerFrame / Math.max(1, frameCount)) * 100, 0, 100);
+        return `<span class="run-temporal-marker is-keyframe" role="listitem" style="left: ${left}%;" title="${escapeAttribute(prompt.label || prompt.kind || "prompt")}"></span>`;
+      });
+      const currentLeft = clamp((frame / Math.max(1, frameCount)) * 100, 0, 100);
+      return `<span class="run-temporal-current" style="left: ${currentLeft}%;" aria-hidden="true"></span>${[...promptMarkers, ...eventMarkers].join("")}`;
+    }
+
+    function renderRunSourceFrame(lifecycle = null, job = null, events = []) {
+      const videoElement = $("#runSourceFrameVideo");
+      const placeholder = $("#runSourceFramePlaceholder");
+      const overlay = $("#runObjectOverlay");
+      if (!videoElement || !placeholder || !overlay) return;
+      const video = selectedVideo();
+      const url = safeLocalContentUrl(video?.contentUrl || selectedVideoBrowserPreview(video)?.contentUrl || "");
+      if (url) {
+        videoElement.hidden = false;
+        placeholder.hidden = true;
+        if (videoElement.getAttribute("src") !== url) videoElement.setAttribute("src", url);
+      } else {
+        videoElement.hidden = true;
+        placeholder.hidden = false;
+        placeholder.textContent = lifecycle ? "Source frame not available from the selected run." : "Source frame preview appears after a video is readable.";
+      }
+      const prompt = state.prompts.find((item) => item?.data?.x != null && item?.data?.y != null) || null;
+      const width = state.video.width || selectedVideoBrowserPreview(video)?.width || 1920;
+      const height = state.video.height || selectedVideoBrowserPreview(video)?.height || 1080;
+      if (prompt) {
+        const x = clamp((toNumber(prompt.data.x, width / 2) / Math.max(1, width)) * 100, 0, 100);
+        const y = clamp((toNumber(prompt.data.y, height / 2) / Math.max(1, height)) * 100, 0, 100);
+        overlay.hidden = false;
+        overlay.style.left = `${x}%`;
+        overlay.style.top = `${y}%`;
+        overlay.textContent = runTargetLabel(job, events);
+      } else {
+        overlay.hidden = true;
+        overlay.textContent = "";
+      }
+      const frame = runFrameProgress(job, events);
+      if ($("#runSourceFrameLabel")) $("#runSourceFrameLabel").textContent = runTargetLabel(job, events);
+      if ($("#runSourceFrameMeta")) $("#runSourceFrameMeta").textContent = frame.total ? `frame ${frame.frame} of ${frame.total}` : frame.frame ? `frame ${frame.frame}` : "No frame data yet.";
+    }
+
+    function renderRunEvidencePreviews() {
+      const cards = livePreviewCards();
+      const primary = cards[0] || {};
+      const imageWithFallback = (url, label, fallback) =>
+        `<img src="${escapeAttribute(url)}" alt="${escapeAttribute(label)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>${escapeHtml(fallback)}</span>`;
+      const setPreview = (selector, statusSelector, url, label, emptyText) => {
+        const container = $(selector);
+        const status = $(statusSelector);
+        if (!container) return;
+        if (status) status.textContent = url ? label : "Waiting";
+        container.innerHTML = url
+          ? imageWithFallback(url, label, "Preview file registered. Open raw artifacts if the thumbnail is unavailable.")
+          : `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
+      };
+      setPreview("#runMaskPreview", "#runMaskPreviewStatus", primary.maskPreview || primary.mask || "", "Mask ready", "Mask previews appear when the worker writes them.");
+      setPreview("#runCutoutPreview", "#runCutoutPreviewStatus", primary.cutout || primary.thumbnail || primary.sprite || "", "Cutout ready", "Cutouts appear after object assets are registered.");
+    }
+
+    function renderRunCockpit() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      if ($("#runPhaseTimeline")) $("#runPhaseTimeline").innerHTML = runPhaseTimelineMarkup(lifecycle);
+      if ($("#runCurrentActivity")) $("#runCurrentActivity").textContent = runCurrentActivityText(lifecycle, job, events);
+      if ($("#mainRunStatusChips")) $("#mainRunStatusChips").innerHTML = runStatusChipsMarkup(lifecycle, job, events);
+      if ($("#runCockpitSubtitle")) {
+        const provider = lifecycle ? runProviderText(lifecycle, jobConfig(job), job) : guidedEnginePlan(collectFormState($)).providerLabel || "the selected provider";
+        $("#runCockpitSubtitle").textContent = lifecycle
+          ? `Tracing a reusable motion object from your video using ${provider}.`
+          : "Start a run to trace reusable motion objects from the source video.";
+      }
+      if ($("#runCandidateSummary")) {
+        const candidateCount = reviewCandidates().length;
+        const trackCount = state.reviewTracks.length;
+        $("#runCandidateSummary").textContent = trackCount ? `${trackCount} track${trackCount === 1 ? "" : "s"}` : candidateCount ? `${candidateCount} candidate${candidateCount === 1 ? "" : "s"}` : "Waiting for reviewable output";
+      }
+      if ($("#mainJobList")) $("#mainJobList").innerHTML = runCandidateRowsMarkup(lifecycle, job);
+      if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = runReadableEventsMarkup(job, events);
+      if ($("#runPreflightSummary")) $("#runPreflightSummary").innerHTML = runPreflightSummaryMarkup(lifecycle, job);
+      if ($("#runTemporalMarkerTrack")) $("#runTemporalMarkerTrack").innerHTML = runTemporalMarkersMarkup(lifecycle, events);
+      if ($("#runTemporalSummary")) {
+        const { frame, total } = runFrameProgress(job, events);
+        $("#runTemporalSummary").textContent = total ? `current frame ${frame} / ${total}` : "Timeline updates when frame progress is reported.";
+      }
+      renderRunSourceFrame(lifecycle, job, events);
+      renderRunEvidencePreviews();
+      renderUsageInspector();
+      renderMainRunLivePreview();
+    }
+
     function renderMainRunLivePreview() {
       const container = $("#mainRunLivePreview");
       const status = $("#mainLivePreviewStatus");
@@ -8502,8 +9134,8 @@ const MotionJSONUI = (() => {
                     <span class="row-meta">${escapeHtml(frameLabel)}</span>
                   </div>
                   <div class="run-live-preview-images">
-                    ${primaryImage ? `<img src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(`${card.label} preview`)}" loading="lazy" />` : ""}
-                    ${secondaryImage && secondaryImage !== primaryImage ? `<img src="${escapeAttribute(secondaryImage)}" alt="${escapeAttribute(`${card.label} mask`)}" loading="lazy" />` : ""}
+                    ${primaryImage ? `<img src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(`${card.label} preview`)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>Preview file registered</span>` : ""}
+                    ${secondaryImage && secondaryImage !== primaryImage ? `<img src="${escapeAttribute(secondaryImage)}" alt="${escapeAttribute(`${card.label} mask`)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>Mask file registered</span>` : ""}
                   </div>
                 </div>
               `;
@@ -8545,7 +9177,7 @@ const MotionJSONUI = (() => {
       $("#artifactBrowser").innerHTML = markup;
       if ($("#mainArtifactCount")) $("#mainArtifactCount").textContent = `${state.jobArtifacts.length} file${state.jobArtifacts.length === 1 ? "" : "s"}`;
       if ($("#mainArtifactBrowser")) $("#mainArtifactBrowser").innerHTML = markup;
-      renderMainRunLivePreview();
+      renderRunCockpit();
     }
 
     function libraryAssetRoute() {
@@ -9018,11 +9650,39 @@ const MotionJSONUI = (() => {
       return rows.slice(0, 12);
     }
 
+    function studioReadinessStripMarkup({ decision, reviewedCount = 0, movingReviewedCount = 0, correctionCount = 0, status = null, correctMode = false } = {}) {
+      const tone = decision?.tone === "bad" ? "is-bad" : decision?.tone === "neutral" ? "is-neutral" : decision?.tone === "warn" ? "is-warn" : "is-ready";
+      const validationLabel = status?.ok === true ? "validated" : status ? "blocked" : "not validated";
+      const headline = correctMode ? "Corrections update export readiness" : decision?.title || "Review export readiness";
+      const detail = correctMode
+        ? `${correctionCount} correction edit${correctionCount === 1 ? "" : "s"} saved or pending. ${decision?.detail || "Validate after corrections before exporting."}`
+        : decision?.detail || "Validate reviewed tracks before writing MotionJSON.";
+      const facts = [
+        { label: "Reviewed", value: `${reviewedCount} track${reviewedCount === 1 ? "" : "s"}` },
+        { label: "Motion", value: `${movingReviewedCount} moving` },
+        { label: "Corrections", value: `${correctionCount} edit${correctionCount === 1 ? "" : "s"}` },
+        { label: "Validation", value: validationLabel },
+      ];
+      return `
+        <div class="studio-readiness-main ${tone}">
+          <span>${escapeHtml(decision?.badge || validationLabel)}</span>
+          <strong>${escapeHtml(headline)}</strong>
+          <small>${escapeHtml(detail)}</small>
+        </div>
+        <dl class="studio-readiness-facts">
+          ${facts.map((fact) => `<dt>${escapeHtml(fact.label)}</dt><dd>${escapeHtml(fact.value)}</dd>`).join("")}
+        </dl>
+      `;
+    }
+
     function renderStudioReviewPanel() {
       const list = $("#studioObjectList");
       const summary = $("#studioReviewSummary");
       if (!list || !summary) return;
       const candidateSelectionMode = state.activeWorkflowStep === "candidate_selection";
+      const reviewMode = reviewWorkflowMode();
+      const correctMode = reviewMode === "correct";
+      const exportSubscreen = state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export";
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
@@ -9033,9 +9693,11 @@ const MotionJSONUI = (() => {
         movingReviewedCount,
       });
       if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = reviewExportScreen.kicker;
-      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : reviewExportScreen.title;
+      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : correctMode ? "Correct reviewed tracks" : reviewExportScreen.title;
       summary.textContent = candidateSelectionMode
         ? "Keep the objects you want, rename them if needed, then track only those selections through the full video."
+        : correctMode
+        ? "Repair labels, merge duplicates, split ranges, or add prompt-based fixes before validating export again."
         : reviewExportScreen.summary;
       const job = selectedJob();
       const lifecycle = job ? normalizeJobLifecycle(job, { events: state.jobEvents }) : null;
@@ -9070,11 +9732,12 @@ const MotionJSONUI = (() => {
       });
       const canValidate = Boolean(state.selectedJobId && reviewedCount);
       const canExport = !exportAction.disabled;
+      const correctionCount = asArray(state.correctionState?.history).length;
       $("#studioExportAllButton").disabled = !canExport;
       $("#studioExportAllButton").textContent = exportAction.label || "Export MotionJSON";
-      $("#studioExportAllButton").hidden = candidateSelectionMode;
+      $("#studioExportAllButton").hidden = candidateSelectionMode || !exportSubscreen;
       $("#studioExportSelectedButton").disabled = candidateSelectionMode ? selectedCandidateIds().length === 0 : !canValidate;
-      $("#studioExportSelectedButton").textContent = candidateSelectionMode ? "Track selected objects" : status ? "Validate again" : "Validate selected";
+      $("#studioExportSelectedButton").textContent = candidateSelectionMode ? "Track selected objects" : correctMode ? (status ? "Validate again" : "Validate after corrections") : status ? "Validate again" : "Validate selected";
       $("#studioCreatePackageButton").disabled = !canExport;
       if ($("#studioValidateExportButton")) {
         $("#studioValidateExportButton").disabled = !canValidate;
@@ -9098,6 +9761,20 @@ const MotionJSONUI = (() => {
       }
       if ($("#studioExportDecision")) {
         $("#studioExportDecision").innerHTML = exportDecisionMarkup(decision);
+      }
+      const readinessStrip = $("#studioReadinessStrip");
+      if (readinessStrip) {
+        readinessStrip.hidden = candidateSelectionMode || exportSubscreen;
+        readinessStrip.innerHTML = readinessStrip.hidden
+          ? ""
+          : studioReadinessStripMarkup({
+              decision,
+              reviewedCount,
+              movingReviewedCount,
+              correctionCount,
+              status,
+              correctMode,
+            });
       }
       const partialDiagnostic = $("#studioPartialDiagnostic");
       if (partialDiagnostic) {
@@ -9142,18 +9819,28 @@ const MotionJSONUI = (() => {
           readableRightsText(rightsSummary.summary) ||
           readableRightsText(rightsSummary) ||
           "Confirm source rights before sharing exported packages.";
+        const reuseObjectText = includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`;
+        const objectLayerText = `Controls object ids, visibility, frame timing, motion transforms, masks/cutouts, and validation metadata. Reuse ${reuseObjectText} with the exported scene graph and manifest in Canvas, Remotion, or an app-owned renderer.`;
         $("#studioExportIncludedObjects").innerHTML = reviewExportScreen.mode === "export"
           ? `
               <div class="artifact-row">
                 <strong>Included objects</strong>
-                <span class="row-meta">${escapeHtml(includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`)}</span>
+                <span class="row-meta">${escapeHtml(reuseObjectText)}</span>
               </div>
               <div class="artifact-row">
                 <strong>Rights note</strong>
                 <span class="row-meta">${escapeHtml(rightsText)}</span>
               </div>
+              <div class="artifact-row">
+                <strong>Reusable object layer</strong>
+                <span class="row-meta">${escapeHtml(objectLayerText)}</span>
+              </div>
             `
           : "";
+      }
+      if ($("#studioExportReuseGuide")) {
+        $("#studioExportReuseGuide").hidden = true;
+        $("#studioExportReuseGuide").innerHTML = "";
       }
       if ($("#studioExportChecklist")) {
         $("#studioExportChecklist").innerHTML = exportReadinessSummary({
@@ -9226,14 +9913,14 @@ const MotionJSONUI = (() => {
       const exportCard = $("#studioExportCard");
       const reviewTools = $(".review-tools-panel");
       const segmentGate = $(".studio-segment-gate");
-      const exportSubscreen = state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export";
-      if (candidateSection) candidateSection.hidden = candidateSelectionMode || exportSubscreen;
+      const showCandidateSection = !candidateSelectionMode && !exportSubscreen && !correctMode && state.reviewTracks.length === 0 && reviewCandidates().length > 0;
+      if (candidateSection) candidateSection.hidden = !showCandidateSection;
       if (trackInspector) trackInspector.hidden = candidateSelectionMode || exportSubscreen;
-      if (exportCard) exportCard.hidden = candidateSelectionMode;
-      if (reviewTools) reviewTools.hidden = candidateSelectionMode;
-      if (correctionSection) correctionSection.hidden = candidateSelectionMode || exportSubscreen;
-      if (artifactSection) artifactSection.hidden = candidateSelectionMode || exportSubscreen;
-      if (segmentGate) segmentGate.hidden = candidateSelectionMode || exportSubscreen;
+      if (exportCard) exportCard.hidden = candidateSelectionMode || !exportSubscreen;
+      if (reviewTools) reviewTools.hidden = candidateSelectionMode || correctMode || !exportSubscreen;
+      if (correctionSection) correctionSection.hidden = candidateSelectionMode || exportSubscreen || !correctMode;
+      if (artifactSection) artifactSection.hidden = candidateSelectionMode || exportSubscreen || lifecycle?.status !== "failed";
+      if (segmentGate) segmentGate.hidden = !showCandidateSection;
       if (list) list.hidden = candidateSelectionMode || exportSubscreen;
     }
 
@@ -13130,6 +13817,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = capture === "workflow-export" ? "export" : "review";
+        state.activeJourneyPhase = capture === "workflow-export" ? "export" : capture === "workflow-correct" ? "correct" : "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
       } else if (capture === "workflow-review-failure") {
@@ -13141,6 +13829,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = ["export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture) ? "export" : "review";
+        state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : capture === "correction-tools" ? "correct" : "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
         if (capture === "candidate-review") {
@@ -13154,6 +13843,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture("workflow-review");
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = "review";
+        state.activeJourneyPhase = "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
         document.querySelectorAll(".right-rail > details").forEach((details) => {
@@ -13429,6 +14119,8 @@ const MotionJSONUI = (() => {
         persistenceStatus: "saving",
         persistenceMessage: "Saving correction edit through the Runtime API correction endpoint.",
       };
+      state.exportValidation = null;
+      state.exportResult = null;
       rebuildTracksFromCorrectionState();
       renderJobReview();
       return entry;
@@ -13447,6 +14139,8 @@ const MotionJSONUI = (() => {
       normalized.history = normalized.history.map((entry) => ({ ...entry, persistenceStatus: "saved" }));
       if (response?.review) state.jobReview = response.review;
       state.correctionState = normalized;
+      state.exportValidation = null;
+      state.exportResult = null;
       rebuildTracksFromCorrectionState();
       renderJobReview();
     }
@@ -13622,6 +14316,29 @@ const MotionJSONUI = (() => {
           : "Could not copy automatically. Open logs and copy the visible run details manually.",
         copied ? "warning-box is-ready" : "warning-box is-warn",
       );
+    }
+
+    async function copyRawLogs() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const rawEvents = filterEventsForRawLog(events);
+      const text = rawEvents.length
+        ? rawEvents
+            .map((event, index) => {
+              const metadata = redactDebugReportValue(eventMetadata(event));
+              return [
+                `${index + 1}. ${eventTimestamp(event) || "no time"} ${eventLabel(event)} ${event.stage || ""}`,
+                redactDebugReportText(eventMessage(event)),
+                JSON.stringify(metadata),
+              ].filter(Boolean).join(" - ");
+            })
+            .join("\n")
+        : "No raw log events are available for the selected run.";
+      const copied = await copyTextToClipboard(text);
+      [$("#copyRawLogsButton"), $("#mainCopyRawLogsButton")].filter(Boolean).forEach((button) => {
+        button.textContent = copied ? "Copied redacted logs" : "Copy redacted logs";
+      });
+      setRunAlert(copied ? "Redacted raw logs copied." : "Could not copy raw logs automatically.", copied ? "warning-box is-ready" : "warning-box is-warn");
     }
 
     async function handleExportHandoffAction(event) {
@@ -13868,6 +14585,10 @@ const MotionJSONUI = (() => {
     $("#mainOpenLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
     $("#copyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
     $("#mainCopyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
+    $("#rawLogSearch")?.addEventListener("input", renderEventLog);
+    $("#mainRawLogSearch")?.addEventListener("input", renderEventLog);
+    $("#copyRawLogsButton")?.addEventListener("click", copyRawLogs);
+    $("#mainCopyRawLogsButton")?.addEventListener("click", copyRawLogs);
     $("#runAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#mainRunAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#changeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));
@@ -14102,6 +14823,7 @@ const MotionJSONUI = (() => {
       const duplicateTracks = state.reviewTracks.filter((track) => /duplicate|overlap|same object/i.test(`${track.label || ""} ${asArray(track.warnings).join(" ")}`));
       const mergeTargets = duplicateTracks.length >= 2 ? duplicateTracks.slice(0, 2) : state.reviewTracks.slice(0, 2);
       state.mergeSelection = new Set(mergeTargets.map((track) => track.id).filter(Boolean));
+      state.activeJourneyPhase = "correct";
       setWorkflowStep("review_export", { focusStep: true });
       renderTrackList();
       renderSelectedTrackDetail();

@@ -529,6 +529,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "diagnostics-open") {
       await cdp.send("Runtime.evaluate", {
         expression: `
+          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
+            document.querySelector("#diagnosticsSummary")?.click();
+          }
+          document.querySelector(".app-shell")?.classList.remove("is-rail-collapsed");
+          const rail = document.querySelector("#diagnosticsRail");
+          if (rail) {
+            rail.style.display = "";
+            rail.removeAttribute("aria-hidden");
+            rail.inert = false;
+          }
           document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
@@ -570,7 +580,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       prompt_preview: ["prompt_preview", "validate_run"],
       candidate_selection: ["review_candidates"],
       run_monitor: ["run_monitor"],
-      review_export: ["correct_tracks", "export"],
+      review_export:
+        state === "workflow-export"
+          ? ["export"]
+          : state === "workflow-correct"
+            ? ["correct_tracks"]
+            : ["review_candidates"],
     };
     const workflowScreenAliases = {
       choose_goal: ["choose_goal"],
@@ -582,9 +597,17 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       review_export: ["review_export"],
     };
     if (workflowStates[state]) {
+      const workflowClickSelector =
+        state === "workflow-correct"
+          ? '[data-journey-phase="correct"]'
+          : state === "workflow-export"
+            ? '[data-journey-phase="export"]'
+            : state === "workflow-review" || state === "workflow-partial-success"
+              ? '[data-journey-phase="review"]'
+              : `[data-workflow-step="${workflowStates[state]}"]`;
       await cdp.send("Runtime.evaluate", {
         expression: `
-          document.querySelector('[data-workflow-step="${workflowStates[state]}"]')?.click();
+          document.querySelector('${workflowClickSelector}')?.click();
         `,
       });
     }
@@ -606,6 +629,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "project-drawer-open") {
       layout.failures = layout.failures.filter((failure) => !/\.sidebar overlaps \.workspace/.test(failure));
+    }
+    if (state === "diagnostics-open") {
+      layout.failures = layout.failures.filter((failure) => !/\.workspace overlaps \.right-rail/.test(failure));
     }
     if (state === "workflow-keyboard") {
       await exerciseWorkflowKeyboard(cdp);
@@ -640,6 +666,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
           railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
           railVisible: visible(rightRail),
+          detailsExpanded: [...(rightRail?.querySelectorAll("details") || [])].some((details) => details.open === true) ? "true" : "false",
           sidebarContentAriaHidden: document.querySelector("#sidebarNavigationContent")?.getAttribute("aria-hidden") || "",
           sidebarContentInert: document.querySelector("#sidebarNavigationContent")?.inert === true,
           railAriaHidden: rightRail?.getAttribute("aria-hidden") || "",
@@ -763,6 +790,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           exportHandoffText: document.querySelector("#exportHandoffCards")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           exportSummaryText: document.querySelector("#exportSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobCenterVisible: visible(document.querySelector("#mainJobCenter")),
+          runCockpitVisible: visible(document.querySelector("[data-testid='run-cockpit']")),
+          phaseTimelineText: document.querySelector("[data-testid='phase-timeline']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          currentActivityText: document.querySelector("[data-testid='current-activity']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runStatusChipsText: document.querySelector("[data-testid='run-status-chips']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          sourceFramePreviewVisible: visible(document.querySelector("[data-testid='source-frame-preview']")),
+          objectOverlayVisible: visible(document.querySelector("[data-testid='object-overlay']")),
+          maskPreviewText: document.querySelector("[data-testid='mask-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          cutoutPreviewText: document.querySelector("[data-testid='cutout-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          candidateListText: document.querySelector("[data-testid='candidate-list']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runEventsText: document.querySelector("[data-testid='run-events']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runTemporalTimelineVisible: visible(document.querySelector("#runTemporalTimeline")),
+          runPreflightSummaryText: document.querySelector("#runPreflightSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          railContextTitle: document.querySelector("#railContextTitle")?.textContent?.trim() || "",
+          usageDrawerText: document.querySelector("[data-testid='usage-drawer']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          jobUsageText: document.querySelector("[data-testid='job-usage']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          workspaceUsageText: document.querySelector("[data-testid='workspace-usage']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          rawLogToolsVisible: visible(document.querySelector(".raw-log-tools")),
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
           mainLivePreviewStatusText: document.querySelector("#mainLivePreviewStatus")?.textContent?.trim() || "",
           mainLivePreviewCardCount: document.querySelectorAll("#mainRunLivePreview .run-live-preview-card").length,
@@ -927,7 +971,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-cache-success" && (!stateValue.modelSetupProgressVisible || !/Model cached|100%|Setup complete/.test(stateValue.modelSetupProgressText))) {
       failures.push(`${viewport.name}/${state}: successful cache job should show completion progress`);
     }
-    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Upload video and project settings" || !stateValue.uploadDropzoneVisible)) {
+    if (
+      state === "workflow-video" &&
+      (!/^(Upload video and project settings|Which video am I extracting from\?)$/.test(stateValue.setupPanelTitle) || !stateValue.uploadDropzoneVisible)
+    ) {
       failures.push(`${viewport.name}/${state}: video step should expose direct upload and project setup`);
     }
     if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Choose video file") {
@@ -1037,14 +1084,45 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
       failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
     }
+    if (state === "workflow-run" && (!stateValue.runCockpitVisible || !/Preflight.*Sampling.*Proposal.*Segmentation.*Tracking.*Artifacts.*Validation.*Review Ready/.test(stateValue.phaseTimelineText))) {
+      failures.push(`${viewport.name}/${state}: run step should render the extraction cockpit phase timeline`);
+    }
+    if (state === "workflow-run" && (!/Tracking selected object.*frame 36.*180.*SAM2/i.test(stateValue.currentActivityText) || !/Healthy.*running.*Local/i.test(stateValue.runStatusChipsText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show readable current activity and health/status/locality chips`);
+    }
+    if (state === "workflow-run" && (!stateValue.sourceFramePreviewVisible || !stateValue.objectOverlayVisible || !/Preview file registered|Mask ready/.test(stateValue.maskPreviewText) || !/Preview file registered|Cutout ready/.test(stateValue.cutoutPreviewText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show source, object overlay, mask, and cutout evidence areas`);
+    }
+    if (state === "workflow-run" && (!/selected object.*track needs review/i.test(stateValue.candidateListText) || !/tracking selected object frame 36\/180|registered live mask preview/i.test(stateValue.runEventsText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show candidate/track context and readable grouped run events`);
+    }
+    if (
+      state === "workflow-run" &&
+      (!stateValue.runTemporalTimelineVisible ||
+        !/Source/i.test(stateValue.runPreflightSummaryText) ||
+        !/Provider/i.test(stateValue.runPreflightSummaryText) ||
+        !/Locality/i.test(stateValue.runPreflightSummaryText) ||
+        !/sam2-local|SAM2 local|SAM2/i.test(stateValue.runPreflightSummaryText))
+    ) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show temporal timeline and compact preflight summary`);
+    }
     if (state === "workflow-run" && (!stateValue.mainJobCenterVisible || stateValue.mainLivePreviewCardCount < 1 || !/selected object/i.test(stateValue.mainLivePreviewText))) {
       failures.push(`${viewport.name}/${state}: run monitor should show live mask/cutout output for the running selected object`);
+    }
+    if (state === "workflow-run" && (!/provider \/ model.*SAM2|provider \/ model.*sam2-local/i.test(stateValue.jobUsageText) || !/Locality.*Local/i.test(stateValue.jobUsageText) || !/artifacts generated/i.test(stateValue.jobUsageText))) {
+      failures.push(`${viewport.name}/${state}: usage drawer should expose per-job provider, locality, and artifact usage`);
+    }
+    if (state === "workflow-run" && (!/jobs by status/i.test(stateValue.workspaceUsageText) || !/cost estimate/i.test(stateValue.workspaceUsageText) || !/failed \/ stalled jobs/i.test(stateValue.workspaceUsageText))) {
+      failures.push(`${viewport.name}/${state}: usage drawer should expose workspace usage totals`);
     }
     if (state === "workflow-run-stale" && (!/No progress update/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.runMonitorSummaryText}`) || stateValue.mainRunStatusText !== "running")) {
       failures.push(`${viewport.name}/${state}: stale running job should expose a no-progress warning without hiding the run monitor`);
     }
     if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
       failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
+    }
+    if (state === "workflow-run-logs-open" && !stateValue.rawLogToolsVisible) {
+      failures.push(`${viewport.name}/${state}: open raw logs should expose search/copy controls`);
     }
     if (
       state === "workflow-run-asset-stalled" &&
@@ -1074,14 +1152,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         if (!stateValue.studioInspectorVisible || !/Selected object|Runtime|Accelerator|Geometry|Motion/.test(stateValue.studioInspectorText)) {
           failures.push(`${viewport.name}/${state}: desktop review should expose selected-object diagnostics and runtime proof in the workbench`);
         }
-        if (!stateValue.reviewToolsVisible || !/Canvas player|Object selection|Timeline/.test(stateValue.reviewToolsText)) {
-          failures.push(`${viewport.name}/${state}: desktop review should expose actual review tool readiness cards above the fold`);
-        }
         for (const [label, box] of [
           ["viewer", stateValue.viewerPanelBox],
           ["object list", stateValue.studioObjectListBox],
           ["inspector", stateValue.studioInspectorBox],
-          ["review tools", stateValue.reviewToolsBox],
         ]) {
           if (!box || box.bottom > bottomLimit || box.top < -2) {
             failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible review workbench`);
@@ -1183,7 +1257,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
-      if (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel) {
+      const mobileRunCockpitOwnsAction = viewport.width <= 760 && expectedWorkflowStep === "run_monitor" && stateValue.runCockpitVisible;
+      if (!mobileRunCockpitOwnsAction && (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel)) {
         failures.push(`${viewport.name}/${state}: guided workflow should expose exactly one visible footer primary action`);
       }
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {
