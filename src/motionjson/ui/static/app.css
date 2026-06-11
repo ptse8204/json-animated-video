@@ -6097,7 +6097,13 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard),
 .app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed),
 .app-shell.is-result-mode.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
-  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-columns: 218px minmax(0, 1fr) !important;
+}
+
+.app-shell.is-result-mode.is-journey-collapsed:not(.is-workflow-dashboard),
+.app-shell.is-result-mode.is-journey-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed),
+.app-shell.is-result-mode.is-journey-collapsed.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
+  grid-template-columns: 72px minmax(0, 1fr) !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail,
@@ -9593,7 +9599,13 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard),
 .app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed),
 .app-shell.is-result-mode.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
-  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-columns: 218px minmax(0, 1fr) !important;
+}
+
+.app-shell.is-result-mode.is-journey-collapsed:not(.is-workflow-dashboard),
+.app-shell.is-result-mode.is-journey-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed),
+.app-shell.is-result-mode.is-journey-collapsed.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
+  grid-template-columns: 72px minmax(0, 1fr) !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail,
@@ -9739,6 +9751,7 @@ body {
   align-content: start !important;
   gap: 0 !important;
   overflow: auto !important;
+  scrollbar-gutter: stable !important;
   padding: 0 !important;
   min-height: 220px !important;
   border-top: 1px solid var(--workflow-line, var(--border)) !important;
@@ -9788,13 +9801,15 @@ body {
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row {
   grid-template-columns: 16px 24px minmax(0, 1fr) 30px 30px !important;
+  grid-template-rows: auto auto !important;
   grid-template-areas:
     "color number copy visible export"
     "color number status visible export" !important;
-  align-items: center !important;
-  min-height: 74px !important;
-  gap: 4px 10px !important;
-  padding: 10px 0 !important;
+  align-items: start !important;
+  min-height: 92px !important;
+  gap: 6px 10px !important;
+  padding: 12px 0 !important;
+  overflow: visible !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-color {
@@ -9807,10 +9822,18 @@ body {
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-copy {
   grid-area: copy !important;
-  gap: 3px !important;
+  align-self: start !important;
+  gap: 4px !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-title {
+  white-space: nowrap !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-meta {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 
@@ -9819,7 +9842,7 @@ body {
   justify-self: start !important;
   align-self: start !important;
   max-width: 100% !important;
-  white-space: normal !important;
+  white-space: nowrap !important;
   line-height: 1.15 !important;
 }
 

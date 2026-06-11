@@ -836,6 +836,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           studioReviewTitle: document.querySelector("#studioReviewTitle")?.textContent?.trim() || "",
           studioReviewModeKicker: document.querySelector("#studioReviewModeKicker")?.textContent?.trim() || "",
           studioObjectRowCount: document.querySelectorAll("#studioObjectList .studio-object-row").length,
+          studioObjectRowOverflowCount: [...document.querySelectorAll("#studioObjectList .studio-object-row")]
+            .filter((element) => visible(element) && element.scrollHeight - element.clientHeight > 2)
+            .length,
           studioObjectListVisible: visible(document.querySelector("#studioObjectList")),
           studioExportCardVisible: visible(document.querySelector("#studioExportCard")),
           studioExportIncludedText: document.querySelector("#studioExportIncludedObjects")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -991,6 +994,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (!stateValue.journeyNavBox || stateValue.journeyNavBox.width > 80) {
         failures.push(`${viewport.name}/${state}: narrow desktop journey menu should use the compact rail width`);
+      }
+    }
+    if (["workflow-review", "workflow-correct", "workflow-export", "workflow-partial-success", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && stateValue.viewportWidth > 900) {
+      if (!stateValue.journeyNavBox || !stateValue.workspaceBox || stateValue.workspaceBox.left < stateValue.journeyNavBox.right - 1) {
+        failures.push(`${viewport.name}/${state}: result workbench should start after the visible journey rail`);
+      }
+      if (stateValue.studioObjectRowOverflowCount > 0) {
+        failures.push(`${viewport.name}/${state}: reviewed object rows should not clip or overlap their status content`);
       }
     }
     if (["real-empty-shell", "workflow-goal"].includes(state) && stateValue.projectDrawerVisible) {
