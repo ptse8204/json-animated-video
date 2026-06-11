@@ -5561,6 +5561,197 @@ body {
   }
 }
 
+/* UI V3 setup flow: compact task rows, source-first setup, and explicit
+   target/preflight staging while preserving existing form controls. */
+.guided-start {
+  align-content: start;
+  min-height: 0;
+  padding-top: 26px;
+}
+
+.guided-start-header {
+  justify-content: flex-start;
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.guided-start-header h2 {
+  font-size: 26px;
+}
+
+.goal-card-grid,
+.advanced-goal-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 960px;
+  margin: 12px auto 0;
+  gap: 0;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.advanced-task-panel {
+  max-width: 960px;
+  margin: 18px auto 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.advanced-task-heading {
+  padding-bottom: 4px;
+}
+
+.goal-card {
+  grid-template-columns: minmax(190px, 0.56fr) minmax(0, 1fr) minmax(220px, 0.7fr);
+  min-height: 68px;
+  padding: 12px 6px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.goal-card:hover {
+  background: #f8fbff;
+}
+
+.goal-card.is-active {
+  border-color: var(--ui-v3-line);
+  background: var(--ui-v3-blue-soft);
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+}
+
+.goal-card-title,
+.goal-card-copy,
+.goal-card-meta {
+  grid-column: auto;
+  margin: 0;
+}
+
+.goal-card-title {
+  align-self: center;
+  padding-left: 12px;
+  font-size: 15px;
+}
+
+.goal-card-copy {
+  align-self: center;
+  color: #314155;
+  font-size: 13px;
+}
+
+.goal-card-meta {
+  align-self: center;
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel {
+  max-width: 1040px;
+  padding-top: 18px;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-dropzone {
+  border-color: #c7d9ef;
+  border-radius: 8px;
+  background: #f8fbff;
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card,
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .step-action-card {
+  border-radius: 8px;
+}
+
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-panel {
+  max-width: 1040px;
+}
+
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-grid {
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-card {
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace-grid {
+  display: grid;
+  max-width: 1160px;
+  margin: 0 auto;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-areas:
+    "viewer wizard"
+    "viewer config";
+  gap: 18px;
+  align-items: start;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel {
+  grid-area: viewer;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel {
+  grid-area: wizard;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-panel {
+  grid-area: config;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel,
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-panel {
+  margin: 0;
+  padding: 0;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-stage {
+  min-height: 420px;
+  border-radius: 8px;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) #startRunButton {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  border-color: #0f4ec6;
+  background: var(--ui-v3-blue);
+  color: #ffffff;
+}
+
+.run-plan-summary {
+  border-left: 4px solid var(--ui-v3-blue);
+}
+
+@media (max-width: 980px) {
+  .goal-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding: 14px 10px;
+  }
+
+  .goal-card-title {
+    padding-left: 0;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "viewer"
+      "wizard"
+      "config";
+  }
+}
+
 /* Final storyboard overrides. Keep these last so older shell rules cannot hide the project rail. */
 .app-shell,
 .app-shell.is-sidebar-collapsed,
@@ -5899,6 +6090,252 @@ body {
 #workflowController #workflowStepper,
 #workflowController #workflowStepper * {
   display: none !important;
+}
+
+/* UI V3 phase-02 guardrails: keep setup choices as a readable workflow list
+   after every legacy storyboard layer has run. */
+.workspace {
+  padding-bottom: 164px;
+}
+
+.guided-start {
+  min-height: 0;
+  align-content: start;
+  padding: 14px 24px 96px;
+  background: transparent;
+}
+
+.guided-start-header {
+  justify-content: flex-start;
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.guided-start-header h2 {
+  font-size: 23px;
+}
+
+.goal-card-grid,
+.advanced-goal-list {
+  grid-template-columns: minmax(0, 1fr) !important;
+  max-width: 960px;
+  margin: 10px auto 0;
+  gap: 0;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.advanced-task-panel {
+  max-width: 960px;
+  margin: 16px auto 0;
+  padding: 0 0 28px;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.goal-card {
+  grid-template-columns: minmax(170px, 0.38fr) minmax(250px, 1fr) minmax(280px, 0.82fr) !important;
+  min-height: 58px;
+  padding: 9px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.goal-card-title,
+.goal-card-copy,
+.goal-card-meta {
+  grid-column: auto;
+  align-self: center;
+  margin: 0;
+}
+
+.goal-card-title {
+  padding-left: 12px;
+}
+
+.goal-card-meta {
+  display: block;
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.goal-card.is-active {
+  border-color: var(--ui-v3-line);
+  background: var(--ui-v3-blue-soft);
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+}
+
+summary.advanced-task-heading {
+  min-height: 48px;
+  padding: 12px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+summary.advanced-task-heading::-webkit-details-marker {
+  display: none;
+}
+
+summary.advanced-task-heading::after {
+  content: "+";
+  color: var(--ui-v3-blue);
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.advanced-task-panel[open] summary.advanced-task-heading::after {
+  content: "-";
+}
+
+@media (max-width: 980px) {
+  .goal-card {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 5px;
+    min-height: 0;
+    padding: 14px 10px;
+  }
+
+  .goal-card-title {
+    padding-left: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .studio-topbar {
+    gap: 8px;
+    min-height: 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .studio-brand-group {
+    display: none;
+  }
+
+  .command-identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .studio-project-pill,
+  .command-identity-chip {
+    min-height: 34px;
+    padding: 4px 10px;
+  }
+
+  .topbar-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #diagnosticsSummary.status-chip,
+  .command-icon-button {
+    display: none;
+  }
+
+  .guided-start {
+    padding-top: 14px;
+  }
+
+  .guided-start-header h2 {
+    font-size: 21px;
+  }
+
+  .goal-card {
+    padding: 11px 12px;
+  }
+
+  .goal-card-title {
+    font-size: 14px;
+  }
+
+  .goal-card-copy,
+  .goal-card-meta {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .workflow-footer,
+  .app-shell.is-journey-collapsed .workflow-footer {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    margin: 0;
+  }
+}
+
+/* UI V3 phase-02 final override: old storyboard rules above still define
+   two-column goal cards, so keep the actual task choices as compact rows. */
+.guided-start {
+  align-content: start;
+  background: transparent;
+}
+
+.guided-start-header {
+  justify-content: flex-start;
+  max-width: 960px;
+  margin: 0 auto;
+  text-align: left;
+}
+
+.goal-card-grid,
+.advanced-goal-list {
+  grid-template-columns: minmax(0, 1fr) !important;
+  max-width: 960px;
+  gap: 0;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.goal-card {
+  grid-template-columns: minmax(180px, 0.42fr) minmax(260px, 1fr) minmax(260px, 0.82fr) !important;
+  min-height: 66px;
+  padding: 11px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.goal-card-title,
+.goal-card-copy,
+.goal-card-meta {
+  grid-column: auto;
+  align-self: center;
+  margin: 0;
+}
+
+.goal-card-title {
+  padding-left: 12px;
+}
+
+.goal-card-meta {
+  display: block;
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.goal-card.is-active {
+  border-color: var(--ui-v3-line);
+  background: var(--ui-v3-blue-soft);
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+}
+
+@media (max-width: 980px) {
+  .goal-card {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 5px;
+    padding: 14px 10px;
+  }
+
+  .goal-card-title {
+    padding-left: 0;
+  }
 }
 
 /* UI V3 workflow shell. This final layer replaces the dashboard frame with a

@@ -927,7 +927,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "model-setup-cache-success" && (!stateValue.modelSetupProgressVisible || !/Model cached|100%|Setup complete/.test(stateValue.modelSetupProgressText))) {
       failures.push(`${viewport.name}/${state}: successful cache job should show completion progress`);
     }
-    if (state === "workflow-video" && (stateValue.setupPanelTitle !== "Upload video and project settings" || !stateValue.uploadDropzoneVisible)) {
+    if (
+      state === "workflow-video" &&
+      (!/^(Upload video and project settings|Which video am I extracting from\?)$/.test(stateValue.setupPanelTitle) || !stateValue.uploadDropzoneVisible)
+    ) {
       failures.push(`${viewport.name}/${state}: video step should expose direct upload and project setup`);
     }
     if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Choose video file") {

@@ -5880,16 +5880,16 @@ const MotionJSONUI = (() => {
       const setupCopy = {
         title:
           activeStep === "choose_goal"
-            ? "Choose your goal"
+            ? "What am I trying to make?"
             : state.selectedPreset === "review_existing"
               ? "Open an existing result"
-              : "Upload video and project settings",
+              : "Which video am I extracting from?",
         note:
           activeStep === "choose_goal"
-            ? "Pick a goal-first workflow. Continue changes this workspace to the next step."
+            ? "Choose the extraction job first. MotionJSON will recommend the safest path from that choice."
             : state.selectedPreset === "review_existing"
             ? "Open a MotionJSON result for review. Guided mode creates the workspace automatically."
-            : "Choose a video file. MotionJSON creates the workspace and prepares a browser-safe preview automatically.",
+            : "Add a source video, confirm MotionJSON can read it, then keep the file local unless you explicitly opt into hosted providers.",
       };
       const enginePlan = guidedEnginePlan(collectFormState($));
       const wizardCopy =
@@ -5904,12 +5904,12 @@ const MotionJSONUI = (() => {
                 title: /^sam3-/.test(String(enginePlan.providerName || "")) ? "Trace the object" : "Trace the object",
                 note: /^sam3-/.test(String(enginePlan.providerName || ""))
                   ? "SAM3 single-object tracing uses one box prompt in the viewer before the run starts."
-                  : "Name the object, then draw a point or box prompt in the viewer.",
+                  : "Name the target object, then draw a point or box prompt directly on the representative frame.",
               }
             : state.selectedPreset === "trace_all_objects"
               ? {
                   title: "Prepare object discovery",
-                  note: "Choose the discovery quality and review plan before running mask proposals.",
+                  note: "Choose the discovery mode, quality, and review plan before running mask proposals.",
                 }
               : state.selectedPreset === "pick_objects_from_frame"
                 ? {
@@ -5931,14 +5931,14 @@ const MotionJSONUI = (() => {
                 note: "Watch progress and logs here. Failed runs keep recovery actions visible.",
               }
           : {
-              title: goalRequiresModel(state.selectedPreset) ? "Choose and install models" : "No model is needed",
+              title: goalRequiresModel(state.selectedPreset) ? "Can the recommended model path run here?" : "No model is needed",
               note: goalRequiresModel(state.selectedPreset)
-                ? "Choose one compatible SAM engine for this workflow. Install, access checks, smoke tests, API keys, and runtime paths stay inside this flow."
+                ? "Start with one recommended provider/model path. Install, cache, credential, consent, and diagnostics details stay inside this step."
                 : "This workflow runs without SAM model setup.",
             };
       const configCopy = {
-        title: "Advanced run plan",
-        note: "Raw config, validation, and save/load controls stay available in Advanced when you need the full technical view.",
+        title: "What will happen if I press Run?",
+        note: "Review the source, target, provider, locality, sample budget, output destination, and blockers before extraction starts.",
       };
       const copyTargets = [
         ["#setupPanelTitle", setupCopy.title],
@@ -6169,7 +6169,9 @@ const MotionJSONUI = (() => {
             : activeStep === "provider_settings"
               ? "model"
               : activeStep === "prompt_preview"
-                ? "target"
+                ? state.activeJourneyPhase === "preflight"
+                  ? "preflight"
+                  : "target"
                 : activeStep === "run_monitor"
                   ? "run"
                   : state.reviewExportSubscreen === "export"
@@ -6344,6 +6346,7 @@ const MotionJSONUI = (() => {
     function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
       const nextStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
       if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
+      if (nextStep !== "prompt_preview" && nextStep !== state.activeWorkflowStep) state.activeJourneyPhase = "";
       state.activeWorkflowStep = nextStep;
       if (nextStep !== "review_export") state.reviewExportSubscreen = "review";
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
@@ -6625,6 +6628,7 @@ const MotionJSONUI = (() => {
         const button = event.target.closest("[data-workflow-step]");
         if (!button) return;
         if (button.disabled) return;
+        if (button.dataset.journeyPhase) state.activeJourneyPhase = button.dataset.journeyPhase;
         if (document.documentElement.dataset.capture === "workflow-export" && button.dataset.workflowStep === "review_export") {
           state.reviewExportSubscreen = "export";
         } else if (button.dataset.reviewSubscreen) {

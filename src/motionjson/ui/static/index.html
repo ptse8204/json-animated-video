@@ -173,52 +173,62 @@
             <button class="goal-card is-active" type="button" data-preset="trace_one_object" data-testid="goal-trace-one-object" aria-pressed="true">
               <span class="goal-card-title">Cut out one object</span>
               <span class="goal-card-copy">Place a point or box, then track that subject.</span>
+              <span class="goal-card-meta">Best for one named object · SAM2/SAM3 prompt path · review required</span>
             </button>
             <button class="goal-card" type="button" data-preset="pick_objects_from_frame" data-testid="goal-pick-objects-from-frame" aria-pressed="false">
               <span class="goal-card-title">Pick objects from one frame</span>
               <span class="goal-card-copy">Scan one frame first, keep what matters, then track only those objects.</span>
+              <span class="goal-card-meta">Best for busy scenes · automatic proposals · lower cost after selection</span>
             </button>
             <button class="goal-card" type="button" data-preset="text_detector" data-testid="goal-text-detector" aria-pressed="false">
               <span class="goal-card-title">Find by description</span>
               <span class="goal-card-copy">Describe objects, review matches, then track the ones to keep.</span>
+              <span class="goal-card-meta">Needs detector/open-vocabulary provider · hosted paths require consent</span>
             </button>
             <button class="goal-card" type="button" data-preset="review_existing" data-testid="goal-review-existing" aria-pressed="false">
               <span class="goal-card-title">Review previous result</span>
               <span class="goal-card-copy">Open a prior result and check tracks before export.</span>
+              <span class="goal-card-meta">No model needed · validates existing tracks · export gate still applies</span>
             </button>
           </div>
-          <div class="advanced-task-panel" aria-label="Advanced tracing tasks">
-            <div class="advanced-task-heading">
+          <details class="advanced-task-panel" aria-label="Advanced tracing tasks">
+            <summary class="advanced-task-heading">
               <h3>Advanced tasks</h3>
               <span class="row-meta">Specialized workflows</span>
-            </div>
+            </summary>
             <div class="advanced-goal-list">
               <button class="goal-card" type="button" data-preset="trace_all_objects" data-testid="goal-trace-all-objects" aria-pressed="false">
                 <span class="goal-card-title">Find everything in scene</span>
                 <span class="goal-card-copy">Run a broader scene sweep when one-frame picking is not enough.</span>
+                <span class="goal-card-meta">SAM3 scene sweep recommended · noisier · review-gated</span>
               </button>
               <button class="goal-card" type="button" data-preset="motion_foreground" data-testid="goal-motion-foreground" aria-pressed="false">
                 <span class="goal-card-title">Find moving things</span>
                 <span class="goal-card-copy">Use runtime motion cues without a model.</span>
+                <span class="goal-card-meta">CPU/no-model path · good for stable clips · false motion possible</span>
               </button>
               <button class="goal-card" type="button" data-preset="auto_object_proposals" data-testid="goal-auto-object-proposals" aria-pressed="false">
                 <span class="goal-card-title">Discover objects</span>
                 <span class="goal-card-copy">Generate automatic proposals before tracking.</span>
+                <span class="goal-card-meta">Proposal first · review required · caps noisy results</span>
               </button>
               <button class="goal-card" type="button" data-preset="sam_auto_masks" data-testid="goal-sam-auto-masks" aria-pressed="false">
                 <span class="goal-card-title">Propose all visible segments</span>
                 <span class="goal-card-copy">Use noisier segmentation for expert review.</span>
+                <span class="goal-card-meta">Expert mode · high noise/cost risk · never export-ready automatically</span>
               </button>
               <button class="goal-card" type="button" data-preset="external_masks" data-testid="goal-external-masks" aria-pressed="false">
                 <span class="goal-card-title">Import masks</span>
                 <span class="goal-card-copy">Bring prepared masks into review.</span>
+                <span class="goal-card-meta">No model needed · mask frame alignment required · review before export</span>
               </button>
               <button class="goal-card" type="button" data-preset="class_detector" data-testid="goal-class-detector" aria-pressed="false">
                 <span class="goal-card-title">Find known classes</span>
                 <span class="goal-card-copy">Use configured detector classes.</span>
+                <span class="goal-card-meta">Detector setup required · class list driven · review uncertain matches</span>
               </button>
             </div>
-          </div>
+          </details>
         </section>
 
         <section id="workflowController" class="workflow-controller panel" aria-label="Guided tracing workflow" data-testid="workflow-controller">
