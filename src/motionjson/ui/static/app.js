@@ -6241,6 +6241,16 @@ const MotionJSONUI = (() => {
           item.classList.toggle("is-pending", !active && !complete && !blocked);
         }
       });
+      const activeButton = nav.querySelector("[data-journey-phase].is-active");
+      const navList = $("#journeyNavList");
+      if (activeButton && navList && nav.scrollWidth > nav.clientWidth + 2) {
+        requestAnimationFrame(() => {
+          const buttonBox = activeButton.getBoundingClientRect();
+          const navBox = nav.getBoundingClientRect();
+          const delta = buttonBox.left + buttonBox.width / 2 - (navBox.left + navBox.width / 2);
+          nav.scrollLeft += delta;
+        });
+      }
     }
 
     function renderWorkflowStepper() {

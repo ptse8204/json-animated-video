@@ -16,6 +16,11 @@ const VIEWPORTS = [
   { name: "desktop-1920", width: 1920, height: 1080 },
 ];
 const REAL_STATES = ["real-empty-shell", "real-seeded-shell", "real-expanded-shell"];
+const requestedScreenshotTimeoutMs = Number(process.env.MOTIONJSON_UI_SCREENSHOT_TIMEOUT_MS || 15000);
+const DEFAULT_SCREENSHOT_TIMEOUT_MS =
+  Number.isFinite(requestedScreenshotTimeoutMs) && requestedScreenshotTimeoutMs > 0 ? requestedScreenshotTimeoutMs : 15000;
+const requestedCdpTimeoutMs = Number(process.env.MOTIONJSON_UI_CDP_TIMEOUT_MS || 20000);
+const DEFAULT_CDP_TIMEOUT_MS = Number.isFinite(requestedCdpTimeoutMs) && requestedCdpTimeoutMs > 0 ? requestedCdpTimeoutMs : 20000;
 const CAPTURE_STATES = [
   "nav-collapsed",
   "project-drawer-open",
@@ -87,17 +92,28 @@ const CAPTURE_STATES = [
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
 
 function parseArgs(argv) {
-  const options = { check: false, screenshotDir: "", states: STATES, viewports: VIEWPORTS };
+  const options = {
+    check: false,
+    screenshotDir: "",
+    screenshotTimeoutMs: DEFAULT_SCREENSHOT_TIMEOUT_MS,
+    states: STATES,
+    viewports: VIEWPORTS,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--check") options.check = true;
     else if (arg === "--screenshot-dir") options.screenshotDir = argv[++index] || "";
-    else if (arg === "--state") options.states = (argv[++index] || "").split(",").filter(Boolean);
+    else if (arg === "--screenshot-timeout-ms") {
+      options.screenshotTimeoutMs = Number(argv[++index] || "");
+      if (!Number.isFinite(options.screenshotTimeoutMs) || options.screenshotTimeoutMs <= 0) {
+        throw new Error("--screenshot-timeout-ms must be a positive number");
+      }
+    } else if (arg === "--state") options.states = (argv[++index] || "").split(",").filter(Boolean);
     else if (arg === "--viewport") {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
       options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-keyboard,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--screenshot-timeout-ms 15000] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-keyboard,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
 
 Starts the Local UI in explicit debug mock mode, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
@@ -275,10 +291,26 @@ function connectCdp(webSocketDebuggerUrl) {
     socket.addEventListener("error", reject, { once: true });
   });
   return {
-    async send(method, params = {}) {
+    async send(method, params = {}, { timeoutMs = DEFAULT_CDP_TIMEOUT_MS } = {}) {
       await opened;
       const messageId = ++id;
-      const response = new Promise((resolvePromise, reject) => callbacks.set(messageId, { resolve: resolvePromise, reject }));
+      let timer = null;
+      const response = new Promise((resolvePromise, reject) => {
+        timer = setTimeout(() => {
+          callbacks.delete(messageId);
+          reject(new Error(`Timed out after ${timeoutMs}ms waiting for CDP ${method}`));
+        }, timeoutMs);
+        callbacks.set(messageId, {
+          resolve: (value) => {
+            clearTimeout(timer);
+            resolvePromise(value);
+          },
+          reject: (error) => {
+            clearTimeout(timer);
+            reject(error);
+          },
+        });
+      });
       socket.send(JSON.stringify({ id: messageId, method, params }));
       return response;
     },
@@ -427,8 +459,32 @@ async function evaluateLayout(cdp) {
   return result.result.value;
 }
 
-async function captureScreenshot(cdp, path, { captureBeyondViewport = false } = {}) {
-  const result = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport });
+async function withTimeout(promise, timeoutMs, message) {
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+    promise.catch(() => {});
+  }
+}
+
+async function captureScreenshot(cdp, path, { captureBeyondViewport = false, label = path, timeoutMs = DEFAULT_SCREENSHOT_TIMEOUT_MS } = {}) {
+  await cdp.send("Page.bringToFront").catch(() => {});
+  await cdp
+    .send("Runtime.evaluate", {
+      awaitPromise: true,
+      expression: `new Promise((resolve) => requestAnimationFrame(() => resolve()))`,
+    })
+    .catch(() => {});
+  const result = await withTimeout(
+    cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport, fromSurface: true }, { timeoutMs }),
+    timeoutMs,
+    `Timed out after ${timeoutMs}ms capturing screenshot for ${label}`,
+  );
   await writeFile(path, Buffer.from(result.data, "base64"));
 }
 
@@ -476,7 +532,7 @@ async function closeTarget(cdp, targetId) {
   ]).catch(() => {});
 }
 
-async function checkState({ port, baseUrl, viewport, state, screenshotDir, failures }) {
+async function checkState({ port, baseUrl, viewport, state, screenshotDir, screenshotTimeoutMs, failures }) {
   const isRealState = REAL_STATES.includes(state);
   const capture = isRealState ? "" : state;
   const url = capture ? `${baseUrl}/?capture=${encodeURIComponent(capture)}` : baseUrl;
@@ -620,6 +676,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           document.querySelector('${workflowClickSelector}')?.click();
         `,
       });
+      await cdp.send("Runtime.evaluate", {
+        awaitPromise: true,
+        expression: `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))`,
+      });
     }
     if (state === "workflow-dashboard") {
       await cdp.send("Runtime.evaluate", {
@@ -691,6 +751,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           journeyToggleLabel: document.querySelector("#journeyNavToggle")?.textContent?.trim() || "",
           journeyToggleVisible: visible(document.querySelector("#journeyNavToggle")),
           journeyNavBox: elementBox("#journeyNav"),
+          activeJourneyButtonBox: elementBox("#journeyNav [data-journey-phase].is-active"),
           workspaceBox: elementBox("#workspaceMain"),
           shellGridColumns: shell ? getComputedStyle(shell).gridTemplateColumns : "",
           projectDrawerButtonExpanded: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-expanded") || "",
@@ -1317,6 +1378,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
+      if (viewport.width <= 900 && stateValue.journeyNavBox && stateValue.activeJourneyButtonBox) {
+        const activeJourneyVisible =
+          stateValue.activeJourneyButtonBox.left >= stateValue.journeyNavBox.left - 2 &&
+          stateValue.activeJourneyButtonBox.right <= Math.min(stateValue.viewportWidth, stateValue.journeyNavBox.right) + 2;
+        if (!activeJourneyVisible) {
+          failures.push(`${viewport.name}/${state}: active journey step should be fully visible in the mobile journey strip`);
+        }
+      }
       const mobileRunCockpitOwnsAction = viewport.width <= 760 && expectedWorkflowStep === "run_monitor" && stateValue.runCockpitVisible;
       if (!mobileRunCockpitOwnsAction && (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel)) {
         failures.push(`${viewport.name}/${state}: guided workflow should expose exactly one visible footer primary action`);
@@ -1359,24 +1428,52 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       }
     }
     if (screenshotDir) {
-      await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`));
+      const baseScreenshotOptions = {
+        label: `${viewport.name}/${state}`,
+        timeoutMs: screenshotTimeoutMs,
+      };
+      await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`), baseScreenshotOptions);
       if (state === "advanced-config" && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
       if (state.startsWith("model-setup") && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
       if (state.startsWith("model-plan") && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
       if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
       if (["job-review", "candidate-review", "correction-tools", "export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state) && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
       if (state === "workflow-review-failure" && viewport.name === "mobile-390") {
-        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), { captureBeyondViewport: true });
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}-full.png`), {
+          ...baseScreenshotOptions,
+          captureBeyondViewport: true,
+          label: `${viewport.name}/${state} full`,
+        });
       }
     }
     for (const failure of layout.failures) {
@@ -1444,7 +1541,15 @@ async function run() {
 
     for (const viewport of options.viewports) {
       for (const state of preSeedStates) {
-        await checkState({ port, baseUrl: ui.baseUrl, viewport, state, screenshotDir: options.screenshotDir, failures });
+        await checkState({
+          port,
+          baseUrl: ui.baseUrl,
+          viewport,
+          state,
+          screenshotDir: options.screenshotDir,
+          screenshotTimeoutMs: options.screenshotTimeoutMs,
+          failures,
+        });
       }
     }
 
@@ -1452,7 +1557,15 @@ async function run() {
 
     for (const viewport of options.viewports) {
       for (const state of postSeedStates) {
-        await checkState({ port, baseUrl: ui.baseUrl, viewport, state, screenshotDir: options.screenshotDir, failures });
+        await checkState({
+          port,
+          baseUrl: ui.baseUrl,
+          viewport,
+          state,
+          screenshotDir: options.screenshotDir,
+          screenshotTimeoutMs: options.screenshotTimeoutMs,
+          failures,
+        });
       }
     }
   } finally {
