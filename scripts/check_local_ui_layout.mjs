@@ -529,6 +529,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "diagnostics-open") {
       await cdp.send("Runtime.evaluate", {
         expression: `
+          if (document.querySelector(".app-shell")?.classList.contains("is-rail-collapsed")) {
+            document.querySelector("#diagnosticsSummary")?.click();
+          }
+          document.querySelector(".app-shell")?.classList.remove("is-rail-collapsed");
+          const rail = document.querySelector("#diagnosticsRail");
+          if (rail) {
+            rail.style.display = "";
+            rail.removeAttribute("aria-hidden");
+            rail.inert = false;
+          }
           document.querySelectorAll("details").forEach((details) => { details.open = true; });
         `,
       });
@@ -607,6 +617,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "project-drawer-open") {
       layout.failures = layout.failures.filter((failure) => !/\.sidebar overlaps \.workspace/.test(failure));
     }
+    if (state === "diagnostics-open") {
+      layout.failures = layout.failures.filter((failure) => !/\.workspace overlaps \.right-rail/.test(failure));
+    }
     if (state === "workflow-keyboard") {
       await exerciseWorkflowKeyboard(cdp);
     }
@@ -640,6 +653,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
           railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
           railVisible: visible(rightRail),
+          detailsExpanded: [...(rightRail?.querySelectorAll("details") || [])].some((details) => details.open === true) ? "true" : "false",
           sidebarContentAriaHidden: document.querySelector("#sidebarNavigationContent")?.getAttribute("aria-hidden") || "",
           sidebarContentInert: document.querySelector("#sidebarNavigationContent")?.inert === true,
           railAriaHidden: rightRail?.getAttribute("aria-hidden") || "",
@@ -775,6 +789,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           runEventsText: document.querySelector("[data-testid='run-events']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runTemporalTimelineVisible: visible(document.querySelector("#runTemporalTimeline")),
           runPreflightSummaryText: document.querySelector("#runPreflightSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          railContextTitle: document.querySelector("#railContextTitle")?.textContent?.trim() || "",
+          usageDrawerText: document.querySelector("[data-testid='usage-drawer']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          jobUsageText: document.querySelector("[data-testid='job-usage']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          workspaceUsageText: document.querySelector("[data-testid='workspace-usage']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          rawLogToolsVisible: visible(document.querySelector(".raw-log-tools")),
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
           mainLivePreviewStatusText: document.querySelector("#mainLivePreviewStatus")?.textContent?.trim() || "",
           mainLivePreviewCardCount: document.querySelectorAll("#mainRunLivePreview .run-live-preview-card").length,
@@ -1077,11 +1096,20 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && (!stateValue.mainJobCenterVisible || stateValue.mainLivePreviewCardCount < 1 || !/selected object/i.test(stateValue.mainLivePreviewText))) {
       failures.push(`${viewport.name}/${state}: run monitor should show live mask/cutout output for the running selected object`);
     }
+    if (state === "workflow-run" && (!/provider \/ model.*SAM2|provider \/ model.*sam2-local/i.test(stateValue.jobUsageText) || !/Locality.*Local/i.test(stateValue.jobUsageText) || !/artifacts generated/i.test(stateValue.jobUsageText))) {
+      failures.push(`${viewport.name}/${state}: usage drawer should expose per-job provider, locality, and artifact usage`);
+    }
+    if (state === "workflow-run" && (!/jobs by status/i.test(stateValue.workspaceUsageText) || !/cost estimate/i.test(stateValue.workspaceUsageText) || !/failed \/ stalled jobs/i.test(stateValue.workspaceUsageText))) {
+      failures.push(`${viewport.name}/${state}: usage drawer should expose workspace usage totals`);
+    }
     if (state === "workflow-run-stale" && (!/No progress update/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.runMonitorSummaryText}`) || stateValue.mainRunStatusText !== "running")) {
       failures.push(`${viewport.name}/${state}: stale running job should expose a no-progress warning without hiding the run monitor`);
     }
     if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
       failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
+    }
+    if (state === "workflow-run-logs-open" && !stateValue.rawLogToolsVisible) {
+      failures.push(`${viewport.name}/${state}: open raw logs should expose search/copy controls`);
     }
     if (
       state === "workflow-run-asset-stalled" &&

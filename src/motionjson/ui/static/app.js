@@ -6794,6 +6794,18 @@ const MotionJSONUI = (() => {
         summary.className = `status-chip ${diagnostic.tone}`;
         summary.setAttribute("aria-expanded", String(!shell?.classList.contains("is-rail-collapsed")));
       }
+      const railTitle = $("#railContextTitle");
+      if (railTitle) {
+        railTitle.textContent =
+          state.activeWorkflowStep === "run_monitor"
+            ? "Job details"
+            : state.activeWorkflowStep === "provider_settings"
+              ? "Model and provider details"
+              : state.activeWorkflowStep === "review_export"
+                ? "Review and export details"
+                : "Context details";
+      }
+      renderUsageInspector();
     }
 
     function moveInlinePanel(slotSelector, node) {
@@ -8529,16 +8541,31 @@ const MotionJSONUI = (() => {
       return `<div class="empty-state">${escapeHtml(detail)}</div>`;
     }
 
+    function rawLogSearchQuery() {
+      return String($("#mainRawLogSearch")?.value || $("#rawLogSearch")?.value || "").trim().toLowerCase();
+    }
+
+    function filterEventsForRawLog(events = []) {
+      const query = rawLogSearchQuery();
+      if (!query) return asArray(events);
+      return asArray(events).filter((event) => {
+        const text = `${eventLabel(event)} ${eventMessage(event)} ${JSON.stringify(eventMetadata(event))}`.toLowerCase();
+        return text.includes(query);
+      });
+    }
+
     function renderEventLog() {
       const job = selectedJob();
       const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const rawEvents = filterEventsForRawLog(events);
       const errorMessage = state.errors.selectedJob || "";
       const countLabel = `${events.length} event${events.length === 1 ? "" : "s"}`;
       const markup = `${eventLogOverviewMarkup(job, events, errorMessage)}${events.length ? eventRowsMarkup(events) : emptyEventLogMarkup(job, errorMessage)}`;
+      const rawMarkup = `${eventLogOverviewMarkup(job, rawEvents, errorMessage)}${rawEvents.length ? eventRowsMarkup(rawEvents) : emptyEventLogMarkup(job, errorMessage)}`;
       $("#eventCount").textContent = countLabel;
-      $("#jobEventLog").innerHTML = markup;
+      $("#jobEventLog").innerHTML = rawMarkup;
       if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
-      if ($("#mainRawJobEventLog")) $("#mainRawJobEventLog").innerHTML = markup;
+      if ($("#mainRawJobEventLog")) $("#mainRawJobEventLog").innerHTML = rawMarkup;
       renderRunCockpit();
     }
 
@@ -8732,6 +8759,132 @@ const MotionJSONUI = (() => {
     function basenameForDisplay(value = "") {
       const text = String(value || "").split(/[?#]/)[0];
       return text.split(/[\\/]/).filter(Boolean).pop() || text || "not selected";
+    }
+
+    function formatBytesForDisplay(value) {
+      const bytes = Number(value || 0);
+      if (!Number.isFinite(bytes) || bytes <= 0) return "not reported";
+      if (bytes < 1024) return `${Math.round(bytes)} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    }
+
+    function jobDurationLabel(job = null, events = []) {
+      const times = [
+        job?.created_at,
+        job?.createdAt,
+        job?.updated_at,
+        job?.updatedAt,
+        job?.lastEventAt,
+        job?.last_event_at,
+        ...asArray(events).flatMap((event) => [event.created_at, event.createdAt, event.timestamp]),
+      ].map(parseTimestampMs).filter(Boolean).sort((a, b) => a - b);
+      if (times.length < 2) return "not reported";
+      return formatJobAge(Math.max(0, times[times.length - 1] - times[0]));
+    }
+
+    function artifactBytes(artifacts = []) {
+      return asArray(artifacts).reduce((total, artifact) => total + Number(artifact.byte_size || artifact.byteSize || artifact.size || 0), 0);
+    }
+
+    function runUsageNotes(lifecycle = null, config = null) {
+      const locality = runLocalityText(lifecycle, config);
+      const hosted = locality === "Hosted";
+      const notes = [];
+      notes.push({
+        tone: hosted ? "warn" : "ready",
+        title: hosted ? "Hosted calls require consent" : "Local-first boundary",
+        detail: hosted ? "The UI must not send frames or run hosted checks until consent is explicit." : "No hosted calls are implied by this run state.",
+      });
+      notes.push({
+        tone: "neutral",
+        title: "Debug reports are redacted",
+        detail: "Copy debug report removes token-like values, keys, credentials, and authorization fields by default.",
+      });
+      return notes;
+    }
+
+    function usageNoteMarkup(notes = []) {
+      return asArray(notes)
+        .map((note) => `
+          <div class="diagnostic-row is-${escapeAttribute(note.tone || "neutral")}">
+            <strong>${escapeHtml(note.title)}</strong>
+            <span class="row-meta">${escapeHtml(note.detail)}</span>
+          </div>
+        `)
+        .join("");
+    }
+
+    function jobUsageFacts(job = null, events = []) {
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      const config = jobConfig(job) || {};
+      const frameProgress = runFrameProgress(job, events);
+      const candidates = reviewCandidates();
+      const selectedCandidates = selectedCandidateIds(candidates);
+      const exportIncluded = state.reviewTracks.filter(isTrackExportIncluded).length;
+      return {
+        "provider / model": lifecycle ? runProviderText(lifecycle, config, job) : guidedEnginePlan(collectFormState($)).providerLabel || "not selected",
+        locality: runLocalityText(lifecycle, config),
+        consent: lifecycle?.provider?.hostedCallsAllowed ? "hosted opt-in recorded" : "no hosted consent recorded",
+        "frames sampled": config.sampling?.max_frames || config.max_frames || "not reported",
+        "frames tracked": frameProgress.total ? `${frameProgress.frame} / ${frameProgress.total}` : "not reported",
+        "objects / candidates": `${state.reviewTracks.length} track${state.reviewTracks.length === 1 ? "" : "s"}, ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`,
+        "selected candidates": selectedCandidates.length ? String(selectedCandidates.length) : "none",
+        "run duration": jobDurationLabel(job, events),
+        "hosted cost": runLocalityText(lifecycle, config) === "Hosted" ? "not reported" : "$0.00 local",
+        "storage written": formatBytesForDisplay(artifactBytes(state.jobArtifacts)),
+        "artifacts generated": String(state.jobArtifacts.length),
+        "export count": String(exportIncluded || state.exportResult?.includedObjectIds?.length || 0),
+      };
+    }
+
+    function workspaceUsageFacts() {
+      const jobs = asArray(state.jobs);
+      const counts = jobs.reduce((acc, job) => {
+        const status = normalizeJobLifecycle(job).status || "unknown";
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {});
+      const providerAttempts = uniqueIds(
+        jobs.map((job) => runProviderText(normalizeJobLifecycle(job), jobConfig(job), job)).filter(Boolean),
+      ).slice(0, 4);
+      const hostedJobs = jobs.filter((job) => runLocalityText(normalizeJobLifecycle(job), jobConfig(job)) === "Hosted").length;
+      const failedOrStalled = jobs.filter((job) => {
+        const lifecycle = normalizeJobLifecycle(job);
+        return /failed|error|blocked|canceled/.test(lifecycle.status) || lifecycle.stale?.stale;
+      }).length;
+      return {
+        "recent providers": providerAttempts.length ? providerAttempts.join(", ") : "none yet",
+        "jobs by status": Object.keys(counts).length ? Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(", ") : "none",
+        "hosted calls": hostedJobs ? `${hostedJobs} job${hostedJobs === 1 ? "" : "s"} may involve hosted provider state` : "0 recorded",
+        "cost estimate": hostedJobs ? "not reported" : "$0.00 local",
+        "generated storage": formatBytesForDisplay(artifactBytes(state.jobArtifacts)),
+        "artifacts in selected run": String(state.jobArtifacts.length),
+        "failed / stalled jobs": String(failedOrStalled),
+        "rights reminders": state.jobReview?.rightsSummary?.warnings?.length ? `${state.jobReview.rightsSummary.warnings.length} warning${state.jobReview.rightsSummary.warnings.length === 1 ? "" : "s"}` : "none reported",
+      };
+    }
+
+    function renderUsageInspector() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      const jobFacts = jobUsageFacts(job, events);
+      const workspaceFacts = workspaceUsageFacts();
+      if ($("#jobUsageFacts")) setFacts($("#jobUsageFacts"), jobFacts);
+      if ($("#workspaceUsageFacts")) setFacts($("#workspaceUsageFacts"), workspaceFacts);
+      if ($("#jobUsageNotes")) $("#jobUsageNotes").innerHTML = usageNoteMarkup(runUsageNotes(lifecycle, jobConfig(job)));
+      if ($("#jobUsageStatus")) {
+        const status = lifecycle?.status || "No run";
+        $("#jobUsageStatus").textContent = status;
+        $("#jobUsageStatus").className = `status-chip ${statusClass(status, /succeeded|complete|running/.test(String(status).toLowerCase()))}`;
+      }
+      if ($("#workspaceUsageStatus")) {
+        const hosted = Object.values(workspaceFacts).some((value) => /hosted/i.test(String(value)));
+        $("#workspaceUsageStatus").textContent = hosted ? "Review hosted usage" : "Local";
+        $("#workspaceUsageStatus").className = `status-chip ${hosted ? "is-warn" : "is-ready"}`;
+      }
     }
 
     function runPreflightSummaryMarkup(lifecycle = null, job = null) {
@@ -8937,6 +9090,7 @@ const MotionJSONUI = (() => {
       }
       renderRunSourceFrame(lifecycle, job, events);
       renderRunEvidencePreviews();
+      renderUsageInspector();
       renderMainRunLivePreview();
     }
 
@@ -14087,6 +14241,29 @@ const MotionJSONUI = (() => {
       );
     }
 
+    async function copyRawLogs() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const rawEvents = filterEventsForRawLog(events);
+      const text = rawEvents.length
+        ? rawEvents
+            .map((event, index) => {
+              const metadata = redactDebugReportValue(eventMetadata(event));
+              return [
+                `${index + 1}. ${eventTimestamp(event) || "no time"} ${eventLabel(event)} ${event.stage || ""}`,
+                redactDebugReportText(eventMessage(event)),
+                JSON.stringify(metadata),
+              ].filter(Boolean).join(" - ");
+            })
+            .join("\n")
+        : "No raw log events are available for the selected run.";
+      const copied = await copyTextToClipboard(text);
+      [$("#copyRawLogsButton"), $("#mainCopyRawLogsButton")].filter(Boolean).forEach((button) => {
+        button.textContent = copied ? "Copied redacted logs" : "Copy redacted logs";
+      });
+      setRunAlert(copied ? "Redacted raw logs copied." : "Could not copy raw logs automatically.", copied ? "warning-box is-ready" : "warning-box is-warn");
+    }
+
     async function handleExportHandoffAction(event) {
       const button = event.target.closest("[data-export-handoff-action]");
       if (!button) return;
@@ -14331,6 +14508,10 @@ const MotionJSONUI = (() => {
     $("#mainOpenLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
     $("#copyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
     $("#mainCopyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
+    $("#rawLogSearch")?.addEventListener("input", renderEventLog);
+    $("#mainRawLogSearch")?.addEventListener("input", renderEventLog);
+    $("#copyRawLogsButton")?.addEventListener("click", copyRawLogs);
+    $("#mainCopyRawLogsButton")?.addEventListener("click", copyRawLogs);
     $("#runAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#mainRunAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#changeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));

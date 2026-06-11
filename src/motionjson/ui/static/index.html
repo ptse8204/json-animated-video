@@ -154,7 +154,7 @@
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
             <span id="providerIdentityChip" class="status-chip is-muted">Provider pending</span>
-            <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
+            <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer-toggle" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
             <button class="command-icon-button" type="button" aria-label="Help">?</button>
             <button class="command-icon-button" type="button" aria-label="Settings">Settings</button>
@@ -381,6 +381,13 @@
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
                 <h3>Raw log stream</h3>
+              </div>
+              <div class="raw-log-tools">
+                <label>
+                  <span>Search logs</span>
+                  <input id="mainRawLogSearch" type="search" placeholder="stage, object, error" />
+                </label>
+                <button id="mainCopyRawLogsButton" type="button">Copy redacted logs</button>
               </div>
               <div id="mainRawJobEventLog" class="event-log" aria-live="polite"></div>
             </section>
@@ -938,7 +945,7 @@
         <div class="rail-heading">
           <div>
             <p class="section-kicker">Inspector</p>
-            <strong>Context details</strong>
+            <strong id="railContextTitle">Context details</strong>
           </div>
           <button
             id="railCloseButton"
@@ -948,6 +955,25 @@
             aria-expanded="true"
           >Hide details</button>
         </div>
+
+        <details id="usageInspectorDisclosure" class="rail-section usage-inspector-section" open data-testid="usage-drawer">
+          <summary>Usage</summary>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Job usage</h2>
+              <span id="jobUsageStatus" class="status-chip is-muted">No run</span>
+            </div>
+            <dl id="jobUsageFacts" class="facts usage-facts" data-testid="job-usage"></dl>
+            <div id="jobUsageNotes" class="diagnostic-list"></div>
+          </section>
+          <section class="compact-panel">
+            <div class="panel-heading compact-heading">
+              <h2>Workspace usage</h2>
+              <span id="workspaceUsageStatus" class="status-chip is-muted">Local</span>
+            </div>
+            <dl id="workspaceUsageFacts" class="facts usage-facts" data-testid="workspace-usage"></dl>
+          </section>
+        </details>
 
         <details class="rail-section" data-workflow-panel="provider_settings">
           <summary>Provider settings</summary>
@@ -1019,6 +1045,13 @@
               <div class="panel-heading compact-heading">
                 <h2>Logs</h2>
                 <span id="eventCount" class="subtle-chip">0 events</span>
+              </div>
+              <div class="raw-log-tools">
+                <label>
+                  <span>Search logs</span>
+                  <input id="rawLogSearch" type="search" placeholder="stage, object, error" />
+                </label>
+                <button id="copyRawLogsButton" type="button">Copy redacted logs</button>
               </div>
               <div id="jobEventLog" class="event-log" data-testid="job-event-log" aria-live="polite"></div>
             </section>
