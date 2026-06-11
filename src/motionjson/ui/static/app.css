@@ -2900,7 +2900,6 @@ button,
   min-width: 0;
   padding: 11px 12px;
   border: 1px solid var(--border);
-  border-left-width: 4px;
   border-radius: var(--radius-sm);
   background: #ffffff;
 }
@@ -2924,12 +2923,13 @@ button,
 }
 
 .run-plan-step.is-ready {
-  border-left-color: var(--ready);
+  border-color: color-mix(in oklab, var(--ready) 42%, var(--border));
+  background: color-mix(in oklab, var(--ready) 7%, #ffffff);
 }
 
 .run-plan-step.is-warning,
 .run-plan-step.is-needs-action {
-  border-left-color: #d99016;
+  border-color: color-mix(in oklab, #d99016 46%, var(--border));
   background: #fffaf0;
 }
 
@@ -5619,7 +5619,9 @@ body {
 .goal-card.is-active {
   border-color: var(--ui-v3-line);
   background: var(--ui-v3-blue-soft);
-  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+  outline: 2px solid color-mix(in oklab, var(--ui-v3-blue) 46%, transparent);
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
 .goal-card-title,
@@ -5657,7 +5659,9 @@ body {
   border-color: #c7d9ef;
   border-radius: 8px;
   background: #f8fbff;
-  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+  outline: 1px solid color-mix(in oklab, var(--ui-v3-blue) 28%, transparent);
+  outline-offset: -1px;
+  box-shadow: none;
 }
 
 .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card,
@@ -5755,6 +5759,97 @@ body {
   display: none !important;
 }
 
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .workspace-grid {
+  max-width: 960px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "config";
+  align-items: start;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .wizard-panel {
+  display: none !important;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .config-panel {
+  display: grid !important;
+  grid-area: config;
+  gap: 14px;
+  max-width: 960px;
+  padding-bottom: 112px;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .config-panel .panel-heading {
+  order: 0;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #runPlanSummary {
+  order: 1;
+  border-top: 0;
+  padding-top: 0;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .config-actions {
+  order: 2;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #startMockRunButton,
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #startRunButton {
+  display: none !important;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .compact-advanced-actions {
+  order: 3;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #rawConfigDisclosure {
+  order: 4;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-list {
+  gap: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step {
+  min-height: 82px;
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-ready {
+  background: color-mix(in oklab, var(--ready) 5%, transparent);
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-warning,
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-needs-action {
+  background: color-mix(in oklab, #d99016 8%, transparent);
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-next {
+  padding: 12px 0;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+}
+
 @media (max-width: 720px) {
   .source-required-stage {
     align-content: start;
@@ -5769,6 +5864,14 @@ body {
 
   .source-required-stage p:not(.section-kicker) {
     font-size: 14px;
+  }
+
+  .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-intro {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -5786,7 +5889,8 @@ body {
 }
 
 .run-plan-summary {
-  border-left: 4px solid var(--ui-v3-blue);
+  border-top: 1px solid var(--ui-v3-line);
+  padding-top: 12px;
 }
 
 @media (max-width: 980px) {
@@ -9749,11 +9853,12 @@ body {
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
   grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-rows: min-content minmax(118px, max-content) minmax(280px, auto) !important;
+  grid-template-rows: min-content minmax(88px, max-content) minmax(230px, auto) !important;
   grid-template-areas:
     "reviewHead"
     "objects"
     "corrections" !important;
+  gap: 8px 16px !important;
   overflow: visible !important;
 }
 
@@ -9964,7 +10069,9 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row.is-selected,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card.is-selected {
   background: #f6fbff !important;
-  box-shadow: inset 4px 0 0 var(--ui-v3-blue, #0b63ce) !important;
+  outline: 2px solid color-mix(in oklab, var(--ui-v3-blue, #0b63ce) 44%, transparent) !important;
+  outline-offset: -2px !important;
+  box-shadow: none !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card {
@@ -9998,16 +10105,45 @@ body {
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-object-list {
   min-height: 0 !important;
-  max-height: 188px !important;
+  max-height: 164px !important;
   overflow: auto !important;
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
   overflow: visible !important;
-  padding-bottom: 56px !important;
+  padding-top: 8px !important;
+  padding-bottom: 104px !important;
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-guidance {
+  display: none !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-object-row {
+  min-height: 78px !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot .compact-panel {
+  display: grid !important;
+  gap: 8px !important;
+  padding: 0 !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot .compact-panel + .compact-panel {
+  margin-top: 10px !important;
+  padding-top: 10px !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #correctionPersistenceMessage {
+  margin: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #correctionStatusSummary {
   display: none !important;
 }
 
@@ -10016,7 +10152,25 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-  gap: 8px 12px !important;
+  gap: 6px 10px !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor label,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-range label {
+  gap: 3px !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor input,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor select,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-range input,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-actions button {
+  min-height: 38px !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-meta,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .suggestion-list,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .history-list {
+  margin-top: 0 !important;
 }
 
 @media (min-width: 1181px) {
@@ -10321,6 +10475,20 @@ body {
     right: 14px !important;
     bottom: 0 !important;
     left: 14px !important;
+    padding: 8px !important;
+  }
+
+  .workflow-footer-actions {
+    flex-direction: row !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  #workflowBackButton,
+  #workflowPrimaryButton {
+    width: auto !important;
+    min-width: 0 !important;
+    flex: 1 1 0 !important;
   }
 
   .workspace-grid,

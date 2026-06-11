@@ -640,6 +640,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       "preview-failed": "source_video",
       "workflow-provider": "provider_settings",
       "workflow-prompts": "prompt_preview",
+      "workflow-preflight": "prompt_preview",
       "prepare-sam3-single": "prompt_preview",
       "prepare-sam3-text": "prompt_preview",
       "prepare-sam3-trace-all": "prompt_preview",
@@ -693,6 +694,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           ? '[data-journey-phase="correct"]'
           : state === "workflow-export"
             ? '[data-journey-phase="export"]'
+            : state === "workflow-preflight"
+              ? '[data-journey-phase="preflight"]'
             : state === "workflow-review" || state === "workflow-partial-success"
               ? '[data-journey-phase="review"]'
               : `[data-workflow-step="${workflowStates[state]}"]`;
@@ -778,7 +781,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           collapseProbe: window.__motionjsonCollapseProbe || null,
           journeyNavBox: elementBox("#journeyNav"),
           activeJourneyButtonBox: elementBox("#journeyNav [data-journey-phase].is-active"),
+          activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
           workspaceBox: elementBox("#workspaceMain"),
+          workspaceGridBox: elementBox(".workspace-grid"),
           shellGridColumns: shell ? getComputedStyle(shell).gridTemplateColumns : "",
           projectDrawerButtonExpanded: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-expanded") || "",
           projectDrawerButtonControls: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-controls") || "",
@@ -834,6 +839,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           wizardPanelVisible: visible(document.querySelector(".wizard-panel")),
+          configPanelTitle: document.querySelector("#configPanelTitle")?.textContent?.trim() || "",
           configPanelVisible: visible(document.querySelector(".config-panel")),
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
           modelSetupStatusText: document.querySelector("#modelSetupStatus")?.textContent?.trim() || "",
@@ -899,6 +905,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           correctionLabelVisible: visible(document.querySelector("#correctionLabelInput")),
           correctionRelabelVisible: visible(document.querySelector("#relabelTrackButton")),
           correctionRangeVisible: visible(document.querySelector("#correctionFrameStart")) && visible(document.querySelector("#correctionFrameEnd")),
+          correctionActionsVisible: visible(document.querySelector(".correction-actions")),
+          correctionActionsText: document.querySelector(".correction-actions")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          correctionActionsBox: elementBox(".correction-actions"),
           exportStatusSummaryCount: document.querySelectorAll("#exportStatusSummary .status-summary-card").length,
           runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true || document.querySelector("#mainRunLogsDisclosure")?.open === true,
           eventLogText: ((document.querySelector("#jobEventLog")?.textContent || "") + " " + (document.querySelector("#mainJobEventLog")?.textContent || "")).trim().replace(/\\s+/g, " "),
@@ -1250,6 +1259,20 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         failures.push(`${viewport.name}/${state}: target step without a source video should hide prompt, wizard, and preflight controls`);
       }
     }
+    if (state === "workflow-preflight") {
+      if (stateValue.activeJourneyPhase !== "preflight") {
+        failures.push(`${viewport.name}/${state}: preflight capture should activate the Preflight journey phase`);
+      }
+      if (!stateValue.configPanelVisible || stateValue.configPanelTitle !== "What will happen if I press Run?") {
+        failures.push(`${viewport.name}/${state}: preflight should show the truthful run summary panel`);
+      }
+      if (stateValue.wizardPanelVisible || stateValue.viewerToolbarVisible) {
+        failures.push(`${viewport.name}/${state}: preflight should not keep target prompt editing as the primary visible surface`);
+      }
+      if (stateValue.targetSourceRequiredVisible || stateValue.workflowPrimaryLabel === "Add source video") {
+        failures.push(`${viewport.name}/${state}: preflight fixture should use a prepared source instead of the source-required gate`);
+      }
+    }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
     }
@@ -1465,6 +1488,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     ) {
       failures.push(`${viewport.name}/${state}: correction step should show relabel and frame range controls without clipping on desktop`);
     }
+    if (state === "workflow-correct" && viewport.width > 900) {
+      const footerTop = stateValue.commandFooterBox?.top || stateValue.viewportHeight;
+      const gridBottom = stateValue.workspaceGridBox?.bottom || footerTop;
+      const actionBottom = stateValue.correctionActionsBox?.bottom || 0;
+      if (
+        !stateValue.correctionActionsVisible ||
+        !/Merge selected.*Split track.*Add from prompts.*Repair with prompts/i.test(stateValue.correctionActionsText) ||
+        actionBottom > Math.min(footerTop, gridBottom) - 8
+      ) {
+        failures.push(`${viewport.name}/${state}: correction action buttons should be fully visible above the footer and inside the workbench`);
+      }
+    }
     if (state === "workflow-export" && stateValue.exportArtifactsOpen) {
       failures.push(`${viewport.name}/${state}: export step should keep generated artifact browser collapsed until requested`);
     }
@@ -1514,7 +1549,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (leakingInactive.length) {
         failures.push(`${viewport.name}/${state}: ${leakingInactive.length} inactive workflow panel(s) remained visible or interactive`);
       }
-      if (activeFragments.length && !activeFragments.some((fragment) => fragment.visible && !fragment.hidden && fragment.ariaHidden === "false" && !fragment.inert)) {
+      const preflightUsesConfigPanelOnly = state === "workflow-preflight";
+      if (!preflightUsesConfigPanelOnly && activeFragments.length && !activeFragments.some((fragment) => fragment.visible && !fragment.hidden && fragment.ariaHidden === "false" && !fragment.inert)) {
         failures.push(`${viewport.name}/${state}: no active workflow fragment is visible and interactive`);
       }
       const leakingInactiveFragments = inactiveFragments.filter((fragment) => fragment.visible || !fragment.hidden || fragment.ariaHidden !== "true" || !fragment.inert);

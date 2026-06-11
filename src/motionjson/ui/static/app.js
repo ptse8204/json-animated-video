@@ -6169,12 +6169,14 @@ const MotionJSONUI = (() => {
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       const sourceRequiredBeforePrompt = activeStep === "prompt_preview" && state.selectedPreset !== "review_existing" && !selectedVideo();
+      const preflightWorkbench = activeStep === "prompt_preview" && state.activeJourneyPhase === "preflight" && !sourceRequiredBeforePrompt;
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
       shell?.classList.toggle("is-review-workbench", reviewMode === "review");
       shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
       shell?.classList.toggle("is-source-required-prompt", sourceRequiredBeforePrompt);
+      shell?.classList.toggle("is-preflight-workbench", preflightWorkbench);
       if (shell) {
         for (const className of Array.from(shell.classList)) {
           if (className.startsWith("is-workflow-step-")) shell.classList.remove(className);
