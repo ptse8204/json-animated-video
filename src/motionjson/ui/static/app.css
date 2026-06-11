@@ -8458,15 +8458,18 @@ body {
 
 /* Workflow rescue: keep primary work inline and remove the side diagnostics rail. */
 .app-shell,
+.app-shell.is-sidebar-collapsed,
+.app-shell.is-sidebar-collapsed.is-rail-collapsed,
 .app-shell.is-rail-collapsed,
-.app-shell:not(.is-rail-collapsed) {
+.app-shell:not(.is-rail-collapsed),
+.app-shell.is-sidebar-collapsed:not(.is-rail-collapsed) {
   grid-template-columns: 260px minmax(0, 1fr);
 }
 
-.app-shell.is-sidebar-collapsed,
-.app-shell.is-sidebar-collapsed.is-rail-collapsed,
-.app-shell.is-sidebar-collapsed:not(.is-rail-collapsed) {
-  grid-template-columns: minmax(0, 1fr);
+.app-shell:not(.is-sidebar-collapsed),
+.app-shell:not(.is-sidebar-collapsed).is-rail-collapsed,
+.app-shell:not(.is-sidebar-collapsed):not(.is-rail-collapsed) {
+  grid-template-columns: min(380px, calc(100vw - 20px)) minmax(0, 1fr);
 }
 
 .app-shell.is-journey-collapsed,
@@ -8476,6 +8479,12 @@ body {
 .app-shell.is-journey-collapsed:not(.is-rail-collapsed),
 .app-shell.is-journey-collapsed.is-sidebar-collapsed:not(.is-rail-collapsed) {
   grid-template-columns: 72px minmax(0, 1fr);
+}
+
+.app-shell.is-journey-collapsed:not(.is-sidebar-collapsed),
+.app-shell.is-journey-collapsed:not(.is-sidebar-collapsed).is-rail-collapsed,
+.app-shell.is-journey-collapsed:not(.is-sidebar-collapsed):not(.is-rail-collapsed) {
+  grid-template-columns: min(380px, calc(100vw - 20px)) minmax(0, 1fr);
 }
 
 .right-rail {

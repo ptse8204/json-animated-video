@@ -218,7 +218,9 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
             : hasPreview
               ? step("needs-action", "Browser preview is loaded; add a local video path before extraction.", { tone: "is-warn", complete: false })
               : step("needs-action", selectedPreset === "review_existing" ? "Open an existing MotionJSON result to continue." : "Add a video or use the demo video to continue.", { complete: false }),
-    provider_settings: !requiresModel
+    provider_settings: !hasRegisteredVideo && selectedPreset !== "review_existing"
+      ? step("needs-action", "Add a source video before preparing model setup.", { complete: false })
+      : !requiresModel
       ? step("done", "No model setup is needed for this workflow.")
       : providerBlocked
         ? step("blocked", "Model setup has a blocker. Open the selected connection and fix it before running.", { complete: false })
@@ -230,7 +232,9 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
               ? step("done", "Compatible model connection is ready.")
               : step("needs-action", "Save one compatible model connection before continuing.", { complete: false }),
     prompt_preview:
-      manualPromptRequired && requiresSam3Box && !hasBoxPrompt
+      !hasRegisteredVideo && selectedPreset !== "review_existing"
+        ? step("needs-action", "Add a source video before defining the target object.", { complete: false })
+        : manualPromptRequired && requiresSam3Box && !hasBoxPrompt
         ? step("needs-action", "Draw one box around the object for SAM3 tracing.", { complete: false })
         : manualPromptRequired && !requiresSam3Box && !hasBoxPrompt && !hasPointPrompt
           ? step("needs-action", "Add at least one point or box prompt for this goal.", { complete: false })
@@ -367,8 +371,8 @@ export function workflowModelSetupStatusFromSnapshot(snapshot = {}) {
       snapshot.providerWarning ||
       (requiresModel ? "Choose one compatible model connection before continuing." : "No model setup is needed for this workflow."),
     action: {
-      id: action.id || (ready ? "continue-to-run" : snapshot.modelSetupActionId || "install"),
-      label: action.label || (ready ? "Continue to run" : snapshot.modelSetupActionLabel || "Save setup"),
+      id: action.id || (ready ? "continue-to-prepare" : snapshot.modelSetupActionId || "install"),
+      label: action.label || (ready ? "Continue to target" : snapshot.modelSetupActionLabel || "Save setup"),
       primary: action.primary !== false,
     },
     hasForm: snapshot.hasModelSetupForm !== false,

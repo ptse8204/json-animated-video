@@ -673,9 +673,20 @@ const MotionJSONUI = (() => {
     }
 
     if (activeStep === "provider_settings") {
+      if (!hasVideo && selectedPreset !== "review_existing") {
+        return {
+          id: activeStep,
+          primaryLabel: "Add source video",
+          primaryAction: "continue_to_video",
+          enabled: true,
+          blockedReason: "Add a source video before preparing target prompts or running extraction.",
+          successAdvanceTo: "source_video",
+          backTarget: "source_video",
+        };
+      }
       return {
         id: activeStep,
-        primaryLabel: modelSetup.ready ? "Continue to run" : modelSetup.action.label,
+        primaryLabel: modelSetup.ready ? "Continue to target" : modelSetup.action.label,
         primaryAction: modelSetup.ready ? "continue_to_prepare" : "run_model_setup_action",
         modelSetupAction: modelSetup.action.id,
         enabled: modelSetup.ready || Boolean(modelSetup.hasForm || modelSetup.hasConnection),
@@ -686,6 +697,17 @@ const MotionJSONUI = (() => {
     }
 
     if (activeStep === "prompt_preview") {
+      if (!hasVideo && selectedPreset !== "review_existing") {
+        return {
+          id: activeStep,
+          primaryLabel: "Add source video",
+          primaryAction: "continue_to_video",
+          enabled: true,
+          blockedReason: "Add a source video before defining the target object.",
+          successAdvanceTo: "source_video",
+          backTarget: "source_video",
+        };
+      }
       const blocksNewRun = jobRunning;
       return {
         id: activeStep,
@@ -876,12 +898,25 @@ const MotionJSONUI = (() => {
       };
     }
     if (screenId === "model") {
+      if (!hasVideo && selectedPreset !== "review_existing") {
+        return {
+          title: "Model setup",
+          description: "Add a source video first so MotionJSON can recommend the right runtime path.",
+          statusLabel: "Needs source",
+          statusTone: "is-warn",
+          primaryLabel: "Add source video",
+          enabled: true,
+          blockedReason: "Add a source video before preparing target prompts or running extraction.",
+          primaryAction: "continue_to_video",
+          backTarget: "source_video",
+        };
+      }
       return {
         title: "Model setup",
         description: requiresModel ? "Install, check, or choose the model runtime for this workflow." : "This workflow can run without SAM setup.",
         statusLabel: !requiresModel ? "Not needed" : providerReady ? "Ready" : "Needs setup",
         statusTone: !requiresModel || providerReady ? "is-ready" : "is-warn",
-        primaryLabel: !requiresModel || providerReady ? "Continue to prepare" : "Save and continue",
+        primaryLabel: !requiresModel || providerReady ? "Continue to target" : "Save and continue",
         enabled: !requiresModel || Boolean(modelSetup.hasForm || modelSetup.hasConnection),
         blockedReason: requiresModel ? "Choose one compatible model connection." : "",
         primaryAction: !requiresModel || providerReady ? "continue_to_prepare" : "save_model_setup",
@@ -3600,7 +3635,7 @@ const MotionJSONUI = (() => {
       return { id: "diagnose", label: "Diagnose advanced setup", primary: true };
     }
     if (status === "ready") {
-      return { id: "continue-to-run", label: "Continue to run", primary: true };
+      return { id: "continue-to-prepare", label: "Continue to target", primary: true };
     }
     if (status === "failed_recoverable") {
       return { id: "retry-setup", label: "Retry setup", primary: true };
@@ -3652,7 +3687,7 @@ const MotionJSONUI = (() => {
     const actionId = String(action.id || "");
     const mappedId =
       actionId === "continue"
-        ? "continue-to-run"
+        ? "continue-to-prepare"
         : actionId === "auto_setup"
           ? "auto-setup"
           : actionId === "save_and_auto_setup"
@@ -13146,7 +13181,7 @@ const MotionJSONUI = (() => {
                 ready: status === "succeeded",
                 message:
                   status === "succeeded"
-                    ? "Model cached. Continue to run when you are ready."
+                    ? "Model cached. Continue to target when you are ready."
                     : status === "failed"
                       ? "Download was interrupted before verification. Cache model again after the network is stable."
                       : "Downloading or resolving the selected model cache.",
@@ -13160,7 +13195,7 @@ const MotionJSONUI = (() => {
                   status === "running"
                     ? "Downloading or resolving the selected model cache."
                     : status === "succeeded"
-                      ? "Model cached. Continue to run when you are ready."
+                      ? "Model cached. Continue to target when you are ready."
                       : "Download was interrupted before verification. Cache model again after the network is stable.",
               },
               events: [

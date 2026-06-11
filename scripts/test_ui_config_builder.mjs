@@ -86,7 +86,8 @@ const blockedWorkflow = ui.workflowReadinessFromSnapshot({
   promptCount: 0,
 });
 assert.equal(blockedWorkflow.source_video.status, "needs-action");
-assert.equal(blockedWorkflow.provider_settings.status, "blocked");
+assert.equal(blockedWorkflow.provider_settings.status, "needs-action");
+assert.match(blockedWorkflow.provider_settings.message, /source video/i);
 assert.equal(blockedWorkflow.prompt_preview.complete, false);
 const previewOnlyWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "motion_foreground",
@@ -97,7 +98,8 @@ const previewOnlyWorkflow = ui.workflowReadinessFromSnapshot({
 });
 assert.equal(previewOnlyWorkflow.source_video.complete, false);
 assert.equal(previewOnlyWorkflow.source_video.status, "needs-action");
-assert.equal(previewOnlyWorkflow.provider_settings.status, "done");
+assert.equal(previewOnlyWorkflow.provider_settings.status, "needs-action");
+assert.match(previewOnlyWorkflow.provider_settings.message, /source video/i);
 const readyWorkflow = ui.workflowReadinessFromSnapshot({
   selectedPreset: "motion_foreground",
   selectedProjectId: "project_1",
@@ -245,7 +247,7 @@ assert.deepEqual(ui.workflowModelSetupStatusFromSnapshot({ selectedPreset: "trac
   status: "ready",
   ready: true,
   message: "Choose one compatible model connection before continuing.",
-  action: { id: "continue-to-run", label: "Continue to run", primary: true },
+  action: { id: "continue-to-prepare", label: "Continue to target", primary: true },
   hasForm: true,
   hasConnection: false,
 });
@@ -732,7 +734,7 @@ const staleNotConfiguredState = ui.modelSetupStateForConnection(
   null,
 );
 assert.equal(staleNotConfiguredState.status, "ready");
-assert.equal(ui.modelSetupPrimaryActionForState(staleNotConfiguredState, { providerId: "sam2-local" }).label, "Continue to run");
+assert.equal(ui.modelSetupPrimaryActionForState(staleNotConfiguredState, { providerId: "sam2-local" }).label, "Continue to target");
 
 const cacheConfirmation = ui.modelSetupConfirmationForAction("cache-model", "sam2-hf-auto-masks", {
   model: "facebook/sam2.1-hiera-large",

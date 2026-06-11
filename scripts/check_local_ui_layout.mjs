@@ -574,7 +574,32 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
             const style = getComputedStyle(element);
             return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
           };
+          const boxFor = (selector) => {
+            const element = document.querySelector(selector);
+            if (!element || !visible(element)) return null;
+            const box = element.getBoundingClientRect();
+            return {
+              left: Math.round(box.left),
+              right: Math.round(box.right),
+              width: Math.round(box.width),
+            };
+          };
           const journeyToggle = document.querySelector("#journeyNavToggle");
+          window.__motionjsonCollapseProbe = null;
+          if (window.innerWidth > 900) {
+            const projectToggle = document.querySelector("#projectDrawerToggle");
+            const sidebarToggle = document.querySelector("#sidebarToggle");
+            if (projectToggle && shell?.classList.contains("is-sidebar-collapsed")) projectToggle.click();
+            if (sidebarToggle && !shell?.classList.contains("is-sidebar-collapsed")) sidebarToggle.click();
+            window.__motionjsonCollapseProbe = {
+              sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
+              sidebarExpanded: sidebarToggle?.getAttribute("aria-expanded") || "",
+              sidebarAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
+              journeyBoxAfterProjectClose: boxFor("#journeyNav"),
+              workspaceBoxAfterProjectClose: boxFor("#workspaceMain"),
+              horizontalOverflowAfterProjectClose: document.documentElement.scrollWidth > window.innerWidth,
+            };
+          }
           if (window.innerWidth > 900 && visible(journeyToggle) && !shell?.classList.contains("is-journey-collapsed")) {
             journeyToggle.click();
           } else if (!shell?.classList.contains("is-sidebar-collapsed")) {
@@ -750,12 +775,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           journeyToggleExpanded: document.querySelector("#journeyNavToggle")?.getAttribute("aria-expanded") || "",
           journeyToggleLabel: document.querySelector("#journeyNavToggle")?.textContent?.trim() || "",
           journeyToggleVisible: visible(document.querySelector("#journeyNavToggle")),
+          collapseProbe: window.__motionjsonCollapseProbe || null,
           journeyNavBox: elementBox("#journeyNav"),
           activeJourneyButtonBox: elementBox("#journeyNav [data-journey-phase].is-active"),
           workspaceBox: elementBox("#workspaceMain"),
           shellGridColumns: shell ? getComputedStyle(shell).gridTemplateColumns : "",
           projectDrawerButtonExpanded: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-expanded") || "",
           projectDrawerButtonControls: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-controls") || "",
+          projectDrawerBox: elementBox("#workspaceSidebar"),
           projectDrawerVisible: visible(document.querySelector("#workspaceSidebar")),
           projectDrawerAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
           mainWorkflowOnly: !document.querySelector("#detailsToggle") && !document.querySelector("#workflowDashboardToggle"),
@@ -987,6 +1014,21 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (stateValue.horizontalOverflow) {
         failures.push(`${viewport.name}/${state}: collapsed journey menu should not create horizontal overflow`);
       }
+      const closeProbe = stateValue.collapseProbe || {};
+      const closeJourneyBox = closeProbe.journeyBoxAfterProjectClose || null;
+      const closeWorkspaceBox = closeProbe.workspaceBoxAfterProjectClose || null;
+      if (!closeProbe.sidebarCollapsed || closeProbe.sidebarExpanded !== "false" || closeProbe.sidebarAriaHidden !== "true") {
+        failures.push(`${viewport.name}/${state}: project menu close should restore the collapsed drawer accessibility state before journey collapse`);
+      }
+      if (!closeJourneyBox || closeJourneyBox.width < 220 || closeJourneyBox.width > 300) {
+        failures.push(`${viewport.name}/${state}: closing the project menu should restore the full journey rail before compacting it`);
+      }
+      if (!closeWorkspaceBox || closeWorkspaceBox.left < (closeJourneyBox?.right || 0) - 1) {
+        failures.push(`${viewport.name}/${state}: closing the project menu should keep workspace aligned after the restored journey rail`);
+      }
+      if (closeProbe.horizontalOverflowAfterProjectClose) {
+        failures.push(`${viewport.name}/${state}: closing the project menu should not create horizontal overflow`);
+      }
     }
     if (state === "workflow-goal" && stateValue.viewportWidth > 900 && stateValue.viewportWidth <= 1100) {
       if (!stateValue.journeyCollapsed || stateValue.journeyToggleExpanded !== "false" || stateValue.journeyToggleLabel !== "Expand") {
@@ -1009,6 +1051,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "project-drawer-open" && (stateValue.sidebarCollapsed || !stateValue.projectDrawerVisible || stateValue.projectDrawerButtonExpanded !== "true" || stateValue.sidebarContentAriaHidden === "true" || stateValue.sidebarContentInert)) {
       failures.push(`${viewport.name}/${state}: project drawer should open with visible, interactive project controls`);
+    }
+    if (
+      state === "project-drawer-open" &&
+      viewport.width > 900 &&
+      (!stateValue.projectDrawerBox || !stateValue.workspaceBox || stateValue.workspaceBox.left < stateValue.projectDrawerBox.right - 1)
+    ) {
+      failures.push(`${viewport.name}/${state}: project drawer should reserve its visible width instead of clipping the command bar`);
     }
     if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
       failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
@@ -1112,6 +1161,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: provider step title should focus on the guided runtime recommendation`);
     }
+    if (state === "workflow-provider" && stateValue.browserPreviewTitle === "Preview not ready" && stateValue.workflowPrimaryLabel !== "Add source video") {
+      failures.push(`${viewport.name}/${state}: model step without a source video should route back to source setup`);
+    }
     if (isModelSetupState && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: model setup should use the guided recommendation title`);
     }
@@ -1167,6 +1219,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "model-setup-hosted-warning" && stateValue.modelSetupNormalSecretInputCount > 0 && !stateValue.modelSetupAdvancedOpen) {
       failures.push(`${viewport.name}/${state}: hosted credentials should stay out of the primary guided card`);
+    }
+    if (state === "workflow-prompts" && stateValue.browserPreviewTitle === "Preview not ready" && stateValue.workflowPrimaryLabel !== "Add source video") {
+      failures.push(`${viewport.name}/${state}: target step without a source video should route back to source setup`);
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
