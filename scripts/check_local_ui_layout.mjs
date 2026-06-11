@@ -511,7 +511,17 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "nav-collapsed") {
       await cdp.send("Runtime.evaluate", {
         expression: `
-          if (!document.querySelector(".app-shell")?.classList.contains("is-sidebar-collapsed")) {
+          const shell = document.querySelector(".app-shell");
+          const visible = (element) => {
+            if (!element) return false;
+            const box = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+          };
+          const journeyToggle = document.querySelector("#journeyNavToggle");
+          if (window.innerWidth > 900 && visible(journeyToggle) && !shell?.classList.contains("is-journey-collapsed")) {
+            journeyToggle.click();
+          } else if (!shell?.classList.contains("is-sidebar-collapsed")) {
             document.querySelector("#sidebarToggle")?.click();
           }
         `,
@@ -663,9 +673,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         };
         return {
           viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
           sidebarCollapsed: shell?.classList.contains("is-sidebar-collapsed") || false,
+          journeyCollapsed: shell?.classList.contains("is-journey-collapsed") || false,
           railCollapsed: shell?.classList.contains("is-rail-collapsed") || false,
           railVisible: visible(rightRail),
+          horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
           detailsExpanded: [...(rightRail?.querySelectorAll("details") || [])].some((details) => details.open === true) ? "true" : "false",
           sidebarContentAriaHidden: document.querySelector("#sidebarNavigationContent")?.getAttribute("aria-hidden") || "",
           sidebarContentInert: document.querySelector("#sidebarNavigationContent")?.inert === true,
@@ -674,6 +687,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           sidebarExpanded: document.querySelector("#sidebarToggle")?.getAttribute("aria-expanded") || "",
           sidebarControls: document.querySelector("#sidebarToggle")?.getAttribute("aria-controls") || "",
           sidebarLabel: document.querySelector("#sidebarToggle")?.getAttribute("aria-label") || document.querySelector("#sidebarToggle")?.textContent?.trim() || "",
+          journeyToggleExpanded: document.querySelector("#journeyNavToggle")?.getAttribute("aria-expanded") || "",
+          journeyToggleLabel: document.querySelector("#journeyNavToggle")?.textContent?.trim() || "",
+          journeyToggleVisible: visible(document.querySelector("#journeyNavToggle")),
+          journeyNavBox: elementBox("#journeyNav"),
+          workspaceBox: elementBox("#workspaceMain"),
+          shellGridColumns: shell ? getComputedStyle(shell).gridTemplateColumns : "",
           projectDrawerButtonExpanded: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-expanded") || "",
           projectDrawerButtonControls: document.querySelector("#projectDrawerToggle")?.getAttribute("aria-controls") || "",
           projectDrawerVisible: visible(document.querySelector("#workspaceSidebar")),
@@ -882,6 +901,31 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     if (state === "nav-collapsed" && (stateValue.sidebarContentAriaHidden !== "true" || !stateValue.sidebarContentInert || !stateValue.sidebarLabel)) {
       failures.push(`${viewport.name}/${state}: collapsed sidebar content should be hidden from assistive tech and focus order`);
+    }
+    if (state === "nav-collapsed" && stateValue.viewportWidth > 900) {
+      if (!stateValue.journeyCollapsed || stateValue.journeyToggleExpanded !== "false") {
+        failures.push(`${viewport.name}/${state}: journey menu did not collapse with aria-expanded=false`);
+      }
+      if (stateValue.journeyToggleLabel !== "Expand") {
+        failures.push(`${viewport.name}/${state}: collapsed journey menu should expose an Expand control`);
+      }
+      if (!stateValue.journeyNavBox || stateValue.journeyNavBox.width > 80) {
+        failures.push(`${viewport.name}/${state}: collapsed journey menu should be a compact rail`);
+      }
+      if (!stateValue.workspaceBox || stateValue.workspaceBox.left < (stateValue.journeyNavBox?.right || 0)) {
+        failures.push(`${viewport.name}/${state}: workspace should start after the collapsed journey rail`);
+      }
+      if (stateValue.horizontalOverflow) {
+        failures.push(`${viewport.name}/${state}: collapsed journey menu should not create horizontal overflow`);
+      }
+    }
+    if (state === "workflow-goal" && stateValue.viewportWidth > 900 && stateValue.viewportWidth <= 1100) {
+      if (!stateValue.journeyCollapsed || stateValue.journeyToggleExpanded !== "false" || stateValue.journeyToggleLabel !== "Expand") {
+        failures.push(`${viewport.name}/${state}: narrow desktop journey menu should auto-collapse with a truthful Expand control`);
+      }
+      if (!stateValue.journeyNavBox || stateValue.journeyNavBox.width > 80) {
+        failures.push(`${viewport.name}/${state}: narrow desktop journey menu should use the compact rail width`);
+      }
     }
     if (["real-empty-shell", "workflow-goal"].includes(state) && stateValue.projectDrawerVisible) {
       failures.push(`${viewport.name}/${state}: project drawer should stay closed in the default guided first-run screen`);

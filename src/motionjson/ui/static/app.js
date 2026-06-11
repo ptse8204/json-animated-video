@@ -6750,6 +6750,17 @@ const MotionJSONUI = (() => {
       renderShellIndicators();
     }
 
+    function setJourneyCollapsed(collapsed, { focusToggle = false } = {}) {
+      shell?.classList.toggle("is-journey-collapsed", collapsed);
+      const toggle = $("#journeyNavToggle");
+      if (toggle) {
+        toggle.textContent = collapsed ? "Expand" : "Collapse";
+        toggle.setAttribute("aria-expanded", String(!collapsed));
+        toggle.setAttribute("aria-label", collapsed ? "Expand journey menu" : "Collapse journey menu");
+        if (focusToggle) toggle.focus();
+      }
+    }
+
     function shellDiagnosticSummary() {
       const providerWarning = $("#providerWarning");
       const providerText = providerWarning?.textContent?.trim() || "";
@@ -6844,6 +6855,17 @@ const MotionJSONUI = (() => {
     function initShellNavigation() {
       setSidebarCollapsed(boolFromStorage(SHELL_STORAGE_KEYS.sidebarCollapsed, true), { persist: false });
       setRailCollapsed(true, { persist: false });
+      let journeyCollapseUserSet = false;
+      const narrowJourneyQuery = window.matchMedia?.("(min-width: 901px) and (max-width: 1100px)");
+      const syncJourneyCollapseForViewport = () => {
+        if (!journeyCollapseUserSet) setJourneyCollapsed(narrowJourneyQuery?.matches === true);
+      };
+      syncJourneyCollapseForViewport();
+      if (narrowJourneyQuery?.addEventListener) {
+        narrowJourneyQuery.addEventListener("change", syncJourneyCollapseForViewport);
+      } else {
+        narrowJourneyQuery?.addListener?.(syncJourneyCollapseForViewport);
+      }
       projectDrawerToggle?.addEventListener("click", () => {
         setSidebarCollapsed(false, { focusToggle: true });
       });
@@ -6860,13 +6882,9 @@ const MotionJSONUI = (() => {
         renderWorkflowStepper();
       });
       $("#journeyNavToggle")?.addEventListener("click", () => {
+        journeyCollapseUserSet = true;
         const collapsed = !shell?.classList.contains("is-journey-collapsed");
-        shell?.classList.toggle("is-journey-collapsed", collapsed);
-        const toggle = $("#journeyNavToggle");
-        if (toggle) {
-          toggle.textContent = collapsed ? "Expand" : "Collapse";
-          toggle.setAttribute("aria-expanded", String(!collapsed));
-        }
+        setJourneyCollapsed(collapsed, { focusToggle: true });
       });
       document.addEventListener("keydown", (event) => {
         const drawerOpen = !shell?.classList.contains("is-sidebar-collapsed");
