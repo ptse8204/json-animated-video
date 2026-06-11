@@ -6268,6 +6268,525 @@ summary.advanced-task-heading::after {
   }
 }
 
+/* UI V3 phase-03 run cockpit. */
+.run-cockpit {
+  max-width: 1180px;
+  gap: 14px;
+  padding: 0 0 120px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.run-cockpit-heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 2px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ui-v3-line);
+}
+
+.run-cockpit-heading h2 {
+  margin: 0;
+  font-size: 25px;
+}
+
+.run-cockpit-heading-actions,
+.run-current-row,
+.run-status-chips,
+.run-evidence-heading,
+.run-temporal-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.run-cockpit-heading-actions,
+.run-status-chips {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.run-phase-timeline {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+  padding: 6px 0 4px;
+  list-style: none;
+}
+
+.run-phase-timeline li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--ui-v3-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.run-phase-timeline li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: calc(50% + 10px);
+  right: calc(-50% + 10px);
+  height: 2px;
+  background: #d7e0e8;
+}
+
+.run-phase-timeline li > span {
+  position: relative;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #aeb9c4;
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.run-phase-timeline strong,
+.run-phase-timeline small {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-phase-timeline strong {
+  color: #162232;
+  font-size: 11px;
+}
+
+.run-phase-timeline small {
+  color: var(--ui-v3-muted);
+}
+
+.run-phase-timeline .is-complete > span {
+  border-color: var(--ui-v3-green);
+  background: var(--ui-v3-green);
+}
+
+.run-phase-timeline .is-active > span {
+  border-color: var(--ui-v3-blue);
+  box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.12);
+}
+
+.run-phase-timeline .is-blocked > span {
+  border-color: var(--ui-v3-red);
+  background: var(--ui-v3-red-soft);
+}
+
+.run-current-row {
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 0 0 4px;
+}
+
+.run-current-activity {
+  margin: 0;
+  color: #172033;
+  font-size: 17px;
+  font-weight: 780;
+  line-height: 1.35;
+}
+
+.run-monitor-summary {
+  display: none;
+}
+
+.run-cockpit-layout {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.25fr) minmax(230px, 0.55fr) minmax(250px, 0.62fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.run-source-preview,
+.run-evidence-stack,
+.run-candidate-column,
+.run-events-section,
+.run-preflight-summary,
+.run-temporal-strip,
+.run-job-details-disclosure,
+.run-monitor-log-panel {
+  min-width: 0;
+  border-top: 1px solid var(--ui-v3-line);
+  background: transparent;
+}
+
+.run-source-preview {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.run-source-frame-shell {
+  position: relative;
+  overflow: hidden;
+  min-height: 330px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--ui-v3-line);
+  border-radius: 8px;
+  background: #18212b;
+}
+
+.run-source-frame-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #111827;
+}
+
+.run-source-frame-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 330px;
+  color: #d7e2ec;
+  text-align: center;
+}
+
+.run-object-overlay {
+  position: absolute;
+  min-width: 78px;
+  max-width: 160px;
+  padding: 5px 8px;
+  border: 2px dashed #ffffff;
+  border-radius: 999px;
+  background: rgba(21, 94, 239, 0.78);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+.run-source-frame-caption,
+.run-evidence-heading,
+.run-temporal-heading {
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.run-evidence-stack {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding-top: 10px;
+}
+
+.run-evidence-preview,
+.run-live-preview-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.run-live-preview-panel {
+  display: none;
+}
+
+.run-evidence-image {
+  display: grid;
+  place-items: center;
+  min-height: 128px;
+  overflow: hidden;
+  border: 1px solid var(--ui-v3-line);
+  border-radius: 8px;
+  background:
+    linear-gradient(45deg, #f4f7fa 25%, transparent 25%),
+    linear-gradient(-45deg, #f4f7fa 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f4f7fa 75%),
+    linear-gradient(-45deg, transparent 75%, #f4f7fa 75%);
+  background-color: #ffffff;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  background-size: 16px 16px;
+}
+
+.run-evidence-image img {
+  width: 100%;
+  height: 100%;
+  max-height: 170px;
+  object-fit: contain;
+}
+
+.run-evidence-image span,
+.run-live-preview-images span {
+  display: grid;
+  place-items: center;
+  min-height: 70px;
+  padding: 8px;
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.run-live-preview-grid {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.run-live-preview-card {
+  padding: 9px;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+
+.run-live-preview-images img {
+  aspect-ratio: 4 / 3;
+}
+
+.run-candidate-column {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding-top: 10px;
+}
+
+.run-candidate-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.run-candidate-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 4px 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  border-radius: 0;
+  background: transparent;
+  color: #1f2937;
+  text-align: left;
+}
+
+.run-candidate-row:hover,
+.run-candidate-row.is-selected {
+  background: var(--ui-v3-blue-soft);
+}
+
+.run-candidate-row.is-selected {
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue);
+}
+
+.run-candidate-row strong,
+.run-candidate-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-candidate-row span,
+.run-candidate-warning {
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+}
+
+.run-candidate-warning {
+  padding: 10px 12px;
+  border-bottom: 1px solid #efd083;
+  background: var(--ui-v3-amber-soft);
+  color: var(--ui-v3-amber);
+}
+
+.run-events-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.run-event-list {
+  display: grid;
+  border-top: 1px solid var(--ui-v3-line);
+}
+
+.run-event-row {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.35fr) minmax(110px, 0.45fr) minmax(76px, 0.32fr) minmax(0, 1fr) minmax(120px, 0.42fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--ui-v3-line);
+  color: #223044;
+  font-size: 12px;
+}
+
+.run-event-row p {
+  margin: 0;
+  min-width: 0;
+}
+
+.run-event-time,
+.run-event-phase,
+.run-event-severity {
+  color: var(--ui-v3-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.run-event-row.is-bad .run-event-severity {
+  color: var(--ui-v3-red);
+}
+
+.run-event-row.is-warn .run-event-severity {
+  color: var(--ui-v3-amber);
+}
+
+.run-event-row.is-ready .run-event-severity {
+  color: var(--ui-v3-green);
+}
+
+.run-preflight-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.run-preflight-summary span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--ui-v3-muted);
+  font-size: 12px;
+}
+
+.run-preflight-summary strong {
+  color: #172033;
+  font-size: 11px;
+}
+
+.run-temporal-strip {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.run-temporal-marker-track {
+  position: relative;
+  height: 34px;
+  border-top: 1px solid var(--ui-v3-line-strong);
+  border-bottom: 1px solid var(--ui-v3-line);
+  background: repeating-linear-gradient(90deg, transparent 0 34px, #e6edf3 34px 35px);
+}
+
+.run-temporal-marker,
+.run-temporal-current {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ui-v3-blue);
+  transform: translate(-50%, -50%);
+}
+
+.run-temporal-marker.is-warn {
+  background: var(--ui-v3-amber);
+}
+
+.run-temporal-marker.is-bad {
+  background: var(--ui-v3-red);
+}
+
+.run-temporal-marker.is-ready,
+.run-temporal-marker.is-keyframe {
+  background: var(--ui-v3-green);
+}
+
+.run-temporal-current {
+  top: 0;
+  width: 2px;
+  height: 100%;
+  border-radius: 0;
+  background: var(--ui-v3-blue);
+}
+
+.run-job-details-disclosure,
+.run-monitor-log-panel {
+  padding-top: 10px;
+}
+
+.run-job-details-disclosure > summary,
+.run-monitor-log-panel > summary {
+  cursor: pointer;
+  color: #172033;
+  font-weight: 800;
+}
+
+.run-job-details-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.55fr);
+  gap: 18px;
+  margin-top: 12px;
+}
+
+@media (max-width: 1120px) {
+  .run-cockpit-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
+  }
+
+  .run-candidate-column {
+    grid-column: 1 / -1;
+  }
+
+  .run-preflight-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .run-cockpit {
+    padding-bottom: 52px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor .workflow-footer,
+  .app-shell.is-workflow-step-run-monitor.is-journey-collapsed .workflow-footer {
+    display: none;
+  }
+
+  .run-cockpit-heading,
+  .run-current-row,
+  .run-cockpit-layout,
+  .run-job-details-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .run-phase-timeline {
+    overflow-x: auto;
+    grid-template-columns: repeat(8, minmax(92px, 1fr));
+    padding-bottom: 8px;
+  }
+
+  .run-current-row,
+  .run-cockpit-heading-actions,
+  .run-status-chips {
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .run-source-frame-shell,
+  .run-source-frame-placeholder {
+    min-height: 210px;
+  }
+
+  .run-event-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    padding: 10px 0;
+  }
+
+  .run-preflight-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* UI V3 phase-02 final override: old storyboard rules above still define
    two-column goal cards, so keep the actual task choices as compact rows. */
 .guided-start {

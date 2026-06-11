@@ -8372,6 +8372,7 @@ const MotionJSONUI = (() => {
         const markup = `<div class="error-state">${escapeHtml(state.errors.jobs)}</div>`;
         $("#jobList").innerHTML = markup;
         if ($("#mainJobList")) $("#mainJobList").innerHTML = markup;
+        renderRunCockpit();
         renderWorkflowStepper();
         return;
       }
@@ -8413,6 +8414,7 @@ const MotionJSONUI = (() => {
         : `<div class="empty-state">Jobs will appear here with status, progress, and export diagnostics.</div>`;
       $("#jobList").innerHTML = markup;
       if ($("#mainJobList")) $("#mainJobList").innerHTML = markup;
+      renderRunCockpit();
       renderWorkflowStepper();
     }
 
@@ -8452,6 +8454,7 @@ const MotionJSONUI = (() => {
         };
         setFacts($("#selectedJobFacts"), facts);
         if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
+        renderRunCockpit();
         return;
       }
 
@@ -8512,6 +8515,7 @@ const MotionJSONUI = (() => {
       if (lifecycle.stale?.stale) facts.watchdog = lifecycle.stale.label;
       setFacts($("#selectedJobFacts"), facts);
       if ($("#mainSelectedJobFacts")) setFacts($("#mainSelectedJobFacts"), facts);
+      renderRunCockpit();
     }
 
     function emptyEventLogMarkup(job, errorMessage = "") {
@@ -8534,8 +8538,8 @@ const MotionJSONUI = (() => {
       $("#eventCount").textContent = countLabel;
       $("#jobEventLog").innerHTML = markup;
       if ($("#mainEventCount")) $("#mainEventCount").textContent = countLabel;
-      if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = markup;
-      renderMainRunLivePreview();
+      if ($("#mainRawJobEventLog")) $("#mainRawJobEventLog").innerHTML = markup;
+      renderRunCockpit();
     }
 
     function previewImageKind(relPath = "") {
@@ -8597,6 +8601,345 @@ const MotionJSONUI = (() => {
       return [...cards.values()].slice(0, 6);
     }
 
+    const RUN_COCKPIT_PHASES = [
+      ["preflight", "Preflight"],
+      ["sampling", "Sampling"],
+      ["proposal", "Proposal"],
+      ["segmentation", "Segmentation"],
+      ["tracking", "Tracking"],
+      ["artifacts", "Artifacts"],
+      ["validation", "Validation"],
+      ["review_ready", "Review Ready"],
+    ];
+
+    function runPhaseId(value = "") {
+      const text = String(value || "").toLowerCase();
+      if (/sample|frame_pick|frame pick/.test(text)) return "sampling";
+      if (/proposal|candidate|discover|detect|scan/.test(text)) return "proposal";
+      if (/segment|mask/.test(text)) return "segmentation";
+      if (/track|propagat/.test(text)) return "tracking";
+      if (/artifact|asset|raster|cutout|sprite|package/.test(text)) return "artifacts";
+      if (/validat|finaliz/.test(text)) return "validation";
+      if (/review|complete|succeed|ready/.test(text)) return "review_ready";
+      return "preflight";
+    }
+
+    function runPhaseIndex(phaseId) {
+      return Math.max(0, RUN_COCKPIT_PHASES.findIndex(([id]) => id === phaseId));
+    }
+
+    function runHealthState(lifecycle = null, events = []) {
+      if (!lifecycle) return { label: "Waiting", status: "waiting", tone: "is-muted", detail: "No run selected." };
+      if (/failed|error|blocked/.test(lifecycle.status)) {
+        return { label: "Failed", status: "failed", tone: "is-bad", detail: lifecycle.failure?.message || "The selected run failed." };
+      }
+      if (/canceled|cancelled/.test(lifecycle.status)) {
+        return { label: "Canceled", status: "canceled", tone: "is-warn", detail: "The selected run was canceled." };
+      }
+      if (lifecycle.stale?.stale) {
+        return { label: "Stalled", status: "stalled", tone: "is-warn", detail: lifecycle.stale.detail || lifecycle.stale.label };
+      }
+      if (/succeeded|complete|review_ready/.test(`${lifecycle.status} ${lifecycle.phase}`)) {
+        return { label: "Reviewable", status: "completed", tone: "is-ready", detail: "Run output is ready for review." };
+      }
+      if (asArray(events).some((event) => eventSeverity(event) === "warn")) {
+        return { label: "Needs attention", status: "warning", tone: "is-warn", detail: "The run reported a warning. Review the event list." };
+      }
+      if (lifecycle.active) return { label: "Healthy", status: "healthy", tone: "is-ready", detail: "Recent progress is arriving." };
+      return { label: "Waiting", status: "waiting", tone: "is-muted", detail: "Waiting for run progress." };
+    }
+
+    function runFrameProgress(job = null, events = []) {
+      const latest = asArray(events).slice().reverse().find((event) => {
+        const metadata = eventMetadata(event);
+        const progress = eventProgress(event);
+        return metadata.frame != null || metadata.currentFrame != null || metadata.totalFrames != null || progress.current != null || progress.total != null;
+      });
+      const metadata = latest ? eventMetadata(latest) : {};
+      const progress = latest ? eventProgress(latest) : {};
+      const config = jobConfig(job) || {};
+      const frame = toInteger(metadata.currentFrame ?? metadata.frame ?? progress.current ?? job?.lifecycle?.latestEvent?.frame ?? state.video.currentFrame, state.video.currentFrame || 0);
+      const total = toInteger(metadata.totalFrames ?? progress.total ?? job?.lifecycle?.latestEvent?.totalFrames ?? config.sampling?.max_frames ?? config.max_frames, 0);
+      return { frame, total };
+    }
+
+    function runProviderText(lifecycle = null, config = null, job = null) {
+      return (
+        lifecycle?.runtimeProof?.displayProvider ||
+        lifecycle?.provider?.displayLabel ||
+        job?.payload?.mask_provider ||
+        config?.provider?.name ||
+        config?.mask_provider ||
+        "provider not reported"
+      );
+    }
+
+    function runLocalityText(lifecycle = null, config = null) {
+      const locality = String(lifecycle?.provider?.locality || config?.provider?.locality || "").toLowerCase();
+      if (/hosted|cloud|remote/.test(locality)) return "Hosted";
+      if (/import/.test(locality)) return "Imported";
+      if (/mock/.test(locality)) return "Mock";
+      if (/local|runtime|cpu|gpu/.test(locality)) return "Local";
+      return "Local-first";
+    }
+
+    function runTargetLabel(job = null, events = []) {
+      const latest = asArray(events).slice().reverse().find((event) => eventMetadata(event).objectId || event.objectId);
+      const objectId = eventMetadata(latest || {}).objectId || latest?.objectId || "";
+      if (objectId) return previewLabelForObjectId(objectId);
+      const config = jobConfig(job) || {};
+      return config.object_id || config.objectId || config.label || $("#objectLabel")?.value || "selected object";
+    }
+
+    function runCurrentActivityText(lifecycle = null, job = null, events = []) {
+      if (!lifecycle) return "No run selected. Start extraction after preflight.";
+      const provider = runProviderText(lifecycle, jobConfig(job), job);
+      if (lifecycle.failure?.message) return lifecycle.failure.message;
+      if (lifecycle.stale?.stale) return lifecycle.stale.detail || lifecycle.stale.label;
+      const phase = RUN_COCKPIT_PHASES.find(([id]) => id === runPhaseId(lifecycle.phase))?.[1] || "Running";
+      const target = runTargetLabel(job, events);
+      const { frame, total } = runFrameProgress(job, events);
+      const frameText = total ? ` on frame ${frame} of ${total}` : frame ? ` on frame ${frame}` : "";
+      const message = lifecycle.latestEvent?.message || "";
+      if (message && /failed|stalled|blocked|error/i.test(message)) return message;
+      return `${phase} ${target}${frameText} with ${provider}.`;
+    }
+
+    function runPhaseTimelineMarkup(lifecycle = null) {
+      const currentId = lifecycle ? runPhaseId(lifecycle.phase || lifecycle.status) : "preflight";
+      const currentIndex = lifecycle ? runPhaseIndex(currentId) : -1;
+      const failed = lifecycle && /failed|error|blocked|canceled|cancelled/.test(lifecycle.status);
+      const completed = lifecycle && /succeeded|complete|review_ready/.test(`${lifecycle.status} ${lifecycle.phase}`);
+      return RUN_COCKPIT_PHASES.map(([id, label], index) => {
+        const stateClass = completed || index < currentIndex ? "is-complete" : index === currentIndex ? (failed ? "is-blocked" : "is-active") : "is-pending";
+        const stateLabel = completed || index < currentIndex ? "complete" : index === currentIndex ? (failed ? "blocked" : "active") : "pending";
+        return `<li class="${stateClass}"><span aria-hidden="true"></span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(stateLabel)}</small></li>`;
+      }).join("");
+    }
+
+    function runStatusChipsMarkup(lifecycle = null, job = null, events = []) {
+      const health = runHealthState(lifecycle, events);
+      const config = jobConfig(job);
+      const locality = runLocalityText(lifecycle, config);
+      const status = lifecycle?.status || "no run";
+      return [
+        `<span class="status-chip ${health.tone}" aria-label="${escapeAttribute(`Health: ${health.label}`)}">${escapeHtml(health.label)}</span>`,
+        `<span id="mainRunStatus" class="status-chip ${statusClass(status, /succeeded|complete|running/.test(String(status).toLowerCase()))}" aria-label="${escapeAttribute(`Status: ${status}`)}">${escapeHtml(status)}</span>`,
+        `<span class="status-chip is-neutral" aria-label="${escapeAttribute(`Locality: ${locality}`)}">${escapeHtml(locality)}</span>`,
+      ].join("");
+    }
+
+    function basenameForDisplay(value = "") {
+      const text = String(value || "").split(/[?#]/)[0];
+      return text.split(/[\\/]/).filter(Boolean).pop() || text || "not selected";
+    }
+
+    function runPreflightSummaryMarkup(lifecycle = null, job = null) {
+      const config = jobConfig(job) || {};
+      const video = selectedVideo();
+      const source = basenameForDisplay(video?.metadata?.filename || video?.filename || state.video.loadedName || selectedVideoPath());
+      const maxFrames = config.sampling?.max_frames || config.max_frames || $("#maxFrames")?.value || "";
+      const trim = maxFrames ? `1-${maxFrames}` : "not limited";
+      const provider = runProviderText(lifecycle, config, job);
+      const locality = runLocalityText(lifecycle, config);
+      const target = runTargetLabel(job, state.jobEvents);
+      const outputs = state.jobArtifacts.length
+        ? `${state.jobArtifacts.length} artifact${state.jobArtifacts.length === 1 ? "" : "s"} registered`
+        : "JSON object layer, masks, cutouts when available";
+      const rows = [
+        ["Source", source],
+        ["Target", target],
+        ["Trim/sample", trim],
+        ["Provider", provider],
+        ["Locality", locality],
+        ["Expected outputs", outputs],
+      ];
+      return rows.map(([label, value]) => `<span><strong>${escapeHtml(label)}</strong>${escapeHtml(String(value || "not reported"))}</span>`).join("");
+    }
+
+    function runCandidateRowsMarkup(lifecycle = null, job = null) {
+      const stale = lifecycle?.stale?.stale ? `<div class="run-candidate-warning">${escapeHtml(lifecycle.stale.label || "No progress update")}</div>` : "";
+      const candidates = reviewCandidates();
+      const candidateRows = candidates.slice(0, 5).map((candidate) => {
+        const id = candidateId(candidate);
+        const selected = state.candidateSelection[id] === true;
+        const score = candidateConfidenceScore(candidate);
+        const statusText = candidateStatusItems(candidate, { selected }).map((item) => item.label).join(", ");
+        return `
+          <button class="run-candidate-row ${selected ? "is-selected" : ""}" type="button" data-candidate-row="${escapeAttribute(id)}">
+            <strong>${escapeHtml(candidateDisplayLabel(candidate))}</strong>
+            <span>${escapeHtml(score == null ? statusText || "candidate" : `score ${score.toFixed(2)} - ${statusText || "candidate"}`)}</span>
+          </button>
+        `;
+      });
+      const trackRows = state.reviewTracks.slice(0, 5).map((track) => {
+        const id = trackObjectId(track) || track.id || "track";
+        const metrics = trackMotionMetrics(track);
+        return `
+          <button class="run-candidate-row is-track" type="button" data-track-id="${escapeAttribute(id)}">
+            <strong>${escapeHtml(track.label || id)}</strong>
+            <span>${escapeHtml(metrics.moving ? "tracked moving object" : "track needs review")}</span>
+          </button>
+        `;
+      });
+      const liveRows = livePreviewCards().slice(0, 4).map((card) => `
+        <button class="run-candidate-row is-track" type="button" data-object-id="${escapeAttribute(card.objectId)}">
+          <strong>${escapeHtml(card.label)}</strong>
+          <span>${escapeHtml(Number.isFinite(card.frame) ? `latest artifact frame ${card.frame}` : "latest artifact")}</span>
+        </button>
+      `);
+      const jobRows = asArray(state.jobs).slice(0, 3).map((rawJob) => {
+        const item = normalizeJobLifecycle(rawJob);
+        const selected = item.id && item.id === state.selectedJobId;
+        const detail = [
+          item.id,
+          item.status || "unknown",
+          item.phase || item.progress.label,
+          rawJob.message || "",
+          item.failure?.message || rawJob.error || "",
+        ].filter(Boolean).join(" - ");
+        return `
+          <button class="run-candidate-row job-choice ${selected ? "is-selected" : ""}" type="button" data-job-id="${escapeAttribute(item.id)}" aria-pressed="${selected}">
+            <strong>${escapeHtml(item.type || "run")}</strong>
+            <span>${escapeHtml(detail)}</span>
+          </button>
+        `;
+      });
+      const rows = trackRows.length ? trackRows : candidateRows.length ? candidateRows : liveRows.length ? liveRows : jobRows;
+      return stale + (rows.length ? rows.join("") : `<div class="empty-state">Candidates and tracks appear after extraction reports reviewable output.</div>`);
+    }
+
+    function runReadableEventsMarkup(job = null, events = []) {
+      if (state.errors.selectedJob) return `<div class="error-state">Could not load job events: ${escapeHtml(state.errors.selectedJob)}</div>`;
+      const items = asArray(events);
+      if (!items.length) return emptyEventLogMarkup(job);
+      return items
+        .slice()
+        .reverse()
+        .map((event) => {
+          const metadata = eventMetadata(event);
+          const phase = RUN_COCKPIT_PHASES.find(([id]) => id === runPhaseId(metadata.stage || event.stage || eventLabel(event)))?.[1] || "Run";
+          const severity = eventSeverity(event);
+          const severityLabel = severity === "bad" ? "Error" : severity === "warn" ? "Warning" : severity === "ready" ? "Recovery" : "Progress";
+          const progressText = eventProgressText(event);
+          const chips = [metadata.objectId || "", metadata.provider || "", progressText].filter(Boolean);
+          return `
+            <div class="run-event-row is-${escapeAttribute(severity)}">
+              <span class="run-event-time">${escapeHtml(eventTimestamp(event) || "no time")}</span>
+              <span class="run-event-phase">${escapeHtml(phase)}</span>
+              <span class="run-event-severity">${escapeHtml(severityLabel)}</span>
+              <p>${escapeHtml(eventMessage(event))}</p>
+              ${chips.length ? `<div>${chips.map((chip) => detailChip(chip)).join("")}</div>` : ""}
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    function runTemporalMarkersMarkup(lifecycle = null, events = []) {
+      const { frame, total } = runFrameProgress(selectedJob(), events);
+      const frameCount = Math.max(1, total || toInteger($("#maxFrames")?.value, 0) || frame || 1);
+      const eventMarkers = asArray(events).slice(-12).map((event, index) => {
+        const metadata = eventMetadata(event);
+        const progress = eventProgress(event);
+        const markerFrame = toInteger(metadata.frame ?? metadata.currentFrame ?? progress.current, frame || index);
+        const left = clamp((markerFrame / Math.max(1, frameCount)) * 100, 0, 100);
+        const severity = eventSeverity(event);
+        return `<span class="run-temporal-marker is-${escapeAttribute(severity)}" role="listitem" style="left: ${left}%;" title="${escapeAttribute(eventMessage(event))}"></span>`;
+      });
+      const promptMarkers = state.prompts.slice(-8).map((prompt) => {
+        const markerFrame = toInteger(prompt.frame_index ?? prompt.frameIndex, frame || 0);
+        const left = clamp((markerFrame / Math.max(1, frameCount)) * 100, 0, 100);
+        return `<span class="run-temporal-marker is-keyframe" role="listitem" style="left: ${left}%;" title="${escapeAttribute(prompt.label || prompt.kind || "prompt")}"></span>`;
+      });
+      const currentLeft = clamp((frame / Math.max(1, frameCount)) * 100, 0, 100);
+      return `<span class="run-temporal-current" style="left: ${currentLeft}%;" aria-hidden="true"></span>${[...promptMarkers, ...eventMarkers].join("")}`;
+    }
+
+    function renderRunSourceFrame(lifecycle = null, job = null, events = []) {
+      const videoElement = $("#runSourceFrameVideo");
+      const placeholder = $("#runSourceFramePlaceholder");
+      const overlay = $("#runObjectOverlay");
+      if (!videoElement || !placeholder || !overlay) return;
+      const video = selectedVideo();
+      const url = safeLocalContentUrl(video?.contentUrl || selectedVideoBrowserPreview(video)?.contentUrl || "");
+      if (url) {
+        videoElement.hidden = false;
+        placeholder.hidden = true;
+        if (videoElement.getAttribute("src") !== url) videoElement.setAttribute("src", url);
+      } else {
+        videoElement.hidden = true;
+        placeholder.hidden = false;
+        placeholder.textContent = lifecycle ? "Source frame not available from the selected run." : "Source frame preview appears after a video is readable.";
+      }
+      const prompt = state.prompts.find((item) => item?.data?.x != null && item?.data?.y != null) || null;
+      const width = state.video.width || selectedVideoBrowserPreview(video)?.width || 1920;
+      const height = state.video.height || selectedVideoBrowserPreview(video)?.height || 1080;
+      if (prompt) {
+        const x = clamp((toNumber(prompt.data.x, width / 2) / Math.max(1, width)) * 100, 0, 100);
+        const y = clamp((toNumber(prompt.data.y, height / 2) / Math.max(1, height)) * 100, 0, 100);
+        overlay.hidden = false;
+        overlay.style.left = `${x}%`;
+        overlay.style.top = `${y}%`;
+        overlay.textContent = runTargetLabel(job, events);
+      } else {
+        overlay.hidden = true;
+        overlay.textContent = "";
+      }
+      const frame = runFrameProgress(job, events);
+      if ($("#runSourceFrameLabel")) $("#runSourceFrameLabel").textContent = runTargetLabel(job, events);
+      if ($("#runSourceFrameMeta")) $("#runSourceFrameMeta").textContent = frame.total ? `frame ${frame.frame} of ${frame.total}` : frame.frame ? `frame ${frame.frame}` : "No frame data yet.";
+    }
+
+    function renderRunEvidencePreviews() {
+      const cards = livePreviewCards();
+      const primary = cards[0] || {};
+      const imageWithFallback = (url, label, fallback) =>
+        `<img src="${escapeAttribute(url)}" alt="${escapeAttribute(label)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>${escapeHtml(fallback)}</span>`;
+      const setPreview = (selector, statusSelector, url, label, emptyText) => {
+        const container = $(selector);
+        const status = $(statusSelector);
+        if (!container) return;
+        if (status) status.textContent = url ? label : "Waiting";
+        container.innerHTML = url
+          ? imageWithFallback(url, label, "Preview file registered. Open raw artifacts if the thumbnail is unavailable.")
+          : `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
+      };
+      setPreview("#runMaskPreview", "#runMaskPreviewStatus", primary.maskPreview || primary.mask || "", "Mask ready", "Mask previews appear when the worker writes them.");
+      setPreview("#runCutoutPreview", "#runCutoutPreviewStatus", primary.cutout || primary.thumbnail || primary.sprite || "", "Cutout ready", "Cutouts appear after object assets are registered.");
+    }
+
+    function renderRunCockpit() {
+      const job = selectedJob();
+      const events = state.jobEvents.length ? state.jobEvents : asArray(job?.events);
+      const lifecycle = job ? normalizeJobLifecycle({ ...job, events }) : null;
+      if ($("#runPhaseTimeline")) $("#runPhaseTimeline").innerHTML = runPhaseTimelineMarkup(lifecycle);
+      if ($("#runCurrentActivity")) $("#runCurrentActivity").textContent = runCurrentActivityText(lifecycle, job, events);
+      if ($("#mainRunStatusChips")) $("#mainRunStatusChips").innerHTML = runStatusChipsMarkup(lifecycle, job, events);
+      if ($("#runCockpitSubtitle")) {
+        const provider = lifecycle ? runProviderText(lifecycle, jobConfig(job), job) : guidedEnginePlan(collectFormState($)).providerLabel || "the selected provider";
+        $("#runCockpitSubtitle").textContent = lifecycle
+          ? `Tracing a reusable motion object from your video using ${provider}.`
+          : "Start a run to trace reusable motion objects from the source video.";
+      }
+      if ($("#runCandidateSummary")) {
+        const candidateCount = reviewCandidates().length;
+        const trackCount = state.reviewTracks.length;
+        $("#runCandidateSummary").textContent = trackCount ? `${trackCount} track${trackCount === 1 ? "" : "s"}` : candidateCount ? `${candidateCount} candidate${candidateCount === 1 ? "" : "s"}` : "Waiting for reviewable output";
+      }
+      if ($("#mainJobList")) $("#mainJobList").innerHTML = runCandidateRowsMarkup(lifecycle, job);
+      if ($("#mainJobEventLog")) $("#mainJobEventLog").innerHTML = runReadableEventsMarkup(job, events);
+      if ($("#runPreflightSummary")) $("#runPreflightSummary").innerHTML = runPreflightSummaryMarkup(lifecycle, job);
+      if ($("#runTemporalMarkerTrack")) $("#runTemporalMarkerTrack").innerHTML = runTemporalMarkersMarkup(lifecycle, events);
+      if ($("#runTemporalSummary")) {
+        const { frame, total } = runFrameProgress(job, events);
+        $("#runTemporalSummary").textContent = total ? `current frame ${frame} / ${total}` : "Timeline updates when frame progress is reported.";
+      }
+      renderRunSourceFrame(lifecycle, job, events);
+      renderRunEvidencePreviews();
+      renderMainRunLivePreview();
+    }
+
     function renderMainRunLivePreview() {
       const container = $("#mainRunLivePreview");
       const status = $("#mainLivePreviewStatus");
@@ -8622,8 +8965,8 @@ const MotionJSONUI = (() => {
                     <span class="row-meta">${escapeHtml(frameLabel)}</span>
                   </div>
                   <div class="run-live-preview-images">
-                    ${primaryImage ? `<img src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(`${card.label} preview`)}" loading="lazy" />` : ""}
-                    ${secondaryImage && secondaryImage !== primaryImage ? `<img src="${escapeAttribute(secondaryImage)}" alt="${escapeAttribute(`${card.label} mask`)}" loading="lazy" />` : ""}
+                    ${primaryImage ? `<img src="${escapeAttribute(primaryImage)}" alt="${escapeAttribute(`${card.label} preview`)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>Preview file registered</span>` : ""}
+                    ${secondaryImage && secondaryImage !== primaryImage ? `<img src="${escapeAttribute(secondaryImage)}" alt="${escapeAttribute(`${card.label} mask`)}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false" /><span hidden>Mask file registered</span>` : ""}
                   </div>
                 </div>
               `;
@@ -8665,7 +9008,7 @@ const MotionJSONUI = (() => {
       $("#artifactBrowser").innerHTML = markup;
       if ($("#mainArtifactCount")) $("#mainArtifactCount").textContent = `${state.jobArtifacts.length} file${state.jobArtifacts.length === 1 ? "" : "s"}`;
       if ($("#mainArtifactBrowser")) $("#mainArtifactBrowser").innerHTML = markup;
-      renderMainRunLivePreview();
+      renderRunCockpit();
     }
 
     function libraryAssetRoute() {

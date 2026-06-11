@@ -763,6 +763,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
           exportHandoffText: document.querySelector("#exportHandoffCards")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           exportSummaryText: document.querySelector("#exportSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobCenterVisible: visible(document.querySelector("#mainJobCenter")),
+          runCockpitVisible: visible(document.querySelector("[data-testid='run-cockpit']")),
+          phaseTimelineText: document.querySelector("[data-testid='phase-timeline']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          currentActivityText: document.querySelector("[data-testid='current-activity']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runStatusChipsText: document.querySelector("[data-testid='run-status-chips']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          sourceFramePreviewVisible: visible(document.querySelector("[data-testid='source-frame-preview']")),
+          objectOverlayVisible: visible(document.querySelector("[data-testid='object-overlay']")),
+          maskPreviewText: document.querySelector("[data-testid='mask-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          cutoutPreviewText: document.querySelector("[data-testid='cutout-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          candidateListText: document.querySelector("[data-testid='candidate-list']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runEventsText: document.querySelector("[data-testid='run-events']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runTemporalTimelineVisible: visible(document.querySelector("#runTemporalTimeline")),
+          runPreflightSummaryText: document.querySelector("#runPreflightSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainRunStatusText: document.querySelector("#mainRunStatus")?.textContent?.trim() || "",
           mainLivePreviewStatusText: document.querySelector("#mainLivePreviewStatus")?.textContent?.trim() || "",
           mainLivePreviewCardCount: document.querySelectorAll("#mainRunLivePreview .run-live-preview-card").length,
@@ -1040,6 +1052,28 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     if (state === "workflow-run" && stateValue.workflowFooterReasonVisible) {
       failures.push(`${viewport.name}/${state}: run step should not show a blocked footer reason when the run CTA is available`);
     }
+    if (state === "workflow-run" && (!stateValue.runCockpitVisible || !/Preflight.*Sampling.*Proposal.*Segmentation.*Tracking.*Artifacts.*Validation.*Review Ready/.test(stateValue.phaseTimelineText))) {
+      failures.push(`${viewport.name}/${state}: run step should render the extraction cockpit phase timeline`);
+    }
+    if (state === "workflow-run" && (!/Tracking selected object.*frame 36.*180.*SAM2/i.test(stateValue.currentActivityText) || !/Healthy.*running.*Local/i.test(stateValue.runStatusChipsText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show readable current activity and health/status/locality chips`);
+    }
+    if (state === "workflow-run" && (!stateValue.sourceFramePreviewVisible || !stateValue.objectOverlayVisible || !/Preview file registered|Mask ready/.test(stateValue.maskPreviewText) || !/Preview file registered|Cutout ready/.test(stateValue.cutoutPreviewText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show source, object overlay, mask, and cutout evidence areas`);
+    }
+    if (state === "workflow-run" && (!/selected object.*track needs review/i.test(stateValue.candidateListText) || !/tracking selected object frame 36\/180|registered live mask preview/i.test(stateValue.runEventsText))) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show candidate/track context and readable grouped run events`);
+    }
+    if (
+      state === "workflow-run" &&
+      (!stateValue.runTemporalTimelineVisible ||
+        !/Source/i.test(stateValue.runPreflightSummaryText) ||
+        !/Provider/i.test(stateValue.runPreflightSummaryText) ||
+        !/Locality/i.test(stateValue.runPreflightSummaryText) ||
+        !/sam2-local|SAM2 local|SAM2/i.test(stateValue.runPreflightSummaryText))
+    ) {
+      failures.push(`${viewport.name}/${state}: run cockpit should show temporal timeline and compact preflight summary`);
+    }
     if (state === "workflow-run" && (!stateValue.mainJobCenterVisible || stateValue.mainLivePreviewCardCount < 1 || !/selected object/i.test(stateValue.mainLivePreviewText))) {
       failures.push(`${viewport.name}/${state}: run monitor should show live mask/cutout output for the running selected object`);
     }
@@ -1186,7 +1220,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
     }
     const expectedWorkflowStep = workflowStates[state];
     if (expectedWorkflowStep) {
-      if (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel) {
+      const mobileRunCockpitOwnsAction = viewport.width <= 760 && expectedWorkflowStep === "run_monitor" && stateValue.runCockpitVisible;
+      if (!mobileRunCockpitOwnsAction && (!stateValue.workflowPrimaryVisible || stateValue.visibleWorkflowPrimaryCount !== 1 || !stateValue.workflowPrimaryLabel)) {
         failures.push(`${viewport.name}/${state}: guided workflow should expose exactly one visible footer primary action`);
       }
       if (stateValue.workflowActiveStep !== expectedWorkflowStep) {

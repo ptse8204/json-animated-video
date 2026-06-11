@@ -268,53 +268,121 @@
           </div>
         </section>
 
-        <section id="mainJobCenter" class="job-center-panel panel" data-workflow-panel="run_monitor" aria-label="Job center">
-          <div class="job-center-heading">
+        <section id="mainJobCenter" class="job-center-panel run-cockpit panel" data-workflow-panel="run_monitor" aria-label="Extraction cockpit" data-testid="run-cockpit">
+          <div class="job-center-heading run-cockpit-heading">
             <div>
               <p class="section-kicker">Job Center</p>
-              <h2>Run monitor</h2>
+              <h2>Extraction cockpit</h2>
+              <p id="runCockpitSubtitle" class="panel-note">Start a run to trace reusable motion objects from the source video.</p>
             </div>
-            <span id="mainJobSummary" class="subtle-chip">0 active</span>
+            <div class="run-cockpit-heading-actions">
+              <span id="mainJobSummary" class="subtle-chip">0 active</span>
+              <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
+            </div>
           </div>
-          <div id="mainRunMonitorSummary" class="status-summary-grid" aria-live="polite"></div>
-          <div class="main-job-center-grid">
-            <section class="compact-panel">
-              <div class="panel-heading compact-heading">
-                <h3>Jobs</h3>
-                <span id="mainRunStatus" class="status-chip is-muted">No run</span>
+
+          <ol id="runPhaseTimeline" class="run-phase-timeline" data-testid="phase-timeline" aria-label="Extraction phases"></ol>
+
+          <div class="run-current-row">
+            <p id="runCurrentActivity" class="run-current-activity" data-testid="current-activity" aria-live="polite">No run selected.</p>
+            <div id="mainRunStatusChips" class="run-status-chips" data-testid="run-status-chips">
+              <span id="mainRunStatus" class="status-chip is-muted">No run</span>
+            </div>
+          </div>
+
+          <div id="mainRunMonitorSummary" class="status-summary-grid run-monitor-summary" aria-live="polite"></div>
+
+          <div class="run-cockpit-layout">
+            <section class="run-source-preview" aria-label="Source frame preview" data-testid="source-frame-preview">
+              <div class="run-source-frame-shell" id="runSourceFramePreview">
+                <video id="runSourceFrameVideo" class="run-source-frame-video" muted playsinline preload="metadata"></video>
+                <div id="runSourceFramePlaceholder" class="run-source-frame-placeholder">Source frame preview appears after a video is readable.</div>
+                <div id="runObjectOverlay" class="run-object-overlay" data-testid="object-overlay" aria-hidden="true"></div>
               </div>
-              <div id="mainJobList" class="artifact-list"></div>
+              <div class="run-source-frame-caption">
+                <strong id="runSourceFrameLabel">Source frame</strong>
+                <span id="runSourceFrameMeta" class="row-meta">No frame data yet.</span>
+              </div>
             </section>
-            <section class="compact-panel">
-              <div class="panel-heading compact-heading">
+
+            <section class="run-evidence-stack" aria-label="Latest output evidence">
+              <article class="run-evidence-preview" data-testid="mask-preview">
+                <div class="run-evidence-heading">
+                  <strong>Mask preview</strong>
+                  <span id="runMaskPreviewStatus" class="row-meta">Waiting</span>
+                </div>
+                <div id="runMaskPreview" class="run-evidence-image"></div>
+              </article>
+              <article class="run-evidence-preview" data-testid="cutout-preview">
+                <div class="run-evidence-heading">
+                  <strong>Cutout preview</strong>
+                  <span id="runCutoutPreviewStatus" class="row-meta">Waiting</span>
+                </div>
+                <div id="runCutoutPreview" class="run-evidence-image"></div>
+              </article>
+              <div class="run-live-preview-panel">
+                <div class="run-evidence-heading">
+                  <strong>Latest artifacts</strong>
+                  <span id="mainLivePreviewStatus" class="subtle-chip">Waiting</span>
+                </div>
+                <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
+              </div>
+            </section>
+
+            <section class="run-candidate-column" aria-label="Candidates and tracks">
+              <div class="run-evidence-heading">
+                <strong>Candidates and tracks</strong>
+                <span id="runCandidateSummary" class="row-meta">No candidates yet.</span>
+              </div>
+              <div id="mainJobList" class="run-candidate-list" data-testid="candidate-list"></div>
+            </section>
+          </div>
+
+          <section class="run-events-section" aria-label="Readable run events">
+            <div class="run-evidence-heading">
+              <strong>Run events</strong>
+              <span id="mainEventCount" class="subtle-chip">0 events</span>
+            </div>
+            <div id="mainJobEventLog" class="run-event-list" data-testid="run-events" aria-live="polite"></div>
+          </section>
+
+          <div id="runPreflightSummary" class="run-preflight-summary" aria-label="Preflight summary"></div>
+
+          <section id="runTemporalTimeline" class="run-temporal-strip" aria-label="Run timeline" data-testid="temporal-timeline">
+            <div class="run-temporal-heading">
+              <strong>Timeline</strong>
+              <span id="runTemporalSummary" class="row-meta">No temporal markers yet.</span>
+            </div>
+            <div id="runTemporalMarkerTrack" class="run-temporal-marker-track" role="list" aria-label="Run timeline markers"></div>
+          </section>
+
+          <details id="runJobDetailsDisclosure" class="run-job-details-disclosure">
+            <summary>Job details and recovery actions</summary>
+            <div class="run-job-details-grid">
+              <section>
                 <h3>Selected run</h3>
-                <button id="mainCancelJobButton" class="danger-action" type="button" disabled>Cancel run</button>
-              </div>
-              <dl id="mainSelectedJobFacts" class="facts"></dl>
-              <div id="mainFailedRunActions" class="inline-actions" hidden>
-                <button id="mainOpenLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
-                <button id="mainCopyRunDebugReportButton" type="button">Copy debug report</button>
-                <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
-                <button id="mainChangeSetupButton" type="button">Change setup</button>
-                <button id="mainChooseModelButton" type="button">Choose different model</button>
-              </div>
-            </section>
-            <section class="compact-panel run-live-preview-panel">
-              <div class="panel-heading compact-heading">
-                <h3>Live output</h3>
-                <span id="mainLivePreviewStatus" class="subtle-chip">Waiting</span>
-              </div>
-              <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
-            </section>
-          </div>
+                <dl id="mainSelectedJobFacts" class="facts"></dl>
+              </section>
+              <section>
+                <h3>Actions</h3>
+                <div id="mainFailedRunActions" class="inline-actions" hidden>
+                  <button id="mainOpenLogsButton" type="button" data-tooltip="Open events before retrying. Completed partial objects can still be reviewed when the backend registered them.">Open logs</button>
+                  <button id="mainCopyRunDebugReportButton" type="button">Copy debug report</button>
+                  <button id="mainRunAgainButton" class="primary-action" type="button">Run again</button>
+                  <button id="mainChangeSetupButton" type="button">Change setup</button>
+                  <button id="mainChooseModelButton" type="button">Choose different model</button>
+                </div>
+              </section>
+            </div>
+          </details>
+
           <details id="mainRunLogsDisclosure" class="run-monitor-log-panel">
-            <summary>Logs and events</summary>
+            <summary>Raw logs and artifacts</summary>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
-                <h3>Logs</h3>
-                <span id="mainEventCount" class="subtle-chip">0 events</span>
+                <h3>Raw log stream</h3>
               </div>
-              <div id="mainJobEventLog" class="event-log" aria-live="polite"></div>
+              <div id="mainRawJobEventLog" class="event-log" aria-live="polite"></div>
             </section>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
