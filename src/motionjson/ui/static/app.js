@@ -5764,6 +5764,12 @@ const MotionJSONUI = (() => {
       return [...document.querySelectorAll("[data-workflow-fragment]")];
     }
 
+    function reviewWorkflowMode() {
+      if (state.activeWorkflowStep !== "review_export") return "";
+      if (state.reviewExportSubscreen === "export") return "export";
+      return state.activeJourneyPhase === "correct" ? "correct" : "review";
+    }
+
     function workflowSnapshot() {
       const providerWarning = $("#providerWarning");
       const configStatus = $("#configStatus");
@@ -6102,7 +6108,9 @@ const MotionJSONUI = (() => {
         stepId === "review_export"
           ? state.reviewExportSubscreen === "export"
             ? ["export"]
-            : ["review_candidates", "correct_tracks"]
+            : state.activeJourneyPhase === "correct"
+              ? ["correct_tracks"]
+              : ["review_candidates"]
           : WORKFLOW_PANEL_STEP_ALIASES[stepId] || [stepId];
       return aliases.some((alias) => steps.includes(alias));
     }
@@ -6121,12 +6129,15 @@ const MotionJSONUI = (() => {
       const visibleStepIds = [activeStep];
       const postRun = postRunSnapshot();
       const exportSubscreen = activeStep === "review_export" && state.reviewExportSubscreen === "export";
+      const reviewMode = reviewWorkflowMode();
       const inspectorOpen = Boolean(state.railOpenedByUser) || !shell?.classList.contains("is-rail-collapsed");
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
+      shell?.classList.toggle("is-review-workbench", reviewMode === "review");
+      shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
       if (shell) {
         for (const className of Array.from(shell.classList)) {
           if (className.startsWith("is-workflow-step-")) shell.classList.remove(className);
@@ -6140,7 +6151,7 @@ const MotionJSONUI = (() => {
           !showAll &&
           (
             ["studioBottomCta", "runPlanAlert", "modelPlanPanel", "postRunGuide"].includes(panel.id) ||
-            (panel.id === "mainJobCenter" && activeStep !== "run_monitor" && !state.selectedJobId) ||
+            (panel.id === "mainJobCenter" && activeStep !== "run_monitor") ||
             (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
         const visible =
@@ -6176,7 +6187,9 @@ const MotionJSONUI = (() => {
                   ? "run"
                   : state.reviewExportSubscreen === "export"
                     ? "export"
-                    : "review";
+                    : state.activeJourneyPhase === "correct"
+                      ? "correct"
+                      : "review";
       const phaseReadiness = {
         goal: readiness.choose_goal,
         source: readiness.source_video,
@@ -6346,9 +6359,10 @@ const MotionJSONUI = (() => {
     function setWorkflowStep(stepId, { persist = true, focusStep = false } = {}) {
       const nextStep = normalizeWorkflowStepId(stepId, state.activeWorkflowStep);
       if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
-      if (nextStep !== "prompt_preview" && nextStep !== state.activeWorkflowStep) state.activeJourneyPhase = "";
+      if (nextStep !== "prompt_preview" && nextStep !== "review_export" && nextStep !== state.activeWorkflowStep) state.activeJourneyPhase = "";
       state.activeWorkflowStep = nextStep;
       if (nextStep !== "review_export") state.reviewExportSubscreen = "review";
+      else if (!state.activeJourneyPhase || state.activeJourneyPhase === "export") state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : "review";
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
       renderWorkflowStepper();
       if (focusStep) {
@@ -6364,6 +6378,7 @@ const MotionJSONUI = (() => {
     function setReviewExportSubscreen(subscreen = "review", { focus = false } = {}) {
       state.reviewExportSubscreen = subscreen === "export" ? "export" : "review";
       state.activeWorkflowStep = "review_export";
+      state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : "review";
       renderWorkflowStepper();
       if (focus) {
         const target = state.reviewExportSubscreen === "export" ? $("#studioExportCard") || $("#exportDecision") : $("#studioObjectList");
@@ -9635,11 +9650,39 @@ const MotionJSONUI = (() => {
       return rows.slice(0, 12);
     }
 
+    function studioReadinessStripMarkup({ decision, reviewedCount = 0, movingReviewedCount = 0, correctionCount = 0, status = null, correctMode = false } = {}) {
+      const tone = decision?.tone === "bad" ? "is-bad" : decision?.tone === "neutral" ? "is-neutral" : decision?.tone === "warn" ? "is-warn" : "is-ready";
+      const validationLabel = status?.ok === true ? "validated" : status ? "blocked" : "not validated";
+      const headline = correctMode ? "Corrections update export readiness" : decision?.title || "Review export readiness";
+      const detail = correctMode
+        ? `${correctionCount} correction edit${correctionCount === 1 ? "" : "s"} saved or pending. ${decision?.detail || "Validate after corrections before exporting."}`
+        : decision?.detail || "Validate reviewed tracks before writing MotionJSON.";
+      const facts = [
+        { label: "Reviewed", value: `${reviewedCount} track${reviewedCount === 1 ? "" : "s"}` },
+        { label: "Motion", value: `${movingReviewedCount} moving` },
+        { label: "Corrections", value: `${correctionCount} edit${correctionCount === 1 ? "" : "s"}` },
+        { label: "Validation", value: validationLabel },
+      ];
+      return `
+        <div class="studio-readiness-main ${tone}">
+          <span>${escapeHtml(decision?.badge || validationLabel)}</span>
+          <strong>${escapeHtml(headline)}</strong>
+          <small>${escapeHtml(detail)}</small>
+        </div>
+        <dl class="studio-readiness-facts">
+          ${facts.map((fact) => `<dt>${escapeHtml(fact.label)}</dt><dd>${escapeHtml(fact.value)}</dd>`).join("")}
+        </dl>
+      `;
+    }
+
     function renderStudioReviewPanel() {
       const list = $("#studioObjectList");
       const summary = $("#studioReviewSummary");
       if (!list || !summary) return;
       const candidateSelectionMode = state.activeWorkflowStep === "candidate_selection";
+      const reviewMode = reviewWorkflowMode();
+      const correctMode = reviewMode === "correct";
+      const exportSubscreen = state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export";
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
@@ -9650,9 +9693,11 @@ const MotionJSONUI = (() => {
         movingReviewedCount,
       });
       if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = reviewExportScreen.kicker;
-      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : reviewExportScreen.title;
+      if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : correctMode ? "Correct reviewed tracks" : reviewExportScreen.title;
       summary.textContent = candidateSelectionMode
         ? "Keep the objects you want, rename them if needed, then track only those selections through the full video."
+        : correctMode
+        ? "Repair labels, merge duplicates, split ranges, or add prompt-based fixes before validating export again."
         : reviewExportScreen.summary;
       const job = selectedJob();
       const lifecycle = job ? normalizeJobLifecycle(job, { events: state.jobEvents }) : null;
@@ -9687,11 +9732,12 @@ const MotionJSONUI = (() => {
       });
       const canValidate = Boolean(state.selectedJobId && reviewedCount);
       const canExport = !exportAction.disabled;
+      const correctionCount = asArray(state.correctionState?.history).length;
       $("#studioExportAllButton").disabled = !canExport;
       $("#studioExportAllButton").textContent = exportAction.label || "Export MotionJSON";
-      $("#studioExportAllButton").hidden = candidateSelectionMode;
+      $("#studioExportAllButton").hidden = candidateSelectionMode || !exportSubscreen;
       $("#studioExportSelectedButton").disabled = candidateSelectionMode ? selectedCandidateIds().length === 0 : !canValidate;
-      $("#studioExportSelectedButton").textContent = candidateSelectionMode ? "Track selected objects" : status ? "Validate again" : "Validate selected";
+      $("#studioExportSelectedButton").textContent = candidateSelectionMode ? "Track selected objects" : correctMode ? (status ? "Validate again" : "Validate after corrections") : status ? "Validate again" : "Validate selected";
       $("#studioCreatePackageButton").disabled = !canExport;
       if ($("#studioValidateExportButton")) {
         $("#studioValidateExportButton").disabled = !canValidate;
@@ -9715,6 +9761,20 @@ const MotionJSONUI = (() => {
       }
       if ($("#studioExportDecision")) {
         $("#studioExportDecision").innerHTML = exportDecisionMarkup(decision);
+      }
+      const readinessStrip = $("#studioReadinessStrip");
+      if (readinessStrip) {
+        readinessStrip.hidden = candidateSelectionMode || exportSubscreen;
+        readinessStrip.innerHTML = readinessStrip.hidden
+          ? ""
+          : studioReadinessStripMarkup({
+              decision,
+              reviewedCount,
+              movingReviewedCount,
+              correctionCount,
+              status,
+              correctMode,
+            });
       }
       const partialDiagnostic = $("#studioPartialDiagnostic");
       if (partialDiagnostic) {
@@ -9843,14 +9903,14 @@ const MotionJSONUI = (() => {
       const exportCard = $("#studioExportCard");
       const reviewTools = $(".review-tools-panel");
       const segmentGate = $(".studio-segment-gate");
-      const exportSubscreen = state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export";
-      if (candidateSection) candidateSection.hidden = candidateSelectionMode || exportSubscreen;
+      const showCandidateSection = !candidateSelectionMode && !exportSubscreen && !correctMode && state.reviewTracks.length === 0 && reviewCandidates().length > 0;
+      if (candidateSection) candidateSection.hidden = !showCandidateSection;
       if (trackInspector) trackInspector.hidden = candidateSelectionMode || exportSubscreen;
-      if (exportCard) exportCard.hidden = candidateSelectionMode;
-      if (reviewTools) reviewTools.hidden = candidateSelectionMode;
-      if (correctionSection) correctionSection.hidden = candidateSelectionMode || exportSubscreen;
-      if (artifactSection) artifactSection.hidden = candidateSelectionMode || exportSubscreen;
-      if (segmentGate) segmentGate.hidden = candidateSelectionMode || exportSubscreen;
+      if (exportCard) exportCard.hidden = candidateSelectionMode || !exportSubscreen;
+      if (reviewTools) reviewTools.hidden = candidateSelectionMode || correctMode || !exportSubscreen;
+      if (correctionSection) correctionSection.hidden = candidateSelectionMode || exportSubscreen || !correctMode;
+      if (artifactSection) artifactSection.hidden = candidateSelectionMode || exportSubscreen || lifecycle?.status !== "failed";
+      if (segmentGate) segmentGate.hidden = !showCandidateSection;
       if (list) list.hidden = candidateSelectionMode || exportSubscreen;
     }
 
@@ -13747,6 +13807,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = capture === "workflow-export" ? "export" : "review";
+        state.activeJourneyPhase = capture === "workflow-export" ? "export" : capture === "workflow-correct" ? "correct" : "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
       } else if (capture === "workflow-review-failure") {
@@ -13758,6 +13819,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = ["export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture) ? "export" : "review";
+        state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : capture === "correction-tools" ? "correct" : "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
         if (capture === "candidate-review") {
@@ -13771,6 +13833,7 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture("workflow-review");
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = "review";
+        state.activeJourneyPhase = "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
         document.querySelectorAll(".right-rail > details").forEach((details) => {
@@ -14046,6 +14109,8 @@ const MotionJSONUI = (() => {
         persistenceStatus: "saving",
         persistenceMessage: "Saving correction edit through the Runtime API correction endpoint.",
       };
+      state.exportValidation = null;
+      state.exportResult = null;
       rebuildTracksFromCorrectionState();
       renderJobReview();
       return entry;
@@ -14064,6 +14129,8 @@ const MotionJSONUI = (() => {
       normalized.history = normalized.history.map((entry) => ({ ...entry, persistenceStatus: "saved" }));
       if (response?.review) state.jobReview = response.review;
       state.correctionState = normalized;
+      state.exportValidation = null;
+      state.exportResult = null;
       rebuildTracksFromCorrectionState();
       renderJobReview();
     }
@@ -14746,6 +14813,7 @@ const MotionJSONUI = (() => {
       const duplicateTracks = state.reviewTracks.filter((track) => /duplicate|overlap|same object/i.test(`${track.label || ""} ${asArray(track.warnings).join(" ")}`));
       const mergeTargets = duplicateTracks.length >= 2 ? duplicateTracks.slice(0, 2) : state.reviewTracks.slice(0, 2);
       state.mergeSelection = new Set(mergeTargets.map((track) => track.id).filter(Boolean));
+      state.activeJourneyPhase = "correct";
       setWorkflowStep("review_export", { focusStep: true });
       renderTrackList();
       renderSelectedTrackDetail();

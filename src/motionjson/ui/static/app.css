@@ -6092,6 +6092,686 @@ body {
   display: none !important;
 }
 
+/* UI V3 final de-card enforcement. This must stay after legacy recovery
+   layers so Review, Correct, and Export cannot fall back to rail/card chrome. */
+.app-shell.is-result-mode:not(.is-workflow-dashboard),
+.app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed),
+.app-shell.is-result-mode.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail,
+.app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed) .right-rail {
+  display: none !important;
+}
+
+.app-shell:not(.is-workflow-dashboard) .panel,
+.app-shell:not(.is-workflow-dashboard) .compact-panel,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell:not(.is-workflow-dashboard) .studio-export-card[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-inline-slot[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-tools-panel[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-track-inspector[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-object-list[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-segment-gate[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-partial-diagnostic[hidden],
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-readiness-strip,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision-slot,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+  display: grid !important;
+  grid-area: review;
+  min-height: 0;
+  overflow: hidden;
+  grid-template-columns: minmax(320px, 1fr) minmax(286px, 0.72fr);
+  grid-template-rows: min-content min-content minmax(0, 1fr) min-content;
+  grid-template-areas:
+    "reviewHead inspector"
+    "bulk inspector"
+    "objects inspector"
+    "tools inspector";
+  gap: 10px;
+  padding: 0 !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: min-content minmax(180px, 0.55fr) minmax(0, 1fr);
+  grid-template-areas:
+    "reviewHead"
+    "objects"
+    "corrections";
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 0.56fr);
+  grid-template-rows: min-content minmax(0, 1fr);
+  grid-template-areas:
+    "reviewHead tools"
+    "exportCard tools";
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading {
+  grid-area: reviewHead;
+  padding: 0 0 12px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  background: transparent !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
+  grid-area: bulk;
+  border-bottom: 1px solid var(--workflow-line, var(--border));
+  padding-bottom: 10px;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-bulk-actions,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-track-inspector {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-list {
+  grid-area: objects;
+  min-height: 180px;
+  overflow: auto;
+  border: 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .history-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .suggestion-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .diagnostic-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .artifact-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-check-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .export-decision {
+  border: 0 !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card.is-selected {
+  background: #f6fbff !important;
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue, #0b63ce) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
+  grid-area: inspector;
+  overflow: auto;
+  border: 0 !important;
+  border-left: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 0 0 16px !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
+  grid-area: tools;
+  max-height: none !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 10px 0 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card {
+  padding: 7px 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card .row-meta {
+  display: none;
+}
+
+#reviewCorrectionSectionSlot {
+  grid-area: corrections;
+  min-width: 0;
+  overflow: auto;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  border-left: 0 !important;
+  padding: 12px 0 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+@media (max-width: 1180px) {
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel,
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel,
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    overflow: visible;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "reviewHead"
+      "bulk"
+      "objects"
+      "inspector"
+      "tools"
+      "corrections"
+      "exportCard";
+  }
+
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "objects"
+      "corrections";
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "exportCard"
+      "tools";
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector,
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+    border-left: 0 !important;
+    border-top: 1px solid var(--workflow-line, var(--border)) !important;
+    padding: 12px 0 0 !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
+    display: none !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* UI V3 de-card pass: workflow mode uses open work surfaces, dividers, and
+   object rows. Framed cards are reserved for true media/object artifacts. */
+.app-shell:not(.is-workflow-dashboard) {
+  --workflow-line: var(--ui-v3-line, var(--border));
+  --workflow-muted-bg: #f8fafc;
+}
+
+.app-shell:not(.is-workflow-dashboard) .workspace {
+  background: #ffffff;
+}
+
+.app-shell:not(.is-workflow-dashboard) .panel,
+.app-shell:not(.is-workflow-dashboard) .compact-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell:not(.is-workflow-dashboard) .panel {
+  padding: 0;
+}
+
+.app-shell:not(.is-workflow-dashboard) .compact-panel {
+  margin: 0;
+  padding: 0;
+}
+
+.app-shell:not(.is-workflow-dashboard) .panel-heading,
+.app-shell:not(.is-workflow-dashboard) .compact-heading,
+.app-shell:not(.is-workflow-dashboard) .model-setup-heading,
+.app-shell:not(.is-workflow-dashboard) .studio-review-heading {
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--workflow-line);
+}
+
+.app-shell:not(.is-workflow-dashboard) .goal-card,
+.app-shell:not(.is-workflow-dashboard) .step-action-card,
+.app-shell:not(.is-workflow-dashboard) .upload-dropzone,
+.app-shell:not(.is-workflow-dashboard) .browser-preview-card,
+.app-shell:not(.is-workflow-dashboard) .model-choice-card,
+.app-shell:not(.is-workflow-dashboard) .model-setup-guided-card,
+.app-shell:not(.is-workflow-dashboard) .model-setup-check-item,
+.app-shell:not(.is-workflow-dashboard) .model-setup-required-now,
+.app-shell:not(.is-workflow-dashboard) .model-setup-summary,
+.app-shell:not(.is-workflow-dashboard) .model-setup-result,
+.app-shell:not(.is-workflow-dashboard) .model-setup-job,
+.app-shell:not(.is-workflow-dashboard) .model-setup-progress-card,
+.app-shell:not(.is-workflow-dashboard) .environment-recommendation-card,
+.app-shell:not(.is-workflow-dashboard) .model-cache-status,
+.app-shell:not(.is-workflow-dashboard) .setup-playbook-step,
+.app-shell:not(.is-workflow-dashboard) .model-setup-access-card,
+.app-shell:not(.is-workflow-dashboard) .model-setup-confirmation,
+.app-shell:not(.is-workflow-dashboard) .candidate-controls,
+.app-shell:not(.is-workflow-dashboard) .candidate-row,
+.app-shell:not(.is-workflow-dashboard) .track-row,
+.app-shell:not(.is-workflow-dashboard) .event-row,
+.app-shell:not(.is-workflow-dashboard) .diagnostic-row,
+.app-shell:not(.is-workflow-dashboard) .history-row,
+.app-shell:not(.is-workflow-dashboard) .suggestion-row,
+.app-shell:not(.is-workflow-dashboard) .artifact-row,
+.app-shell:not(.is-workflow-dashboard) .library-row,
+.app-shell:not(.is-workflow-dashboard) .route-row,
+.app-shell:not(.is-workflow-dashboard) .status-summary-card,
+.app-shell:not(.is-workflow-dashboard) .post-run-stage,
+.app-shell:not(.is-workflow-dashboard) .handoff-card,
+.app-shell:not(.is-workflow-dashboard) .export-next-steps-card,
+.app-shell:not(.is-workflow-dashboard) .review-tool-card,
+.app-shell:not(.is-workflow-dashboard) .studio-export-check-row,
+.app-shell:not(.is-workflow-dashboard) .export-decision,
+.app-shell:not(.is-workflow-dashboard) .studio-runtime-card,
+.app-shell:not(.is-workflow-dashboard) .studio-segment-gate,
+.app-shell:not(.is-workflow-dashboard) .studio-partial-diagnostic {
+  border: 0;
+  border-bottom: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell:not(.is-workflow-dashboard) .goal-card.is-active,
+.app-shell:not(.is-workflow-dashboard) .model-choice-card.is-active,
+.app-shell:not(.is-workflow-dashboard) .artifact-row.video-choice.is-selected,
+.app-shell:not(.is-workflow-dashboard) .artifact-row.job-choice.is-selected,
+.app-shell:not(.is-workflow-dashboard) .library-row.is-selected,
+.app-shell:not(.is-workflow-dashboard) .candidate-row.is-selected,
+.app-shell:not(.is-workflow-dashboard) .track-row.is-selected,
+.app-shell:not(.is-workflow-dashboard) .studio-object-row.is-selected,
+.app-shell:not(.is-workflow-dashboard) .review-tool-card.is-selected {
+  background: #f6fbff;
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue, #0b63ce);
+}
+
+.app-shell:not(.is-workflow-dashboard) .warning-box {
+  border: 0;
+  border-left: 4px solid #d99016;
+  border-radius: 0;
+}
+
+.app-shell:not(.is-workflow-dashboard) .warning-box.is-ready {
+  border-left-color: var(--ready);
+}
+
+.app-shell:not(.is-workflow-dashboard) .warning-box.is-bad {
+  border-left-color: var(--bad);
+}
+
+.app-shell:not(.is-workflow-dashboard) .empty-state {
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-dropzone,
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card,
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .step-action-card {
+  border-bottom: 1px solid var(--workflow-line);
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-dropzone {
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.6fr);
+  padding: 16px 0;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card {
+  padding: 16px 0;
+}
+
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-grid,
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-checklist,
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-playbook {
+  gap: 0;
+  border-top: 1px solid var(--workflow-line);
+}
+
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-card,
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-check-item,
+.app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .setup-playbook-step {
+  padding: 12px 0;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail,
+.app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed) .right-rail {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+  display: grid !important;
+  grid-template-rows: min-content min-content min-content minmax(0, 1fr) min-content;
+  grid-template-areas:
+    "reviewHead inspector"
+    "bulk inspector"
+    "readiness inspector"
+    "objects inspector"
+    "segment tools";
+  padding: 0;
+}
+
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision-slot,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision {
+  display: none !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-columns: minmax(320px, 0.78fr) minmax(380px, 1fr);
+  grid-template-rows: min-content minmax(0, 1fr);
+  grid-template-areas:
+    "reviewHead corrections"
+    "objects corrections";
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-bulk-actions {
+  display: none;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-track-inspector {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-areas:
+    "reviewHead tools"
+    "exportCard tools";
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading {
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--workflow-line);
+  background: transparent;
+}
+
+.studio-readiness-strip {
+  grid-area: readiness;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(210px, 0.54fr);
+  gap: 14px;
+  align-items: stretch;
+  min-width: 0;
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--workflow-line);
+}
+
+.studio-readiness-strip[hidden] {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-readiness-strip {
+  display: none !important;
+}
+
+.app-shell:not(.is-workflow-dashboard) .studio-export-card[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-inline-slot[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-tools-panel[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-track-inspector[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-object-list[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-segment-gate[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-partial-diagnostic[hidden] {
+  display: none !important;
+}
+
+.studio-readiness-main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 10px;
+  min-width: 0;
+  align-content: start;
+}
+
+.studio-readiness-main span {
+  grid-row: span 2;
+  align-self: start;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e8eef4;
+  color: #31404f;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.studio-readiness-main.is-ready span {
+  background: var(--ready-soft);
+  color: #0f524b;
+}
+
+.studio-readiness-main.is-warn span {
+  background: #fff4cf;
+  color: #72500c;
+}
+
+.studio-readiness-main.is-bad span {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.studio-readiness-main strong,
+.studio-readiness-main small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.studio-readiness-main strong {
+  color: #172124;
+  font-size: 13px;
+}
+
+.studio-readiness-main small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.studio-readiness-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  min-width: 0;
+  margin: 0;
+}
+
+.studio-readiness-facts dt,
+.studio-readiness-facts dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.studio-readiness-facts dt {
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.studio-readiness-facts dd {
+  color: var(--ink);
+  font-weight: 780;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
+  border-bottom: 1px solid var(--workflow-line);
+  padding-bottom: 10px;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-list {
+  border: 0;
+  border-top: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row {
+  border: 0;
+  border-bottom: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
+  border: 0;
+  border-left: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+  padding: 0 0 0 16px;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-detail .artifact-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-detail .empty-state {
+  padding: 8px 0;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
+  border: 0;
+  border-top: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+  padding: 10px 0 0;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card {
+  min-width: 0;
+  padding: 8px 0;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card button,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card strong,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row {
+  min-width: 240px;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-segment-gate {
+  padding: 10px 0;
+}
+
+#reviewCandidateSectionSlot {
+  grid-area: candidates;
+}
+
+#reviewCorrectionSectionSlot {
+  grid-area: corrections;
+  min-width: 0;
+  overflow: auto;
+  border-top: 1px solid var(--workflow-line);
+  padding-top: 10px;
+}
+
+#reviewArtifactSectionSlot {
+  grid-area: diagnostics;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot .review-inline-panel + .review-inline-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--workflow-line);
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor button,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range button {
+  align-self: end;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-heading,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-included-list,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-checklist,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .export-decision-slot {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--workflow-line);
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-included-list .artifact-row {
+  padding: 9px 0;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row {
+  grid-template-columns: 18px minmax(0, 0.75fr) minmax(0, 1.25fr);
+  padding: 9px 0;
+}
+
+@media (max-width: 1180px) {
+  .studio-readiness-strip,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--workflow-line);
+    padding: 12px 0 0;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
+    display: none !important;
+  }
+}
+
 /* UI V3 phase-02 guardrails: keep setup choices as a readable workflow list
    after every legacy storyboard layer has run. */
 .workspace {
@@ -8719,4 +9399,458 @@ body {
 #workflowController #workflowStepper,
 #workflowController #workflowStepper * {
   display: none !important;
+}
+
+/* UI V3 final workflow surface enforcement.
+   This block intentionally sits at EOF so old recovery styles cannot re-card
+   the review, correction, and export workflow states. */
+.app-shell.is-result-mode:not(.is-workflow-dashboard),
+.app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed),
+.app-shell.is-result-mode.is-sidebar-collapsed:not(.is-workflow-dashboard):not(.is-rail-collapsed) {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .right-rail,
+.app-shell.is-result-mode:not(.is-workflow-dashboard):not(.is-rail-collapsed) .right-rail {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
+  padding-bottom: 28px !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid {
+  display: grid !important;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: min(540px, calc(100vh - 288px)) !important;
+  max-height: calc(100vh - 288px) !important;
+  grid-template-columns: minmax(460px, 0.92fr) minmax(540px, 1.08fr) !important;
+  grid-template-rows: minmax(0, 1fr) !important;
+  grid-template-areas: "viewer review" !important;
+  align-items: stretch !important;
+  gap: 18px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
+  max-width: 1160px !important;
+  min-height: min(520px, calc(100vh - 288px)) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-areas: "review" !important;
+  justify-content: center !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .viewer-panel {
+  grid-area: viewer !important;
+  display: grid !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  grid-template-rows: minmax(0, 1fr) auto auto !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .viewer-panel {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .viewer-stage {
+  min-height: 0 !important;
+  border-radius: 8px !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-area: review !important;
+  display: grid !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  grid-template-columns: minmax(400px, 1fr) minmax(240px, 0.54fr) !important;
+  grid-template-rows: min-content min-content min-content minmax(220px, 1fr) !important;
+  grid-template-areas:
+    "reviewHead inspector"
+    "partial inspector"
+    "bulk inspector"
+    "objects inspector" !important;
+  gap: 12px 16px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: min-content minmax(170px, 0.48fr) minmax(0, 1fr) !important;
+  grid-template-areas:
+    "reviewHead"
+    "objects"
+    "corrections" !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+  grid-template-columns: minmax(520px, 1fr) minmax(320px, 0.52fr) !important;
+  grid-template-rows: min-content minmax(0, 1fr) !important;
+  grid-template-areas:
+    "reviewHead tools"
+    "exportCard tools" !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-list,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading {
+  grid-area: reviewHead !important;
+  display: flex !important;
+  gap: 12px !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading h2 {
+  font-size: 20px !important;
+  line-height: 1.15 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
+  grid-area: bulk !important;
+  padding: 0 0 10px !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-partial-diagnostic {
+  grid-area: partial !important;
+  padding: 0 0 10px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-list {
+  grid-area: objects !important;
+  display: grid !important;
+  align-content: start !important;
+  gap: 0 !important;
+  overflow: auto !important;
+  padding: 0 !important;
+  min-height: 220px !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
+  grid-area: inspector !important;
+  align-content: start !important;
+  overflow: auto !important;
+  padding: 0 0 0 16px !important;
+  border-left: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
+  grid-area: tools !important;
+  max-height: none !important;
+  overflow: visible !important;
+  padding: 10px 0 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-grid {
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .history-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .suggestion-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .diagnostic-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .artifact-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-check-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .reuse-snippet,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .export-handoff-step,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .export-decision {
+  border: 0 !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row {
+  grid-template-columns: 16px 24px minmax(0, 1fr) 30px 30px !important;
+  grid-template-areas:
+    "color number copy visible export"
+    "color number status visible export" !important;
+  align-items: center !important;
+  min-height: 74px !important;
+  gap: 4px 10px !important;
+  padding: 10px 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-color {
+  grid-area: color !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-number {
+  grid-area: number !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-copy {
+  grid-area: copy !important;
+  gap: 3px !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-title {
+  white-space: nowrap !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-status-chip {
+  grid-area: status !important;
+  justify-self: start !important;
+  align-self: start !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-icon-toggle {
+  grid-area: visible !important;
+  justify-self: center !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-check {
+  grid-area: export !important;
+  justify-self: center !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row.is-selected,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card.is-selected {
+  background: #f6fbff !important;
+  box-shadow: inset 4px 0 0 var(--ui-v3-blue, #0b63ce) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card {
+  padding: 8px 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tool-card .row-meta {
+  display: none !important;
+}
+
+.app-shell.is-review-workbench:not(.is-workflow-dashboard) .review-tools-panel {
+  display: none !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-bulk-actions,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-track-inspector,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .review-tools-panel,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-segment-gate,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-partial-diagnostic,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCandidateSectionSlot,
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewArtifactSectionSlot {
+  display: none !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+  grid-area: corrections !important;
+  overflow: auto !important;
+  padding: 12px 0 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-object-list {
+  min-height: 150px !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px 12px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
+  grid-area: exportCard !important;
+  display: grid !important;
+  overflow: auto !important;
+  padding: 0 !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tools-panel {
+  grid-area: tools !important;
+  display: grid !important;
+  align-content: start !important;
+  overflow: auto !important;
+  padding: 0 0 0 18px !important;
+  border-top: 0 !important;
+  border-left: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-object-list,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-track-inspector,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-bulk-actions,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-segment-gate,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-partial-diagnostic,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCandidateSectionSlot,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewArtifactSectionSlot {
+  display: none !important;
+}
+
+.app-shell:not(.is-workflow-dashboard) .studio-export-card[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-inline-slot[hidden],
+.app-shell:not(.is-workflow-dashboard) .review-tools-panel[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-track-inspector[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-object-list[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-segment-gate[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-partial-diagnostic[hidden],
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-readiness-strip,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision-slot,
+.app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision {
+  display: none !important;
+}
+
+@media (max-width: 1180px) {
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid,
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
+    min-height: 0 !important;
+    max-height: none !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "viewer"
+      "review" !important;
+    gap: 14px !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
+    grid-template-areas: "review" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel,
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel,
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    overflow: visible !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto !important;
+    grid-template-areas:
+      "reviewHead"
+      "partial"
+      "bulk"
+      "objects"
+      "inspector"
+      "tools"
+      "corrections"
+      "exportCard" !important;
+  }
+
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "objects"
+      "corrections" !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "exportCard"
+      "tools" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector,
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tools-panel,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+    overflow: visible !important;
+    padding: 12px 0 0 !important;
+    border-left: 0 !important;
+    border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-range,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 760px) {
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
+    padding-bottom: 148px !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid {
+    width: 100% !important;
+    max-width: none !important;
+    grid-template-areas:
+      "review"
+      "viewer" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+    width: 100% !important;
+    max-width: none !important;
+    justify-self: stretch !important;
+    grid-auto-flow: row !important;
+    grid-auto-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "reviewHead"
+      "partial"
+      "objects"
+      "bulk"
+      "inspector"
+      "tools"
+      "corrections"
+      "exportCard" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel > * {
+    grid-column: 1 / -1 !important;
+    justify-self: stretch !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading {
+    display: grid !important;
+    width: 100% !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-items: stretch !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading > div,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-partial-diagnostic,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-list {
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row {
+    grid-template-columns: 16px 24px minmax(0, 1fr) 30px 30px !important;
+  }
 }

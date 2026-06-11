@@ -580,7 +580,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       prompt_preview: ["prompt_preview", "validate_run"],
       candidate_selection: ["review_candidates"],
       run_monitor: ["run_monitor"],
-      review_export: ["correct_tracks", "export"],
+      review_export:
+        state === "workflow-export"
+          ? ["export"]
+          : state === "workflow-correct"
+            ? ["correct_tracks"]
+            : ["review_candidates"],
     };
     const workflowScreenAliases = {
       choose_goal: ["choose_goal"],
@@ -592,9 +597,17 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
       review_export: ["review_export"],
     };
     if (workflowStates[state]) {
+      const workflowClickSelector =
+        state === "workflow-correct"
+          ? '[data-journey-phase="correct"]'
+          : state === "workflow-export"
+            ? '[data-journey-phase="export"]'
+            : state === "workflow-review" || state === "workflow-partial-success"
+              ? '[data-journey-phase="review"]'
+              : `[data-workflow-step="${workflowStates[state]}"]`;
       await cdp.send("Runtime.evaluate", {
         expression: `
-          document.querySelector('[data-workflow-step="${workflowStates[state]}"]')?.click();
+          document.querySelector('${workflowClickSelector}')?.click();
         `,
       });
     }
@@ -1139,14 +1152,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, failu
         if (!stateValue.studioInspectorVisible || !/Selected object|Runtime|Accelerator|Geometry|Motion/.test(stateValue.studioInspectorText)) {
           failures.push(`${viewport.name}/${state}: desktop review should expose selected-object diagnostics and runtime proof in the workbench`);
         }
-        if (!stateValue.reviewToolsVisible || !/Canvas player|Object selection|Timeline/.test(stateValue.reviewToolsText)) {
-          failures.push(`${viewport.name}/${state}: desktop review should expose actual review tool readiness cards above the fold`);
-        }
         for (const [label, box] of [
           ["viewer", stateValue.viewerPanelBox],
           ["object list", stateValue.studioObjectListBox],
           ["inspector", stateValue.studioInspectorBox],
-          ["review tools", stateValue.reviewToolsBox],
         ]) {
           if (!box || box.bottom > bottomLimit || box.top < -2) {
             failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible review workbench`);
