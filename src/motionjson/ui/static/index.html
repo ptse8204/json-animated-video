@@ -92,10 +92,30 @@
         </div>
       </aside>
 
-      <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1">
-        <header class="topbar studio-topbar">
+      <nav id="journeyNav" class="journey-nav" aria-label="Extraction journey" data-testid="journey-nav">
+        <div class="journey-nav-header">
+          <span class="journey-kicker">Journey</span>
+          <button id="journeyNavToggle" class="journey-collapse" type="button" aria-controls="journeyNavList" aria-expanded="true">Collapse</button>
+        </div>
+        <ol id="journeyNavList" class="journey-nav-list">
+          <li><button type="button" data-workflow-step="choose_goal" data-journey-phase="goal"><span class="journey-dot" aria-hidden="true"></span><strong>Goal</strong><small>Choose the job</small></button></li>
+          <li><button type="button" data-workflow-step="source_video" data-journey-phase="source"><span class="journey-dot" aria-hidden="true"></span><strong>Source</strong><small>Add video</small></button></li>
+          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="target"><span class="journey-dot" aria-hidden="true"></span><strong>Target</strong><small>Define object</small></button></li>
+          <li><button type="button" data-workflow-step="provider_settings" data-journey-phase="model"><span class="journey-dot" aria-hidden="true"></span><strong>Model</strong><small>Prepare provider</small></button></li>
+          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="preflight"><span class="journey-dot" aria-hidden="true"></span><strong>Preflight</strong><small>Confirm run</small></button></li>
+          <li><button type="button" data-workflow-step="run_monitor" data-journey-phase="run"><span class="journey-dot" aria-hidden="true"></span><strong>Run</strong><small>Watch output</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="review" data-journey-phase="review"><span class="journey-dot" aria-hidden="true"></span><strong>Review</strong><small>Keep tracks</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="review" data-journey-phase="correct"><span class="journey-dot" aria-hidden="true"></span><strong>Correct</strong><small>Refine results</small></button></li>
+          <li><button type="button" data-workflow-step="review_export" data-review-subscreen="export" data-journey-phase="export"><span class="journey-dot" aria-hidden="true"></span><strong>Export</strong><small>Create layer</small></button></li>
+        </ol>
+      </nav>
+
+      <section id="workspaceMain" class="workspace" aria-label="Video prompt workspace" tabindex="-1" data-testid="workflow-stage">
+        <header class="topbar studio-topbar" data-testid="app-command-bar">
           <div class="studio-brand-group">
             <strong class="studio-wordmark">Motion<span>JSON</span></strong>
+          </div>
+          <div class="command-identity" aria-label="Current project and source">
             <button
               id="projectDrawerToggle"
               class="studio-project-pill project-drawer-trigger"
@@ -103,8 +123,12 @@
               aria-controls="workspaceSidebar"
               aria-expanded="false"
             >Project</button>
+            <span id="sourceIdentityChip" class="command-identity-chip">
+              <small>Source</small>
+              <strong>No video selected</strong>
+            </span>
           </div>
-          <ol id="studioProgressStepper" class="studio-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
+          <ol id="studioProgressStepper" class="studio-progress sr-workflow-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
             <li class="is-active" data-studio-step="choose_goal">
               <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Start</strong></button>
             </li>
@@ -129,8 +153,11 @@
           </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
-            <span id="diagnosticsSummary" class="status-chip is-muted">Main workflow</span>
+            <span id="providerIdentityChip" class="status-chip is-muted">Provider pending</span>
+            <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
+            <button class="command-icon-button" type="button" aria-label="Help">?</button>
+            <button class="command-icon-button" type="button" aria-label="Settings">Settings</button>
           </div>
         </header>
 
@@ -221,7 +248,7 @@
             <li><button type="button" data-workflow-step="review_export"><span>7</span><strong>Review</strong><small>Correct and export</small></button></li>
           </ol>
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
-          <div class="workflow-footer">
+          <div class="workflow-footer" data-testid="command-footer">
             <div class="workflow-footer-actions">
               <button id="workflowBackButton" type="button" data-testid="workflow-back">Back</button>
               <button id="workflowPrimaryButton" class="primary-action" type="button" data-testid="workflow-primary">Continue to video</button>
@@ -270,7 +297,7 @@
               <div id="mainRunLivePreview" class="run-live-preview-grid" aria-live="polite"></div>
             </section>
           </div>
-          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel" open>
+          <details id="mainRunLogsDisclosure" class="run-monitor-log-panel">
             <summary>Logs and events</summary>
             <section class="compact-panel">
               <div class="panel-heading compact-heading">
@@ -365,7 +392,7 @@
               <input id="frameSlider" type="range" min="0" max="0" step="1" value="0" aria-label="Frame" />
               <button id="markKeyframeButton" type="button" aria-keyshortcuts="M" title="Mark current frame as a keyframe">Mark keyframe</button>
             </div>
-            <div class="timeline-review" aria-label="Review timeline">
+            <div class="timeline-review" aria-label="Review timeline" data-testid="temporal-timeline">
               <div id="timelineMarkerTrack" class="timeline-marker-track" role="list" aria-label="API review timeline markers"></div>
               <div class="timeline-keyframe-row">
                 <span id="timelineSummary" class="row-meta">No API timeline loaded.</span>
@@ -829,11 +856,11 @@
         </section>
       </section>
 
-      <aside id="diagnosticsRail" class="right-rail" aria-label="Jobs and diagnostics">
+      <aside id="diagnosticsRail" class="right-rail" aria-label="Context inspector" data-testid="context-inspector-drawer">
         <div class="rail-heading">
           <div>
-            <p class="section-kicker">Details</p>
-            <strong>Run, review, diagnostics</strong>
+            <p class="section-kicker">Inspector</p>
+            <strong>Context details</strong>
           </div>
           <button
             id="railCloseButton"
@@ -867,7 +894,7 @@
           </section>
         </details>
 
-        <details class="rail-section" data-workflow-panel="validate_run review_candidates" open>
+        <details class="rail-section" data-workflow-panel="run_monitor validate_run review_candidates" open>
           <summary>Run monitor</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">

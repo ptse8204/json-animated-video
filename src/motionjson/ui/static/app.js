@@ -5749,7 +5749,10 @@ const MotionJSONUI = (() => {
       return (
         [...document.querySelectorAll("[data-workflow-step]")]
           .filter((button) => button.dataset.workflowStep === normalized)
-          .sort((a, b) => Number(a.closest("#studioProgressStepper") ? -1 : 1) - Number(b.closest("#studioProgressStepper") ? -1 : 1))[0] || null
+          .sort((a, b) => {
+            const priority = (button) => (button.closest("#journeyNav") ? -2 : button.closest("#studioProgressStepper") ? -1 : 1);
+            return priority(a) - priority(b);
+          })[0] || null
       );
     }
 
@@ -6118,6 +6121,7 @@ const MotionJSONUI = (() => {
       const visibleStepIds = [activeStep];
       const postRun = postRunSnapshot();
       const exportSubscreen = activeStep === "review_export" && state.reviewExportSubscreen === "export";
+      const inspectorOpen = Boolean(state.railOpenedByUser) || !shell?.classList.contains("is-rail-collapsed");
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       shell?.classList.toggle("is-workflow-dashboard", showAll);
@@ -6139,7 +6143,9 @@ const MotionJSONUI = (() => {
             (panel.id === "mainJobCenter" && activeStep !== "run_monitor" && !state.selectedJobId) ||
             (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
-        const visible = !hiddenInSimpleMode && (showAll || ((!railDetail || showReviewDetails) && matchesVisibleStep));
+        const visible =
+          !hiddenInSimpleMode &&
+          (showAll || (!railDetail && matchesVisibleStep) || (railDetail && matchesVisibleStep && (inspectorOpen || showReviewDetails)));
         setElementWorkflowHidden(panel, !visible);
         if (visible && panel.matches("details.rail-section") && !showAll) {
           panel.open = true;
@@ -6148,8 +6154,78 @@ const MotionJSONUI = (() => {
       for (const fragment of workflowFragments()) {
         setElementWorkflowHidden(fragment, !(showAll || visibleStepIds.some((stepId) => fragmentMatchesWorkflowStep(fragment, stepId))));
       }
-      setRailCollapsed(true, { persist: false });
+      if (!state.railOpenedByUser) setRailCollapsed(true, { persist: false });
       scheduleDrawOverlay();
+    }
+
+    function renderJourneyNav(snapshot, readiness, activeStep) {
+      const nav = $("#journeyNav");
+      if (!nav) return;
+      const activePhase =
+        activeStep === "choose_goal"
+          ? "goal"
+          : activeStep === "source_video"
+            ? "source"
+            : activeStep === "provider_settings"
+              ? "model"
+              : activeStep === "prompt_preview"
+                ? "target"
+                : activeStep === "run_monitor"
+                  ? "run"
+                  : state.reviewExportSubscreen === "export"
+                    ? "export"
+                    : "review";
+      const phaseReadiness = {
+        goal: readiness.choose_goal,
+        source: readiness.source_video,
+        target: readiness.prompt_preview,
+        model: readiness.provider_settings,
+        preflight: {
+          status: snapshot.backendValidated ? "done" : readiness.prompt_preview?.status || "needs-action",
+          complete: Boolean(snapshot.backendValidated || snapshot.selectedJobId),
+          message: snapshot.backendValidated ? "Preflight validation passed." : "Confirm what extraction will run before starting.",
+          tone: snapshot.backendValidated ? "is-ready" : "is-warn",
+        },
+        run: readiness.run_monitor,
+        review: readiness.review_export,
+        correct: {
+          status: snapshot.correctionCount ? "done" : snapshot.trackCount ? "ready" : "needs-action",
+          complete: Boolean(snapshot.correctionCount),
+          message: snapshot.trackCount ? "Correction tools are available for reviewed tracks." : "Run extraction before correcting tracks.",
+          tone: snapshot.correctionCount ? "is-ready" : snapshot.trackCount ? "is-warn" : "is-muted",
+        },
+        export: {
+          status: snapshot.exportOk ? "done" : snapshot.exportIncludedCount ? "ready" : "needs-action",
+          complete: Boolean(snapshot.exportOk),
+          message: snapshot.exportOk ? "Reusable object layer exported." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
+          tone: snapshot.exportOk ? "is-ready" : snapshot.exportIncludedCount ? "is-warn" : "is-muted",
+        },
+      };
+      const phaseOrder = ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export"];
+      const activeOrder = Math.max(0, phaseOrder.indexOf(activePhase));
+      nav.querySelectorAll("[data-journey-phase]").forEach((button) => {
+        const phase = button.dataset.journeyPhase || "";
+        const phaseIndex = Math.max(0, phaseOrder.indexOf(phase));
+        const item = button.closest("li");
+        const itemReadiness = phaseReadiness[phase] || {};
+        const active = phase === activePhase;
+        const blocked = itemReadiness.status === "blocked";
+        const complete = Boolean(itemReadiness.complete) && phaseIndex < activeOrder;
+        button.classList.toggle("is-active", active);
+        button.classList.toggle("is-complete", complete);
+        button.classList.toggle("is-blocked", blocked);
+        button.classList.toggle("is-pending", !active && !complete && !blocked);
+        button.setAttribute("aria-pressed", String(active));
+        button.setAttribute("title", itemReadiness.message || "");
+        if (active) button.setAttribute("aria-current", "step");
+        else button.removeAttribute("aria-current");
+        if (item) {
+          item.classList.toggle("is-active", active);
+          item.classList.toggle("is-complete", complete);
+          item.classList.toggle("is-blocked", blocked);
+          item.classList.toggle("is-pending", !active && !complete && !blocked);
+        }
+      });
     }
 
     function renderWorkflowStepper() {
@@ -6237,6 +6313,7 @@ const MotionJSONUI = (() => {
         }
       });
 
+      renderJourneyNav(snapshot, readiness, activeStep);
       renderWorkflowContextCopy(activeStep);
       renderWorkflowStepSummary(snapshot, activeStep);
       renderPostRunFlow();
@@ -6548,6 +6625,11 @@ const MotionJSONUI = (() => {
         const button = event.target.closest("[data-workflow-step]");
         if (!button) return;
         if (button.disabled) return;
+        if (document.documentElement.dataset.capture === "workflow-export" && button.dataset.workflowStep === "review_export") {
+          state.reviewExportSubscreen = "export";
+        } else if (button.dataset.reviewSubscreen) {
+          state.reviewExportSubscreen = button.dataset.reviewSubscreen === "export" ? "export" : "review";
+        }
         setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
       });
       document.addEventListener("click", (event) => {
@@ -6670,6 +6752,7 @@ const MotionJSONUI = (() => {
 
     function renderShellIndicators() {
       $("#collapsedGoalLabel").textContent = currentPresetLabel();
+      const selectedSource = selectedVideo();
       if (projectDrawerToggle) {
         const project = state.projects.find((item) => item.id === state.selectedProjectId);
         const shellState = projectShellStateFromSnapshot({
@@ -6682,11 +6765,30 @@ const MotionJSONUI = (() => {
         projectDrawerToggle.setAttribute("aria-label", shellState.projectButtonAriaLabel);
         projectDrawerToggle.setAttribute("aria-expanded", shellState.projectButtonExpanded);
       }
+      const sourceChip = $("#sourceIdentityChip");
+      if (sourceChip) {
+        const sourceName =
+          selectedSource?.metadata?.filename ||
+          selectedSource?.filename ||
+          selectedSource?.name ||
+          (state.video.loadedName ? String(state.video.loadedName).split(/[\\/]/).pop() : "") ||
+          (selectedSource?.id ? "Registered video" : "No video selected");
+        sourceChip.querySelector("strong").textContent = sourceName;
+      }
+      const providerChip = $("#providerIdentityChip");
+      if (providerChip) {
+        const enginePlan = guidedEnginePlan(collectFormState($));
+        const label = enginePlan.displayLabel || enginePlan.providerName || "Provider pending";
+        const locality = enginePlan.locality ? ` - ${enginePlan.locality}` : "";
+        providerChip.textContent = `${label}${locality}`;
+        providerChip.className = `status-chip ${enginePlan.locality === "hosted" ? "is-warn" : label === "Provider pending" ? "is-muted" : "is-neutral"}`;
+      }
       const summary = $("#diagnosticsSummary");
       if (summary) {
         const diagnostic = shellDiagnosticSummary();
         summary.textContent = diagnostic.label;
         summary.className = `status-chip ${diagnostic.tone}`;
+        summary.setAttribute("aria-expanded", String(!shell?.classList.contains("is-rail-collapsed")));
       }
     }
 
@@ -6719,7 +6821,21 @@ const MotionJSONUI = (() => {
       });
       railCloseButton?.addEventListener("click", () => {
         state.railOpenedByUser = false;
-        setWorkflowDashboard(false);
+        setRailCollapsed(true, { focusToggle: true });
+      });
+      $("#diagnosticsSummary")?.addEventListener("click", () => {
+        state.railOpenedByUser = true;
+        setRailCollapsed(false, { focusToggle: false });
+        renderWorkflowStepper();
+      });
+      $("#journeyNavToggle")?.addEventListener("click", () => {
+        const collapsed = !shell?.classList.contains("is-journey-collapsed");
+        shell?.classList.toggle("is-journey-collapsed", collapsed);
+        const toggle = $("#journeyNavToggle");
+        if (toggle) {
+          toggle.textContent = collapsed ? "Expand" : "Collapse";
+          toggle.setAttribute("aria-expanded", String(!collapsed));
+        }
       });
       document.addEventListener("keydown", (event) => {
         const drawerOpen = !shell?.classList.contains("is-sidebar-collapsed");
