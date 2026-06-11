@@ -802,6 +802,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           deviceFieldVisible: visible(document.querySelector("#deviceField")),
           textPromptVisible: visible(document.querySelector("#textPromptField")),
           viewerToolbarVisible: visible(document.querySelector(".viewer-toolbar")),
+          targetSourceRequiredVisible: visible(document.querySelector("#targetSourceRequired")),
+          targetSourceRequiredText: document.querySelector("#targetSourceRequired")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           pointToolVisible: visible(document.querySelector("[data-tool='point']")),
           boxToolVisible: visible(document.querySelector("[data-tool='box']")),
           adaptiveSummaryVisible: visible(document.querySelector("#adaptiveParameterSummary")),
@@ -831,9 +833,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
+          wizardPanelVisible: visible(document.querySelector(".wizard-panel")),
+          configPanelVisible: visible(document.querySelector(".config-panel")),
           modelSetupTitle: document.querySelector("#modelSetupPanel h2")?.textContent?.trim() || "",
+          modelSetupStatusText: document.querySelector("#modelSetupStatus")?.textContent?.trim() || "",
           modelSetupStatusAria: document.querySelector("#modelSetupStatus")?.getAttribute("aria-label") || "",
           modelSetupGuidedTitle: document.querySelector("#modelSetupPanel .model-setup-recommendation-title")?.textContent?.trim() || "",
+          modelSetupSourceRequiredVisible: visible(document.querySelector("#modelSetupPanel .source-required-stage")),
           modelSetupKicker: document.querySelector("#modelSetupPanel .model-setup-recommendation-copy .section-kicker")?.textContent?.trim() || "",
           modelSetupChecklistCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item")].filter(visible).length,
           modelSetupChecklistAriaCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item[aria-label]")].filter(visible).length,
@@ -1156,13 +1162,22 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
     }
+    const isSourceBlockedProvider = state === "workflow-provider" && stateValue.browserPreviewTitle === "Preview not ready";
     const isModelSetupState = state === "workflow-provider" || state.startsWith("model-setup");
-    const isGuidedModelSetupState = isModelSetupState && state !== "model-setup-capability-error";
+    const isGuidedModelSetupState = isModelSetupState && state !== "model-setup-capability-error" && !isSourceBlockedProvider;
     if (state === "workflow-provider" && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: provider step title should focus on the guided runtime recommendation`);
     }
     if (state === "workflow-provider" && stateValue.browserPreviewTitle === "Preview not ready" && stateValue.workflowPrimaryLabel !== "Add source video") {
       failures.push(`${viewport.name}/${state}: model step without a source video should route back to source setup`);
+    }
+    if (state === "workflow-provider" && stateValue.browserPreviewTitle === "Preview not ready") {
+      if (stateValue.modelSetupStatusText !== "Needs source" || !stateValue.modelSetupSourceRequiredVisible) {
+        failures.push(`${viewport.name}/${state}: model step without a source video should show a source-required model setup state`);
+      }
+      if (stateValue.modelSetupGuidedTitle) {
+        failures.push(`${viewport.name}/${state}: model step without a source video should not expose a ready provider recommendation`);
+      }
     }
     if (isModelSetupState && stateValue.modelSetupTitle !== "Recommended model setup") {
       failures.push(`${viewport.name}/${state}: model setup should use the guided recommendation title`);
@@ -1182,7 +1197,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "model-setup-advanced-local-sam3" && stateValue.modelSetupUseAnywayAdvancedCount < 1) {
       failures.push(`${viewport.name}/${state}: manual override should expose Use this anyway only inside Advanced controls`);
     }
-    if (isModelSetupState && stateValue.modelSetupRescanCount < 1) {
+    if (isModelSetupState && !isSourceBlockedProvider && stateValue.modelSetupRescanCount < 1) {
       failures.push(`${viewport.name}/${state}: model setup should expose a Re-scan runtime action`);
     }
     if (state === "model-setup-capability-error") {
@@ -1222,6 +1237,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "workflow-prompts" && stateValue.browserPreviewTitle === "Preview not ready" && stateValue.workflowPrimaryLabel !== "Add source video") {
       failures.push(`${viewport.name}/${state}: target step without a source video should route back to source setup`);
+    }
+    if (state === "workflow-prompts" && stateValue.browserPreviewTitle === "Preview not ready") {
+      if (!stateValue.targetSourceRequiredVisible || !/Add a source video/i.test(stateValue.targetSourceRequiredText)) {
+        failures.push(`${viewport.name}/${state}: target step without a source video should show one source-required work surface`);
+      }
+      if (stateValue.viewerToolbarVisible || stateValue.pointToolVisible || stateValue.wizardPanelVisible || stateValue.configPanelVisible) {
+        failures.push(`${viewport.name}/${state}: target step without a source video should hide prompt, wizard, and preflight controls`);
+      }
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);

@@ -6168,11 +6168,13 @@ const MotionJSONUI = (() => {
       const inspectorOpen = Boolean(state.railOpenedByUser) || !shell?.classList.contains("is-rail-collapsed");
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
+      const sourceRequiredBeforePrompt = activeStep === "prompt_preview" && state.selectedPreset !== "review_existing" && !selectedVideo();
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
       shell?.classList.toggle("is-review-workbench", reviewMode === "review");
       shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
+      shell?.classList.toggle("is-source-required-prompt", sourceRequiredBeforePrompt);
       if (shell) {
         for (const className of Array.from(shell.classList)) {
           if (className.startsWith("is-workflow-step-")) shell.classList.remove(className);
@@ -6200,6 +6202,8 @@ const MotionJSONUI = (() => {
       for (const fragment of workflowFragments()) {
         setElementWorkflowHidden(fragment, !(showAll || visibleStepIds.some((stepId) => fragmentMatchesWorkflowStep(fragment, stepId))));
       }
+      const targetSourceRequired = $("#targetSourceRequired");
+      if (targetSourceRequired) setElementWorkflowHidden(targetSourceRequired, !sourceRequiredBeforePrompt);
       if (!state.railOpenedByUser) setRailCollapsed(true, { persist: false });
       scheduleDrawOverlay();
     }
@@ -7135,6 +7139,19 @@ const MotionJSONUI = (() => {
       `;
     }
 
+    function sourceRequiredMarkup({
+      title = "Add a source video first",
+      message = "MotionJSON needs a readable local source before this step can be prepared truthfully.",
+    } = {}) {
+      return `
+        <div class="source-required-stage">
+          <p class="section-kicker">Source required</p>
+          <h3>${escapeHtml(title)}</h3>
+          <p>${escapeHtml(message)}</p>
+        </div>
+      `;
+    }
+
     function renderModelSetup() {
       const status = $("#modelSetupStatus");
       const choices = $("#modelSetupChoices");
@@ -7145,6 +7162,17 @@ const MotionJSONUI = (() => {
         setModelSetupStatusChip(status, state.errors.providerSettings ? "Unavailable" : "Not loaded", state.errors.providerSettings ? "bad" : "muted", state.errors.providerSettings || "Provider settings have not loaded yet.");
         choices.innerHTML = "";
         detail.innerHTML = `<div class="${state.errors.providerSettings ? "error-state" : "empty-state"}">${escapeHtml(state.errors.providerSettings || "Provider information has not loaded yet.")}</div>`;
+        return;
+      }
+
+      if (state.selectedPreset !== "review_existing" && !selectedVideo()) {
+        setModelSetupStatusChip(status, "Needs source", "warn", "Add a source video before preparing model setup.");
+        choices.className = "model-choice-grid";
+        choices.innerHTML = "";
+        detail.innerHTML = sourceRequiredMarkup({
+          title: "Add a source video before model setup",
+          message: "The recommended provider path depends on the selected video, trim, frame budget, and whether MotionJSON can read the source locally.",
+        });
         return;
       }
 

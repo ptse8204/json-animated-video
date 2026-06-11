@@ -5715,6 +5715,63 @@ body {
   border-radius: 8px;
 }
 
+.source-required-stage {
+  display: grid;
+  align-content: center;
+  min-height: min(420px, calc(100vh - 300px));
+  padding: 34px 0;
+  border-top: 1px solid var(--ui-v3-line);
+  border-bottom: 1px solid var(--ui-v3-line);
+}
+
+.source-required-stage h3 {
+  max-width: 680px;
+  margin: 0;
+  color: var(--ui-v3-ink);
+  font-size: 28px;
+  line-height: 1.08;
+}
+
+.source-required-stage p:not(.section-kicker) {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: var(--ui-v3-muted);
+  font-size: 15px;
+}
+
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .workspace-grid {
+  max-width: 920px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "viewer";
+}
+
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-toolbar,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-stage,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-status,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .timeline-controls,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .timeline-review,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .wizard-panel,
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .config-panel {
+  display: none !important;
+}
+
+@media (max-width: 720px) {
+  .source-required-stage {
+    align-content: start;
+    min-height: 0;
+    padding: 22px 0 132px;
+  }
+
+  .source-required-stage h3 {
+    font-size: 24px;
+    line-height: 1.12;
+  }
+
+  .source-required-stage p:not(.section-kicker) {
+    font-size: 14px;
+  }
+}
+
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

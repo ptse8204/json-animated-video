@@ -458,6 +458,12 @@
               </div>
             </div>
 
+            <div id="targetSourceRequired" class="source-required-stage" data-workflow-fragment="prompt_preview" data-testid="target-source-required" hidden>
+              <p class="section-kicker">Source required</p>
+              <h3>Add a source video before defining the target</h3>
+              <p>MotionJSON needs a readable frame before point, box, brush, label, keyframe, or preflight controls can be useful.</p>
+            </div>
+
             <div id="viewerStage" class="viewer-stage" tabindex="0" aria-label="Video frame and prompt overlay" aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Space M P B E">
               <video id="previewVideo" class="preview-video" muted playsinline preload="metadata"></video>
               <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
