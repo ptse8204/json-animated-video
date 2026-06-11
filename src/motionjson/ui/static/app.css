@@ -6122,6 +6122,7 @@ body {
 .app-shell:not(.is-workflow-dashboard) .studio-track-inspector[hidden],
 .app-shell:not(.is-workflow-dashboard) .studio-object-list[hidden],
 .app-shell:not(.is-workflow-dashboard) .studio-segment-gate[hidden],
+.app-shell:not(.is-workflow-dashboard) .studio-export-reuse-guide[hidden],
 .app-shell:not(.is-workflow-dashboard) .studio-partial-diagnostic[hidden],
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-readiness-strip,
 .app-shell.is-review-export-screen-review:not(.is-workflow-dashboard) .export-decision-slot,
@@ -9506,6 +9507,7 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-card,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
   min-width: 0 !important;
   min-height: 0 !important;
@@ -9587,6 +9589,7 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .diagnostic-row,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .artifact-row,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-check-row,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-row,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .reuse-snippet,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .export-handoff-step,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card,
@@ -9626,7 +9629,7 @@ body {
   white-space: nowrap !important;
 }
 
-.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-status-chip {
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row .studio-status-chip {
   grid-area: status !important;
   justify-self: start !important;
   align-self: start !important;
@@ -9643,6 +9646,36 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-check {
   grid-area: export !important;
   justify-self: center !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide {
+  display: grid !important;
+  grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr) !important;
+  gap: 4px 14px !important;
+  align-items: start !important;
+  padding: 10px 0 !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-card > * {
+  grid-column: 1 / -1 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide > strong {
+  grid-row: span 2 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-heading,
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-row {
+  display: grid !important;
+  grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr) !important;
+  gap: 8px 14px !important;
+  align-items: start !important;
+  padding: 9px 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-heading {
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row.is-selected,
@@ -9852,5 +9885,22 @@ body {
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row,
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row {
     grid-template-columns: 16px 24px minmax(0, 1fr) 30px 30px !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "exportCard"
+      "tools" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-heading,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-row,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide > strong {
+    grid-row: auto !important;
   }
 }

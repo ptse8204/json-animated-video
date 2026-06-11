@@ -9819,18 +9819,28 @@ const MotionJSONUI = (() => {
           readableRightsText(rightsSummary.summary) ||
           readableRightsText(rightsSummary) ||
           "Confirm source rights before sharing exported packages.";
+        const reuseObjectText = includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`;
+        const objectLayerText = `Controls object ids, visibility, frame timing, motion transforms, masks/cutouts, and validation metadata. Reuse ${reuseObjectText} with the exported scene graph and manifest in Canvas, Remotion, or an app-owned renderer.`;
         $("#studioExportIncludedObjects").innerHTML = reviewExportScreen.mode === "export"
           ? `
               <div class="artifact-row">
                 <strong>Included objects</strong>
-                <span class="row-meta">${escapeHtml(includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`)}</span>
+                <span class="row-meta">${escapeHtml(reuseObjectText)}</span>
               </div>
               <div class="artifact-row">
                 <strong>Rights note</strong>
                 <span class="row-meta">${escapeHtml(rightsText)}</span>
               </div>
+              <div class="artifact-row">
+                <strong>Reusable object layer</strong>
+                <span class="row-meta">${escapeHtml(objectLayerText)}</span>
+              </div>
             `
           : "";
+      }
+      if ($("#studioExportReuseGuide")) {
+        $("#studioExportReuseGuide").hidden = true;
+        $("#studioExportReuseGuide").innerHTML = "";
       }
       if ($("#studioExportChecklist")) {
         $("#studioExportChecklist").innerHTML = exportReadinessSummary({
