@@ -895,6 +895,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           runMonitorSummaryText: document.querySelector("#runMonitorSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           reviewStatusSummaryCount: document.querySelectorAll("#reviewStatusSummary .status-summary-card").length,
           correctionStatusSummaryCount: document.querySelectorAll("#correctionStatusSummary .status-summary-card").length,
+          correctionTrackVisible: visible(document.querySelector("#correctionTrackSelect")),
+          correctionLabelVisible: visible(document.querySelector("#correctionLabelInput")),
+          correctionRelabelVisible: visible(document.querySelector("#relabelTrackButton")),
+          correctionRangeVisible: visible(document.querySelector("#correctionFrameStart")) && visible(document.querySelector("#correctionFrameEnd")),
           exportStatusSummaryCount: document.querySelectorAll("#exportStatusSummary .status-summary-card").length,
           runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true || document.querySelector("#mainRunLogsDisclosure")?.open === true,
           eventLogText: ((document.querySelector("#jobEventLog")?.textContent || "") + " " + (document.querySelector("#mainJobEventLog")?.textContent || "")).trim().replace(/\\s+/g, " "),
@@ -1453,6 +1457,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "workflow-correct" && (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1)) {
       failures.push(`${viewport.name}/${state}: correction step should keep reviewed objects visible`);
+    }
+    if (
+      state === "workflow-correct" &&
+      viewport.width > 900 &&
+      (!stateValue.correctionTrackVisible || !stateValue.correctionLabelVisible || !stateValue.correctionRelabelVisible || !stateValue.correctionRangeVisible)
+    ) {
+      failures.push(`${viewport.name}/${state}: correction step should show relabel and frame range controls without clipping on desktop`);
     }
     if (state === "workflow-export" && stateValue.exportArtifactsOpen) {
       failures.push(`${viewport.name}/${state}: export step should keep generated artifact browser collapsed until requested`);

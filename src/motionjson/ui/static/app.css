@@ -9749,11 +9749,18 @@ body {
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
   grid-template-columns: minmax(0, 1fr) !important;
-  grid-template-rows: min-content minmax(170px, 0.48fr) minmax(0, 1fr) !important;
+  grid-template-rows: min-content minmax(118px, max-content) minmax(280px, auto) !important;
   grid-template-areas:
     "reviewHead"
     "objects"
     "corrections" !important;
+  overflow: visible !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .workspace-grid {
+  min-height: 0 !important;
+  max-height: none !important;
+  align-items: start !important;
 }
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
@@ -9990,7 +9997,18 @@ body {
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-object-list {
-  min-height: 150px !important;
+  min-height: 0 !important;
+  max-height: 188px !important;
+  overflow: auto !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
+  overflow: visible !important;
+  padding-bottom: 56px !important;
+}
+
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-guidance {
+  display: none !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .correction-editor,
@@ -9999,6 +10017,19 @@ body {
   display: grid !important;
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   gap: 8px 12px !important;
+}
+
+@media (min-width: 1181px) {
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor,
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-range {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(126px, auto) !important;
+    align-items: end !important;
+  }
+
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor button,
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-range button {
+    min-height: 38px !important;
+  }
 }
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
