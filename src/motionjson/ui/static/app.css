@@ -6450,6 +6450,25 @@ body {
   padding: 16px 0;
 }
 
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card.is-empty {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-height: 0;
+  padding: 10px 0;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card.is-empty .browser-preview-poster-shell {
+  display: none;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card.is-empty .browser-preview-copy {
+  gap: 2px;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .browser-preview-card.is-empty .browser-preview-copy strong {
+  font-size: 13px;
+}
+
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-grid,
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-checklist,
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-playbook {

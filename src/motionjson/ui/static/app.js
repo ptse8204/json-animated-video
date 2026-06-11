@@ -8342,6 +8342,9 @@ const MotionJSONUI = (() => {
       meta.textContent = [filename, preview?.codec || "", dimensions, duration].filter(Boolean).join(" • ");
 
       const status = String(preview?.status || "");
+      card.classList.toggle("is-empty", !video);
+      card.classList.toggle("is-ready", Boolean(video) && status === "ready");
+      card.classList.toggle("is-failed", Boolean(video) && (status === "failed" || status === "blocked"));
       if (!video) {
         title.textContent = "Preview not ready";
         message.textContent = "Add a source video to prepare a browser-safe preview.";

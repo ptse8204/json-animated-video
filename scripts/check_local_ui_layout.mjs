@@ -800,6 +800,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           workflowFooterReasonVisible: visible(document.querySelector("#workflowFooterReason")),
           browserPreviewTitle: document.querySelector("#browserPreviewTitle")?.textContent?.trim() || "",
           browserPreviewMessage: document.querySelector("#browserPreviewMessage")?.textContent?.trim() || "",
+          browserPreviewBox: elementBox("#browserPreviewCard"),
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
@@ -1088,6 +1089,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "workflow-video" && stateValue.workflowPrimaryLabel !== "Choose video file") {
       failures.push(`${viewport.name}/${state}: setup screen should promote file upload as the primary CTA before preview is ready`);
+    }
+    if (state === "workflow-video" && stateValue.browserPreviewTitle === "Preview not ready" && (stateValue.browserPreviewBox?.height || 0) > 120) {
+      failures.push(`${viewport.name}/${state}: empty source preview should stay compact before a video is selected`);
     }
     if (state === "preview-failed" && (stateValue.browserPreviewTitle !== "Preview failed" || stateValue.workflowPrimaryLabel !== "Retry preview")) {
       failures.push(`${viewport.name}/${state}: preview failure state should surface Retry preview with a real preview failure message`);
