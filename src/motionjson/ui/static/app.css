@@ -9904,3 +9904,249 @@ body {
     grid-row: auto !important;
   }
 }
+
+/* UI V3 overlap hardening: tablet layouts should behave like a focused
+   workflow, not a squeezed desktop with a side rail. */
+@media (min-width: 901px) {
+  .app-shell:not(.is-workflow-dashboard) .workspace,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
+    height: calc(100vh - 124px) !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 124px) !important;
+    padding-bottom: 24px !important;
+    overflow-y: auto !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-shell,
+  .app-shell.is-sidebar-collapsed,
+  .app-shell.is-rail-collapsed,
+  .app-shell.is-sidebar-collapsed.is-rail-collapsed,
+  .app-shell:not(.is-rail-collapsed),
+  .app-shell.is-sidebar-collapsed:not(.is-rail-collapsed) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+  }
+
+  .sidebar,
+  .app-shell:not(.is-sidebar-collapsed) .sidebar,
+  .app-shell.is-sidebar-collapsed .sidebar {
+    display: none !important;
+  }
+
+  .journey-nav {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 24 !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    display: block !important;
+    height: auto !important;
+    max-width: 100vw !important;
+    padding: 8px 14px !important;
+    overflow-x: auto !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--ui-v3-line) !important;
+    background: #fbfcfd !important;
+  }
+
+  .journey-nav-header {
+    display: none !important;
+  }
+
+  .journey-nav-list {
+    display: flex !important;
+    gap: 6px !important;
+    min-width: max-content !important;
+  }
+
+  .journey-nav-list li::after {
+    display: none !important;
+  }
+
+  .journey-nav-list button {
+    display: grid !important;
+    grid-template-columns: 20px max-content !important;
+    min-width: max-content !important;
+    min-height: 40px !important;
+    padding: 7px 9px !important;
+  }
+
+  .journey-kicker,
+  .journey-nav-list strong {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    clip-path: none !important;
+  }
+
+  .journey-nav-list small {
+    display: none !important;
+  }
+
+  .workspace {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    height: calc(100vh - 57px - 92px) !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 57px - 92px) !important;
+    padding-right: 14px !important;
+    padding-bottom: 24px !important;
+    padding-left: 14px !important;
+    overflow-y: auto !important;
+  }
+
+  .app-shell:not(.is-workflow-dashboard) .workspace,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
+    height: calc(100vh - 57px - 92px) !important;
+    min-height: 0 !important;
+    max-height: calc(100vh - 57px - 92px) !important;
+    padding-bottom: 24px !important;
+    overflow-y: auto !important;
+  }
+
+  .workflow-footer,
+  .app-shell.is-journey-collapsed .workflow-footer {
+    right: 14px !important;
+    bottom: 0 !important;
+    left: 14px !important;
+  }
+
+  .workspace-grid,
+  .app-shell:not(.is-workflow-dashboard) .workspace-grid,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .workspace-grid,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid {
+    grid-template-areas:
+      "review"
+      "viewer" !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
+    grid-template-areas: "review" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel {
+    width: 100% !important;
+    max-width: none !important;
+    justify-self: stretch !important;
+    overflow: visible !important;
+    grid-auto-flow: row !important;
+    grid-auto-columns: minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto !important;
+    grid-template-areas:
+      "reviewHead"
+      "partial"
+      "objects"
+      "bulk"
+      "inspector"
+      "tools"
+      "corrections"
+      "exportCard" !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "exportCard"
+      "tools" !important;
+  }
+
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .studio-review-panel {
+    grid-template-areas:
+      "reviewHead"
+      "objects"
+      "corrections" !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-panel > * {
+    grid-column: 1 / -1 !important;
+    justify-self: stretch !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading {
+    display: grid !important;
+    width: 100% !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-items: stretch !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
+    width: 100% !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions button {
+    min-width: 0 !important;
+    padding-right: 8px !important;
+    padding-left: 8px !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .main-job-center-grid,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-layout,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-heading,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-current-row,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-job-details-grid,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-preflight-summary,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-live-preview-grid,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-live-preview-images {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-live-preview-panel,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-live-preview-card,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-preview,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-stack,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-candidate-column,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-events-section,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-temporal-strip,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-monitor-log-panel {
+    grid-column: 1 / -1 !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-stack {
+    padding-top: 0 !important;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-shell,
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-placeholder {
+    min-height: 220px !important;
+  }
+}
+
+@media (max-width: 620px) {
+  .workspace {
+    height: calc(100vh - 57px - 128px) !important;
+    max-height: calc(100vh - 57px - 128px) !important;
+  }
+
+  .app-shell:not(.is-workflow-dashboard) .workspace,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
+    height: calc(100vh - 57px - 128px) !important;
+    max-height: calc(100vh - 57px - 128px) !important;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .workspace {
+    height: calc(100vh - 57px) !important;
+    max-height: calc(100vh - 57px) !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
