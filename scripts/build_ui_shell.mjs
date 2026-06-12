@@ -21,6 +21,7 @@ const script = contents.get("app.js");
 const style = contents.get("app.css");
 const configBuilder = contents.get("config_builder.js");
 const uiSelectors = contents.get("ui_selectors.js");
+const workflowModule = contents.get("modules/workflow.js");
 const combined = [...contents.values()].join("\n");
 
 async function collectJsModules(prefix) {
@@ -412,8 +413,28 @@ for (const phase of ["goal", "source", "target", "model", "preflight", "run", "r
   }
 }
 
-if (!index.includes('id="workflowStepper"') || !index.includes("data-testid=\"workflow-stepper\"") || !index.includes("hidden")) {
-  throw new Error("workflow stepper must remain an accessibility-only compatibility control");
+const workflowStepperTag = index.match(/<ol[^>]+id="workflowStepper"[^>]*>/)?.[0] || "";
+const studioProgressTag = index.match(/<ol[^>]+id="studioProgressStepper"[^>]*>/)?.[0] || "";
+
+if (!workflowStepperTag.includes("data-testid=\"workflow-stepper\"") || !workflowStepperTag.includes("hidden")) {
+  throw new Error("legacy workflow stepper must remain hidden compatibility infrastructure");
+}
+
+if (!studioProgressTag.includes("data-testid=\"studio-progress-stepper\"") || !studioProgressTag.includes("hidden")) {
+  throw new Error("legacy topbar progress mirror must not be visible in the normal workflow shell");
+}
+
+for (const helper of [
+  "export const JOURNEY_PHASES",
+  "export const JOURNEY_PHASE_ORDER",
+  "export function journeyPhaseForWorkflowStep",
+  "export function journeyReadinessFromSnapshot",
+  "export function normalizeJourneyPhaseId",
+  "export function journeyPhaseIndex",
+]) {
+  if (!workflowModule.includes(helper)) {
+    throw new Error(`workflow.js must expose journey contract helper ${helper}`);
+  }
 }
 
 const remotePattern = /https?:\/\//;

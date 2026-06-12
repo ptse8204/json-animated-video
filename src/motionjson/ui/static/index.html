@@ -129,27 +129,27 @@
               <strong>No video selected</strong>
             </span>
           </div>
-          <ol id="studioProgressStepper" class="studio-progress sr-workflow-progress" aria-label="Guided workflow" data-testid="studio-progress-stepper">
+          <ol id="studioProgressStepper" class="studio-progress sr-workflow-progress" aria-label="Compatibility workflow mirror" data-testid="studio-progress-stepper" hidden>
             <li class="is-active" data-studio-step="choose_goal">
-              <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Start</strong></button>
+              <button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong></button>
             </li>
             <li class="is-pending" data-studio-step="source_video">
-              <button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong></button>
+              <button type="button" data-workflow-step="source_video"><span>2</span><strong>Source</strong></button>
             </li>
             <li class="is-pending" data-studio-step="provider_settings">
-              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model setup</strong></button>
+              <button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong></button>
             </li>
             <li class="is-pending" data-studio-step="prompt_preview">
-              <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare &amp; run</strong></button>
+              <button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Target</strong></button>
             </li>
             <li class="is-pending" data-studio-step="candidate_selection">
-              <button type="button" data-workflow-step="candidate_selection"><span>5</span><strong>Select</strong></button>
+              <button type="button" data-workflow-step="candidate_selection"><span>5</span><strong>Review</strong></button>
             </li>
             <li class="is-pending" data-studio-step="run_monitor">
               <button type="button" data-workflow-step="run_monitor"><span>6</span><strong>Run</strong></button>
             </li>
             <li class="is-pending" data-studio-step="review_export">
-              <button type="button" data-workflow-step="review_export"><span>7</span><strong>Review &amp; export</strong></button>
+              <button type="button" data-workflow-step="review_export"><span>7</span><strong>Export</strong></button>
             </li>
           </ol>
           <div class="topbar-actions">
@@ -251,18 +251,18 @@
             hidden
           >
             <li><button type="button" data-workflow-step="choose_goal"><span>1</span><strong>Goal</strong><small>Choose what to trace</small></button></li>
-            <li><button type="button" data-workflow-step="source_video"><span>2</span><strong>Video</strong><small>Add source</small></button></li>
-            <li><button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model setup</strong><small>Install or connect SAM</small></button></li>
-            <li><button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Prepare</strong><small>Prompt and run</small></button></li>
-            <li><button type="button" data-workflow-step="candidate_selection"><span>5</span><strong>Select</strong><small>Keep only the right objects</small></button></li>
+            <li><button type="button" data-workflow-step="source_video"><span>2</span><strong>Source</strong><small>Add source</small></button></li>
+            <li><button type="button" data-workflow-step="provider_settings"><span>3</span><strong>Model</strong><small>Install or connect SAM</small></button></li>
+            <li><button type="button" data-workflow-step="prompt_preview"><span>4</span><strong>Target</strong><small>Define and confirm</small></button></li>
+            <li><button type="button" data-workflow-step="candidate_selection"><span>5</span><strong>Review</strong><small>Keep only the right objects</small></button></li>
             <li><button type="button" data-workflow-step="run_monitor"><span>6</span><strong>Run</strong><small>Track selected objects</small></button></li>
-            <li><button type="button" data-workflow-step="review_export"><span>7</span><strong>Review</strong><small>Correct and export</small></button></li>
+            <li><button type="button" data-workflow-step="review_export"><span>7</span><strong>Export</strong><small>Correct, export, reuse</small></button></li>
           </ol>
           <div id="workflowStepSummary" class="workflow-step-summary" aria-live="polite"></div>
           <div class="workflow-footer" data-testid="command-footer">
             <div class="workflow-footer-actions">
               <button id="workflowBackButton" type="button" data-testid="workflow-back">Back</button>
-              <button id="workflowPrimaryButton" class="primary-action" type="button" data-testid="workflow-primary">Continue to video</button>
+              <button id="workflowPrimaryButton" class="primary-action" type="button" data-testid="workflow-primary">Continue to source</button>
             </div>
             <p id="workflowFooterHint" class="row-meta">Choose a tracing goal to continue.</p>
             <p id="workflowFooterReason" class="form-hint workflow-footer-reason" hidden></p>
@@ -1045,7 +1045,7 @@
         </details>
 
         <details class="rail-section" data-workflow-panel="run_monitor validate_run review_candidates" open>
-          <summary>Run monitor</summary>
+          <summary>Extraction cockpit details</summary>
           <section class="compact-panel">
             <div class="panel-heading compact-heading">
               <h2>Run status</h2>

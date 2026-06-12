@@ -815,6 +815,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           journeyToggleVisible: visible(document.querySelector("#journeyNavToggle")),
           collapseProbe: window.__motionjsonCollapseProbe || null,
           journeyNavBox: elementBox("#journeyNav"),
+          journeyPhaseOrder: [...document.querySelectorAll("#journeyNav [data-journey-phase]")].map((button) => button.dataset.journeyPhase || ""),
           activeJourneyButtonBox: elementBox("#journeyNav [data-journey-phase].is-active"),
           journeyNavScrollLeft: document.querySelector("#journeyNav")?.scrollLeft || 0,
           journeyNavScrollWidth: document.querySelector("#journeyNav")?.scrollWidth || 0,
@@ -835,6 +836,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           railCloseVisible: visible(document.querySelector("#railCloseButton")),
           rightRailWidth: Math.round(rightRailBox?.width || 0),
           workflowKeyshortcuts: document.querySelector("#workflowStepper")?.getAttribute("aria-keyshortcuts") || "",
+          legacyWorkflowStepperVisible: visible(document.querySelector("#workflowStepper")),
+          legacyProgressMirrorVisible: visible(document.querySelector("#studioProgressStepper")),
           workflowFocusedStep: document.activeElement?.dataset?.workflowStep || "",
           workflowFocusStart: document.documentElement.dataset.workflowFocusStart || "",
           workflowFocusedElement: String(document.activeElement?.tagName || "") + "#" + String(document.activeElement?.id || "") + "." + String(document.activeElement?.className || "") + ":" + String(document.activeElement?.textContent || "").trim().slice(0, 30),
@@ -1221,20 +1224,27 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (stateValue.sidebarControls !== "sidebarNavigationContent" || stateValue.projectDrawerButtonControls !== "workspaceSidebar" || stateValue.railCloseControls !== "diagnosticsRail") {
       failures.push(`${viewport.name}/${state}: shell collapse controls should expose stable aria-controls targets`);
     }
+    if (stateValue.legacyWorkflowStepperVisible || stateValue.legacyProgressMirrorVisible) {
+      failures.push(`${viewport.name}/${state}: legacy workflow progress controls must stay hidden behind the journey nav`);
+    }
     if (!stateValue.workflowKeyshortcuts.includes("ArrowRight") || !stateValue.workflowKeyshortcuts.includes("ArrowDown") || !stateValue.workflowKeyshortcuts.includes("ArrowLeft") || !stateValue.workflowKeyshortcuts.includes("ArrowUp") || !stateValue.workflowKeyshortcuts.includes("Home") || !stateValue.workflowKeyshortcuts.includes("End")) {
-      failures.push(`${viewport.name}/${state}: workflow stepper should advertise keyboard navigation shortcuts`);
+      failures.push(`${viewport.name}/${state}: hidden compatibility workflow control should retain keyboard navigation shortcuts`);
     }
     if (state === "workflow-keyboard" && (stateValue.workflowActiveStep !== "source_video" || stateValue.workflowFocusedStep !== "source_video")) {
-      failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Video (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
+      failures.push(`${viewport.name}/${state}: keyboard sequence should move active/focused workflow step to Source (start=${stateValue.workflowFocusStart || "none"}, active=${stateValue.workflowActiveStep || "none"}, focus=${stateValue.workflowFocusedStep || "none"}, element=${stateValue.workflowFocusedElement || "none"})`);
     }
-    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to video" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
-      failures.push(`${viewport.name}/${state}: goal step should start with Continue to video, no back action, and preview not ready`);
+    if (state === "workflow-goal" && (stateValue.workflowPrimaryLabel !== "Continue to source" || stateValue.workflowBackDisabled !== true || stateValue.browserPreviewTitle !== "Preview not ready")) {
+      failures.push(`${viewport.name}/${state}: goal step should start with Continue to source, no back action, and preview not ready`);
     }
     if (state === "workflow-goal" && stateValue.visibleGoalCardCount !== 4) {
       failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards before advanced tasks`);
     }
     if (stateValue.journeyPhaseCount !== 10) {
       failures.push(`${viewport.name}/${state}: journey should expose ten workflow phases including Reuse`);
+    }
+    const expectedJourneyOrder = "goal,source,target,model,preflight,run,review,correct,export,reuse";
+    if (stateValue.journeyPhaseOrder.join(",") !== expectedJourneyOrder) {
+      failures.push(`${viewport.name}/${state}: journey order should be ${expectedJourneyOrder}`);
     }
     if (stateValue.viewportWidth <= 720 && stateValue.topbarActionClipping) {
       failures.push(`${viewport.name}/${state}: mobile command bar should not clip status, help, or settings controls`);

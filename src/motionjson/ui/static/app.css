@@ -327,6 +327,11 @@ h2 {
   margin-bottom: 10px;
 }
 
+#studioProgressStepper[hidden],
+#workflowStepper[hidden] {
+  display: none !important;
+}
+
 .panel-heading {
   display: flex;
   gap: 12px;
@@ -10187,6 +10192,16 @@ body {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .workflow-footer,
+  .app-shell.is-journey-collapsed .workflow-footer {
+    position: static !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 100%;
+    margin: 18px 0 0;
+  }
+
   .workflow-footer-actions,
   #workflowFooterReason {
     grid-column: 1;
@@ -11436,14 +11451,16 @@ body {
 
 @media (max-width: 620px) {
   .workspace {
-    height: calc(100vh - 57px - 128px) !important;
-    max-height: calc(100vh - 57px - 128px) !important;
+    height: calc(100vh - 57px) !important;
+    max-height: calc(100vh - 57px) !important;
+    padding-bottom: 16px !important;
   }
 
   .app-shell:not(.is-workflow-dashboard) .workspace,
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
-    height: calc(100vh - 57px - 128px) !important;
-    max-height: calc(100vh - 57px - 128px) !important;
+    height: calc(100vh - 57px) !important;
+    max-height: calc(100vh - 57px) !important;
+    padding-bottom: 16px !important;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .workspace {

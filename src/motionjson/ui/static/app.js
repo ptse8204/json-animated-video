@@ -631,7 +631,7 @@ const MotionJSONUI = (() => {
     if (activeStep === "choose_goal") {
       return {
         id: activeStep,
-        primaryLabel: "Continue to video",
+        primaryLabel: "Continue to source",
         primaryAction: "continue_to_video",
         enabled: true,
         blockedReason: "",
@@ -666,7 +666,7 @@ const MotionJSONUI = (() => {
         }
         return {
           id: activeStep,
-          primaryLabel: requiresModel ? "Continue to model" : "Continue to prepare",
+          primaryLabel: requiresModel ? "Continue to model" : "Continue to target",
           primaryAction: "continue_after_video",
           enabled: true,
           blockedReason: "",
@@ -832,11 +832,11 @@ const MotionJSONUI = (() => {
     const jobFailed = jobStatus.failed;
     if (screenId === "start") {
       return {
-        title: "Start",
+        title: "Goal",
         description: "Choose the workflow first. The rest of the interface changes to match that goal.",
         statusLabel: "Ready",
         statusTone: "is-ready",
-        primaryLabel: "Continue to video",
+        primaryLabel: "Continue to source",
         enabled: true,
         blockedReason: "",
         primaryAction: "continue_to_video",
@@ -846,7 +846,7 @@ const MotionJSONUI = (() => {
     if (screenId === "video") {
       if (selectedPreset === "review_existing" && hasResult) {
         return {
-          title: "Video",
+          title: "Source",
           description: "Existing result loaded. Continue to review and export.",
           statusLabel: "Ready",
           statusTone: "is-ready",
@@ -861,7 +861,7 @@ const MotionJSONUI = (() => {
       const importPathValue = String(snapshot.motionJsonImportPathValue || snapshot.importPathValue || "").trim();
       if (!hasVideo) {
         return {
-          title: "Video",
+          title: "Source",
           description: selectedPreset === "review_existing" ? "Open an existing MotionJSON result for review." : "Import a source video and confirm project settings.",
           statusLabel: selectedPreset === "review_existing" ? (importPathValue ? "Ready to open" : "Needs result") : videoPathValue ? "Ready to register" : "Ready for upload",
           statusTone: selectedPreset === "review_existing" ? (importPathValue ? "is-ready" : "is-warn") : "is-ready",
@@ -874,7 +874,7 @@ const MotionJSONUI = (() => {
       }
       if (previewStatus === "failed" || previewStatus === "blocked") {
         return {
-          title: "Video",
+          title: "Source",
           description: "The source video needs a browser-safe preview before you can continue.",
           statusLabel: "Preview failed",
           statusTone: "is-bad",
@@ -887,7 +887,7 @@ const MotionJSONUI = (() => {
       }
       if (previewStatus && previewStatus !== "ready") {
         return {
-          title: "Video",
+          title: "Source",
           description: "The source video needs a browser-safe preview before you can continue.",
           statusLabel: "Preparing preview",
           statusTone: "is-neutral",
@@ -899,11 +899,11 @@ const MotionJSONUI = (() => {
         };
       }
       return {
-        title: "Video",
+        title: "Source",
         description: "The source video and preview are ready for model setup.",
         statusLabel: "Ready",
         statusTone: "is-ready",
-        primaryLabel: requiresModel ? "Continue to model setup" : "Continue to prepare",
+        primaryLabel: requiresModel ? "Continue to model" : "Continue to target",
         enabled: true,
         blockedReason: "",
         primaryAction: "continue_after_video",
@@ -940,7 +940,7 @@ const MotionJSONUI = (() => {
       const base = workflowStepContractFromSnapshot(snapshot, "prompt_preview");
       return {
         title: fastFramePick ? "Scan keyframe" : "Prepare",
-        description: fastFramePick ? "Choose the frame to inspect, then run one quick candidate scan." : "Configure the scene sweep, prompt, or import settings before starting extraction.",
+        description: fastFramePick ? "Choose the frame to inspect, then run one quick candidate scan." : "Define the target or discovery mode, then confirm preflight before extraction.",
         statusLabel: base.enabled ? "Ready" : "Needs input",
         statusTone: base.enabled ? "is-ready" : "is-warn",
         primaryLabel: base.primaryLabel,
@@ -953,7 +953,7 @@ const MotionJSONUI = (() => {
     if (screenId === "select") {
       const base = workflowStepContractFromSnapshot(snapshot, "candidate_selection");
       return {
-        title: "Select objects",
+        title: "Review candidates",
         description: "Inspect the scan frame, rename the right objects, and continue with only those selections.",
         statusLabel: base.enabled ? "Ready" : "Needs selection",
         statusTone: base.enabled ? "is-ready" : "is-warn",
@@ -967,7 +967,7 @@ const MotionJSONUI = (() => {
     if (screenId === "run") {
       if (jobRunning) {
         return {
-          title: "Run",
+          title: "Extraction cockpit",
           description: "The run is active. Watch progress here, cancel if needed, then review results when the job finishes.",
           statusLabel: "Running",
           statusTone: "is-neutral",
@@ -980,7 +980,7 @@ const MotionJSONUI = (() => {
       }
       if (jobFailed) {
         return {
-          title: "Run",
+          title: "Extraction cockpit",
           description: "The selected run failed or was canceled. Open logs, change setup, run again, or choose another model.",
           statusLabel: "Needs attention",
           statusTone: "is-bad",
@@ -993,7 +993,7 @@ const MotionJSONUI = (() => {
       }
       const hasRunData = Boolean(snapshot.selectedJobId || snapshot.candidateCount || snapshot.trackCount);
       return {
-        title: "Run",
+        title: "Extraction cockpit",
         description: hasRunData ? "The run finished. Continue to inspect object tracks before export." : "Start the prepared run and keep logs visible here.",
         statusLabel: hasRunData ? "Ready" : "No run",
         statusTone: hasRunData ? "is-ready" : "is-warn",
@@ -1043,11 +1043,11 @@ const MotionJSONUI = (() => {
       tone: status === "done" || status === "ready" ? "is-ready" : status === "running" ? "is-neutral" : status === "blocked" ? "is-bad" : "is-warn",
     });
 
-    if (hasFailure) return stage("run", "Run monitor", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked");
+    if (hasFailure) return stage("run", "Extraction cockpit", selectedJobStatus || "Run issue", "Open diagnostics and logs to inspect the backend failure.", "blocked");
     if (hasStaleProgress) {
       return stage(
         "run",
-        "Run monitor",
+        "Extraction cockpit",
         `${activeJobs || 1} active`,
         snapshot.staleProgressDetail || "No progress update has arrived recently. Open logs or cancel the run if it is blocked.",
         "warning",
@@ -1056,7 +1056,7 @@ const MotionJSONUI = (() => {
     if (selectedJobComplete) {
       return stage(
         "run",
-        "Run monitor",
+        "Extraction cockpit",
         selectedJobStatus || "Run complete",
         attentionDiagnosticCount
           ? `${attentionDiagnosticCount} fallback or provider diagnostic${attentionDiagnosticCount === 1 ? "" : "s"} need review.`
@@ -1066,9 +1066,9 @@ const MotionJSONUI = (() => {
         attentionDiagnosticCount ? "warning" : "done",
       );
     }
-    if (selectedJobRunning) return stage("run", "Run monitor", `${activeJobs || 1} active`, "Wait for the local job to finish or cancel it if needed.", "running");
-    if (hasSelectedJob) return stage("run", "Run monitor", selectedJobStatus || "Run selected", "Review the selected run status before continuing.", "ready");
-    return stage("run", "Run monitor", "No run selected", "Start or select a run before reviewing candidates.");
+    if (selectedJobRunning) return stage("run", "Extraction cockpit", `${activeJobs || 1} active`, "Wait for the local job to finish or cancel it if needed.", "running");
+    if (hasSelectedJob) return stage("run", "Extraction cockpit", selectedJobStatus || "Run selected", "Review the selected run status before continuing.", "ready");
+    return stage("run", "Extraction cockpit", "No run selected", "Start or select a run before reviewing candidates.");
   }
 
   function containedVideoRect(containerWidth, containerHeight, videoWidth, videoHeight) {
@@ -6059,8 +6059,8 @@ const MotionJSONUI = (() => {
                   }
           : screenId === "run"
             ? {
-                title: "Run monitor",
-                note: "Watch progress and logs here. Failed runs keep recovery actions visible.",
+                title: "Extraction cockpit",
+                note: "Watch visual evidence, readable events, health, usage, and recovery actions while extraction runs.",
               }
           : {
               title: goalRequiresModel(state.selectedPreset) ? "Can the recommended model path run here?" : "No model is needed",
@@ -9845,16 +9845,16 @@ const MotionJSONUI = (() => {
         const label =
           fastFramePick && stepId === "prompt_preview"
             ? "Scan"
-            : fastFramePick && stepId === "run_monitor"
+          : fastFramePick && stepId === "run_monitor"
               ? "Track"
-              : fastFramePick && stepId === "candidate_selection"
-                ? "Select"
-                : fastFramePick && stepId === "review_export"
-                  ? "Review & export"
-                  : stepId === "prompt_preview"
-                    ? "Prepare & run"
-                    : stepId === "review_export"
-                      ? "Review & export"
+          : fastFramePick && stepId === "candidate_selection"
+                ? "Review"
+          : fastFramePick && stepId === "review_export"
+                  ? "Export"
+          : stepId === "prompt_preview"
+                    ? "Target"
+          : stepId === "review_export"
+                      ? "Export"
                       : button?.querySelector("strong")?.textContent || "";
         if (button) {
           const span = button.querySelector("span");
