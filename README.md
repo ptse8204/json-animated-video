@@ -16,7 +16,7 @@ run extraction, recover from failures, review, and export. CPU-only threshold
 demos still exist for sanity checks, and debug mock mode is reserved for
 contributor smoke tests.
 
-![Local UI first-run checklist](docs/assets/local-ui-first-run.png)
+![Goal-first Local UI workflow](docs/assets/local-ui-first-run.png)
 
 ## What it does
 
@@ -125,16 +125,15 @@ python3 -m motionjson.cli backend diagnostics --json
 python3 -m motionjson.cli ui --no-open
 ```
 
-Open the printed local UI URL. The workspace guides you through goal, project,
-video, model setup, prepared input, run monitoring, review, correction, and
-export one step at a time. The visible UI steps are `Start`, `Video`,
-`Model setup`, `Prepare & run`, `Run`, and `Review & export`. In **Model
-setup**, use the recommended path shown for the goal: SAM2 prompt tracking for
-one-object cutout, SAM3 Scene Sweep for everything-in-scene, SAM2 HF automatic
-masks as the fallback, SAM3 concept for text prompts, or no model for reviewing
-an existing result. After a run starts, the main workspace switches to **Run
-monitor** so active, failed, canceled, and completed jobs stay visible. Use
-`Advanced` for diagnostics, raw config, local paths, custom endpoints, and
+Open the printed local UI URL. The workspace guides you through Goal, Source,
+Target, Model, Preflight, Run, Review, Correct, Export, and Reuse one step at a
+time. In **Model**, use the recommended path shown for the goal: SAM2 prompt
+tracking for one-object cutout, SAM3 Scene Sweep for everything-in-scene, SAM2
+HF automatic masks as the fallback, SAM3 concept for text prompts, or no model
+for reviewing an existing result. After a run starts, the main workspace
+switches to the **Extraction cockpit** so active, failed, canceled, and
+completed jobs stay visible with readable events and visual output. Use the
+context drawer for diagnostics, raw config, local paths, custom endpoints, and
 manual fallback details.
 
 Contributor-only debug smoke checks use:
@@ -275,13 +274,13 @@ python3 scripts/capture_docs_assets.py --check
 python3 scripts/capture_docs_assets.py
 ```
 
-![Local UI project setup](docs/assets/local-ui-new-project.png)
+![Local UI source setup](docs/assets/local-ui-new-project.png)
 
-![Goal-first extraction wizard](docs/assets/local-ui-extraction-wizard.png)
+![Model readiness and hosted blocker](docs/assets/local-ui-extraction-wizard.png)
 
-![Provider diagnostics](docs/assets/local-ui-provider-diagnostics.png)
+![Target preparation workflow](docs/assets/local-ui-provider-diagnostics.png)
 
-![Job review and track status](docs/assets/local-ui-job-review.png)
+![Review workbench and track status](docs/assets/local-ui-job-review.png)
 
 ![Red-ball canvas preview](docs/assets/canvas-preview-red-ball.png)
 

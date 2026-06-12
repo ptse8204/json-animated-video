@@ -8,11 +8,11 @@ keep it listed here as pending.
 
 | Asset | Status | How to regenerate |
 | --- | --- | --- |
-| `docs/assets/local-ui-first-run.png` | Generated | `python3 scripts/capture_docs_assets.py` starts the local UI in mock mode and captures the first-run checklist. |
-| `docs/assets/local-ui-new-project.png` | Generated | `python3 scripts/capture_docs_assets.py` seeds a demo project/video and captures the project setup panel. |
-| `docs/assets/local-ui-extraction-wizard.png` | Generated | `python3 scripts/capture_docs_assets.py` captures the goal-first extraction wizard with the text-detector preset selected. |
-| `docs/assets/local-ui-provider-diagnostics.png` | Generated | `python3 scripts/capture_docs_assets.py` captures capability diagnostics from `/api/capabilities`. |
-| `docs/assets/local-ui-job-review.png` | Generated | `python3 scripts/capture_docs_assets.py` runs a mock job and captures the job review surface. Regenerate after UI layout changes when docs need the latest Track Detail and correction panels. |
+| `docs/assets/local-ui-first-run.png` | Generated | `python3 scripts/capture_docs_assets.py` starts the local UI in mock mode and captures the Goal step in the workflow shell. |
+| `docs/assets/local-ui-new-project.png` | Generated | `python3 scripts/capture_docs_assets.py` seeds a demo project/video and captures the Source step with the registered video preview. |
+| `docs/assets/local-ui-extraction-wizard.png` | Generated | `python3 scripts/capture_docs_assets.py` captures Model readiness with the recommended provider path and hosted blocker. |
+| `docs/assets/local-ui-provider-diagnostics.png` | Generated | `python3 scripts/capture_docs_assets.py` captures the Target preparation step with only the relevant controls visible. |
+| `docs/assets/local-ui-job-review.png` | Generated | `python3 scripts/capture_docs_assets.py` runs a mock job and captures the Review workbench. Regenerate after UI layout changes when docs need the latest review/correction/export surfaces. |
 | `docs/assets/canvas-preview-red-ball.png` | Generated | `python3 scripts/capture_docs_assets.py` runs the threshold red-ball extraction and overlays the real mask on a sampled frame. |
 | `docs/assets/red-ball-demo.gif` | Generated | `python3 scripts/capture_docs_assets.py` creates a small GIF from generated red-ball frames and masks. |
 | `docs/assets/red-ball-demo.mp4` | Not generated | The GIF is the current lightweight README demo; generate MP4 only if later docs need lower file size or better playback quality. |
@@ -31,10 +31,10 @@ Capture every README asset:
 python3 scripts/capture_docs_assets.py
 ```
 
-Capture the commercial Local UI viewport matrix and overlap checks:
+Capture the Local UI viewport matrix and overlap checks:
 
 ```bash
-npm run ui:layout -- --screenshot-dir docs/design/screenshots/phase-03b
+npm run ui:layout -- --screenshot-dir docs/design/screenshots/colab-ui-provider-connect-qa
 ```
 
 Generate only the red-ball preview and GIF, without browser screenshots:
