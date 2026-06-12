@@ -8148,6 +8148,19 @@ summary.advanced-task-heading::after {
 }
 
 @media (max-width: 1120px) {
+  .run-recovery-strip {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .run-recovery-actions {
+    justify-content: flex-start;
+  }
+
+  .run-recovery-actions button {
+    flex: 1 1 156px;
+  }
+
   .run-cockpit-layout {
     grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
   }
@@ -8173,7 +8186,6 @@ summary.advanced-task-heading::after {
 
   .run-cockpit-heading,
   .run-current-row,
-  .run-recovery-strip,
   .run-cockpit-layout,
   .run-job-details-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -8191,10 +8203,6 @@ summary.advanced-task-heading::after {
   .run-recovery-actions {
     align-items: flex-start;
     justify-content: flex-start;
-  }
-
-  .run-recovery-actions button {
-    flex: 1 1 142px;
   }
 
   .run-source-frame-shell,

@@ -1052,6 +1052,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runRecoveryVisible: visible(document.querySelector("#runRecoveryStrip")),
           runRecoveryText: document.querySelector("#runRecoveryStrip")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runRecoveryCopyBox: elementBox("#runRecoveryStrip > div:first-child"),
           failedRunActionsText: ((document.querySelector("#failedRunActions")?.textContent || "") + " " + (document.querySelector("#mainFailedRunActions")?.textContent || "")).trim().replace(/\\s+/g, " "),
           visibleExportPrimaryCount: [...document.querySelectorAll("button.primary-action, .studio-package-button")]
             .filter((element) => {
@@ -1537,6 +1538,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         !/Cancel run/.test(stateValue.runRecoveryText))
     ) {
       failures.push(`${viewport.name}/${state}: stale running job should expose first-viewport recovery actions`);
+    }
+    if (["workflow-run-stale", "workflow-run-asset-stalled"].includes(state) && stateValue.runRecoveryVisible && (stateValue.runRecoveryCopyBox?.width || 0) < 180) {
+      failures.push(`${viewport.name}/${state}: run recovery copy should not collapse into unreadable vertical text`);
     }
     if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
       failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
