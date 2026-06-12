@@ -9869,7 +9869,8 @@ body {
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
   max-width: 1160px !important;
-  min-height: min(520px, calc(100vh - 288px)) !important;
+  min-height: 0 !important;
+  max-height: none !important;
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-areas: "review" !important;
   justify-content: center !important;
@@ -9903,14 +9904,15 @@ body {
   min-width: 0 !important;
   min-height: 0 !important;
   overflow: hidden !important;
-  grid-template-columns: minmax(400px, 1fr) minmax(240px, 0.54fr) !important;
-  grid-template-rows: min-content min-content min-content minmax(220px, 1fr) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: min-content min-content minmax(104px, 138px) min-content minmax(180px, 1fr) !important;
   grid-template-areas:
-    "reviewHead inspector"
-    "partial inspector"
-    "bulk inspector"
-    "objects inspector" !important;
-  gap: 12px 16px !important;
+    "reviewHead"
+    "partial"
+    "inspector"
+    "bulk"
+    "objects" !important;
+  gap: 10px !important;
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -9927,6 +9929,7 @@ body {
     "corrections" !important;
   gap: 8px 16px !important;
   overflow: visible !important;
+  max-height: none !important;
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .workspace-grid {
@@ -9936,11 +9939,13 @@ body {
 }
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
-  grid-template-columns: minmax(520px, 1fr) minmax(320px, 0.52fr) !important;
-  grid-template-rows: min-content minmax(0, 1fr) !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: min-content auto auto !important;
   grid-template-areas:
-    "reviewHead tools"
-    "exportCard tools" !important;
+    "reviewHead"
+    "exportCard"
+    "tools" !important;
+  overflow: visible !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading,
@@ -10004,10 +10009,39 @@ body {
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
   grid-area: inspector !important;
+  display: grid !important;
+  grid-template-columns: minmax(190px, 0.42fr) minmax(0, 0.58fr) !important;
+  grid-template-areas:
+    "inspectorHead runtime"
+    "detail detail" !important;
+  gap: 8px 16px !important;
   align-content: start !important;
   overflow: auto !important;
-  padding: 0 0 0 16px !important;
-  border-left: 1px solid var(--workflow-line, var(--border)) !important;
+  max-height: 138px !important;
+  padding: 10px 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  border-left: 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector .studio-inspector-heading {
+  grid-area: inspectorHead !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector .studio-runtime-proof {
+  grid-area: runtime !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector .track-detail {
+  grid-area: detail !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector .track-detail-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.app-shell.is-review-workbench:not(.is-workflow-dashboard) .studio-track-inspector .track-detail {
+  display: none !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .review-tools-panel {
@@ -10256,7 +10290,7 @@ body {
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
   grid-area: exportCard !important;
   display: grid !important;
-  overflow: auto !important;
+  overflow: visible !important;
   padding: 0 !important;
 }
 
@@ -10264,10 +10298,20 @@ body {
   grid-area: tools !important;
   display: grid !important;
   align-content: start !important;
-  overflow: auto !important;
-  padding: 0 0 0 18px !important;
-  border-top: 0 !important;
-  border-left: 1px solid var(--workflow-line, var(--border)) !important;
+  overflow: visible !important;
+  padding: 10px 0 !important;
+  border-top: 1px solid var(--workflow-line, var(--border)) !important;
+  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+  border-left: 0 !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tool-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tool-frame-shell {
+  display: none !important;
 }
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-object-list,

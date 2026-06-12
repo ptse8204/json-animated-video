@@ -1447,6 +1447,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         if (!stateValue.studioInspectorVisible || !/Selected object|Runtime|Accelerator|Geometry|Motion/.test(stateValue.studioInspectorText)) {
           failures.push(`${viewport.name}/${state}: desktop review should expose selected-object diagnostics and runtime proof in the workbench`);
         }
+        if (
+          stateValue.studioInspectorBox &&
+          stateValue.studioObjectListBox &&
+          (stateValue.studioInspectorBox.left > stateValue.studioObjectListBox.left + 8 ||
+            stateValue.studioInspectorBox.width < stateValue.studioObjectListBox.width - 12)
+        ) {
+          failures.push(`${viewport.name}/${state}: desktop selected-object diagnostics should be inline with the review list, not a right-side rail`);
+        }
         for (const [label, box] of [
           ["viewer", stateValue.viewerPanelBox],
           ["object list", stateValue.studioObjectListBox],
@@ -1486,9 +1494,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (viewport.width >= 1366) {
         const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
+        if (
+          stateValue.reviewToolsVisible &&
+          stateValue.reviewToolsBox &&
+          stateValue.studioExportCardBox &&
+          (stateValue.reviewToolsBox.top <= stateValue.studioExportCardBox.top ||
+            stateValue.reviewToolsBox.left > stateValue.studioExportCardBox.left + 8 ||
+            stateValue.reviewToolsBox.width < stateValue.studioExportCardBox.width - 12)
+        ) {
+          failures.push(`${viewport.name}/${state}: desktop layer reuse checks should be inline below the export checklist, not a right-side rail`);
+        }
         for (const [label, box] of [
           ["export checklist", stateValue.studioExportCardBox],
-          ["review tools", stateValue.reviewToolsBox],
         ]) {
           if (!box || box.bottom > bottomLimit || box.top < -2) {
             failures.push(`${viewport.name}/${state}: desktop ${label} should fit inside the visible export workbench`);
@@ -1516,6 +1533,17 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         const toolsTop = stateValue.reviewToolsBox?.top ?? 0;
         if (toolsTop && exportTop && toolsTop < exportTop) {
           failures.push(`${viewport.name}/${state}: mobile export capture should show the export checklist before review tools`);
+        }
+      }
+      if (viewport.width >= 1366 && stateValue.reviewToolsVisible && stateValue.studioExportCardVisible) {
+        if (
+          stateValue.reviewToolsBox &&
+          stateValue.studioExportCardBox &&
+          (stateValue.reviewToolsBox.top <= stateValue.studioExportCardBox.top ||
+            stateValue.reviewToolsBox.left > stateValue.studioExportCardBox.left + 8 ||
+            stateValue.reviewToolsBox.width < stateValue.studioExportCardBox.width - 12)
+        ) {
+          failures.push(`${viewport.name}/${state}: desktop export capture should keep reuse checks inline below the checklist, not in a side rail`);
         }
       }
     }
