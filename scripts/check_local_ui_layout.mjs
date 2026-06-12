@@ -875,6 +875,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           deviceFieldVisible: visible(document.querySelector("#deviceField")),
           textPromptVisible: visible(document.querySelector("#textPromptField")),
           viewerToolbarVisible: visible(document.querySelector(".viewer-toolbar")),
+          viewerPanelHeadingVisible: visible(document.querySelector(".viewer-panel > .panel-heading")),
+          videoMetricReadoutVisible: visible(document.querySelector("#videoMetricReadout")),
           targetSourceRequiredVisible: visible(document.querySelector("#targetSourceRequired")),
           targetSourceRequiredText: document.querySelector("#targetSourceRequired")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           targetSourceRequiredStepCount: [...document.querySelectorAll("#targetSourceRequired .source-required-steps li")].filter(visible).length,
@@ -1448,6 +1450,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (stateValue.viewerToolbarVisible || stateValue.pointToolVisible || stateValue.wizardPanelVisible || stateValue.configPanelVisible) {
         failures.push(`${viewport.name}/${state}: target step without a source video should hide prompt, wizard, and preflight controls`);
+      }
+      if (stateValue.viewerPanelHeadingVisible || stateValue.videoMetricReadoutVisible) {
+        failures.push(`${viewport.name}/${state}: target source-required state should not expose legacy viewer heading or pixel readout chrome`);
       }
     }
     if (state === "workflow-preflight") {

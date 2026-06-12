@@ -5922,6 +5922,13 @@ body {
   grid-template-areas: "viewer";
 }
 
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-panel {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-panel > .panel-heading,
 .app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-toolbar,
 .app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-stage,
 .app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .viewer-status,
@@ -5930,6 +5937,10 @@ body {
 .app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .wizard-panel,
 .app-shell.is-source-required-prompt:not(.is-workflow-dashboard) .config-panel {
   display: none !important;
+}
+
+.app-shell.is-source-required-prompt:not(.is-workflow-dashboard) #targetSourceRequired {
+  padding-top: 18px;
 }
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .workspace-grid {
@@ -11075,6 +11086,40 @@ body {
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .candidate-row,
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .track-row {
     grid-template-columns: 16px 24px minmax(0, 1fr) 30px 30px !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "inspectorHead"
+      "runtime"
+      "detail" !important;
+    gap: 10px !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-track-inspector .studio-inspector-heading {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card {
+    padding: 6px 0 0 !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card .track-detail-grid {
+    grid-template-columns: minmax(76px, max-content) minmax(0, 1fr) !important;
+    gap: 5px 12px !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card .track-detail-grid dt,
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-runtime-card .track-detail-grid dd {
+    line-height: 1.25 !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
   }
 
   .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-review-panel {
