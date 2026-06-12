@@ -20,7 +20,13 @@ import {
   emptyCorrectionState,
 } from "../src/motionjson/ui/static/modules/state_store.js";
 import {
+  JOURNEY_PHASES,
+  JOURNEY_PHASE_ORDER,
   WORKFLOW_STEPS,
+  journeyPhaseForWorkflowStep,
+  journeyPhaseIndex,
+  journeyReadinessFromSnapshot,
+  normalizeJourneyPhaseId,
   normalizeWorkflowStepId,
   workflowNextStepId,
   workflowScreenForStep,
@@ -38,7 +44,13 @@ assert.equal(ui.reviewToolUrl, reviewToolUrl);
 assert.equal(ui.CORRECTION_STATE_FORMAT, CORRECTION_STATE_FORMAT);
 assert.equal(ui.MODEL_CONNECTIONS, MODEL_CONNECTIONS);
 assert.equal(ui.MODEL_CONNECTION_PRIORITY, MODEL_CONNECTION_PRIORITY);
+assert.equal(ui.JOURNEY_PHASES, JOURNEY_PHASES);
+assert.equal(ui.JOURNEY_PHASE_ORDER, JOURNEY_PHASE_ORDER);
 assert.equal(ui.WORKFLOW_STEPS, WORKFLOW_STEPS);
+assert.equal(ui.journeyPhaseForWorkflowStep, journeyPhaseForWorkflowStep);
+assert.equal(ui.journeyPhaseIndex, journeyPhaseIndex);
+assert.equal(ui.journeyReadinessFromSnapshot, journeyReadinessFromSnapshot);
+assert.equal(ui.normalizeJourneyPhaseId, normalizeJourneyPhaseId);
 assert.equal(ui.normalizeWorkflowStepId, normalizeWorkflowStepId);
 assert.equal(ui.workflowNextStepId, workflowNextStepId);
 
@@ -90,6 +102,45 @@ applyModelSetupRecommendationToState(freshState, {
 });
 assert.equal(freshState.modelSetupRecommendations.pick_objects_from_frame.selectedConnectionId, "sam3-local");
 
+assert.deepEqual(JOURNEY_PHASES.map((phase) => phase.id), [
+  "goal",
+  "source",
+  "target",
+  "model",
+  "preflight",
+  "run",
+  "review",
+  "correct",
+  "export",
+  "reuse",
+]);
+assert.deepEqual(JOURNEY_PHASE_ORDER, JOURNEY_PHASES.map((phase) => phase.id));
+assert.equal(normalizeJourneyPhaseId("not-real"), "goal");
+assert.equal(journeyPhaseIndex("preflight"), 4);
+assert.equal(journeyPhaseForWorkflowStep("choose_goal"), "goal");
+assert.equal(journeyPhaseForWorkflowStep("source_video"), "source");
+assert.equal(journeyPhaseForWorkflowStep("provider_settings"), "model");
+assert.equal(journeyPhaseForWorkflowStep("prompt_preview"), "target");
+assert.equal(journeyPhaseForWorkflowStep("prompt_preview", { activeJourneyPhase: "preflight" }), "preflight");
+assert.equal(journeyPhaseForWorkflowStep("run_monitor"), "run");
+assert.equal(journeyPhaseForWorkflowStep("review_export"), "review");
+assert.equal(journeyPhaseForWorkflowStep("review_export", { activeJourneyPhase: "correct" }), "correct");
+assert.equal(journeyPhaseForWorkflowStep("review_export", { reviewExportSubscreen: "export" }), "export");
+assert.equal(journeyPhaseForWorkflowStep("review_export", { exportResultReady: true }), "reuse");
+const journeyReadiness = journeyReadinessFromSnapshot({
+  backendValidated: true,
+  trackCount: 1,
+  correctionCount: 1,
+  exportOk: true,
+  exportResultReady: true,
+});
+assert.equal(journeyReadiness.preflight.complete, true);
+assert.equal(journeyReadiness.correct.complete, true);
+assert.equal(journeyReadiness.export.complete, true);
+assert.equal(journeyReadiness.reuse.complete, true);
+
+// These compatibility IDs are still used by DOM adapters, backend actions, and
+// persisted local state; the product journey contract above is user-facing.
 assert.deepEqual(WORKFLOW_STEPS.map((step) => step.id), [
   "choose_goal",
   "source_video",

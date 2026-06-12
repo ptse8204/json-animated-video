@@ -406,6 +406,16 @@ for (const testId of [
   }
 }
 
+for (const phase of ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export", "reuse"]) {
+  if (!index.includes(`data-journey-phase="${phase}"`)) {
+    throw new Error(`index.html is missing workflow journey phase "${phase}"`);
+  }
+}
+
+if (!index.includes('id="workflowStepper"') || !index.includes("data-testid=\"workflow-stepper\"") || !index.includes("hidden")) {
+  throw new Error("workflow stepper must remain an accessibility-only compatibility control");
+}
+
 const remotePattern = /https?:\/\//;
 for (const [file, content] of contents) {
   const checkedContent = content.replaceAll("http://www.w3.org/2000/svg", "");

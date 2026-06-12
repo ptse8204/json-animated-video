@@ -25,6 +25,8 @@ import {
   emptyCorrectionState,
 } from "./modules/state_store.js";
 import {
+  JOURNEY_PHASES,
+  JOURNEY_PHASE_ORDER,
   WORKFLOW_FRAGMENT_STEP_ALIASES,
   WORKFLOW_PANEL_STEP_ALIASES,
   WORKFLOW_STEPS,
@@ -32,6 +34,10 @@ import {
   goalRequiresReviewExportFlow,
   isActiveJobStatus,
   isFailedJobStatus,
+  journeyPhaseForWorkflowStep,
+  journeyPhaseIndex,
+  journeyReadinessFromSnapshot,
+  normalizeJourneyPhaseId,
   normalizeWorkflowStepId,
   workflowJobStatusFromSnapshot as workflowJobStatusFromSnapshotBase,
   workflowModelSetupStatusFromSnapshot,
@@ -6313,62 +6319,13 @@ const MotionJSONUI = (() => {
     function renderJourneyNav(snapshot, readiness, activeStep) {
       const nav = $("#journeyNav");
       if (!nav) return;
-      const activePhase =
-        (() => {
-          const exportPhaseActive = state.reviewExportSubscreen === "export" || state.activeJourneyPhase === "reuse" || snapshot.exportResultReady;
-          return activeStep === "choose_goal"
-            ? "goal"
-            : activeStep === "source_video"
-              ? "source"
-              : activeStep === "provider_settings"
-                ? "model"
-                : activeStep === "prompt_preview"
-                  ? state.activeJourneyPhase === "preflight"
-                    ? "preflight"
-                    : "target"
-                  : activeStep === "run_monitor"
-                    ? "run"
-                    : exportPhaseActive
-                      ? state.activeJourneyPhase === "reuse" || snapshot.exportResultReady
-                        ? "reuse"
-                        : "export"
-                      : state.activeJourneyPhase === "correct"
-                        ? "correct"
-                        : "review";
-        })();
-      const phaseReadiness = {
-        goal: readiness.choose_goal,
-        source: readiness.source_video,
-        target: readiness.prompt_preview,
-        model: readiness.provider_settings,
-        preflight: {
-          status: snapshot.backendValidated ? "done" : readiness.prompt_preview?.status || "needs-action",
-          complete: Boolean(snapshot.backendValidated || snapshot.selectedJobId),
-          message: snapshot.backendValidated ? "Preflight validation passed." : "Confirm what extraction will run before starting.",
-          tone: snapshot.backendValidated ? "is-ready" : "is-warn",
-        },
-        run: readiness.run_monitor,
-        review: readiness.review_export,
-        correct: {
-          status: snapshot.correctionCount ? "done" : snapshot.trackCount ? "ready" : "needs-action",
-          complete: Boolean(snapshot.correctionCount),
-          message: snapshot.trackCount ? "Correction tools are available for reviewed tracks." : "Run extraction before correcting tracks.",
-          tone: snapshot.correctionCount ? "is-ready" : snapshot.trackCount ? "is-warn" : "is-muted",
-        },
-        export: {
-          status: snapshot.exportOk ? "done" : snapshot.exportIncludedCount ? "ready" : "needs-action",
-          complete: Boolean(snapshot.exportOk),
-          message: snapshot.exportOk ? "MotionJSON package is ready to write." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
-          tone: snapshot.exportOk ? "is-ready" : snapshot.exportIncludedCount ? "is-warn" : "is-muted",
-        },
-        reuse: {
-          status: snapshot.exportResultReady ? "done" : snapshot.exportOk ? "ready" : "needs-action",
-          complete: Boolean(snapshot.exportResultReady),
-          message: snapshot.exportResultReady ? "Reusable object layer exported with handoff instructions." : snapshot.exportOk ? "Export MotionJSON before reuse handoff." : "Validate and export before reuse.",
-          tone: snapshot.exportResultReady ? "is-ready" : snapshot.exportOk ? "is-warn" : "is-muted",
-        },
-      };
-      const phaseOrder = ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export", "reuse"];
+      const activePhase = journeyPhaseForWorkflowStep(activeStep, {
+        activeJourneyPhase: state.activeJourneyPhase,
+        reviewExportSubscreen: state.reviewExportSubscreen,
+        exportResultReady: snapshot.exportResultReady,
+      });
+      const phaseReadiness = journeyReadinessFromSnapshot(snapshot, readiness);
+      const phaseOrder = JOURNEY_PHASE_ORDER;
       const activeOrder = Math.max(0, phaseOrder.indexOf(activePhase));
       nav.querySelectorAll("[data-journey-phase]").forEach((button) => {
         const phase = button.dataset.journeyPhase || "";
@@ -16144,6 +16101,8 @@ const MotionJSONUI = (() => {
   const publicApi = {
     API_ROUTES,
     CORRECTION_STATE_FORMAT,
+    JOURNEY_PHASES,
+    JOURNEY_PHASE_ORDER,
     MODEL_CONNECTION_PRIORITY,
     MODEL_CONNECTIONS,
     PRESETS,
@@ -16184,6 +16143,9 @@ const MotionJSONUI = (() => {
     exportValidationIssueText,
     failedRunRecoveryLabels,
     filterReviewCandidates,
+    journeyPhaseForWorkflowStep,
+    journeyPhaseIndex,
+    journeyReadinessFromSnapshot,
     jobStaleNotice,
     jobProgressText,
     modelConnectorsForSetup,
@@ -16208,6 +16170,7 @@ const MotionJSONUI = (() => {
     localApiUrl,
     normalizedModelConnection,
     normalizeJobLifecycle,
+    normalizeJourneyPhaseId,
     normalizeCorrectionState,
     normalizeWorkflowStepId,
     objectDiscoveryConfig,

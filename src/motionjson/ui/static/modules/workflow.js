@@ -65,6 +65,71 @@ export const WORKFLOW_STEPS = [
   },
 ];
 
+export const JOURNEY_PHASES = [
+  {
+    id: "goal",
+    label: "Goal",
+    workflowStep: "choose_goal",
+    question: "What am I trying to make?",
+  },
+  {
+    id: "source",
+    label: "Source",
+    workflowStep: "source_video",
+    question: "Which video am I extracting from?",
+  },
+  {
+    id: "target",
+    label: "Target",
+    workflowStep: "prompt_preview",
+    question: "What object should be traced?",
+  },
+  {
+    id: "model",
+    label: "Model",
+    workflowStep: "provider_settings",
+    question: "Can the recommended model path run?",
+  },
+  {
+    id: "preflight",
+    label: "Preflight",
+    workflowStep: "prompt_preview",
+    question: "What will happen if I press Run?",
+  },
+  {
+    id: "run",
+    label: "Run",
+    workflowStep: "run_monitor",
+    question: "What is happening, and is the result becoming useful?",
+  },
+  {
+    id: "review",
+    label: "Review",
+    workflowStep: "review_export",
+    question: "Which produced objects are valid?",
+  },
+  {
+    id: "correct",
+    label: "Correct",
+    workflowStep: "review_export",
+    question: "How do I fix enough to export?",
+  },
+  {
+    id: "export",
+    label: "Export",
+    workflowStep: "review_export",
+    question: "What am I exporting?",
+  },
+  {
+    id: "reuse",
+    label: "Reuse",
+    workflowStep: "review_export",
+    question: "How can the exported object layer be reused?",
+  },
+];
+
+export const JOURNEY_PHASE_ORDER = JOURNEY_PHASES.map((phase) => phase.id);
+
 export const WORKFLOW_PANEL_STEP_ALIASES = {
   choose_goal: ["choose_goal"],
   source_video: ["project_video", "source_video"],
@@ -98,6 +163,31 @@ export const SCREEN_STEPS = [
 export function normalizeWorkflowStepId(value, fallback = "choose_goal") {
   const id = String(value || "").trim();
   return WORKFLOW_STEPS.some((step) => step.id === id) ? id : fallback;
+}
+
+export function normalizeJourneyPhaseId(value, fallback = "goal") {
+  const id = String(value || "").trim();
+  return JOURNEY_PHASE_ORDER.includes(id) ? id : fallback;
+}
+
+export function journeyPhaseIndex(phaseId) {
+  return Math.max(0, JOURNEY_PHASE_ORDER.indexOf(normalizeJourneyPhaseId(phaseId)));
+}
+
+export function journeyPhaseForWorkflowStep(stepId, options = {}) {
+  const normalized = normalizeWorkflowStepId(stepId);
+  const activeJourneyPhase = normalizeJourneyPhaseId(options.activeJourneyPhase || "", "");
+  const exportResultReady = Boolean(options.exportResultReady);
+  const reviewExportSubscreen = String(options.reviewExportSubscreen || "");
+  if (normalized === "choose_goal") return "goal";
+  if (normalized === "source_video") return "source";
+  if (normalized === "provider_settings") return "model";
+  if (normalized === "prompt_preview") return activeJourneyPhase === "preflight" ? "preflight" : "target";
+  if (normalized === "run_monitor") return "run";
+  if (exportResultReady || activeJourneyPhase === "reuse") return "reuse";
+  if (reviewExportSubscreen === "export" || activeJourneyPhase === "export") return "export";
+  if (activeJourneyPhase === "correct") return "correct";
+  return "review";
 }
 
 export function workflowStepIndex(stepId) {
@@ -279,6 +369,41 @@ export function workflowReadinessFromSnapshot(snapshot = {}) {
               trackCount ? `${trackCount} reviewed track${trackCount === 1 ? "" : "s"} ready for export.` : `${candidateCount} candidate${candidateCount === 1 ? "" : "s"} ready to review.`,
             )
         : step("needs-action", selectedPreset === "review_existing" ? "Open an existing result before reviewing and exporting." : "Run extraction before reviewing tracks and exporting.", { complete: false }),
+  };
+}
+
+export function journeyReadinessFromSnapshot(snapshot = {}, readiness = workflowReadinessFromSnapshot(snapshot)) {
+  return {
+    goal: readiness.choose_goal,
+    source: readiness.source_video,
+    target: readiness.prompt_preview,
+    model: readiness.provider_settings,
+    preflight: {
+      status: snapshot.backendValidated ? "done" : readiness.prompt_preview?.status || "needs-action",
+      complete: Boolean(snapshot.backendValidated || snapshot.selectedJobId),
+      message: snapshot.backendValidated ? "Preflight validation passed." : "Confirm what extraction will run before starting.",
+      tone: snapshot.backendValidated ? "is-ready" : "is-warn",
+    },
+    run: readiness.run_monitor,
+    review: readiness.review_export,
+    correct: {
+      status: snapshot.correctionCount ? "done" : snapshot.trackCount ? "ready" : "needs-action",
+      complete: Boolean(snapshot.correctionCount),
+      message: snapshot.trackCount ? "Correction tools are available for reviewed tracks." : "Run extraction before correcting tracks.",
+      tone: snapshot.correctionCount ? "is-ready" : snapshot.trackCount ? "is-warn" : "is-muted",
+    },
+    export: {
+      status: snapshot.exportOk ? "done" : snapshot.exportIncludedCount ? "ready" : "needs-action",
+      complete: Boolean(snapshot.exportOk),
+      message: snapshot.exportOk ? "MotionJSON package is ready to write." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
+      tone: snapshot.exportOk ? "is-ready" : snapshot.exportIncludedCount ? "is-warn" : "is-muted",
+    },
+    reuse: {
+      status: snapshot.exportResultReady ? "done" : snapshot.exportOk ? "ready" : "needs-action",
+      complete: Boolean(snapshot.exportResultReady),
+      message: snapshot.exportResultReady ? "Reusable object layer exported with handoff instructions." : snapshot.exportOk ? "Export MotionJSON before reuse handoff." : "Validate and export before reuse.",
+      tone: snapshot.exportResultReady ? "is-ready" : snapshot.exportOk ? "is-warn" : "is-muted",
+    },
   };
 }
 
