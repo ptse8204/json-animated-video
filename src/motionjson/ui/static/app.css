@@ -54,8 +54,11 @@ body {
   font-weight: 700;
 }
 
+.skip-link:focus,
 .skip-link:focus-visible {
   transform: translateY(0);
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 button,
@@ -98,6 +101,14 @@ button.primary-action:disabled {
   background: #dce7e5;
 }
 
+button:focus,
+input:focus,
+select:focus,
+a:focus,
+.skip-link:focus,
+summary:focus,
+.viewer-stage:focus,
+.adaptive-chip:focus,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -2064,7 +2075,17 @@ body {
   background: #ffffff;
   font-size: 12px;
   font-weight: 800;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   white-space: normal;
+}
+
+.shell-toggle:focus,
+.shell-toggle:focus-visible,
+.project-drawer-trigger:focus,
+.project-drawer-trigger:focus-visible {
+  outline-color: var(--focus);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--focus) 18%, transparent);
 }
 
 .brand .shell-toggle {
@@ -6636,6 +6657,17 @@ body {
   font-size: 13px;
 }
 
+@media (max-width: 900px) {
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-dropzone {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-file-control {
+    width: 100%;
+  }
+}
+
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-choice-grid,
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-checklist,
 .app-shell.is-workflow-step-provider-settings:not(.is-workflow-dashboard) .model-setup-playbook {
@@ -7981,6 +8013,14 @@ body {
   color: #314155;
   font-size: 11px;
   font-weight: 750;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.journey-collapse:focus,
+.journey-collapse:focus-visible {
+  outline-color: var(--focus);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--focus) 18%, transparent);
 }
 
 .journey-nav-list {
@@ -8021,12 +8061,21 @@ body {
   background: transparent;
   color: var(--ui-v3-muted);
   text-align: left;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
   box-shadow: none;
 }
 
 .journey-nav-list button:hover {
   border-color: #d6e2ef;
   background: #f3f7fb;
+}
+
+.journey-nav-list button:focus,
+.journey-nav-list button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--focus) 18%, transparent);
 }
 
 .journey-nav-list strong,
@@ -8082,7 +8131,9 @@ body {
 .journey-nav-list .is-active button {
   border-color: #c8d9f8;
   background: var(--ui-v3-blue-soft);
-  box-shadow: inset 3px 0 0 var(--ui-v3-blue);
+  outline: 2px solid color-mix(in oklab, var(--ui-v3-blue) 38%, transparent);
+  outline-offset: -2px;
+  box-shadow: none;
 }
 
 .journey-nav-list .is-active .journey-dot {
@@ -9713,6 +9764,22 @@ body {
     grid-row: auto;
   }
 
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .panel-heading {
+    order: 1;
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .workflow-fragment[data-workflow-fragment="source_video"] {
+    order: 2;
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #guidedProjectSummary {
+    order: 3;
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #projectWorkspaceDisclosure {
+    order: 4;
+  }
+
   .goal-card {
     min-height: 112px;
     padding: 16px;
@@ -10407,8 +10474,8 @@ body {
     display: block !important;
     height: auto !important;
     max-width: 100vw !important;
-    padding: 8px 14px !important;
-    overflow-x: auto !important;
+    padding: 8px 10px !important;
+    overflow-x: visible !important;
     border-right: 0 !important;
     border-bottom: 1px solid var(--ui-v3-line) !important;
     background: #fbfcfd !important;
@@ -10419,9 +10486,10 @@ body {
   }
 
   .journey-nav-list {
-    display: flex !important;
-    gap: 6px !important;
-    min-width: max-content !important;
+    display: grid !important;
+    grid-template-columns: repeat(9, minmax(0, 1fr)) !important;
+    gap: 3px !important;
+    min-width: 0 !important;
   }
 
   .journey-nav-list li::after {
@@ -10430,19 +10498,20 @@ body {
 
   .journey-nav-list button {
     display: grid !important;
-    grid-template-columns: 20px max-content !important;
-    min-width: max-content !important;
-    min-height: 40px !important;
-    padding: 7px 9px !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    justify-items: center !important;
+    min-width: 0 !important;
+    min-height: 36px !important;
+    padding: 6px 2px !important;
   }
 
   .journey-kicker,
   .journey-nav-list strong {
-    position: static !important;
-    width: auto !important;
-    height: auto !important;
-    overflow: visible !important;
-    clip-path: none !important;
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    overflow: hidden !important;
+    clip-path: inset(50%) !important;
   }
 
   .journey-nav-list small {
@@ -10468,6 +10537,79 @@ body {
     max-height: calc(100vh - 57px - 92px) !important;
     padding-bottom: 24px !important;
     overflow-y: auto !important;
+  }
+
+  .studio-topbar {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+    min-height: 0 !important;
+    margin-bottom: 12px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .studio-brand-group {
+    display: none !important;
+  }
+
+  .command-identity {
+    display: flex !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    min-width: 0 !important;
+  }
+
+  .studio-project-pill,
+  .command-identity-chip {
+    min-height: 34px !important;
+    padding: 3px 10px !important;
+  }
+
+  .command-identity-chip small {
+    font-size: 10px !important;
+  }
+
+  .command-identity-chip strong {
+    font-size: 12px !important;
+  }
+
+  .topbar-actions {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+  }
+
+  .topbar-actions::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  #apiStatus.status-chip,
+  #providerIdentityChip.status-chip,
+  #diagnosticsSummary.status-chip,
+  .command-icon-button {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    min-height: 32px !important;
+    padding: 0 10px !important;
+    justify-content: center !important;
+    white-space: nowrap !important;
+  }
+
+  #providerIdentityChip.status-chip {
+    max-width: 190px !important;
+  }
+
+  .app-shell:not(.is-workflow-step-provider-settings) #providerIdentityChip.status-chip {
+    display: none !important;
+  }
+
+  #diagnosticsSummary.status-chip {
+    grid-column: auto !important;
   }
 
   .workflow-footer,

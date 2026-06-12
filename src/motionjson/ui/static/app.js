@@ -6210,6 +6210,15 @@ const MotionJSONUI = (() => {
       scheduleDrawOverlay();
     }
 
+    function scrollActiveJourneyIntoView() {
+      const nav = $("#journeyNav");
+      const activeButton = nav?.querySelector("[data-journey-phase].is-active");
+      if (!nav || !activeButton) return;
+      const activeItem = activeButton.closest("li") || activeButton;
+      const targetLeft = activeItem.offsetLeft - (nav.clientWidth - activeItem.offsetWidth) / 2;
+      nav.scrollLeft = Math.max(0, targetLeft);
+    }
+
     function renderJourneyNav(snapshot, readiness, activeStep) {
       const nav = $("#journeyNav");
       if (!nav) return;
@@ -6284,13 +6293,9 @@ const MotionJSONUI = (() => {
       });
       const activeButton = nav.querySelector("[data-journey-phase].is-active");
       const navList = $("#journeyNavList");
-      if (activeButton && navList && nav.scrollWidth > nav.clientWidth + 2) {
-        requestAnimationFrame(() => {
-          const buttonBox = activeButton.getBoundingClientRect();
-          const navBox = nav.getBoundingClientRect();
-          const delta = buttonBox.left + buttonBox.width / 2 - (navBox.left + navBox.width / 2);
-          nav.scrollLeft += delta;
-        });
+      if (activeButton && navList) {
+        requestAnimationFrame(scrollActiveJourneyIntoView);
+        window.setTimeout(scrollActiveJourneyIntoView, 120);
       }
     }
 
@@ -13950,6 +13955,7 @@ const MotionJSONUI = (() => {
 
       window.setTimeout(() => {
         window.scrollTo({ top: 0, left: 0 });
+        scrollActiveJourneyIntoView();
         document.documentElement.dataset.captureReady = "true";
       }, 800);
     }

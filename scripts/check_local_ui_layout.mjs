@@ -320,8 +320,12 @@ function connectCdp(webSocketDebuggerUrl) {
   };
 }
 
-async function waitForReady(cdp, capture) {
-  const deadline = Date.now() + 15000;
+async function waitForReady(cdp, capture, { timeoutMs = 15000 } = {}) {
+  const startedAt = Date.now();
+  const deadline = Date.now() + timeoutMs;
+  let lastState = null;
+  let lastError = "";
+  let reloadAttempted = false;
   while (Date.now() < deadline) {
     try {
       const result = await cdp.send("Runtime.evaluate", {
@@ -329,20 +333,41 @@ async function waitForReady(cdp, capture) {
         expression: `({
           href: location.href,
           ready: document.readyState,
-          captureReady: document.documentElement.dataset.captureReady || ""
+          capture: document.documentElement.dataset.capture || "",
+          captureReady: document.documentElement.dataset.captureReady || "",
+          bodyText: document.body?.innerText?.slice(0, 160) || ""
         })`,
       });
       const value = result.result.value || {};
+      lastState = value;
       const navigated = capture ? String(value.href || "").includes("capture=") : !String(value.href || "").startsWith("about:");
       const ready = value.ready === "complete";
       const captureReady = capture ? value.captureReady === "true" : true;
       if (navigated && ready && captureReady) return;
-    } catch {
+      if (
+        capture &&
+        navigated &&
+        !reloadAttempted &&
+        !value.capture &&
+        (value.ready === "interactive" || value.ready === "loading") &&
+        Date.now() - startedAt > 2500
+      ) {
+        reloadAttempted = true;
+        await cdp.send("Page.stopLoading").catch(() => {});
+        await cdp.send("Page.reload", { ignoreCache: true }).catch(() => {});
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
       // A navigation can destroy the previous execution context; retry.
     }
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 120));
   }
-  throw new Error(`Timed out waiting for UI capture readiness: ${capture}`);
+  const detail = lastState
+    ? `last=${JSON.stringify(lastState)}`
+    : lastError
+      ? `lastError=${lastError}`
+      : "no page state observed";
+  throw new Error(`Timed out waiting for UI capture readiness: ${capture} (${detail})`);
 }
 
 async function evaluateLayout(cdp) {
@@ -444,12 +469,18 @@ async function evaluateLayout(cdp) {
         }
       }
       const focusTarget = [...document.querySelectorAll("button, input, select, summary, a[href]")]
-        .find((element) => isVisible(element) && !element.disabled);
+        .find((element) => !element.matches(".skip-link") && isVisible(element) && !element.disabled);
       if (focusTarget) {
         focusTarget.focus();
         const focusStyle = getComputedStyle(focusTarget);
         if (focusStyle.outlineStyle === "none" && focusStyle.boxShadow === "none") {
-          failures.push("visible focus target has no visible focus style");
+          const focusLabel = (
+            focusTarget.getAttribute("aria-label") ||
+            focusTarget.textContent ||
+            focusTarget.getAttribute("id") ||
+            focusTarget.tagName
+          ).trim().replace(/\s+/g, " ").slice(0, 80);
+          failures.push("visible focus target has no visible focus style: " + (focusLabel || focusTarget.tagName));
         }
         focusTarget.blur();
       }
@@ -536,7 +567,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
   const isRealState = REAL_STATES.includes(state);
   const capture = isRealState ? "" : state;
   const url = capture ? `${baseUrl}/?capture=${encodeURIComponent(capture)}` : baseUrl;
-  const page = await newPage(port, url);
+  const page = await newPage(port, "about:blank");
   const cdp = connectCdp(page.webSocketDebuggerUrl);
   try {
     await cdp.send("Page.enable");
@@ -556,7 +587,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       mobile: false,
     });
     await cdp.send("Page.navigate", { url });
-    await waitForReady(cdp, capture);
+    await waitForReady(cdp, capture, { timeoutMs: Math.max(15000, screenshotTimeoutMs) });
     if (state === "real-expanded-shell") {
       await cdp.send("Runtime.evaluate", {
         expression: `
@@ -781,6 +812,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           collapseProbe: window.__motionjsonCollapseProbe || null,
           journeyNavBox: elementBox("#journeyNav"),
           activeJourneyButtonBox: elementBox("#journeyNav [data-journey-phase].is-active"),
+          journeyNavScrollLeft: document.querySelector("#journeyNav")?.scrollLeft || 0,
+          journeyNavScrollWidth: document.querySelector("#journeyNav")?.scrollWidth || 0,
+          journeyNavClientWidth: document.querySelector("#journeyNav")?.clientWidth || 0,
+          activeJourneyOffsetLeft: document.querySelector("#journeyNav [data-journey-phase].is-active")?.closest("li")?.offsetLeft || 0,
           activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
           workspaceBox: elementBox("#workspaceMain"),
           workspaceGridBox: elementBox(".workspace-grid"),
@@ -837,6 +872,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           browserPreviewBox: elementBox("#browserPreviewCard"),
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
+          uploadDropzoneBox: elementBox("#directUploadCard"),
+          guidedProjectSummaryBox: elementBox("#guidedProjectSummary"),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           wizardPanelVisible: visible(document.querySelector(".wizard-panel")),
           configPanelTitle: document.querySelector("#configPanelTitle")?.textContent?.trim() || "",
@@ -1112,6 +1149,19 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (state === "workflow-goal" && stateValue.visibleGoalCardCount !== 4) {
       failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards before advanced tasks`);
+    }
+    if (state === "workflow-video" && stateValue.viewportWidth <= 720) {
+      if (!stateValue.uploadDropzoneVisible || !stateValue.uploadDropzoneBox) {
+        failures.push(`${viewport.name}/${state}: mobile source step should show the source upload control`);
+      } else {
+        const footerTop = stateValue.footerBox?.top ?? stateValue.viewportHeight;
+        if (stateValue.uploadDropzoneBox.top >= footerTop - 24) {
+          failures.push(`${viewport.name}/${state}: mobile source upload control should start above the fixed footer`);
+        }
+        if (stateValue.guidedProjectSummaryBox && stateValue.uploadDropzoneBox.top > stateValue.guidedProjectSummaryBox.top) {
+          failures.push(`${viewport.name}/${state}: mobile source upload control should appear before project metadata`);
+        }
+      }
     }
     if (state === "prepare-pick-frame") {
       if (!stateValue.keyframeScanChooserVisible) {
@@ -1522,7 +1572,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           stateValue.activeJourneyButtonBox.left >= stateValue.journeyNavBox.left - 2 &&
           stateValue.activeJourneyButtonBox.right <= Math.min(stateValue.viewportWidth, stateValue.journeyNavBox.right) + 2;
         if (!activeJourneyVisible) {
-          failures.push(`${viewport.name}/${state}: active journey step should be fully visible in the mobile journey strip`);
+          failures.push(`${viewport.name}/${state}: active journey step should be fully visible in the mobile journey strip (scrollLeft=${stateValue.journeyNavScrollLeft}, scrollWidth=${stateValue.journeyNavScrollWidth}, clientWidth=${stateValue.journeyNavClientWidth}, activeOffset=${stateValue.activeJourneyOffsetLeft})`);
         }
       }
       const mobileRunCockpitOwnsAction = viewport.width <= 760 && expectedWorkflowStep === "run_monitor" && stateValue.runCockpitVisible;
