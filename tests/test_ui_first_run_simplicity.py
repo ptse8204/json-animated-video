@@ -13,8 +13,8 @@ def read(path: str) -> str:
 
 def test_normal_first_run_has_one_goal_picker_and_four_goal_cards():
     html = read("src/motionjson/ui/static/index.html")
-    normal_start = html.split('<div class="advanced-task-panel"', 1)[0]
-    advanced_start = html.split('<div class="advanced-task-panel"', 1)[1].split("</section>", 1)[0]
+    normal_start, advanced_panel = re.split(r'<details class="advanced-task-panel"', html, maxsplit=1)
+    advanced_start = advanced_panel.split("</details>", 1)[0]
 
     assert 'class="goal-list"' not in html
     assert len(re.findall(r'<button class="goal-card(?:\s|")', normal_start)) == 4

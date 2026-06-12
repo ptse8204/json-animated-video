@@ -977,6 +977,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           correctionActionsVisible: visible(document.querySelector(".correction-actions")),
           correctionActionsText: document.querySelector(".correction-actions")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           correctionActionsBox: elementBox(".correction-actions"),
+          correctionActionButtonClippedCount: (() => {
+            const actions = document.querySelector(".correction-actions");
+            if (!actions || !visible(actions)) return 0;
+            const footer = document.querySelector("[data-testid='command-footer']");
+            const footerTop = visible(footer) ? footer.getBoundingClientRect().top : window.innerHeight;
+            const actionBox = actions.getBoundingClientRect();
+            return [...actions.querySelectorAll("button")].filter((button) => {
+              if (!visible(button)) return false;
+              const box = button.getBoundingClientRect();
+              return box.bottom > footerTop - 1 || box.left < actionBox.left - 1 || box.right > actionBox.right + 1 || box.top < actionBox.top - 1 || box.bottom > actionBox.bottom + 1;
+            }).length;
+          })(),
           exportStatusSummaryCount: document.querySelectorAll("#exportStatusSummary .status-summary-card").length,
           runLogsOpen: document.querySelector("#runLogsDisclosure")?.open === true || document.querySelector("#mainRunLogsDisclosure")?.open === true,
           eventLogText: ((document.querySelector("#jobEventLog")?.textContent || "") + " " + (document.querySelector("#mainJobEventLog")?.textContent || "")).trim().replace(/\\s+/g, " "),
@@ -998,9 +1010,28 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           maskPreviewText: document.querySelector("[data-testid='mask-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           cutoutPreviewText: document.querySelector("[data-testid='cutout-preview']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           candidateListText: document.querySelector("[data-testid='candidate-list']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          candidateNestedButtonCount: document.querySelectorAll("[data-testid='candidate-list'] button button").length,
           runEventsText: document.querySelector("[data-testid='run-events']")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runEventsSectionBox: elementBox(".run-events-section"),
           runEventsListBox: elementBox("[data-testid='run-events']"),
+          runEventRowCount: [...document.querySelectorAll("[data-testid='run-events'] .run-event-row")].filter(visible).length,
+          runEventFullyVisibleRowCount: (() => {
+            const list = document.querySelector("[data-testid='run-events']");
+            if (!list || !visible(list)) return 0;
+            const listBox = list.getBoundingClientRect();
+            const footer = document.querySelector("[data-testid='command-footer']");
+            const footerTop = visible(footer) ? footer.getBoundingClientRect().top : window.innerHeight;
+            const visibleBottom = Math.min(listBox.bottom, footerTop);
+            return [...list.querySelectorAll(".run-event-row")].filter((row) => {
+              if (!visible(row)) return false;
+              const box = row.getBoundingClientRect();
+              return box.top >= listBox.top - 1 && box.bottom <= visibleBottom + 1;
+            }).length;
+          })(),
+          runEventRowOverflowCount: [...document.querySelectorAll("[data-testid='run-events'] .run-event-row")]
+            .filter((row) => visible(row) && (row.scrollHeight - row.clientHeight > 2 || row.scrollWidth - row.clientWidth > 2))
+            .length,
+          runEventListClientHeight: document.querySelector("[data-testid='run-events']")?.clientHeight || 0,
           runTemporalTimelineVisible: visible(document.querySelector("#runTemporalTimeline")),
           runTemporalTimelineBox: elementBox("#runTemporalTimeline"),
           runPreflightSummaryText: document.querySelector("#runPreflightSummary")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -1440,6 +1471,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "workflow-run" && (!/selected object.*track needs review/i.test(stateValue.candidateListText) || !/tracking selected object frame 36\/180|registered live mask preview/i.test(stateValue.runEventsText))) {
       failures.push(`${viewport.name}/${state}: run cockpit should show candidate/track context and readable grouped run events`);
     }
+    if (state === "workflow-run" && stateValue.candidateNestedButtonCount > 0) {
+      failures.push(`${viewport.name}/${state}: candidate/track rows should not contain nested interactive buttons`);
+    }
     if (
       state === "workflow-run" &&
       (!stateValue.runTemporalTimelineVisible ||
@@ -1457,6 +1491,12 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (!stateValue.runEventsListBox || stateValue.runEventsListBox.top >= footerTop - 24) {
         failures.push(`${viewport.name}/${state}: run event rows should be readable above the command footer in the first viewport`);
+      }
+      if (stateValue.runEventListClientHeight < 120 || stateValue.runEventFullyVisibleRowCount < Math.min(3, stateValue.runEventRowCount || 3)) {
+        failures.push(`${viewport.name}/${state}: run event ledger should expose at least three full readable rows on desktop`);
+      }
+      if (stateValue.runEventRowOverflowCount > 0) {
+        failures.push(`${viewport.name}/${state}: run event rows should not clip their own text or status chips`);
       }
       if (!stateValue.runTemporalTimelineBox || stateValue.runTemporalTimelineBox.top >= footerTop - 24) {
         failures.push(`${viewport.name}/${state}: run timeline should be visible above the command footer in the first viewport`);
@@ -1652,6 +1692,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (
         !stateValue.correctionActionsVisible ||
         !/Merge selected.*Split track.*Add from prompts.*Repair with prompts/i.test(stateValue.correctionActionsText) ||
+        stateValue.correctionActionButtonClippedCount > 0 ||
         actionBottom > Math.min(footerTop, gridBottom) - 8
       ) {
         failures.push(`${viewport.name}/${state}: correction action buttons should be fully visible above the footer and inside the workbench`);

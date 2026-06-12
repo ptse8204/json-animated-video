@@ -7637,10 +7637,10 @@ summary.advanced-task-heading::after {
 
 .run-event-row {
   display: grid;
-  grid-template-columns: minmax(86px, 0.35fr) minmax(110px, 0.45fr) minmax(76px, 0.32fr) minmax(0, 1fr) minmax(120px, 0.42fr);
-  gap: 10px;
-  align-items: center;
-  min-height: 40px;
+  grid-template-columns: minmax(74px, 0.24fr) minmax(96px, 0.3fr) minmax(72px, 0.22fr) minmax(0, 1fr) minmax(96px, 0.3fr);
+  gap: 8px;
+  align-items: start;
+  min-height: 38px;
   padding: 8px 0;
   border-bottom: 1px solid var(--ui-v3-line);
   color: #223044;
@@ -7650,6 +7650,24 @@ summary.advanced-task-heading::after {
 .run-event-row p {
   margin: 0;
   min-width: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.run-event-row > div {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.run-event-row .status-chip {
+  max-width: 100%;
+  min-height: 20px;
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 1.1;
 }
 
 .run-event-time,
@@ -7812,8 +7830,8 @@ summary.advanced-task-heading::after {
       "phases phases phases"
       "activity activity activity"
       "source evidence candidates"
-      "preflight timeline candidates"
-      "events events candidates"
+      "preflight preflight timeline"
+      "events events events"
       "details details details"
       "logs logs logs";
     gap: 9px 14px;
@@ -7894,30 +7912,32 @@ summary.advanced-task-heading::after {
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-shell,
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-source-frame-placeholder {
     min-height: 0;
-    height: clamp(188px, 23vh, 230px);
+    height: clamp(150px, 16vh, 178px);
     aspect-ratio: auto;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-image {
-    min-height: 76px;
+    min-height: 68px;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-evidence-image img {
-    max-height: 96px;
+    max-height: 84px;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-event-list {
-    max-height: 96px;
+    max-height: 146px;
     overflow: auto;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-event-row {
-    min-height: 34px;
-    padding: 6px 0;
+    grid-template-columns: minmax(68px, 0.18fr) minmax(92px, 0.22fr) minmax(68px, 0.18fr) minmax(320px, 1fr) minmax(62px, auto);
+    min-height: 30px;
+    padding: 3px 0;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-preflight-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 6px;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-temporal-marker-track {
@@ -10345,7 +10365,7 @@ body {
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot {
   overflow: visible !important;
   padding-top: 8px !important;
-  padding-bottom: 104px !important;
+  padding-bottom: 112px !important;
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-guidance {
@@ -10406,11 +10426,20 @@ body {
   margin-top: 0 !important;
 }
 
+.app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-meta {
+  min-height: 28px !important;
+  padding-bottom: 4px !important;
+}
+
 @media (min-width: 1181px) {
   .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor,
   .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-range {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(126px, auto) !important;
     align-items: end !important;
+  }
+
+  .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-actions {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
   }
 
   .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-editor button,

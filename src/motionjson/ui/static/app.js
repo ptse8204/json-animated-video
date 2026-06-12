@@ -2087,6 +2087,15 @@ const MotionJSONUI = (() => {
     return event.created_at || event.createdAt || event.timestamp || metadata.timestamp || "";
   }
 
+  function eventDisplayTimestamp(event = {}) {
+    const raw = String(eventTimestamp(event) || "");
+    if (!raw) return "";
+    const isoTime = raw.match(/T(\d{2}:\d{2}:\d{2})/);
+    if (isoTime) return isoTime[1];
+    const clockTime = raw.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+    return clockTime ? clockTime[1] : raw.slice(0, 19);
+  }
+
   function eventMessage(event = {}) {
     const metadata = eventMetadata(event);
     return event.message || metadata.message || event.stage || "job event";
@@ -9113,10 +9122,10 @@ const MotionJSONUI = (() => {
           const severity = eventSeverity(event);
           const severityLabel = severity === "bad" ? "Error" : severity === "warn" ? "Warning" : severity === "ready" ? "Recovery" : "Progress";
           const progressText = eventProgressText(event);
-          const chips = [metadata.objectId || "", metadata.provider || "", progressText].filter(Boolean);
+          const chips = [progressText].filter(Boolean);
           return `
             <div class="run-event-row is-${escapeAttribute(severity)}">
-              <span class="run-event-time">${escapeHtml(eventTimestamp(event) || "no time")}</span>
+              <span class="run-event-time">${escapeHtml(eventDisplayTimestamp(event) || "no time")}</span>
               <span class="run-event-phase">${escapeHtml(phase)}</span>
               <span class="run-event-severity">${escapeHtml(severityLabel)}</span>
               <p>${escapeHtml(eventMessage(event))}</p>
@@ -13618,13 +13627,64 @@ const MotionJSONUI = (() => {
             outputMode: "authoring",
             qualityPreset: "balanced",
           });
-          const eventAt = new Date().toISOString();
+          const eventBaseTime = Date.now();
+          const eventAt = (secondsAgo = 0) => new Date(eventBaseTime - secondsAgo * 1000).toISOString();
+          const preflightEvent = {
+            event_type: "preflight_complete",
+            status: "succeeded",
+            stage: "preflight",
+            message: "confirmed local source, SAM2 provider, and output destination",
+            created_at: eventAt(30),
+            metadata: {
+              progress: { overallRatio: 0.12, stageRatio: 1 },
+              provider: "sam2-local",
+              objectId: "selected_object",
+            },
+          };
+          const samplingEvent = {
+            event_type: "frame_sampling_complete",
+            status: "succeeded",
+            stage: "sampling",
+            message: "sampled 24 frames across the 1-180 trim range",
+            created_at: eventAt(24),
+            metadata: {
+              progress: { overallRatio: 0.26, stageRatio: 1, current: 24, total: 180 },
+              provider: "sam2-local",
+              objectId: "selected_object",
+            },
+          };
+          const proposalEvent = {
+            event_type: "proposal_ready",
+            status: "succeeded",
+            stage: "proposal",
+            message: "accepted selected object proposal for tracking",
+            created_at: eventAt(18),
+            metadata: {
+              progress: { overallRatio: 0.38, stageRatio: 1 },
+              provider: "sam2-local",
+              objectId: "selected_object",
+            },
+          };
+          const segmentationEvent = {
+            event_type: "segmentation_complete",
+            status: "succeeded",
+            stage: "segmentation",
+            message: "generated source mask for selected_object on frame 36",
+            created_at: eventAt(12),
+            metadata: {
+              progress: { overallRatio: 0.48, stageRatio: 1, current: 36, total: 180 },
+              provider: "sam2-local",
+              objectId: "selected_object",
+              frame: 36,
+              totalFrames: 180,
+            },
+          };
           const trackingEvent = {
             event_type: "tracking_progress",
             status: "running",
             stage: "tracking",
             message: "tracking selected object frame 36/180",
-            created_at: eventAt,
+            created_at: eventAt(6),
             metadata: {
               progress: { overallRatio: 0.56, stageRatio: 0.42, current: 36, total: 180 },
               provider: "sam2-local",
@@ -13638,7 +13698,7 @@ const MotionJSONUI = (() => {
             status: "running",
             stage: "raster_prep",
             message: "registered live mask preview and cutout for selected_object",
-            created_at: eventAt,
+            created_at: eventAt(),
             metadata: {
               progress: { overallRatio: 0.61, stageRatio: 0.18, current: 36, total: 180 },
               provider: "sam2-local",
@@ -13665,21 +13725,21 @@ const MotionJSONUI = (() => {
                 type: "tracking_progress",
                 stage: "tracking",
                 message: "tracking selected object frame 36/180",
-                createdAt: eventAt,
+                createdAt: eventAt(6),
               },
               actions: { canCancel: true, canRetry: false, canReview: false, canExport: false },
             },
-            updated_at: eventAt,
-            lastEventAt: eventAt,
+            updated_at: eventAt(),
+            lastEventAt: eventAt(),
             message: "tracking selected object frame 36/180",
-            events: [trackingEvent, artifactEvent],
+            events: [preflightEvent, samplingEvent, proposalEvent, segmentationEvent, trackingEvent, artifactEvent],
           };
           state.jobs = [job];
           state.selectedJobId = job.id;
           state.selectedJob = job;
           state.lastRunConfig = runConfig;
           state.runConfigsByJob[job.id] = runConfig;
-          state.jobEvents = [trackingEvent, artifactEvent];
+          state.jobEvents = [preflightEvent, samplingEvent, proposalEvent, segmentationEvent, trackingEvent, artifactEvent];
           state.jobArtifacts = [
             {
               id: "layout_selected_mask_preview",
