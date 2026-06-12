@@ -932,6 +932,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           setupPanelTitle: document.querySelector("#setupPanelTitle")?.textContent?.trim() || "",
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           uploadDropzoneBox: elementBox("#directUploadCard"),
+          sourceWorkflowCountChipVisible: visible(document.querySelector("#projectCount")) || visible(document.querySelector("#videoCount")),
           guidedProjectSummaryBox: elementBox("#guidedProjectSummary"),
           topbarActionClipping: (() => {
             const actions = document.querySelector(".topbar-actions");
@@ -1357,6 +1358,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     }
     if (stateValue.viewportWidth <= 720 && stateValue.topbarActionClipping) {
       failures.push(`${viewport.name}/${state}: mobile command bar should not clip status, help, or settings controls`);
+    }
+    if (state === "workflow-video" && stateValue.sourceWorkflowCountChipVisible) {
+      failures.push(`${viewport.name}/${state}: source step should not show project/video count chips as primary workflow content`);
     }
     if (state === "workflow-video" && stateValue.viewportWidth <= 720) {
       if (!stateValue.uploadDropzoneVisible || !stateValue.uploadDropzoneBox) {

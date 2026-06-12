@@ -6477,6 +6477,11 @@ body {
   order: 1;
 }
 
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #projectCount,
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) #videoCount {
+  display: none !important;
+}
+
 .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .setup-panel > .workflow-fragment[data-workflow-fragment="source_video"] {
   grid-column: 1;
   grid-row: auto;
