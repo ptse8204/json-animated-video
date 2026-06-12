@@ -335,6 +335,7 @@ async function waitForReady(cdp, capture, { timeoutMs = 15000 } = {}) {
           ready: document.readyState,
           capture: document.documentElement.dataset.capture || "",
           captureReady: document.documentElement.dataset.captureReady || "",
+          captureError: document.documentElement.dataset.captureError || "",
           bodyText: document.body?.innerText?.slice(0, 160) || ""
         })`,
       });
@@ -953,6 +954,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           studioObjectListVisible: visible(document.querySelector("#studioObjectList")),
           studioExportCardVisible: visible(document.querySelector("#studioExportCard")),
           studioExportIncludedText: document.querySelector("#studioExportIncludedObjects")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioExportReuseGuideVisible: visible(document.querySelector("#studioExportReuseGuide")),
+          studioExportReuseGuideText: document.querySelector("#studioExportReuseGuide")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioExportReuseActionCount: [...document.querySelectorAll("#studioExportReuseGuide [data-export-handoff-action]")]
+            .filter((element) => visible(element))
+            .length,
+          studioExportReuseRowOverflowCount: [...document.querySelectorAll("#studioExportReuseGuide .studio-export-reuse-row")]
+            .filter((element) => visible(element) && (element.scrollHeight - element.clientHeight > 2 || element.scrollWidth - element.clientWidth > 2))
+            .length,
           studioPartialDiagnosticVisible: visible(document.querySelector("#studioPartialDiagnostic")),
           studioPartialDiagnosticText: document.querySelector("#studioPartialDiagnostic")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
@@ -1070,6 +1079,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
               "#postRunGuide .post-run-stage",
               "#studioReviewPanel",
               "#studioExportDecision",
+              "#studioExportReuseGuide .studio-export-reuse-row",
               "#studioObjectList .studio-object-row",
               "#exportHandoffCards .handoff-card",
               "#exportSummary .diagnostic-row",
@@ -1662,6 +1672,24 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (reuseHandoffState && stateValue.workflowPrimaryLabel !== "Copy reuse steps") {
         failures.push(`${viewport.name}/${state}: reuse handoff screen should promote copying reusable object-layer steps`);
+      }
+      if (reuseHandoffState) {
+        if (!stateValue.studioExportReuseGuideVisible) {
+          failures.push(`${viewport.name}/${state}: reuse handoff screen should show inline object-layer handoff checks in the main workbench`);
+        }
+        const missingReuseTerms = ["Layer reuse checks", "Runtime snippet", "Copyable handoff steps", "MotionJSON scene", "Developer handoff"]
+          .filter((term) => !stateValue.studioExportReuseGuideText.includes(term));
+        if (missingReuseTerms.length) {
+          failures.push(`${viewport.name}/${state}: reuse handoff screen is missing inline handoff terms: ${missingReuseTerms.join(", ")}`);
+        }
+        if (stateValue.studioExportReuseActionCount < 4) {
+          failures.push(`${viewport.name}/${state}: reuse handoff screen should expose actionable open/copy handoff rows`);
+        }
+        if (stateValue.studioExportReuseRowOverflowCount) {
+          failures.push(`${viewport.name}/${state}: reuse handoff rows should not clip or overflow their text/actions`);
+        }
+      } else if (stateValue.studioExportReuseGuideVisible) {
+        failures.push(`${viewport.name}/${state}: pre-export checklist should not show reusable handoff actions before export succeeds`);
       }
       const expectedStudioTitle = reuseHandoffState ? "Reuse object layer" : "Export MotionJSON";
       if (stateValue.studioReviewTitle !== expectedStudioTitle || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible) {

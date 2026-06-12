@@ -5630,6 +5630,73 @@ const MotionJSONUI = (() => {
     return lines.join("\n\n");
   }
 
+  function handoffDetailForWorkflow(card) {
+    const detail = String(card?.detail || "").trim();
+    const safeDetail = detail && detail !== "handoff ready" && !detail.startsWith("/") && !detail.startsWith("file:") && !/^[a-z]:\\/i.test(detail)
+      ? detail
+      : "";
+    if (card?.ready) {
+      return [card.description, safeDetail].filter(Boolean).join(" ");
+    }
+    return safeDetail || card?.description || "Create this handoff from the reviewed MotionJSON export.";
+  }
+
+  function studioExportReuseGuideMarkup({ handoffCards = [], nextStepsText = "", copiedId = "", objectSummary = "", rightsText = "" } = {}) {
+    const nextStepsReady = Boolean(nextStepsText);
+    const headingMeta = [
+      objectSummary ? `Objects: ${objectSummary}` : "",
+      rightsText ? `Rights: ${rightsText}` : "",
+      "Open one preview path, confirm the selected objects, then copy the handoff steps.",
+    ].filter(Boolean).join(" ");
+    return `
+      <div class="studio-export-reuse-heading">
+        <strong>Layer reuse checks</strong>
+        <span class="row-meta">${escapeHtml(headingMeta)}</span>
+      </div>
+      ${handoffCards
+        .map(
+          (card) => `
+            <div class="studio-export-reuse-row is-${escapeAttribute(card.tone)}">
+              <div class="studio-export-reuse-copy">
+                <strong>${escapeHtml(card.title)}</strong>
+                <span class="row-meta">${escapeHtml(handoffDetailForWorkflow(card))}</span>
+                ${card.copied ? `<span class="copy-status">Copied to clipboard.</span>` : ""}
+              </div>
+              <div class="studio-export-reuse-action">
+                <span class="status-chip is-${escapeAttribute(card.tone)}">${escapeHtml(card.status)}</span>
+                <button
+                  type="button"
+                  class="${card.ready ? "mini-action" : "mini-action primary-action"}"
+                  data-export-handoff-action="${escapeAttribute(card.action)}"
+                  data-export-handoff-id="${escapeAttribute(card.id)}"
+                  ${card.url ? `data-export-handoff-url="${escapeAttribute(card.url)}"` : ""}
+                  ${card.disabled ? "disabled" : ""}
+                >${escapeHtml(card.actionLabel)}</button>
+              </div>
+            </div>
+          `,
+        )
+        .join("")}
+      <div class="studio-export-reuse-row export-handoff-step ${nextStepsReady ? "is-ready" : "is-warn"}">
+        <div class="studio-export-reuse-copy">
+          <strong>Copyable handoff steps</strong>
+          <span class="row-meta">${nextStepsReady ? "Includes reviewed objects, available packages, runtime snippet, and renderer handoff notes." : "Export the package to generate reusable handoff text."}</span>
+          ${copiedId === "nextSteps" ? `<span class="copy-status">Reuse steps copied to clipboard.</span>` : ""}
+        </div>
+        <div class="studio-export-reuse-action">
+          <span class="status-chip ${nextStepsReady ? "is-ready" : "is-warn"}">${nextStepsReady ? "Ready" : "Needs export"}</span>
+          <button
+            type="button"
+            class="mini-action"
+            data-export-handoff-action="copy"
+            data-export-handoff-id="nextSteps"
+            ${nextStepsReady ? "" : "disabled"}
+          >${copiedId === "nextSteps" ? "Copied" : "Copy steps"}</button>
+        </div>
+      </div>
+    `;
+  }
+
   function correctionDiagnosticMessages(entry) {
     const messages = [];
     const repair = entry?.repairDiagnostics || {};
@@ -6184,8 +6251,10 @@ const MotionJSONUI = (() => {
       const showAll = false;
       const visibleStepIds = [activeStep];
       const postRun = postRunSnapshot();
-      const exportSubscreen = activeStep === "review_export" && state.reviewExportSubscreen === "export";
       const reviewMode = reviewWorkflowMode();
+      const exportResultReady = Boolean(state.exportResult?.jobId && state.exportResult.jobId === state.selectedJobId);
+      const exportSubscreen = activeStep === "review_export" && (state.reviewExportSubscreen === "export" || state.activeJourneyPhase === "reuse" || exportResultReady);
+      const reuseHandoffMode = exportSubscreen && (exportResultReady || state.activeJourneyPhase === "reuse");
       const inspectorOpen = Boolean(state.railOpenedByUser) || !shell?.classList.contains("is-rail-collapsed");
       const showFailureDetails = !showAll && activeStep === "review_export" && (postRun.hasFailure || postRun.hasAttentionDiagnostics);
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
@@ -6194,6 +6263,7 @@ const MotionJSONUI = (() => {
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
+      shell?.classList.toggle("is-reuse-handoff", reuseHandoffMode);
       shell?.classList.toggle("is-review-workbench", reviewMode === "review");
       shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
       shell?.classList.toggle("is-source-required-prompt", sourceRequiredBeforePrompt);
@@ -6244,25 +6314,28 @@ const MotionJSONUI = (() => {
       const nav = $("#journeyNav");
       if (!nav) return;
       const activePhase =
-        activeStep === "choose_goal"
-          ? "goal"
-          : activeStep === "source_video"
-            ? "source"
-            : activeStep === "provider_settings"
-              ? "model"
-              : activeStep === "prompt_preview"
-                ? state.activeJourneyPhase === "preflight"
-                  ? "preflight"
-                  : "target"
-                : activeStep === "run_monitor"
-                  ? "run"
-                  : state.reviewExportSubscreen === "export"
-                    ? state.activeJourneyPhase === "reuse" || snapshot.exportResultReady
-                      ? "reuse"
-                      : "export"
-                    : state.activeJourneyPhase === "correct"
-                      ? "correct"
-                      : "review";
+        (() => {
+          const exportPhaseActive = state.reviewExportSubscreen === "export" || state.activeJourneyPhase === "reuse" || snapshot.exportResultReady;
+          return activeStep === "choose_goal"
+            ? "goal"
+            : activeStep === "source_video"
+              ? "source"
+              : activeStep === "provider_settings"
+                ? "model"
+                : activeStep === "prompt_preview"
+                  ? state.activeJourneyPhase === "preflight"
+                    ? "preflight"
+                    : "target"
+                  : activeStep === "run_monitor"
+                    ? "run"
+                    : exportPhaseActive
+                      ? state.activeJourneyPhase === "reuse" || snapshot.exportResultReady
+                        ? "reuse"
+                        : "export"
+                      : state.activeJourneyPhase === "correct"
+                        ? "correct"
+                        : "review";
+        })();
       const phaseReadiness = {
         goal: readiness.choose_goal,
         source: readiness.source_video,
@@ -9923,13 +9996,13 @@ const MotionJSONUI = (() => {
       const candidateSelectionMode = state.activeWorkflowStep === "candidate_selection";
       const reviewMode = reviewWorkflowMode();
       const correctMode = reviewMode === "correct";
-      const exportSubscreen = state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export";
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
       const exportResultReady = Boolean(state.exportResult?.jobId && state.exportResult.jobId === state.selectedJobId);
+      const exportSubscreen = state.activeWorkflowStep === "review_export" && (state.reviewExportSubscreen === "export" || state.activeJourneyPhase === "reuse" || exportResultReady);
       const reviewExportScreen = reviewExportScreenStateFromSnapshot({
-        mode: state.reviewExportSubscreen,
+        mode: exportSubscreen ? "export" : state.reviewExportSubscreen,
         exportResultReady: exportResultReady || state.activeJourneyPhase === "reuse",
         rowCount: rows.length,
         reviewedCount,
@@ -9977,6 +10050,8 @@ const MotionJSONUI = (() => {
       const canValidate = Boolean(state.selectedJobId && reviewedCount);
       const canExport = !exportAction.disabled;
       const correctionCount = asArray(state.correctionState?.history).length;
+      const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : exportArtifactsFromJobArtifacts(state.jobArtifacts);
+      const objectLayerPack = exportState.objectLayerPack || exported?.objectLayerPack || validation?.objectLayerPack || null;
       $("#studioExportAllButton").disabled = !canExport;
       $("#studioExportAllButton").textContent = exportAction.label || "Export MotionJSON";
       $("#studioExportAllButton").hidden = candidateSelectionMode || !exportSubscreen;
@@ -10023,6 +10098,10 @@ const MotionJSONUI = (() => {
           : decision;
         $("#studioExportDecision").innerHTML = exportDecisionMarkup(visibleDecision);
       }
+      const studioExportCard = $("#studioExportCard");
+      if (studioExportCard) {
+        studioExportCard.setAttribute("aria-label", reuseHandoffMode ? "Reusable object layer handoff" : "Export checklist");
+      }
       const readinessStrip = $("#studioReadinessStrip");
       if (readinessStrip) {
         readinessStrip.hidden = candidateSelectionMode || exportSubscreen;
@@ -10049,6 +10128,8 @@ const MotionJSONUI = (() => {
           ? `<strong>Partial result is reviewable</strong><span class="row-meta">${escapeHtml(failedTarget ? `The run failed at ${failedTarget}, but completed objects remain available below.` : failure.message || "The run failed after some objects were registered for review.")}</span>`
           : "";
       }
+      let reuseObjectText = `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`;
+      let rightsText = "Confirm source rights before sharing exported packages.";
       if ($("#studioExportIncludedObjects")) {
         const rowByExportId = new Map();
         for (const row of rows) {
@@ -10074,25 +10155,29 @@ const MotionJSONUI = (() => {
               .join(" - ")
           );
         };
-        const rightsText =
+        rightsText =
           readableRightsText(rightsSummary.displayText) ||
           readableRightsText(rightsSummary.display_text) ||
           readableRightsText(rightsSummary.summary) ||
           readableRightsText(rightsSummary) ||
           "Confirm source rights before sharing exported packages.";
-        const reuseObjectText = includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : `${includedIds.length || 0} selected object${includedIds.length === 1 ? "" : "s"}`;
-        const objectLayerText = `Controls object ids, visibility, frame timing, motion transforms, masks/cutouts, and validation metadata. Reuse ${reuseObjectText} with the exported scene graph and manifest in Canvas, Remotion, or an app-owned renderer.`;
+        reuseObjectText = includedRows.length ? includedRows.map((row) => row.label || row.objectId).join(", ") : reuseObjectText;
+        const objectLayerText = reuseHandoffMode
+          ? "Object ids, visibility, timing, transforms, masks/cutouts, and validation metadata."
+          : `Controls object ids, visibility, frame timing, motion transforms, masks/cutouts, and validation metadata. Reuse ${reuseObjectText} with the exported scene graph and manifest in Canvas, Remotion, or an app-owned renderer.`;
         $("#studioExportIncludedObjects").innerHTML = reviewExportScreen.mode === "export"
-          ? `
-              <div class="artifact-row">
+          ? reuseHandoffMode
+            ? ""
+            : `
+              <div class="artifact-row ${reuseHandoffMode ? "studio-export-fact-row" : ""}">
                 <strong>Included objects</strong>
                 <span class="row-meta">${escapeHtml(reuseObjectText)}</span>
               </div>
-              <div class="artifact-row">
+              <div class="artifact-row ${reuseHandoffMode ? "studio-export-fact-row" : ""}">
                 <strong>Rights note</strong>
                 <span class="row-meta">${escapeHtml(rightsText)}</span>
               </div>
-              <div class="artifact-row">
+              <div class="artifact-row ${reuseHandoffMode ? "studio-export-fact-row" : ""}">
                 <strong>Reusable object layer</strong>
                 <span class="row-meta">${escapeHtml(objectLayerText)}</span>
               </div>
@@ -10100,8 +10185,59 @@ const MotionJSONUI = (() => {
           : "";
       }
       if ($("#studioExportReuseGuide")) {
-        $("#studioExportReuseGuide").hidden = true;
-        $("#studioExportReuseGuide").innerHTML = "";
+        const reuseGuide = $("#studioExportReuseGuide");
+        if (reuseHandoffMode) {
+          const handoffCards = exportHandoffCards({
+            job,
+            includedIds,
+            pendingIds,
+            trackCount: state.reviewTracks.length,
+            assets: exportArtifacts,
+            objectLayerPack,
+            status,
+            copiedId: state.exportCopiedHandoffId,
+          });
+          const nextStepsText =
+            exportNextStepText({ exportState, assets: exportArtifacts, objectLayerPack }) ||
+            "Use the exported scene graph, manifest, masks/cutouts, and validation report as the reusable MotionJSON object layer.";
+          for (const card of handoffCards) {
+            if (card.copyText) state.exportCopyPayloads[card.id] = card.copyText;
+          }
+          if (nextStepsText) state.exportCopyPayloads.nextSteps = nextStepsText;
+          reuseGuide.hidden = false;
+          try {
+            reuseGuide.innerHTML = studioExportReuseGuideMarkup({
+              handoffCards,
+              nextStepsText,
+              copiedId: state.exportCopiedHandoffId,
+              objectSummary: reuseObjectText,
+              rightsText,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("Failed to render reuse handoff guide", error);
+            document.documentElement.dataset.captureError = message;
+            reuseGuide.innerHTML = `
+              <div class="studio-export-reuse-heading">
+                <strong>Layer reuse checks</strong>
+                <span class="row-meta">${escapeHtml([reuseObjectText ? `Objects: ${reuseObjectText}` : "", rightsText ? `Rights: ${rightsText}` : "", "Open an exported preview and copy the reusable object-layer steps."].filter(Boolean).join(" "))}</span>
+              </div>
+              <div class="studio-export-reuse-row export-handoff-step is-ready">
+                <div class="studio-export-reuse-copy">
+                  <strong>Copyable handoff steps</strong>
+                  <span class="row-meta">Use the exported scene graph, manifest, masks/cutouts, and validation report as the reusable MotionJSON object layer.</span>
+                </div>
+                <div class="studio-export-reuse-action">
+                  <span class="status-chip is-ready">Ready</span>
+                  <button type="button" class="mini-action" data-export-handoff-action="copy" data-export-handoff-id="nextSteps">Copy steps</button>
+                </div>
+              </div>
+            `;
+          }
+        } else {
+          reuseGuide.hidden = true;
+          reuseGuide.innerHTML = "";
+        }
       }
       if ($("#studioExportChecklist")) {
         $("#studioExportChecklist").innerHTML = reuseHandoffMode
@@ -14702,6 +14838,7 @@ const MotionJSONUI = (() => {
       const copied = await copyTextToClipboard(text);
       state.exportCopiedHandoffId = copied ? "nextSteps" : "";
       renderExportPanel();
+      renderStudioReviewPanel();
       renderWorkflowStepper();
       setRunAlert(
         copied ? "Reuse steps copied. Share them with the app, Remotion, or renderer that will consume this object layer." : "Could not copy reuse steps automatically.",
@@ -14727,6 +14864,7 @@ const MotionJSONUI = (() => {
         const copied = await copyTextToClipboard(state.exportCopyPayloads[id] || "");
         state.exportCopiedHandoffId = copied ? id : "";
         renderExportPanel();
+        renderStudioReviewPanel();
         $("#exportStatus").textContent = copied ? "Copied" : "Copy failed";
         $("#exportStatus").className = `status-chip ${copied ? "is-ready" : "is-bad"}`;
       }
@@ -14974,6 +15112,7 @@ const MotionJSONUI = (() => {
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
     $("#exportHandoffCards").addEventListener("click", handleExportHandoffAction);
     $("#exportNextSteps").addEventListener("click", handleExportHandoffAction);
+    $("#studioExportReuseGuide")?.addEventListener("click", handleExportHandoffAction);
     $("#reviewToolCards")?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-review-tool-id]");
       if (!button || button.disabled) return;

@@ -10521,13 +10521,29 @@ body {
   justify-self: center !important;
 }
 
-.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide {
+.app-shell.is-reuse-handoff:not(.is-workflow-dashboard) #studioExportDecision {
+  order: 2 !important;
+}
+
+.app-shell.is-reuse-handoff:not(.is-workflow-dashboard) #studioExportReuseGuide {
+  order: 3 !important;
+}
+
+.app-shell.is-reuse-handoff:not(.is-workflow-dashboard) #studioExportIncludedObjects {
+  order: 4 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
   display: grid !important;
-  grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr) !important;
-  gap: 4px 14px !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 0 18px !important;
   align-items: start !important;
   padding: 10px 0 !important;
   border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide[hidden] {
+  display: none !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-card > * {
@@ -10541,14 +10557,42 @@ body {
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-heading,
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-row {
   display: grid !important;
-  grid-template-columns: minmax(140px, 0.34fr) minmax(0, 1fr) !important;
-  gap: 8px 14px !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  gap: 6px !important;
   align-items: start !important;
-  padding: 9px 0 !important;
+  padding: 8px 0 !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-heading {
+  grid-column: 1 / -1 !important;
+  grid-template-columns: minmax(0, 0.35fr) minmax(0, 0.65fr) !important;
   border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-copy {
+  display: grid !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-copy strong {
+  color: var(--ink, #202a36) !important;
+  font-size: 13px !important;
+  font-weight: 820 !important;
+  line-height: 1.22 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-action {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  min-width: 0 !important;
+}
+
+.app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-action button {
+  min-height: 30px !important;
+  white-space: nowrap !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-object-row.is-selected,
@@ -10867,6 +10911,32 @@ body {
 
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide > strong {
     grid-row: auto !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-action {
+    justify-content: flex-start !important;
+  }
+
+}
+
+@media (max-width: 680px) {
+  .app-shell.is-reuse-handoff:not(.is-workflow-dashboard) .studio-export-heading {
+    display: none !important;
+  }
+
+  .app-shell.is-reuse-handoff:not(.is-workflow-dashboard) #studioExportDecision {
+    display: none !important;
+  }
+
+  .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
+    grid-template-columns: minmax(0, 1fr) !important;
+    max-height: min(360px, calc(100vh - 500px)) !important;
+    overflow: auto !important;
+    scrollbar-gutter: stable !important;
   }
 }
 
