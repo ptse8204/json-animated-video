@@ -906,7 +906,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           modelSetupOptionsSummaryAria: document.querySelector("#modelSetupPanel .model-setup-options summary")?.getAttribute("aria-label") || "",
           modelSetupAdvancedOpen: document.querySelector("#modelSetupPanel .model-setup-advanced")?.open === true,
           modelSetupAdvancedSummaryAria: document.querySelector("#modelSetupPanel .model-setup-advanced summary")?.getAttribute("aria-label") || "",
-          modelSetupPrimaryActionAria: document.querySelector("#modelSetupPanel .model-setup-guided-card .primary-action")?.getAttribute("aria-label") || "",
+          modelSetupPrimaryActionAria: document.querySelector("#modelSetupPanel .model-setup-normal-actions > button")?.getAttribute("aria-label") || "",
           modelSetupRescanCount: document.querySelectorAll("#modelSetupPanel [data-model-setup-action='rescan-runtime']").length,
           modelSetupUseAnywayOutsideAdvancedCount: [...document.querySelectorAll("#modelSetupPanel button")].filter((button) => /Use this anyway/i.test(button.textContent || "") && !button.closest(".model-setup-advanced")).length,
           modelSetupUseAnywayAdvancedCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-advanced button")].filter((button) => /Use this anyway/i.test(button.textContent || "")).length,
