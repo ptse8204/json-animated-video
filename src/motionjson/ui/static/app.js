@@ -6897,7 +6897,15 @@ const MotionJSONUI = (() => {
         const enginePlan = guidedEnginePlan(collectFormState($));
         const label = enginePlan.displayLabel || enginePlan.providerName || "Provider pending";
         const locality = enginePlan.locality ? ` - ${enginePlan.locality}` : "";
-        providerChip.textContent = `${label}${locality}`;
+        const fullLabel = `${label}${locality}`;
+        const shortLabel = label
+          .replace(/\bworkflow\b/gi, "")
+          .replace(/\s+-\s+no_model\b/gi, "")
+          .replace(/\s+/g, " ")
+          .trim() || "Provider";
+        providerChip.textContent = fullLabel;
+        providerChip.title = fullLabel;
+        providerChip.dataset.shortLabel = shortLabel.length > 22 ? `${shortLabel.slice(0, 21).trim()}...` : shortLabel;
         providerChip.className = `status-chip ${enginePlan.locality === "hosted" ? "is-warn" : label === "Provider pending" ? "is-muted" : "is-neutral"}`;
       }
       const summary = $("#diagnosticsSummary");
@@ -7180,21 +7188,41 @@ const MotionJSONUI = (() => {
     function sourceRequiredMarkup({
       title = "Add a source video first",
       message = "MotionJSON needs a readable local source before this step can be prepared truthfully.",
+      steps = [],
+      next = "",
+      compactSequence = false,
     } = {}) {
+      const stepMarkup = Array.isArray(steps) && steps.length
+        ? `
+          <ol class="source-required-steps" aria-label="What happens after adding a source video">
+            ${steps.map((step) => `
+              <li${step.compact ? ` data-compact-text="${escapeAttribute(step.compact)}"` : ""}>
+                <span class="source-required-step-label">${escapeHtml(step.label || "")}</span>
+                <span>${escapeHtml(step.text || "")}</span>
+              </li>
+            `).join("")}
+          </ol>
+        `
+        : "";
+      const nextMarkup = next ? `<p class="source-required-next">${escapeHtml(next)}</p>` : "";
       return `
-        <div class="source-required-stage">
+        <div class="source-required-stage${compactSequence ? " is-compact-sequence" : ""}">
           <p class="section-kicker">Source required</p>
           <h3>${escapeHtml(title)}</h3>
           <p>${escapeHtml(message)}</p>
+          ${stepMarkup}
+          ${nextMarkup}
         </div>
       `;
     }
 
     function renderModelSetup() {
+      const panel = $("#modelSetupPanel");
       const status = $("#modelSetupStatus");
       const choices = $("#modelSetupChoices");
       const detail = $("#modelSetupDetail");
       if (!status || !choices || !detail) return;
+      panel?.classList.remove("is-source-required");
 
       if (!state.providerSettings) {
         setModelSetupStatusChip(status, state.errors.providerSettings ? "Unavailable" : "Not loaded", state.errors.providerSettings ? "bad" : "muted", state.errors.providerSettings || "Provider settings have not loaded yet.");
@@ -7204,12 +7232,20 @@ const MotionJSONUI = (() => {
       }
 
       if (state.selectedPreset !== "review_existing" && !selectedVideo()) {
+        panel?.classList.add("is-source-required");
         setModelSetupStatusChip(status, "Needs source", "warn", "Add a source video before preparing model setup.");
         choices.className = "model-choice-grid";
         choices.innerHTML = "";
         detail.innerHTML = sourceRequiredMarkup({
           title: "Add a source video before model setup",
           message: "The recommended provider path depends on the selected video, trim, frame budget, and whether MotionJSON can read the source locally.",
+          steps: [
+            { label: "Source", compact: "Pick file or demo", text: "Choose a local file or demo video so MotionJSON can inspect real frames." },
+            { label: "Preview", compact: "Check frames", text: "MotionJSON checks browser preview, trim range, frame budget, and local readability." },
+            { label: "Model path", compact: "Show safe path", text: "This step then shows one local-first provider path plus any install, cache, or consent action." },
+          ],
+          next: "Use the footer action to return to Source. Provider settings stay hidden until they can be prepared truthfully.",
+          compactSequence: true,
         });
         return;
       }
@@ -8261,6 +8297,23 @@ const MotionJSONUI = (() => {
       });
     }
 
+    function clearBrowserSecretInputs(root = document) {
+      root
+        ?.querySelectorAll?.(
+          [
+            "[data-model-setup-field='apiKey']",
+            "[data-model-setup-field='hfToken']",
+            "[data-provider-field='apiKey']",
+            "[data-provider-field='hfToken']",
+          ].join(", "),
+        )
+        .forEach((input) => {
+          input.value = "";
+          input.defaultValue = "";
+          input.setAttribute("value", "");
+        });
+    }
+
     function modelSetupPayloadForAction(form, action, providerId, confirmed = false) {
       const snapshot = confirmed ? state.confirmedModelSetupAction : null;
       if (
@@ -8314,6 +8367,7 @@ const MotionJSONUI = (() => {
       }
       renderModelSetup();
       renderWorkflowStepper();
+      clearBrowserSecretInputs(document);
       if (job?.id && !job.terminal) pollProviderSetupJob(job.id);
       return job;
     }
@@ -8369,10 +8423,9 @@ const MotionJSONUI = (() => {
         body: JSON.stringify(payload),
       });
       state.providerSettings = response;
-      row.querySelectorAll("[data-provider-field='apiKey']").forEach((input) => {
-        input.value = "";
-      });
+      clearBrowserSecretInputs(document);
       await refreshAll();
+      clearBrowserSecretInputs(document);
     }
 
     function renderProjects() {
@@ -15607,12 +15660,11 @@ const MotionJSONUI = (() => {
             body: JSON.stringify(modelSetupPayloadFromForm(form)),
           });
           state.providerSettings = response;
-          form.querySelectorAll("[data-model-setup-field='apiKey'], [data-model-setup-field='hfToken']").forEach((input) => {
-            input.value = "";
-          });
+          clearBrowserSecretInputs(document);
           state.modelSetupMessage = "Model connection saved. Diagnose checks saved settings without making a hosted network call.";
           state.modelSetupTone = "ready";
           await refreshAll();
+          clearBrowserSecretInputs(document);
         } else if (action === "diagnose") {
           await startProviderSetupJob(providerId, "diagnose", {
             settings: form ? modelSetupPayloadFromForm(form) : {},

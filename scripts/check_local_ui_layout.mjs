@@ -831,6 +831,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           projectDrawerAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
           mainWorkflowOnly: !document.querySelector("#detailsToggle") && !document.querySelector("#workflowDashboardToggle"),
           railCloseControls: document.querySelector("#railCloseButton")?.getAttribute("aria-controls") || "",
+          railCloseVisible: visible(document.querySelector("#railCloseButton")),
           rightRailWidth: Math.round(rightRailBox?.width || 0),
           workflowKeyshortcuts: document.querySelector("#workflowStepper")?.getAttribute("aria-keyshortcuts") || "",
           workflowFocusedStep: document.activeElement?.dataset?.workflowStep || "",
@@ -848,6 +849,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           viewerToolbarVisible: visible(document.querySelector(".viewer-toolbar")),
           targetSourceRequiredVisible: visible(document.querySelector("#targetSourceRequired")),
           targetSourceRequiredText: document.querySelector("#targetSourceRequired")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          targetSourceRequiredStepCount: [...document.querySelectorAll("#targetSourceRequired .source-required-steps li")].filter(visible).length,
           pointToolVisible: visible(document.querySelector("[data-tool='point']")),
           boxToolVisible: visible(document.querySelector("[data-tool='box']")),
           adaptiveSummaryVisible: visible(document.querySelector("#adaptiveParameterSummary")),
@@ -899,6 +901,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           modelSetupStatusAria: document.querySelector("#modelSetupStatus")?.getAttribute("aria-label") || "",
           modelSetupGuidedTitle: document.querySelector("#modelSetupPanel .model-setup-recommendation-title")?.textContent?.trim() || "",
           modelSetupSourceRequiredVisible: visible(document.querySelector("#modelSetupPanel .source-required-stage")),
+          modelSetupSourceRequiredText: document.querySelector("#modelSetupPanel .source-required-stage")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          modelSetupSourceRequiredStepCount: [...document.querySelectorAll("#modelSetupPanel .source-required-steps li")].filter(visible).length,
           modelSetupKicker: document.querySelector("#modelSetupPanel .model-setup-recommendation-copy .section-kicker")?.textContent?.trim() || "",
           modelSetupChecklistCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item")].filter(visible).length,
           modelSetupChecklistAriaCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-check-item[aria-label]")].filter(visible).length,
@@ -1181,6 +1185,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railCollapsed || !stateValue.railVisible || stateValue.detailsExpanded !== "true")) {
       failures.push(`${viewport.name}/${state}: diagnostics rail did not open accessibly`);
     }
+    if (state === "diagnostics-open" && stateValue.railVisible && !stateValue.railCloseVisible) {
+      failures.push(`${viewport.name}/${state}: diagnostics drawer should expose a visible close button`);
+    }
     if (state === "diagnostics-open" && viewport.width > 1180 && (stateValue.railAriaHidden === "true" || stateValue.railInert)) {
       failures.push(`${viewport.name}/${state}: diagnostics rail should not be inert while open`);
     }
@@ -1316,6 +1323,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (stateValue.modelSetupStatusText !== "Needs source" || !stateValue.modelSetupSourceRequiredVisible) {
         failures.push(`${viewport.name}/${state}: model step without a source video should show a source-required model setup state`);
       }
+      if (stateValue.modelSetupSourceRequiredStepCount < 3 || !/Choose a local file|demo video/i.test(stateValue.modelSetupSourceRequiredText) || !/local-first provider path/i.test(stateValue.modelSetupSourceRequiredText)) {
+        failures.push(`${viewport.name}/${state}: model source-required state should explain the source, preview, and provider recommendation sequence`);
+      }
       if (stateValue.modelSetupGuidedTitle) {
         failures.push(`${viewport.name}/${state}: model step without a source video should not expose a ready provider recommendation`);
       }
@@ -1382,6 +1392,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "workflow-prompts" && stateValue.browserPreviewTitle === "Preview not ready") {
       if (!stateValue.targetSourceRequiredVisible || !/Add a source video/i.test(stateValue.targetSourceRequiredText)) {
         failures.push(`${viewport.name}/${state}: target step without a source video should show one source-required work surface`);
+      }
+      if (stateValue.targetSourceRequiredStepCount < 3 || !/browser-safe preview/i.test(stateValue.targetSourceRequiredText) || !/Target tools/i.test(stateValue.targetSourceRequiredText)) {
+        failures.push(`${viewport.name}/${state}: target source-required state should explain the source, frame, and target-tool sequence`);
       }
       if (stateValue.viewerToolbarVisible || stateValue.pointToolVisible || stateValue.wizardPanelVisible || stateValue.configPanelVisible) {
         failures.push(`${viewport.name}/${state}: target step without a source video should hide prompt, wizard, and preflight controls`);

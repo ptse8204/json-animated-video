@@ -459,10 +459,25 @@
               </div>
             </div>
 
-            <div id="targetSourceRequired" class="source-required-stage" data-workflow-fragment="prompt_preview" data-testid="target-source-required" hidden>
+            <div id="targetSourceRequired" class="source-required-stage is-compact-sequence" data-workflow-fragment="prompt_preview" data-testid="target-source-required" hidden>
               <p class="section-kicker">Source required</p>
               <h3>Add a source video before defining the target</h3>
               <p>MotionJSON needs a readable frame before point, box, brush, label, keyframe, or preflight controls can be useful.</p>
+              <ol class="source-required-steps" aria-label="What happens after adding a source video">
+                <li data-compact-text="Pick file or demo">
+                  <span class="source-required-step-label">Source</span>
+                  <span>Choose a local file or demo video so MotionJSON can prepare real frames.</span>
+                </li>
+                <li data-compact-text="Load frame">
+                  <span class="source-required-step-label">Frame</span>
+                  <span>MotionJSON creates a browser-safe preview and confirms frame coordinates.</span>
+                </li>
+                <li data-compact-text="Draw target">
+                  <span class="source-required-step-label">Target tools</span>
+                  <span>Point, box, brush, label, and discovery controls appear after the frame is ready.</span>
+                </li>
+              </ol>
+              <p class="source-required-next">Use the footer action to return to Source. Target tools stay hidden until a readable frame exists.</p>
             </div>
 
             <div id="viewerStage" class="viewer-stage" tabindex="0" aria-label="Video frame and prompt overlay" aria-keyshortcuts="ArrowLeft ArrowRight Shift+ArrowLeft Shift+ArrowRight Space M P B E">
@@ -967,7 +982,9 @@
             type="button"
             aria-controls="diagnosticsRail"
             aria-expanded="true"
-          >Hide details</button>
+            aria-label="Close inspector"
+            title="Close inspector"
+          >Close</button>
         </div>
 
         <details id="usageInspectorDisclosure" class="rail-section usage-inspector-section" open data-testid="usage-drawer">
