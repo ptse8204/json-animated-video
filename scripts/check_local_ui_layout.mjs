@@ -794,6 +794,30 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           if (!element || !visible(element)) return null;
           return elementMetrics(element);
         };
+        const clippedElementBox = (element) => {
+          if (!element || !visible(element)) return null;
+          let rect = element.getBoundingClientRect();
+          let top = rect.top;
+          let right = rect.right;
+          let bottom = rect.bottom;
+          let left = rect.left;
+          for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
+            const style = getComputedStyle(ancestor);
+            const overflow = style.overflow + " " + style.overflowX + " " + style.overflowY;
+            if (!/(auto|scroll|hidden|clip)/.test(overflow)) continue;
+            const box = ancestor.getBoundingClientRect();
+            top = Math.max(top, box.top);
+            right = Math.min(right, box.right);
+            bottom = Math.min(bottom, box.bottom);
+            left = Math.max(left, box.left);
+          }
+          top = Math.max(top, 0);
+          right = Math.min(right, window.innerWidth);
+          bottom = Math.min(bottom, window.innerHeight);
+          left = Math.max(left, 0);
+          if (right - left <= 0 || bottom - top <= 0) return null;
+          return { top, right, bottom, left, width: right - left, height: bottom - top };
+        };
         return {
           viewportHeight: window.innerHeight,
           viewportWidth: window.innerWidth,
@@ -1074,7 +1098,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
             })
             .length,
           fixedFooterOcclusions: (() => {
-            const footer = document.querySelector("#workflowController");
+            const footer = document.querySelector("[data-testid='command-footer']");
             if (!visible(footer)) return [];
             const footerBox = footer.getBoundingClientRect();
             const selectors = [
@@ -1083,6 +1107,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
               "#studioReviewPanel",
               "#studioExportDecision",
               "#studioExportReuseGuide .studio-export-reuse-row",
+              ".review-tools-panel",
+              "#reviewToolCards .review-tool-card",
               "#studioObjectList .studio-object-row",
               "#exportHandoffCards .handoff-card",
               "#exportSummary .diagnostic-row",
@@ -1092,7 +1118,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
             for (const selector of selectors) {
               for (const element of document.querySelectorAll(selector)) {
                 if (!visible(element)) continue;
-                const box = element.getBoundingClientRect();
+                const box = clippedElementBox(element);
+                if (!box) continue;
                 const x = Math.min(footerBox.right, box.right) - Math.max(footerBox.left, box.left);
                 const y = Math.min(footerBox.bottom, box.bottom) - Math.max(footerBox.top, box.top);
                 if (x > 2 && y > 2) overlaps.push(selector);
@@ -1647,6 +1674,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible || !/Included objects|Rights note/.test(stateValue.studioExportIncludedText)) {
         failures.push(`${viewport.name}/${state}: export screen should show package readiness, included objects, and rights notes instead of the review object list`);
+      }
+      if (stateValue.reviewToolsVisible) {
+        failures.push(`${viewport.name}/${state}: export screen should not show the reuse-preview tool strip before the handoff step`);
       }
       if (stateValue.reviewCandidateSlotVisible && /Track selected|not background|coverage/i.test(stateValue.reviewCandidateSlotText)) {
         failures.push(`${viewport.name}/${state}: export screen should not show candidate filter/track controls ahead of the export gate`);

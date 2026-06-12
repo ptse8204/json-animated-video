@@ -59,7 +59,7 @@ test("browser mobile first load keeps primary workflow controls visible", { skip
     await page.setViewport(390, 844);
     await openFreshUi(page);
     await page.waitForVisible('[data-testid="workflow-primary"]');
-    await page.assertText('[data-testid="workflow-primary"]', /Continue to video/i);
+    await page.assertText('[data-testid="workflow-primary"]', /Continue to source/i);
     await page.assertNoConsoleErrors();
   });
 });
@@ -92,7 +92,7 @@ test("browser completes mock/no-model run, review correction, and export", { ski
       const select = document.querySelector('[data-testid="video-select"]');
       return Boolean(select?.value && select.options.length);
     }, "demo video selected");
-    await waitForWorkflowPrimary(page, /Continue to prepare/i);
+    await waitForWorkflowPrimary(page, /Continue to (model|target|preflight)|Start extraction/i);
     await page.clickTestId("workflow-primary");
     const { projectId, videoId } = await selectedProjectVideo(page);
     const created = await createMockJobFromBrowser(page, projectId, videoId);

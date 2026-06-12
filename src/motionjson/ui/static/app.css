@@ -9002,8 +9002,9 @@ body {
   .workspace {
     grid-column: 1;
     grid-row: 2;
-    height: calc(100vh - 55px);
+    height: calc(100vh - 55px - 88px);
     padding-right: 14px;
+    padding-bottom: 20px;
     padding-left: 14px;
   }
 
@@ -10194,12 +10195,12 @@ body {
 
   .workflow-footer,
   .app-shell.is-journey-collapsed .workflow-footer {
-    position: static !important;
-    right: auto !important;
-    bottom: auto !important;
-    left: auto !important;
-    width: 100%;
-    margin: 18px 0 0;
+    position: fixed !important;
+    right: 14px !important;
+    bottom: 0 !important;
+    left: 14px !important;
+    width: auto;
+    margin: 0;
   }
 
   .workflow-footer-actions,
@@ -10271,8 +10272,8 @@ body {
   display: grid !important;
   width: 100% !important;
   max-width: none !important;
-  min-height: min(540px, calc(100vh - 288px)) !important;
-  max-height: calc(100vh - 288px) !important;
+  min-height: min(500px, calc(100vh - 176px)) !important;
+  max-height: calc(100vh - 176px) !important;
   grid-template-columns: minmax(460px, 0.92fr) minmax(540px, 1.08fr) !important;
   grid-template-rows: minmax(0, 1fr) !important;
   grid-template-areas: "viewer review" !important;
@@ -10283,7 +10284,7 @@ body {
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .workspace-grid {
   max-width: 1160px !important;
   min-height: 0 !important;
-  max-height: none !important;
+  max-height: calc(100vh - 176px) !important;
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-areas: "review" !important;
   justify-content: center !important;
@@ -10316,6 +10317,7 @@ body {
   display: grid !important;
   min-width: 0 !important;
   min-height: 0 !important;
+  max-height: calc(100vh - 176px) !important;
   overflow: hidden !important;
   grid-template-columns: minmax(0, 1fr) !important;
   grid-template-rows: min-content min-content minmax(104px, 138px) min-content minmax(180px, 1fr) !important;
@@ -10341,13 +10343,13 @@ body {
     "objects"
     "corrections" !important;
   gap: 8px 16px !important;
-  overflow: visible !important;
-  max-height: none !important;
+  overflow: hidden !important;
+  max-height: calc(100vh - 176px) !important;
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .workspace-grid {
   min-height: 0 !important;
-  max-height: none !important;
+  max-height: calc(100vh - 176px) !important;
   align-items: start !important;
 }
 
@@ -10358,7 +10360,9 @@ body {
     "reviewHead"
     "exportCard"
     "tools" !important;
-  overflow: visible !important;
+  max-height: calc(100vh - 176px) !important;
+  overflow: auto !important;
+  scrollbar-gutter: stable !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-review-heading,
@@ -10789,8 +10793,7 @@ body {
 }
 
 .app-shell.is-correct-workbench:not(.is-workflow-dashboard) .correction-meta {
-  min-height: 28px !important;
-  padding-bottom: 4px !important;
+  display: none !important;
 }
 
 @media (min-width: 1181px) {
@@ -10819,15 +10822,73 @@ body {
   scrollbar-gutter: stable !important;
 }
 
-.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tools-panel {
-  grid-area: tools !important;
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-heading {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportChecklistNote {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportDecision,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportIncludedObjects,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportChecklist {
   display: grid !important;
-  align-content: start !important;
-  overflow: visible !important;
-  padding: 10px 0 !important;
-  border-top: 1px solid var(--workflow-line, var(--border)) !important;
-  border-bottom: 1px solid var(--workflow-line, var(--border)) !important;
-  border-left: 0 !important;
+  gap: 0 !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportChecklist {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 0 12px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .export-decision,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .artifact-row,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row {
+  min-height: 0 !important;
+  padding-top: 6px !important;
+  padding-bottom: 6px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row {
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  align-items: center !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row small {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
+  padding: 6px 0 !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-heading,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-row {
+  gap: 3px !important;
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-row {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-copy {
+  gap: 2px !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-copy .row-meta {
+  display: none !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-reuse-action {
+  justify-content: flex-end !important;
+}
+
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tools-panel {
+  display: none !important;
 }
 
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .review-tool-grid {
@@ -11451,21 +11512,21 @@ body {
 
 @media (max-width: 620px) {
   .workspace {
-    height: calc(100vh - 57px) !important;
-    max-height: calc(100vh - 57px) !important;
-    padding-bottom: 16px !important;
+    height: calc(100vh - 57px - 92px) !important;
+    max-height: calc(100vh - 57px - 92px) !important;
+    padding-bottom: 28px !important;
   }
 
   .app-shell:not(.is-workflow-dashboard) .workspace,
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
-    height: calc(100vh - 57px) !important;
-    max-height: calc(100vh - 57px) !important;
-    padding-bottom: 16px !important;
+    height: calc(100vh - 57px - 92px) !important;
+    max-height: calc(100vh - 57px - 92px) !important;
+    padding-bottom: 28px !important;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .workspace {
-    height: calc(100vh - 57px) !important;
-    max-height: calc(100vh - 57px) !important;
+    height: calc(100vh - 57px - 92px) !important;
+    max-height: calc(100vh - 57px - 92px) !important;
   }
 
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
