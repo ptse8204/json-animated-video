@@ -1518,7 +1518,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (!stateValue.runEventsListBox || stateValue.runEventsListBox.top >= footerTop - 24) {
         failures.push(`${viewport.name}/${state}: run event rows should be readable above the command footer in the first viewport`);
       }
-      if (stateValue.runEventListClientHeight < 120 || stateValue.runEventFullyVisibleRowCount < Math.min(3, stateValue.runEventRowCount || 3)) {
+      const requiredRunEventRows = Math.min(3, stateValue.runEventRowCount || 3);
+      if (
+        stateValue.runEventFullyVisibleRowCount < requiredRunEventRows ||
+        stateValue.runEventListClientHeight < requiredRunEventRows * 18
+      ) {
         failures.push(`${viewport.name}/${state}: run event ledger should expose at least three full readable rows on desktop`);
       }
       if (stateValue.runEventRowOverflowCount > 0) {
@@ -1827,8 +1831,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         failures.push(`${viewport.name}/${state}: removed dashboard controls are still present`);
       }
       const visiblePanels = stateValue.workflowPanels.filter((panel) => panel.visible);
-      if (visiblePanels.length < 2) {
-        failures.push(`${viewport.name}/${state}: main workflow exposed too few inline panels (${visiblePanels.length})`);
+      if (visiblePanels.length !== 1) {
+        failures.push(`${viewport.name}/${state}: normal workflow should keep one primary stage visible, not a dashboard of ${visiblePanels.length} panels`);
       }
     }
     if (screenshotDir) {

@@ -6799,17 +6799,25 @@ const MotionJSONUI = (() => {
         if (!pendingWorkflowKeyboardFocus) return;
         workflowStepButton(pendingWorkflowKeyboardFocus)?.focus();
       };
-      document.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-workflow-step]");
-        if (!button) return;
-        if (button.disabled) return;
+      const workflowButtonsForKeyboard = (button) => {
+        const scope = button.closest("#journeyNav") || button.closest("#studioProgressStepper") || document;
+        const selector = scope.id === "journeyNav" ? "#journeyNav [data-workflow-step]" : "#studioProgressStepper [data-workflow-step]";
+        return [...document.querySelectorAll(selector)].filter((item) => !item.disabled);
+      };
+      const activateWorkflowButton = (button, { focusStep = true } = {}) => {
+        if (!button || button.disabled) return;
         if (button.dataset.journeyPhase) state.activeJourneyPhase = button.dataset.journeyPhase;
         if (document.documentElement.dataset.capture === "workflow-export" && button.dataset.workflowStep === "review_export") {
           state.reviewExportSubscreen = "export";
         } else if (button.dataset.reviewSubscreen) {
           state.reviewExportSubscreen = button.dataset.reviewSubscreen === "export" ? "export" : "review";
         }
-        setWorkflowStep(button.dataset.workflowStep, { focusStep: true });
+        setWorkflowStep(button.dataset.workflowStep, { focusStep });
+      };
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-workflow-step]");
+        if (!button) return;
+        activateWorkflowButton(button, { focusStep: true });
       });
       document.addEventListener("click", (event) => {
         const button = event.target.closest("[data-workflow-screen]");
@@ -6821,8 +6829,9 @@ const MotionJSONUI = (() => {
       document.addEventListener("keydown", (event) => {
         const button = event.target.closest("[data-workflow-step]");
         if (!button) return;
-        const buttons = [...document.querySelectorAll("#studioProgressStepper [data-workflow-step]")];
+        const buttons = workflowButtonsForKeyboard(button);
         const index = buttons.indexOf(button);
+        if (index < 0) return;
         const keyTargets = {
           ArrowRight: index + 1,
           ArrowDown: index + 1,
@@ -6836,10 +6845,11 @@ const MotionJSONUI = (() => {
         const nextButton = buttons[clamp(keyTargets[event.key], 0, buttons.length - 1)];
         if (nextButton) {
           pendingWorkflowKeyboardFocus = nextButton.dataset.workflowStep || "";
-          setWorkflowStep(pendingWorkflowKeyboardFocus, { focusStep: false });
-          window.requestAnimationFrame(() => focusWorkflowKeyboardStep());
-          window.setTimeout(() => focusWorkflowKeyboardStep(), 80);
-          window.setTimeout(() => focusWorkflowKeyboardStep(), 300);
+          activateWorkflowButton(nextButton, { focusStep: false });
+          const focusNextButton = () => nextButton.focus();
+          window.requestAnimationFrame(focusNextButton);
+          window.setTimeout(focusNextButton, 80);
+          window.setTimeout(focusNextButton, 300);
         }
       });
       document.addEventListener("keyup", (event) => {
@@ -7036,9 +7046,11 @@ const MotionJSONUI = (() => {
       }
       projectDrawerToggle?.addEventListener("click", () => {
         setSidebarCollapsed(false, { focusToggle: true });
+        if (window.innerWidth > 900) setJourneyCollapsed(false);
       });
       sidebarToggle?.addEventListener("click", () => {
         setSidebarCollapsed(true, { focusToggle: true });
+        if (window.innerWidth > 900) setJourneyCollapsed(false);
       });
       railCloseButton?.addEventListener("click", () => {
         state.railOpenedByUser = false;
@@ -10320,7 +10332,7 @@ const MotionJSONUI = (() => {
       if (correctionSection) correctionSection.hidden = candidateSelectionMode || exportSubscreen || !correctMode;
       if (artifactSection) artifactSection.hidden = candidateSelectionMode || exportSubscreen || lifecycle?.status !== "failed";
       if (segmentGate) segmentGate.hidden = !showCandidateSection;
-      if (list) list.hidden = candidateSelectionMode || exportSubscreen;
+      if (list) list.hidden = candidateSelectionMode || exportSubscreen || showCandidateSection;
     }
 
     function renderStudioShell(activeStep = normalizeWorkflowStepId(state.activeWorkflowStep)) {
