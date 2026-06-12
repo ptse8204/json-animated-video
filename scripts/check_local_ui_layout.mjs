@@ -875,6 +875,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           uploadDropzoneVisible: visible(document.querySelector("#directUploadCard")),
           uploadDropzoneBox: elementBox("#directUploadCard"),
           guidedProjectSummaryBox: elementBox("#guidedProjectSummary"),
+          topbarActionClipping: (() => {
+            const actions = document.querySelector(".topbar-actions");
+            if (!actions || !visible(actions)) return false;
+            const actionBox = actions.getBoundingClientRect();
+            return [...actions.children].filter(visible).some((child) => {
+              const box = child.getBoundingClientRect();
+              return (
+                box.left < actionBox.left - 1 ||
+                box.right > actionBox.right + 1
+              );
+            });
+          })(),
           wizardPanelTitle: document.querySelector("#wizardPanelTitle")?.textContent?.trim() || "",
           wizardPanelVisible: visible(document.querySelector(".wizard-panel")),
           configPanelTitle: document.querySelector("#configPanelTitle")?.textContent?.trim() || "",
@@ -1154,6 +1166,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (stateValue.journeyPhaseCount !== 10) {
       failures.push(`${viewport.name}/${state}: journey should expose ten workflow phases including Reuse`);
     }
+    if (stateValue.viewportWidth <= 720 && stateValue.topbarActionClipping) {
+      failures.push(`${viewport.name}/${state}: mobile command bar should not clip status, help, or settings controls`);
+    }
     if (state === "workflow-video" && stateValue.viewportWidth <= 720) {
       if (!stateValue.uploadDropzoneVisible || !stateValue.uploadDropzoneBox) {
         failures.push(`${viewport.name}/${state}: mobile source step should show the source upload control`);
@@ -1166,6 +1181,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           failures.push(`${viewport.name}/${state}: mobile source upload control should appear before project metadata`);
         }
       }
+    }
+    if (
+      state === "workflow-video" &&
+      stateValue.viewportWidth > 720 &&
+      stateValue.guidedProjectSummaryBox &&
+      stateValue.uploadDropzoneBox &&
+      stateValue.uploadDropzoneBox.top > stateValue.guidedProjectSummaryBox.top
+    ) {
+      failures.push(`${viewport.name}/${state}: source upload control should lead project metadata in the normal workflow`);
     }
     if (state === "prepare-pick-frame") {
       if (!stateValue.keyframeScanChooserVisible) {
