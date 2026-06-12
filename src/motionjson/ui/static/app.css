@@ -4451,6 +4451,41 @@ body {
   font-size: 12px;
 }
 
+.upload-file-control input[type="file"]::file-selector-button {
+  min-height: 28px;
+  margin-right: 10px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-v3-blue, #0b63ce);
+  border-radius: 7px;
+  background: var(--ui-v3-blue, #0b63ce);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.source-choice-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: end;
+  min-width: 0;
+}
+
+.source-select-control {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.source-select-control > span {
+  color: var(--ui-v3-muted, var(--muted));
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 #videoUploadStatus.is-ready {
   color: #17715f;
   font-weight: 750;
@@ -6788,10 +6823,27 @@ body {
   font-size: 13px;
 }
 
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .source-choice-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--workflow-line);
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .source-choice-row .inline-secondary-actions {
+  margin: 0;
+}
+
+.app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .source-select-control select {
+  min-height: 42px;
+}
+
 @media (max-width: 900px) {
   .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-dropzone {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .source-choice-row {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .app-shell.is-workflow-step-source-video:not(.is-workflow-dashboard) .upload-file-control {

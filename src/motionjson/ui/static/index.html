@@ -620,7 +620,7 @@
                   <p id="videoUploadStatus" class="row-meta">No upload selected.</p>
                 </div>
                 <label class="file-control upload-file-control">
-                  <span>Choose video file</span>
+                  <span>Local file</span>
                   <input id="videoFileInput" type="file" accept="video/*" data-testid="video-file-input" />
                 </label>
               </div>
@@ -635,10 +635,15 @@
                 </div>
                 <button id="retryPreviewButton" type="button" hidden>Retry preview</button>
               </div>
-              <div class="inline-secondary-actions">
-                <button id="guidedDemoVideoButton" type="button" data-testid="use-demo-video">Use demo video</button>
+              <div class="source-choice-row">
+                <div class="inline-secondary-actions">
+                  <button id="guidedDemoVideoButton" type="button" data-testid="use-demo-video">Use demo video</button>
+                </div>
+                <label class="source-select-control">
+                  <span>Registered source</span>
+                  <select id="videoSelect" data-testid="video-select" aria-label="Registered video"></select>
+                </label>
               </div>
-              <select id="videoSelect" data-testid="video-select" aria-label="Registered video"></select>
               <details id="localVideoPathDisclosure" class="advanced-panel">
                 <summary>Use a runtime file path instead</summary>
                 <div class="advanced-stack">
