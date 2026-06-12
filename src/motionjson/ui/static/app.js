@@ -13319,6 +13319,26 @@ const MotionJSONUI = (() => {
         state.jobArtifacts = [];
         state.jobReview = null;
         state.reviewTracks = [];
+        state.projects = [{ id: "project_layout", name: "MotionJSON project" }];
+        state.videos = [
+          {
+            id: "video_layout",
+            project_id: "project_layout",
+            kind: "source_video",
+            contentUrl: "/api/videos/video_layout/content",
+            metadata: { filename: "prepare-demo.mp4" },
+            browserPreview: {
+              status: "ready",
+              kind: "native",
+              contentUrl: "/api/videos/video_layout/content",
+              posterUrl: "",
+              width: 1920,
+              height: 1080,
+              duration: 15,
+              codec: "h264",
+            },
+          },
+        ];
         state.video = {
           ...state.video,
           width: 1920,

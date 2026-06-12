@@ -10625,7 +10625,7 @@ body {
 
   .topbar-actions {
     display: grid !important;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) 38px 38px !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 38px 38px !important;
     gap: 6px !important;
     align-items: center !important;
     width: auto !important;
@@ -10646,6 +10646,7 @@ body {
     min-width: 0 !important;
     min-height: 32px !important;
     padding: 0 8px !important;
+    font-size: 12px !important;
     justify-content: center !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
