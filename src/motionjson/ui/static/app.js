@@ -551,6 +551,7 @@ const MotionJSONUI = (() => {
     const hasReviewablePartial = jobFailed && Boolean(snapshot.partialSuccess || snapshot.reviewableObjectCount || snapshot.candidateCount || snapshot.trackCount);
     const fastFramePick = selectedPreset === "pick_objects_from_frame";
     const reviewExportSubscreen = snapshot.reviewExportSubscreen === "export" ? "export" : "review";
+    const exportResultReady = Boolean(snapshot.exportResultReady);
     const exportAvailability = workflowExportAvailabilityFromSnapshot(snapshot);
     const reviewFlow = reviewFlowStateFromSnapshot({
       ...snapshot,
@@ -588,6 +589,10 @@ const MotionJSONUI = (() => {
         reviewPrimaryLabel = "Continue to export";
         reviewPrimaryBlockedReason = "";
       }
+    } else if (reviewExportSubscreen === "export" && exportResultReady) {
+      reviewPrimaryAction = "copy_reuse_steps";
+      reviewPrimaryLabel = "Copy reuse steps";
+      reviewPrimaryBlockedReason = "";
     } else if (reviewExportSubscreen === "export" && reviewHasIncludedObjects && !exportAvailability.status) {
       reviewPrimaryAction = "validate_export";
       reviewPrimaryLabel = "Validate export";
@@ -597,6 +602,8 @@ const MotionJSONUI = (() => {
     }
     const reviewPrimaryEnabled =
       reviewPrimaryAction === "validate_export"
+        ? true
+        : reviewPrimaryAction === "copy_reuse_steps"
         ? true
         : reviewPrimaryAction === "export_reviewed"
         ? !exportAvailability.action.disabled
@@ -5522,7 +5529,7 @@ const MotionJSONUI = (() => {
     return `
       <div class="export-decision is-${escapeAttribute(tone)}" role="status">
         <div>
-          <span class="section-kicker">Export readiness</span>
+          <span class="section-kicker">${escapeHtml(decision.kicker || "Export readiness")}</span>
           <strong>${escapeHtml(decision.title || "Review export status")}</strong>
           <p>${escapeHtml(decision.detail || "Review selected tracks before exporting.")}</p>
         </div>
@@ -5827,6 +5834,7 @@ const MotionJSONUI = (() => {
       }).length;
       const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
       const exportState = state.exportResult || state.exportValidation || {};
+      const exportResultReady = Boolean(state.exportResult?.jobId && state.exportResult.jobId === state.selectedJobId);
       const exportSummary = buildExportPanelSummary({
         exportState,
         reviewExport: state.jobReview?.export || {},
@@ -5893,6 +5901,7 @@ const MotionJSONUI = (() => {
         exportPendingCount: exportSummary.pendingIds.length,
         staticFallbackCount,
         correctionCount: asArray(state.correctionState?.history).length,
+        exportResultReady,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
         exportStatus: exportValidation,
@@ -6005,6 +6014,7 @@ const MotionJSONUI = (() => {
         return id && state.candidateSelection[id] === true;
       }).length;
       const exportValidation = state.exportValidation?.validation || state.exportResult?.validation || null;
+      const exportResultReady = Boolean(state.exportResult?.jobId && state.exportResult.jobId === state.selectedJobId);
       const diagnostics = collectDiagnostics(selectedJob(), state.jobEvents, state.jobArtifacts, state.reviewTracks, state.jobReview).filter(
         (item) => item.severity !== "ready",
       );
@@ -6023,6 +6033,7 @@ const MotionJSONUI = (() => {
         trackCount: state.reviewTracks.length,
         exportIncludedCount: state.reviewTracks.filter(isTrackExportIncluded).length,
         correctionCount: asArray(state.correctionState?.history).length,
+        exportResultReady,
         exportValidated: Boolean(exportValidation),
         exportOk: exportValidation?.ok === true,
         exportIssueText: exportValidationIssueText(exportValidation),
@@ -6055,6 +6066,7 @@ const MotionJSONUI = (() => {
       const exportStage = stages.find((stage) => stage.id === "export");
       const reviewExportScreen = reviewExportScreenStateFromSnapshot({
         mode: state.reviewExportSubscreen,
+        exportResultReady: snapshot.exportResultReady || state.activeJourneyPhase === "reuse",
         exportStageValue: exportStage?.value,
         reviewPrimaryLabel: reviewFlow.gate.primaryLabel,
         reviewNote: reviewFlow.gate.reason || next?.detail,
@@ -6236,7 +6248,9 @@ const MotionJSONUI = (() => {
                 : activeStep === "run_monitor"
                   ? "run"
                   : state.reviewExportSubscreen === "export"
-                    ? "export"
+                    ? state.activeJourneyPhase === "reuse" || snapshot.exportResultReady
+                      ? "reuse"
+                      : "export"
                     : state.activeJourneyPhase === "correct"
                       ? "correct"
                       : "review";
@@ -6262,11 +6276,17 @@ const MotionJSONUI = (() => {
         export: {
           status: snapshot.exportOk ? "done" : snapshot.exportIncludedCount ? "ready" : "needs-action",
           complete: Boolean(snapshot.exportOk),
-          message: snapshot.exportOk ? "Reusable object layer exported." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
+          message: snapshot.exportOk ? "MotionJSON package is ready to write." : snapshot.exportIncludedCount ? "Validate reviewed objects before export." : "Review at least one object before export.",
           tone: snapshot.exportOk ? "is-ready" : snapshot.exportIncludedCount ? "is-warn" : "is-muted",
         },
+        reuse: {
+          status: snapshot.exportResultReady ? "done" : snapshot.exportOk ? "ready" : "needs-action",
+          complete: Boolean(snapshot.exportResultReady),
+          message: snapshot.exportResultReady ? "Reusable object layer exported with handoff instructions." : snapshot.exportOk ? "Export MotionJSON before reuse handoff." : "Validate and export before reuse.",
+          tone: snapshot.exportResultReady ? "is-ready" : snapshot.exportOk ? "is-warn" : "is-muted",
+        },
       };
-      const phaseOrder = ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export"];
+      const phaseOrder = ["goal", "source", "target", "model", "preflight", "run", "review", "correct", "export", "reuse"];
       const activeOrder = Math.max(0, phaseOrder.indexOf(activePhase));
       nav.querySelectorAll("[data-journey-phase]").forEach((button) => {
         const phase = button.dataset.journeyPhase || "";
@@ -6677,6 +6697,8 @@ const MotionJSONUI = (() => {
           setReviewExportSubscreen("export", { focus: true });
         } else if (contract.primaryAction === "export_reviewed") {
           await exportReviewedObjectsFromGuidedFlow();
+        } else if (contract.primaryAction === "copy_reuse_steps") {
+          await copyCurrentReuseSteps();
         }
       } catch (error) {
         setRunAlert(error.message, "warning-box is-bad");
@@ -9787,12 +9809,15 @@ const MotionJSONUI = (() => {
       const rows = studioObjectRows();
       const reviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable).length;
       const movingReviewedCount = rows.filter((row) => row.kind === "track" && row.exportIncluded && row.exportable && row.motion?.moving).length;
+      const exportResultReady = Boolean(state.exportResult?.jobId && state.exportResult.jobId === state.selectedJobId);
       const reviewExportScreen = reviewExportScreenStateFromSnapshot({
         mode: state.reviewExportSubscreen,
+        exportResultReady: exportResultReady || state.activeJourneyPhase === "reuse",
         rowCount: rows.length,
         reviewedCount,
         movingReviewedCount,
       });
+      const reuseHandoffMode = exportSubscreen && (exportResultReady || state.activeJourneyPhase === "reuse");
       if ($("#studioReviewModeKicker")) $("#studioReviewModeKicker").textContent = reviewExportScreen.kicker;
       if ($("#studioReviewTitle")) $("#studioReviewTitle").textContent = candidateSelectionMode ? "Select objects from the keyframe scan" : correctMode ? "Correct reviewed tracks" : reviewExportScreen.title;
       summary.textContent = candidateSelectionMode
@@ -9853,15 +9878,32 @@ const MotionJSONUI = (() => {
         $("#studioExportStatus").textContent = !job ? "No run" : status?.ok === true ? "Valid" : status ? "Needs review" : "Not validated";
         $("#studioExportStatus").className = `status-chip ${!job ? "is-muted" : status?.ok === true ? "is-ready" : status ? "is-warn" : "is-muted"}`;
       }
+      const studioExportHeading = $("#studioExportCard .studio-export-heading strong");
+      if (studioExportHeading) {
+        studioExportHeading.textContent = reuseHandoffMode ? "Reuse checklist" : "Export checklist";
+      }
       if ($("#studioExportChecklistNote")) {
         $("#studioExportChecklistNote").textContent = candidateSelectionMode
           ? "Tracking starts only for the selected keyframe objects."
+          : reuseHandoffMode
+          ? "The package is written. Confirm previews and copy the handoff steps before sharing."
           : status?.ok === true
           ? "Moving tracks are validated for MotionJSON export."
           : decision.detail || exportAction.reason || "Validate moving tracks before writing MotionJSON.";
       }
       if ($("#studioExportDecision")) {
-        $("#studioExportDecision").innerHTML = exportDecisionMarkup(decision);
+        const visibleDecision = reuseHandoffMode
+          ? {
+              ...decision,
+              kicker: "Reuse readiness",
+              badge: "Ready",
+              title: "Reusable object layer is written",
+              detail: "Open a preview or copy the reuse steps to hand this JSON-controlled object layer to Canvas, Remotion, or an app-owned renderer.",
+              nextAction: "Copy reuse steps",
+              tone: "ready",
+            }
+          : decision;
+        $("#studioExportDecision").innerHTML = exportDecisionMarkup(visibleDecision);
       }
       const readinessStrip = $("#studioReadinessStrip");
       if (readinessStrip) {
@@ -9944,24 +9986,26 @@ const MotionJSONUI = (() => {
         $("#studioExportReuseGuide").innerHTML = "";
       }
       if ($("#studioExportChecklist")) {
-        $("#studioExportChecklist").innerHTML = exportReadinessSummary({
-          job,
-          includedIds,
-          pendingIds,
-          reviewTracks: state.reviewTracks,
-          status,
-        })
-          .map((row) => {
-            const className = row.status === "ready" ? "is-ready" : row.status === "blocked" ? "is-bad" : "is-warn";
-            return `
-              <div class="studio-export-check-row ${className}">
-                <span aria-hidden="true"></span>
-                <strong>${escapeHtml(row.title)}</strong>
-                <small>${escapeHtml(row.detail)}</small>
-              </div>
-            `;
-          })
-          .join("");
+        $("#studioExportChecklist").innerHTML = reuseHandoffMode
+          ? ""
+          : exportReadinessSummary({
+              job,
+              includedIds,
+              pendingIds,
+              reviewTracks: state.reviewTracks,
+              status,
+            })
+              .map((row) => {
+                const className = row.status === "ready" ? "is-ready" : row.status === "blocked" ? "is-bad" : "is-warn";
+                return `
+                  <div class="studio-export-check-row ${className}">
+                    <span aria-hidden="true"></span>
+                    <strong>${escapeHtml(row.title)}</strong>
+                    <small>${escapeHtml(row.detail)}</small>
+                  </div>
+                `;
+              })
+              .join("");
       }
       list.innerHTML = rows.length
         ? rows
@@ -13930,7 +13974,14 @@ const MotionJSONUI = (() => {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");
         state.reviewExportSubscreen = ["export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(capture) ? "export" : "review";
-        state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : capture === "correction-tools" ? "correct" : "review";
+        state.activeJourneyPhase =
+          capture === "export-success" || capture === "copyable-snippet"
+            ? "reuse"
+            : state.reviewExportSubscreen === "export"
+              ? "export"
+              : capture === "correction-tools"
+                ? "correct"
+                : "review";
         setWorkflowStep("review_export", { persist: false });
         setRunAlert("", "warning-box");
         if (capture === "candidate-review") {
@@ -14374,8 +14425,12 @@ const MotionJSONUI = (() => {
     async function copyTextToClipboard(text) {
       if (!text) return false;
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
+        try {
+          await navigator.clipboard.writeText(text);
+          return true;
+        } catch (_error) {
+          // Fall back to the hidden textarea path when browser permission blocks Clipboard API writes.
+        }
       }
       const textarea = document.createElement("textarea");
       textarea.value = text;
@@ -14441,6 +14496,25 @@ const MotionJSONUI = (() => {
         button.textContent = copied ? "Copied redacted logs" : "Copy redacted logs";
       });
       setRunAlert(copied ? "Redacted raw logs copied." : "Could not copy raw logs automatically.", copied ? "warning-box is-ready" : "warning-box is-warn");
+    }
+
+    async function copyCurrentReuseSteps() {
+      const exported = state.exportResult?.jobId === state.selectedJobId ? state.exportResult : null;
+      const validation = state.exportValidation?.jobId === state.selectedJobId ? state.exportValidation : null;
+      const exportState = exported || validation || {};
+      const exportArtifacts = asArray(exported?.assets).length ? asArray(exported?.assets) : exportArtifactsFromJobArtifacts(state.jobArtifacts);
+      const objectLayerPack = exportState.objectLayerPack || exported?.objectLayerPack || validation?.objectLayerPack || null;
+      const text =
+        exportNextStepText({ exportState, assets: exportArtifacts, objectLayerPack }) ||
+        "Use the exported scene graph, manifest, masks/cutouts, and validation report as the reusable MotionJSON object layer.";
+      const copied = await copyTextToClipboard(text);
+      state.exportCopiedHandoffId = copied ? "nextSteps" : "";
+      renderExportPanel();
+      renderWorkflowStepper();
+      setRunAlert(
+        copied ? "Reuse steps copied. Share them with the app, Remotion, or renderer that will consume this object layer." : "Could not copy reuse steps automatically.",
+        copied ? "warning-box is-ready" : "warning-box is-warn",
+      );
     }
 
     async function handleExportHandoffAction(event) {

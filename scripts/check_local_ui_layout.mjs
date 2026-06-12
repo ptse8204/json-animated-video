@@ -817,6 +817,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           journeyNavClientWidth: document.querySelector("#journeyNav")?.clientWidth || 0,
           activeJourneyOffsetLeft: document.querySelector("#journeyNav [data-journey-phase].is-active")?.closest("li")?.offsetLeft || 0,
           activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
+          journeyPhaseCount: document.querySelectorAll("#journeyNav [data-journey-phase]").length,
           workspaceBox: elementBox("#workspaceMain"),
           workspaceGridBox: elementBox(".workspace-grid"),
           shellGridColumns: shell ? getComputedStyle(shell).gridTemplateColumns : "",
@@ -1150,6 +1151,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "workflow-goal" && stateValue.visibleGoalCardCount !== 4) {
       failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards before advanced tasks`);
     }
+    if (stateValue.journeyPhaseCount !== 10) {
+      failures.push(`${viewport.name}/${state}: journey should expose ten workflow phases including Reuse`);
+    }
     if (state === "workflow-video" && stateValue.viewportWidth <= 720) {
       if (!stateValue.uploadDropzoneVisible || !stateValue.uploadDropzoneBox) {
         failures.push(`${viewport.name}/${state}: mobile source step should show the source upload control`);
@@ -1461,6 +1465,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       failures.push(`${viewport.name}/${state}: partial success should keep completed objects reviewable and show the failed object/frame diagnostic`);
     }
     if (state === "workflow-export") {
+      if (stateValue.activeJourneyPhase !== "export") {
+        failures.push(`${viewport.name}/${state}: export validation screen should keep Export active before handoff reuse`);
+      }
       if (stateValue.workflowPrimaryLabel !== "Export MotionJSON" && stateValue.workflowPrimaryLabel !== "Validate export") {
         failures.push(`${viewport.name}/${state}: export screen should promote Export MotionJSON or the exact blocked export action`);
       }
@@ -1490,8 +1497,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
     }
     if (["export-gate", "export-handoff", "export-success", "copyable-snippet"].includes(state)) {
-      if (stateValue.studioReviewTitle !== "Export MotionJSON" || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible) {
-        failures.push(`${viewport.name}/${state}: export capture should show the export checklist instead of the review object list`);
+      const reuseHandoffState = ["export-success", "copyable-snippet"].includes(state);
+      if (["export-success", "copyable-snippet"].includes(state) && stateValue.activeJourneyPhase !== "reuse") {
+        failures.push(`${viewport.name}/${state}: exported handoff screen should activate the Reuse journey phase`);
+      }
+      if (reuseHandoffState && stateValue.workflowPrimaryLabel !== "Copy reuse steps") {
+        failures.push(`${viewport.name}/${state}: reuse handoff screen should promote copying reusable object-layer steps`);
+      }
+      const expectedStudioTitle = reuseHandoffState ? "Reuse object layer" : "Export MotionJSON";
+      if (stateValue.studioReviewTitle !== expectedStudioTitle || !stateValue.studioExportCardVisible || stateValue.studioObjectListVisible) {
+        failures.push(`${viewport.name}/${state}: export capture should show the ${reuseHandoffState ? "reuse handoff" : "export checklist"} instead of the review object list`);
       }
       if (stateValue.reviewCandidateSlotVisible && /Track selected|not background|coverage/i.test(stateValue.reviewCandidateSlotText)) {
         failures.push(`${viewport.name}/${state}: export capture should not show candidate filter/track controls ahead of the export gate`);

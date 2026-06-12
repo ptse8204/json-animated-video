@@ -560,6 +560,7 @@ export function projectShellStateFromSnapshot(snapshot = {}) {
 
 export function reviewExportScreenStateFromSnapshot(snapshot = {}) {
   const mode = snapshot.mode === "export" || snapshot.reviewExportSubscreen === "export" ? "export" : "review";
+  const reuseReady = Boolean(snapshot.exportResultReady || snapshot.reuseReady);
   const rowCount = toInteger(snapshot.rowCount ?? snapshot.objectCount ?? snapshot.trackCount, 0);
   const reviewedCount = toInteger(snapshot.reviewedCount ?? snapshot.exportIncludedCount ?? snapshot.includedCount, 0);
   const movingReviewedCount = toInteger(snapshot.movingReviewedCount, 0);
@@ -572,6 +573,20 @@ export function reviewExportScreenStateFromSnapshot(snapshot = {}) {
   const reviewNote = String(snapshot.reviewNote || snapshot.reviewReason || snapshot.nextDetail || "Review, correct, and export reviewed object tracks.");
   const exportNote = String(snapshot.exportNote || "Validate package readiness, included objects, rights notes, and handoff links before writing MotionJSON.");
   if (mode === "export") {
+    if (reuseReady) {
+      return {
+        format: "motionjson.local_ui_review_export_screen.v0.1",
+        mode,
+        kicker: "Reuse",
+        title: "Reuse object layer",
+        guideTitle: "Reuse exported layer",
+        statusLabel: "Exported",
+        note: "Open previews, copy handoff snippets, and reuse the reviewed JSON-controlled object layer in your renderer.",
+        summary: "The MotionJSON package is written. Use the exported scene graph, masks/cutouts, manifest, and snippets as a reusable object layer.",
+        primaryLabel: "Copy reuse steps",
+        primaryAction: "copy_reuse_steps",
+      };
+    }
     return {
       format: "motionjson.local_ui_review_export_screen.v0.1",
       mode,

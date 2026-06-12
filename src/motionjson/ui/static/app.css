@@ -10487,7 +10487,7 @@ body {
 
   .journey-nav-list {
     display: grid !important;
-    grid-template-columns: repeat(9, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(10, minmax(0, 1fr)) !important;
     gap: 3px !important;
     min-width: 0 !important;
   }

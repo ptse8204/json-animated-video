@@ -332,6 +332,11 @@ assert.equal(exportScreenState.title, "Export MotionJSON");
 assert.equal(exportScreenState.statusLabel, "Validated");
 assert.equal(exportScreenState.primaryLabel, "Export MotionJSON");
 assert.notEqual(reviewScreenState.guideTitle, exportScreenState.guideTitle);
+const reuseScreenState = ui.reviewExportScreenStateFromSnapshot({ mode: "export", exportResultReady: true, exportValidated: true });
+assert.equal(reuseScreenState.title, "Reuse object layer");
+assert.equal(reuseScreenState.kicker, "Reuse");
+assert.equal(reuseScreenState.primaryLabel, "Copy reuse steps");
+assert.ok(reuseScreenState.summary.includes("reusable object layer"));
 const adaptiveSceneSweep = ui.adaptiveRunDefaultsFromSnapshot({
   preset: "trace_all_objects",
   providerId: "sam3-local",
