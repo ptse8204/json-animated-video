@@ -1050,6 +1050,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           mainLivePreviewText: document.querySelector("#mainRunLivePreview")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainSelectedJobFactsText: document.querySelector("#mainSelectedJobFacts")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           mainJobListText: document.querySelector("#mainJobList")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runRecoveryVisible: visible(document.querySelector("#runRecoveryStrip")),
+          runRecoveryText: document.querySelector("#runRecoveryStrip")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           failedRunActionsText: ((document.querySelector("#failedRunActions")?.textContent || "") + " " + (document.querySelector("#mainFailedRunActions")?.textContent || "")).trim().replace(/\\s+/g, " "),
           visibleExportPrimaryCount: [...document.querySelectorAll("button.primary-action, .studio-package-button")]
             .filter((element) => {
@@ -1527,6 +1529,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "workflow-run-stale" && (!/No progress update/.test(`${stateValue.mainJobListText} ${stateValue.mainSelectedJobFactsText} ${stateValue.runMonitorSummaryText}`) || stateValue.mainRunStatusText !== "running")) {
       failures.push(`${viewport.name}/${state}: stale running job should expose a no-progress warning without hiding the run monitor`);
     }
+    if (
+      state === "workflow-run-stale" &&
+      (!stateValue.runRecoveryVisible ||
+        !/Open logs/.test(stateValue.runRecoveryText) ||
+        !/Copy debug report/.test(stateValue.runRecoveryText) ||
+        !/Cancel run/.test(stateValue.runRecoveryText))
+    ) {
+      failures.push(`${viewport.name}/${state}: stale running job should expose first-viewport recovery actions`);
+    }
     if (state === "workflow-run-logs-open" && (!stateValue.runLogsOpen || !/discovering object candidates|loading SAM3 Tracker/.test(stateValue.eventLogText))) {
       failures.push(`${viewport.name}/${state}: open logs state should show selected job events, not an empty log panel`);
     }
@@ -1540,6 +1551,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         !/Retry asset prep/.test(`${stateValue.workflowPrimaryLabel} ${stateValue.failedRunActionsText}`))
     ) {
       failures.push(`${viewport.name}/${state}: asset-preparation stall should be terminal with retry-specific recovery copy`);
+    }
+    if (
+      state === "workflow-run-asset-stalled" &&
+      (!stateValue.runRecoveryVisible ||
+        !/Open logs/.test(stateValue.runRecoveryText) ||
+        !/Copy debug report/.test(stateValue.runRecoveryText) ||
+        !/Retry asset prep/.test(stateValue.runRecoveryText) ||
+        !/Retry from Model setup/.test(stateValue.runRecoveryText))
+    ) {
+      failures.push(`${viewport.name}/${state}: terminal stalled run should expose first-viewport recovery actions`);
     }
     if (["workflow-review", "workflow-correct", "workflow-export", "workflow-partial-success"].includes(state)) {
       if (!stateValue.studioReviewVisible || stateValue.studioObjectRowCount < 1) {

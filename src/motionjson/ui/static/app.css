@@ -7582,6 +7582,43 @@ summary.advanced-task-heading::after {
   line-height: 1.35;
 }
 
+.run-recovery-strip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--ui-v3-line);
+  border-bottom: 1px solid var(--ui-v3-line);
+}
+
+.run-recovery-strip[hidden] {
+  display: none !important;
+}
+
+.run-recovery-strip strong,
+.run-recovery-strip span {
+  display: block;
+  min-width: 0;
+}
+
+.run-recovery-strip strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.run-recovery-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.run-recovery-actions button {
+  min-height: 34px;
+  white-space: nowrap;
+}
+
 .run-monitor-summary {
   display: none;
 }
@@ -7989,6 +8026,7 @@ summary.advanced-task-heading::after {
       "heading heading heading"
       "phases phases phases"
       "activity activity activity"
+      "recovery recovery recovery"
       "source evidence candidates"
       "preflight preflight timeline"
       "events events events"
@@ -8021,6 +8059,10 @@ summary.advanced-task-heading::after {
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-current-activity {
     font-size: 16px;
+  }
+
+  .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-recovery-strip {
+    grid-area: recovery;
   }
 
   .app-shell.is-workflow-step-run-monitor:not(.is-workflow-dashboard) .run-cockpit-layout {
@@ -8131,6 +8173,7 @@ summary.advanced-task-heading::after {
 
   .run-cockpit-heading,
   .run-current-row,
+  .run-recovery-strip,
   .run-cockpit-layout,
   .run-job-details-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -8144,9 +8187,14 @@ summary.advanced-task-heading::after {
 
   .run-current-row,
   .run-cockpit-heading-actions,
-  .run-status-chips {
+  .run-status-chips,
+  .run-recovery-actions {
     align-items: flex-start;
     justify-content: flex-start;
+  }
+
+  .run-recovery-actions button {
+    flex: 1 1 142px;
   }
 
   .run-source-frame-shell,

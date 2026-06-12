@@ -291,6 +291,21 @@
             </div>
           </div>
 
+          <section id="runRecoveryStrip" class="run-recovery-strip" aria-label="Run recovery actions" data-testid="run-recovery-strip" hidden>
+            <div>
+              <strong id="runRecoveryTitle">Run needs attention</strong>
+              <span id="runRecoveryDetail" class="row-meta">Open logs before retrying or changing setup.</span>
+            </div>
+            <div class="run-recovery-actions">
+              <button id="runRecoveryOpenLogsButton" type="button">Open logs</button>
+              <button id="runRecoveryCopyDebugButton" type="button">Copy debug report</button>
+              <button id="runRecoveryCancelButton" class="danger-action" type="button">Cancel run</button>
+              <button id="runRecoveryRunAgainButton" class="primary-action" type="button" hidden>Run again</button>
+              <button id="runRecoveryChangeSetupButton" type="button" hidden>Change setup</button>
+              <button id="runRecoveryChooseModelButton" type="button" hidden>Choose different model</button>
+            </div>
+          </section>
+
           <div id="mainRunMonitorSummary" class="status-summary-grid run-monitor-summary" aria-live="polite"></div>
 
           <div class="run-cockpit-layout">

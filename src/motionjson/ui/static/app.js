@@ -8956,6 +8956,61 @@ const MotionJSONUI = (() => {
       ].join("");
     }
 
+    function renderRunRecoveryStrip(lifecycle = null, job = null) {
+      const strip = $("#runRecoveryStrip");
+      if (!strip) return;
+      const status = String(lifecycle?.status || "").toLowerCase();
+      const terminalFailure = isFailedJobStatus(status);
+      const stale = Boolean(lifecycle?.stale?.stale);
+      if (!lifecycle || (!stale && !terminalFailure)) {
+        strip.hidden = true;
+        return;
+      }
+      const title = $("#runRecoveryTitle");
+      const detail = $("#runRecoveryDetail");
+      const openLogs = $("#runRecoveryOpenLogsButton");
+      const copyDebug = $("#runRecoveryCopyDebugButton");
+      const cancel = $("#runRecoveryCancelButton");
+      const runAgain = $("#runRecoveryRunAgainButton");
+      const changeSetup = $("#runRecoveryChangeSetupButton");
+      const chooseModel = $("#runRecoveryChooseModelButton");
+      const labels = failedRunRecoveryLabels(lifecycle);
+      strip.hidden = false;
+      strip.className = `run-recovery-strip ${terminalFailure ? "is-terminal" : "is-stale"}`;
+      if (title) {
+        title.textContent = terminalFailure
+          ? status === "canceled" || status === "cancelled"
+            ? "Run was canceled"
+            : "Run failed before export"
+          : "Run may be stalled";
+      }
+      if (detail) {
+        detail.textContent = terminalFailure
+          ? lifecycle.failure?.suggestedAction || lifecycle.failure?.message || "Open logs, copy a redacted report, then retry or change setup."
+          : lifecycle.stale?.detail || lifecycle.stale?.label || "No recent progress update has arrived. Open logs before canceling or changing setup.";
+      }
+      if (openLogs) openLogs.hidden = false;
+      if (copyDebug) {
+        copyDebug.hidden = false;
+        copyDebug.disabled = !job;
+        copyDebug.textContent = state.runDebugReportCopiedJobId === lifecycle.id ? "Copied" : "Copy debug report";
+      }
+      if (cancel) {
+        cancel.hidden = terminalFailure;
+        cancel.disabled = !lifecycle.actions?.canCancel || status === "cancel_requested";
+        cancel.textContent = status === "cancel_requested" ? "Cancel requested" : "Cancel run";
+      }
+      [
+        [runAgain, labels.runAgain],
+        [changeSetup, labels.changeSetup],
+        [chooseModel, labels.chooseModel],
+      ].forEach(([button, label]) => {
+        if (!button) return;
+        button.hidden = !terminalFailure;
+        button.textContent = label;
+      });
+    }
+
     function basenameForDisplay(value = "") {
       const text = String(value || "").split(/[?#]/)[0];
       return text.split(/[\\/]/).filter(Boolean).pop() || text || "not selected";
@@ -9269,6 +9324,7 @@ const MotionJSONUI = (() => {
       if ($("#runPhaseTimeline")) $("#runPhaseTimeline").innerHTML = runPhaseTimelineMarkup(lifecycle);
       if ($("#runCurrentActivity")) $("#runCurrentActivity").textContent = runCurrentActivityText(lifecycle, job, events);
       if ($("#mainRunStatusChips")) $("#mainRunStatusChips").innerHTML = runStatusChipsMarkup(lifecycle, job, events);
+      renderRunRecoveryStrip(lifecycle, job);
       if ($("#runCockpitSubtitle")) {
         const provider = lifecycle ? runProviderText(lifecycle, jobConfig(job), job) : guidedEnginePlan(collectFormState($)).providerLabel || "the selected provider";
         $("#runCockpitSubtitle").textContent = lifecycle
@@ -14893,20 +14949,26 @@ const MotionJSONUI = (() => {
     $("#startMockRunButton").addEventListener("click", () => startJobFromConfig({ forceMock: true }));
     $("#cancelJobButton").addEventListener("click", cancelSelectedJob);
     $("#mainCancelJobButton")?.addEventListener("click", cancelSelectedJob);
+    $("#runRecoveryCancelButton")?.addEventListener("click", cancelSelectedJob);
     $("#openLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
     $("#mainOpenLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
+    $("#runRecoveryOpenLogsButton")?.addEventListener("click", openRunLogsAndDiagnostics);
     $("#copyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
     $("#mainCopyRunDebugReportButton")?.addEventListener("click", copySelectedRunDebugReport);
+    $("#runRecoveryCopyDebugButton")?.addEventListener("click", copySelectedRunDebugReport);
     $("#rawLogSearch")?.addEventListener("input", renderEventLog);
     $("#mainRawLogSearch")?.addEventListener("input", renderEventLog);
     $("#copyRawLogsButton")?.addEventListener("click", copyRawLogs);
     $("#mainCopyRawLogsButton")?.addEventListener("click", copyRawLogs);
     $("#runAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#mainRunAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
+    $("#runRecoveryRunAgainButton")?.addEventListener("click", runAgainFromTerminalJob);
     $("#changeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));
     $("#mainChangeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));
+    $("#runRecoveryChangeSetupButton")?.addEventListener("click", () => prepareNewGuidedRun("prompt_preview"));
     $("#chooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
     $("#mainChooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
+    $("#runRecoveryChooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
     $("#validateExportButton").addEventListener("click", validateSelectedExport);
     $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
@@ -15655,9 +15717,11 @@ const MotionJSONUI = (() => {
           }
         } else if (action === "save") {
           if (!form) throw new Error("Select a SAM provider before saving setup.");
+          const payload = modelSetupPayloadFromForm(form);
+          clearBrowserSecretInputs(document);
           const response = await api("/api/provider-settings", {
             method: "POST",
-            body: JSON.stringify(modelSetupPayloadFromForm(form)),
+            body: JSON.stringify(payload),
           });
           state.providerSettings = response;
           clearBrowserSecretInputs(document);
