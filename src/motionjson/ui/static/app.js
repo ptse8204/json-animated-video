@@ -13313,12 +13313,10 @@ const MotionJSONUI = (() => {
       const guidedStart = document.querySelector(".guided-start");
       const workflowSteps = document.querySelector(".workflow-steps");
       const workspaceGrid = document.querySelector(".workspace-grid");
-      const viewerPanel = document.querySelector(".viewer-panel");
-      const configPanel = document.querySelector(".config-panel");
       const modelSetupPanel = document.querySelector("#modelSetupPanel");
       const modelPlanPanel = document.querySelector("#modelPlanPanel");
-      const rawConfigDisclosure = document.querySelector("#rawConfigDisclosure");
-      const captureUsesSam3Prepare = ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(capture);
+      const advancedParametersDisclosure = document.querySelector("#advancedParametersDisclosure");
+      const captureUsesSam3Prepare = ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime", "advanced-config"].includes(capture);
       const markCaptureCapabilityReady = (capabilityName, { message = "Ready for this workflow." } = {}) => {
         if (!state.capabilities?.providers) return;
         state.capabilities.providers = state.capabilities.providers.map((provider) =>
@@ -13404,8 +13402,6 @@ const MotionJSONUI = (() => {
         setWorkflowStep("run_monitor", { persist: false });
       } else if (captureUsesSam3Prepare) {
         setWorkflowStep("prompt_preview", { persist: false });
-      } else if (capture === "advanced-config") {
-        setWorkflowDashboard(true, { persist: false });
       } else if (capture === "new-project") {
         setWorkflowStep("source_video", { persist: false });
       } else if (capture === "extraction-wizard" || capture === "provider-diagnostics" || capture === "provider-settings") {
@@ -13640,7 +13636,7 @@ const MotionJSONUI = (() => {
           state.modelSetupSelectionMode = "user_override";
           markCaptureProviderReady("sam3-hosted", { hostedProfileId: "roboflow-sam3-pcs", allowHosted: true });
           $("#textPrompt").value = "red ball";
-        } else if (capture === "prepare-pick-frame" || capture === "prepare-sam3-trace-all" || capture === "prepare-sam3-trace-all-runtime-ready" || capture === "prepare-sam3-trace-all-missing-runtime") {
+        } else if (capture === "prepare-pick-frame" || capture === "prepare-sam3-trace-all" || capture === "prepare-sam3-trace-all-runtime-ready" || capture === "prepare-sam3-trace-all-missing-runtime" || capture === "advanced-config") {
           applyPreset(capture === "prepare-pick-frame" ? "pick_objects_from_frame" : "trace_all_objects", { keepProvider: true });
           state.selectedModelSetupProviderId = "sam3-local";
           state.modelSetupSelectionMode = "user_override";
@@ -13665,6 +13661,7 @@ const MotionJSONUI = (() => {
             markCaptureProviderReady("sam3-local");
           }
           $("#discoveryQualityPreset").value = "balanced";
+          if (capture === "advanced-config" && advancedParametersDisclosure) advancedParametersDisclosure.open = true;
         }
         renderModelSetup();
         renderPresetFields();
@@ -14281,23 +14278,6 @@ const MotionJSONUI = (() => {
         if (shell) shell.style.gridTemplateColumns = "";
         if (rightRail) rightRail.style.display = "none";
         if (wizardPanel) wizardPanel.style.display = "none";
-      } else if (capture === "advanced-config") {
-        applyPreset("text_detector");
-        if (shell) {
-          shell.style.display = "grid";
-          shell.style.minHeight = "100vh";
-        }
-        if (sidebar) sidebar.style.display = "";
-        if (rightRail) rightRail.style.display = "none";
-        if (guidedStart) guidedStart.style.display = "none";
-        if (workflowSteps) workflowSteps.style.display = "none";
-        if (viewerPanel) viewerPanel.style.display = "none";
-        if (workspaceGrid) {
-          workspaceGrid.style.gridTemplateColumns = "minmax(0, 1fr)";
-          workspaceGrid.style.gridTemplateAreas = '"config" "setup" "wizard"';
-        }
-        if (configPanel) configPanel.style.order = "-1";
-        if (rawConfigDisclosure) rawConfigDisclosure.open = true;
       } else if (["workflow-review", "workflow-correct", "workflow-export", "workflow-partial-success"].includes(capture)) {
         applyReviewCaptureFixture(capture);
         markCaptureProviderReady("sam2-local");

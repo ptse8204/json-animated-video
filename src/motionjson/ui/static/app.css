@@ -11053,7 +11053,7 @@ body {
     height: calc(100vh - 124px) !important;
     min-height: 0 !important;
     max-height: calc(100vh - 124px) !important;
-    padding-bottom: 24px !important;
+    padding-bottom: 104px !important;
     overflow-y: auto !important;
   }
 }
@@ -11139,7 +11139,7 @@ body {
     min-height: 0 !important;
     max-height: calc(100vh - 57px - 92px) !important;
     padding-right: 14px !important;
-    padding-bottom: 24px !important;
+    padding-bottom: 140px !important;
     padding-left: 14px !important;
     overflow-y: auto !important;
   }
@@ -11149,7 +11149,7 @@ body {
     height: calc(100vh - 57px - 92px) !important;
     min-height: 0 !important;
     max-height: calc(100vh - 57px - 92px) !important;
-    padding-bottom: 24px !important;
+    padding-bottom: 140px !important;
     overflow-y: auto !important;
   }
 
