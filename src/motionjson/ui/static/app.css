@@ -5872,6 +5872,16 @@ body {
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .config-actions {
   order: 2;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #validateConfigButton {
+  flex: 0 0 auto;
+  width: min(320px, 100%);
+  max-width: 100%;
 }
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) #startMockRunButton,
@@ -5901,34 +5911,70 @@ body {
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-list {
   gap: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   border-top: 1px solid var(--ui-v3-line);
 }
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step {
-  min-height: 82px;
-  padding: 12px 0;
+  position: relative;
+  grid-template-columns: minmax(132px, 0.28fr) minmax(170px, 0.3fr) minmax(0, 1fr);
+  gap: 8px 14px;
+  align-items: start;
+  min-height: 0;
+  padding: 12px 0 12px 18px;
   border: 0;
   border-bottom: 1px solid var(--ui-v3-line);
   border-radius: 0;
   background: transparent;
 }
 
-.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-ready {
-  background: color-mix(in oklab, var(--ready) 5%, transparent);
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step::before {
+  content: "";
+  position: absolute;
+  top: 18px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--ready);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ready) 14%, transparent);
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step > span:last-child {
+  grid-column: auto;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step strong {
+  line-height: 1.35;
 }
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-warning,
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-needs-action {
-  background: color-mix(in oklab, #d99016 8%, transparent);
+  background: transparent;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-warning::before,
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step.is-needs-action::before {
+  background: #d99016;
+  box-shadow: 0 0 0 3px color-mix(in oklab, #d99016 16%, transparent);
 }
 
 .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-next {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 14px;
   padding: 12px 0;
   border: 0;
   border-bottom: 1px solid var(--ui-v3-line);
   border-radius: 0;
   background: transparent;
+}
+
+.app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-next ul {
+  padding-left: 0;
+  list-style: none;
 }
 
 @media (max-width: 720px) {
@@ -5952,6 +5998,14 @@ body {
   }
 
   .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-intro {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-step {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.is-preflight-workbench:not(.is-workflow-dashboard) .run-plan-next {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -9012,7 +9066,7 @@ body {
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
-  padding-bottom: 28px;
+  padding-bottom: 124px;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) #workflowController {
@@ -9928,7 +9982,7 @@ body {
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace {
-  padding-bottom: 28px !important;
+  padding-bottom: 124px !important;
 }
 
 .app-shell.is-result-mode:not(.is-workflow-dashboard) .workspace-grid {
@@ -10081,6 +10135,7 @@ body {
   scrollbar-gutter: stable !important;
   padding: 0 !important;
   min-height: 220px !important;
+  max-height: 253px !important;
   border-top: 1px solid var(--workflow-line, var(--border)) !important;
 }
 
@@ -10162,9 +10217,9 @@ body {
     "color number copy visible export"
     "color number status visible export" !important;
   align-items: start !important;
-  min-height: 92px !important;
+  min-height: 84px !important;
   gap: 6px 10px !important;
-  padding: 12px 0 !important;
+  padding: 10px 0 !important;
   overflow: visible !important;
 }
 

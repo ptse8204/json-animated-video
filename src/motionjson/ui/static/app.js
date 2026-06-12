@@ -11367,13 +11367,16 @@ const MotionJSONUI = (() => {
       const statusClassName = plan.errors.length ? "is-bad" : plan.warnings.length ? "is-warn" : "is-ready";
       const stepRows = plan.steps
         .map(
-          (step) => `
-            <li class="run-plan-step is-${escapeAttribute(step.status)}">
+          (step) => {
+            const detail = step.detail || "";
+            return `
+            <li class="run-plan-step is-${escapeAttribute(step.status)}" aria-label="${escapeAttribute(`${step.label}: ${step.value}. ${detail}`)}">
               <span class="run-plan-step-label">${escapeHtml(step.label)}</span>
               <strong>${escapeHtml(step.value)}</strong>
-              <span>${escapeHtml(step.detail)}</span>
+              <span>${escapeHtml(detail)}</span>
             </li>
-          `,
+          `;
+          },
         )
         .join("");
       const nextRows = plan.nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join("");

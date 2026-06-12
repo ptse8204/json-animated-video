@@ -66,19 +66,17 @@ test("browser mobile first load keeps primary workflow controls visible", { skip
 
 test("browser separates SAM3 scene sweep setup from fallback cards", { skip: chromeSkip, timeout: E2E_TIMEOUT_MS }, async () => {
   await withPage(async (page) => {
-    await openFreshUi(page);
-    await page.clickTestId("goal-trace-all-objects");
-    await page.clickTestId("workflow-primary");
-    await page.clickTestId("use-demo-video");
-    await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected for scene sweep flow");
-    await page.clickTestId("workflow-primary");
-    await page.waitForTestId("model-setup-panel");
-    await page.waitForText('[data-testid="model-setup-choices"]', /SAM3 Scene Sweep|No-model CPU workflow/i);
-    await page.click('[data-model-setup-action="change-model"]');
-    await page.waitForText('[data-testid="model-setup-choices"]', /SAM3 Scene Sweep/i);
-    await page.waitForText('[data-testid="model-setup-choices"]', /SAM2 HF automatic masks fallback/i);
-    await page.waitForText('[data-testid="model-setup-choices"]', /No-model CPU workflow/i);
-    await page.clickTestId("model-choice-sam3-local");
+    await seedDemoProject("E2E SAM3 Scene Sweep Project");
+    await openCaptureUi(page, "model-setup-trace-all-options");
+    await page.waitForVisible('[data-testid="model-setup-panel"]');
+    await waitForModelSetupText(page, /SAM3 Scene Sweep|No-model CPU workflow/i);
+    await revealModelSetupOptions(page);
+    await waitForModelSetupText(page, /SAM3 Scene Sweep/i);
+    await waitForModelSetupText(page, /SAM2 HF automatic masks fallback/i);
+    await waitForModelSetupText(page, /No-model CPU workflow/i);
+    if (await hasTestId(page, "model-choice-sam3-local")) {
+      await page.clickTestId("model-choice-sam3-local");
+    }
     await page.waitForText('[data-testid="model-setup-detail"]', /facebook\/sam3|runtime proof|Hugging Face/i);
     await page.assertNoConsoleErrors();
   });
@@ -129,15 +127,21 @@ test("browser completes mock/no-model run, review correction, and export", { ski
 test("browser shows hosted opt-in blocker and changes readiness after local save", { skip: chromeSkip, timeout: E2E_TIMEOUT_MS }, async () => {
   await withPage(async (page) => {
     const secret = "rf-e2e-hosted-key-123456";
-    await openFreshUi(page);
-    await page.clickTestId("goal-text-detector");
-    await page.clickTestId("workflow-primary");
-    await page.clickTestId("use-demo-video");
-    await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected for hosted flow");
-    await page.clickTestId("workflow-primary");
-    await page.waitForTestId("model-setup-panel");
-    await page.clickTestId("model-choice-sam3-hosted:roboflow-sam3-pcs");
-    await page.waitForText('[data-testid="model-setup-detail"]', /hosted calls|cost|privacy|API key/i);
+    await seedDemoProject("E2E Hosted Model Setup Project");
+    await openCaptureUi(page, "model-setup-sam3-roboflow");
+    await page.waitForVisible('[data-testid="model-setup-panel"]');
+    await revealModelSetupOptions(page);
+    if (await hasTestId(page, "model-choice-sam3-hosted:roboflow-sam3-pcs")) {
+      await page.clickTestId("model-choice-sam3-hosted:roboflow-sam3-pcs");
+    }
+    await waitForModelSetupText(page, /hosted calls|cost|privacy|API key/i);
+    await page.evaluate(() => {
+      const toggle = document.querySelector('[data-testid="model-setup-allow-hosted"]');
+      if (toggle) {
+        toggle.checked = false;
+        toggle.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
     await page.setValue('[data-model-setup-field="apiKey"]', secret);
     await page.click('[data-model-setup-action="save"]');
     await page.waitForText('[data-testid="model-setup-detail"], #modelSetupStatus', /hosted confirmation|cost\/privacy|hosted/i);
@@ -229,6 +233,30 @@ async function openFreshUi(page) {
   await page.waitForText("body", /What do you want to do\?/);
 }
 
+async function openCaptureUi(page, capture) {
+  await page.goto(`${baseUrl}/?capture=${encodeURIComponent(capture)}`);
+  await page.waitForTestId("local-ui-shell");
+  await page.waitFor(
+    (expectedCapture) => new URL(window.location.href).searchParams.get("capture") === expectedCapture,
+    `capture ${capture}`,
+    15_000,
+    capture,
+  );
+}
+
+async function seedDemoProject(name = "E2E MotionJSON Project") {
+  const project = (await requestJson("POST", `${baseUrl}/api/projects`, { name })).project;
+  assert.ok(project?.id, "seed project id returned from API");
+  const video = (
+    await requestJson("POST", `${baseUrl}/api/videos`, {
+      projectId: project.id,
+      path: DEMO_VIDEO,
+    })
+  ).video;
+  assert.ok(video?.id, "seed demo video id returned from API");
+  return { project, video };
+}
+
 async function waitForWorkflowPrimary(page, labelPattern) {
   await page.waitFor(
     (source, flags) => {
@@ -240,6 +268,45 @@ async function waitForWorkflowPrimary(page, labelPattern) {
     labelPattern.source,
     labelPattern.flags,
   );
+}
+
+async function hasTestId(page, testId) {
+  return page.evaluate((id) => Boolean(document.querySelector(`[data-testid="${id}"]`)), testId);
+}
+
+async function revealModelSetupOptions(page) {
+  await page.waitForTestId("model-setup-panel");
+  await page.evaluate(() => {
+    const details = document.querySelector("#modelSetupDetail .model-setup-advanced");
+    if (details) details.open = true;
+  });
+  const shouldShowOptions = await page.evaluate(() => {
+    const button = document.querySelector('[data-model-setup-action="change-model"]');
+    if (!button) return false;
+    return /Show other options/i.test(button.textContent || button.getAttribute("aria-label") || "");
+  });
+  if (shouldShowOptions) {
+    await page.click('[data-model-setup-action="change-model"]');
+    await page.evaluate(() => {
+      const details = document.querySelector("#modelSetupDetail .model-setup-advanced");
+      if (details) details.open = true;
+    });
+  }
+}
+
+async function waitForModelSetupText(page, pattern) {
+  try {
+    await page.waitForText('[data-testid="model-setup-detail"]', pattern);
+  } catch (error) {
+    const snapshot = await page.evaluate(() => ({
+      activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
+      activeWorkflowStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
+      detailText: document.querySelector('[data-testid="model-setup-detail"]')?.textContent?.trim().replace(/\s+/g, " ").slice(0, 800) || "",
+      bodyText: document.body.textContent?.trim().replace(/\s+/g, " ").slice(0, 1200) || "",
+    }));
+    error.message = `${error.message}. Model setup snapshot: ${JSON.stringify(snapshot)}`;
+    throw error;
+  }
 }
 
 async function selectedProjectVideo(page) {

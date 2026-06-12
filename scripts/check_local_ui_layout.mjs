@@ -777,9 +777,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           const style = getComputedStyle(element);
           return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden";
         };
-        const elementBox = (selector) => {
-          const element = document.querySelector(selector);
-          if (!element || !visible(element)) return null;
+        const elementMetrics = (element) => {
           const box = element.getBoundingClientRect();
           return {
             top: Math.round(box.top),
@@ -789,6 +787,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
             width: Math.round(box.width),
             height: Math.round(box.height),
           };
+        };
+        const elementBox = (selector) => {
+          const element = document.querySelector(selector);
+          if (!element || !visible(element)) return null;
+          return elementMetrics(element);
         };
         return {
           viewportHeight: window.innerHeight,
@@ -916,6 +919,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           modelSetupConfirmationText: document.querySelector(".model-setup-confirmation")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           modelSetupProgressVisible: visible(document.querySelector(".model-setup-progress-card")),
           modelSetupProgressText: document.querySelector(".model-setup-progress-card")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          runPlanSummaryVisible: visible(document.querySelector("#runPlanSummary")),
+          runPlanListBox: elementBox("#runPlanSummary .run-plan-list"),
+          runPlanStepBoxes: [...document.querySelectorAll("#runPlanSummary .run-plan-step")].filter(visible).map(elementMetrics),
           rawConfigOpen: document.querySelector("#rawConfigDisclosure")?.open === true,
           configSaveLoadOpen: document.querySelector(".compact-advanced-actions")?.open === true,
           startMockText: document.querySelector("#startMockRunButton")?.textContent?.trim() || "",
@@ -928,6 +934,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           studioObjectRowOverflowCount: [...document.querySelectorAll("#studioObjectList .studio-object-row")]
             .filter((element) => visible(element) && element.scrollHeight - element.clientHeight > 2)
             .length,
+          studioObjectRowClippedByListCount: (() => {
+            const list = document.querySelector("#studioObjectList");
+            if (!list || !visible(list)) return 0;
+            const listBox = list.getBoundingClientRect();
+            return [...list.querySelectorAll(".studio-object-row")]
+              .filter((element) => {
+                if (!visible(element)) return false;
+                const box = element.getBoundingClientRect();
+                return box.top < listBox.bottom - 2 && box.bottom > listBox.bottom + 2;
+              })
+              .length;
+          })(),
           studioObjectListVisible: visible(document.querySelector("#studioObjectList")),
           studioExportCardVisible: visible(document.querySelector("#studioExportCard")),
           studioExportIncludedText: document.querySelector("#studioExportIncludedObjects")?.textContent?.trim().replace(/\\s+/g, " ") || "",
@@ -1345,6 +1363,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (!stateValue.configPanelVisible || stateValue.configPanelTitle !== "What will happen if I press Run?") {
         failures.push(`${viewport.name}/${state}: preflight should show the truthful run summary panel`);
       }
+      if (
+        viewport.width >= 1200 &&
+        stateValue.runPlanListBox &&
+        stateValue.runPlanStepBoxes?.length > 1 &&
+        stateValue.runPlanStepBoxes.some((box) => box.width < stateValue.runPlanListBox.width - 12)
+      ) {
+        failures.push(`${viewport.name}/${state}: preflight summary should read as one confirmation list, not a multi-column card grid`);
+      }
       if (stateValue.wizardPanelVisible || stateValue.viewerToolbarVisible) {
         failures.push(`${viewport.name}/${state}: preflight should not keep target prompt editing as the primary visible surface`);
       }
@@ -1476,6 +1502,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (stateValue.studioReviewTitle !== "Review all objects" || !stateValue.studioObjectListVisible || stateValue.studioExportCardVisible) {
         failures.push(`${viewport.name}/${state}: review screen should show object review content and hide export package content`);
+      }
+      if (stateValue.studioObjectRowClippedByListCount > 0) {
+        failures.push(`${viewport.name}/${state}: review object list should not rest with a partially clipped candidate row`);
       }
       if (viewport.width >= 1366) {
         const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
