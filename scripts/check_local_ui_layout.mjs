@@ -983,6 +983,33 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           studioObjectListVisible: visible(document.querySelector("#studioObjectList")),
           studioExportCardVisible: visible(document.querySelector("#studioExportCard")),
           studioExportIncludedText: document.querySelector("#studioExportIncludedObjects")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          studioExportChecklistColumnCount: (() => {
+            const list = document.querySelector("#studioExportChecklist");
+            if (!list || !visible(list)) return 0;
+            const columns = getComputedStyle(list).gridTemplateColumns;
+            if (!columns || columns === "none") return 0;
+            return columns.split(/\s+/).filter(Boolean).length;
+          })(),
+          studioExportChecklistRowClippedByViewportCount: (() => {
+            const list = document.querySelector("#studioExportChecklist");
+            const workspace = document.querySelector(".workspace");
+            if (!list || !workspace || !visible(list)) return 0;
+            const workspaceBox = workspace.getBoundingClientRect();
+            const footer = document.querySelector("[data-testid='command-footer']");
+            const footerTop = visible(footer) ? footer.getBoundingClientRect().top : window.innerHeight;
+            const visibleTop = Math.max(0, workspaceBox.top);
+            const visibleBottom = Math.min(window.innerHeight, workspaceBox.bottom, footerTop);
+            return [...list.querySelectorAll(".studio-export-check-row")]
+              .filter((element) => {
+                if (!visible(element)) return false;
+                const box = element.getBoundingClientRect();
+                if (box.bottom <= visibleTop + 2 || box.top >= visibleBottom - 2) return false;
+                const visibleHeight = Math.min(box.bottom, visibleBottom) - Math.max(box.top, visibleTop);
+                const hiddenBelow = box.bottom - visibleBottom;
+                return visibleHeight > 12 && hiddenBelow > 12;
+              })
+              .length;
+          })(),
           studioExportReuseGuideVisible: visible(document.querySelector("#studioExportReuseGuide")),
           studioExportReuseGuideText: document.querySelector("#studioExportReuseGuide")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioExportReuseActionCount: [...document.querySelectorAll("#studioExportReuseGuide [data-export-handoff-action]")]
@@ -991,6 +1018,27 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           studioExportReuseRowOverflowCount: [...document.querySelectorAll("#studioExportReuseGuide .studio-export-reuse-row")]
             .filter((element) => visible(element) && (element.scrollHeight - element.clientHeight > 2 || element.scrollWidth - element.clientWidth > 2))
             .length,
+          studioExportReuseRowClippedByViewportCount: (() => {
+            const guide = document.querySelector("#studioExportReuseGuide");
+            const workspace = document.querySelector(".workspace");
+            if (!guide || !workspace || !visible(guide)) return 0;
+            const guideBox = guide.getBoundingClientRect();
+            const workspaceBox = workspace.getBoundingClientRect();
+            const footer = document.querySelector("[data-testid='command-footer']");
+            const footerTop = visible(footer) ? footer.getBoundingClientRect().top : window.innerHeight;
+            const visibleTop = Math.max(0, guideBox.top, workspaceBox.top);
+            const visibleBottom = Math.min(window.innerHeight, guideBox.bottom, workspaceBox.bottom, footerTop);
+            return [...guide.querySelectorAll(".studio-export-reuse-row")]
+              .filter((element) => {
+                if (!visible(element)) return false;
+                const box = element.getBoundingClientRect();
+                if (box.bottom <= visibleTop + 2 || box.top >= visibleBottom - 2) return false;
+                const visibleHeight = Math.min(box.bottom, visibleBottom) - Math.max(box.top, visibleTop);
+                const hiddenBelow = box.bottom - visibleBottom;
+                return visibleHeight > 12 && hiddenBelow > 12;
+              })
+              .length;
+          })(),
           studioPartialDiagnosticVisible: visible(document.querySelector("#studioPartialDiagnostic")),
           studioPartialDiagnosticText: document.querySelector("#studioPartialDiagnostic")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioBottomCtaVisible: visible(document.querySelector("#studioBottomCta")),
@@ -1702,6 +1750,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           failures.push(`${viewport.name}/${state}: mobile export screen should show the export checklist before review tools`);
         }
       }
+      if (viewport.width <= 620) {
+        if (stateValue.studioExportChecklistColumnCount > 1) {
+          failures.push(`${viewport.name}/${state}: mobile export checklist should use one readable column, found ${stateValue.studioExportChecklistColumnCount}`);
+        }
+        if (stateValue.studioExportChecklistRowClippedByViewportCount > 0) {
+          failures.push(`${viewport.name}/${state}: mobile export checklist should not leave a partially clipped row above the command footer`);
+        }
+      }
       if (viewport.width >= 1366) {
         const bottomLimit = (stateValue.viewportHeight || viewport.height) + 2;
         if (
@@ -1746,6 +1802,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         if (stateValue.studioExportReuseRowOverflowCount) {
           failures.push(`${viewport.name}/${state}: reuse handoff rows should not clip or overflow their text/actions`);
         }
+        if (viewport.width <= 620 && stateValue.studioExportReuseRowClippedByViewportCount > 0) {
+          failures.push(`${viewport.name}/${state}: mobile reuse handoff should not leave a partially clipped handoff row above the command footer`);
+        }
       } else if (stateValue.studioExportReuseGuideVisible) {
         failures.push(`${viewport.name}/${state}: pre-export checklist should not show reusable handoff actions before export succeeds`);
       }
@@ -1761,6 +1820,14 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         const toolsTop = stateValue.reviewToolsBox?.top ?? 0;
         if (toolsTop && exportTop && toolsTop < exportTop) {
           failures.push(`${viewport.name}/${state}: mobile export capture should show the export checklist before review tools`);
+        }
+      }
+      if (viewport.width <= 620) {
+        if (stateValue.studioExportChecklistColumnCount > 1) {
+          failures.push(`${viewport.name}/${state}: mobile export capture checklist should use one readable column, found ${stateValue.studioExportChecklistColumnCount}`);
+        }
+        if (stateValue.studioExportChecklistRowClippedByViewportCount > 0) {
+          failures.push(`${viewport.name}/${state}: mobile export capture checklist should not leave a partially clipped row above the command footer`);
         }
       }
       if (viewport.width >= 1366 && stateValue.reviewToolsVisible && stateValue.studioExportCardVisible) {

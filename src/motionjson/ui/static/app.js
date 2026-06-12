@@ -6282,6 +6282,7 @@ const MotionJSONUI = (() => {
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
       shell?.classList.toggle("is-reuse-handoff", reuseHandoffMode);
+      shell?.classList.toggle("is-reuse-copy-confirmed", reuseHandoffMode && Boolean(state.exportCopiedHandoffId));
       shell?.classList.toggle("is-review-workbench", reviewMode === "review");
       shell?.classList.toggle("is-correct-workbench", reviewMode === "correct");
       shell?.classList.toggle("is-source-required-prompt", sourceRequiredBeforePrompt);

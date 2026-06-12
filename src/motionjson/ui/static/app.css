@@ -11160,9 +11160,13 @@ body {
 
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
     grid-template-columns: minmax(0, 1fr) !important;
-    max-height: min(360px, calc(100vh - 500px)) !important;
+    max-height: clamp(248px, calc(100vh - 558px), 286px) !important;
     overflow: auto !important;
     scrollbar-gutter: stable !important;
+  }
+
+  .app-shell.is-reuse-copy-confirmed:not(.is-workflow-dashboard) .studio-export-reuse-guide:not([hidden]) {
+    max-height: clamp(264px, calc(100vh - 540px), 304px) !important;
   }
 }
 
@@ -11576,5 +11580,32 @@ body {
 
   .app-shell.is-result-mode:not(.is-workflow-dashboard) .studio-bulk-actions {
     grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-card {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportChecklist {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0 !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #studioExportChecklist:not(:empty) {
+    margin-top: clamp(40px, 7vh, 64px) !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row {
+    grid-template-columns: 18px minmax(0, 1fr) !important;
+    gap: 4px 8px !important;
+    align-items: start !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-export-check-row small {
+    display: block !important;
+    grid-column: 2 !important;
   }
 }
