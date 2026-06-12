@@ -855,6 +855,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           projectDrawerBox: elementBox("#workspaceSidebar"),
           projectDrawerVisible: visible(document.querySelector("#workspaceSidebar")),
           projectDrawerAriaHidden: document.querySelector("#workspaceSidebar")?.getAttribute("aria-hidden") || "",
+          projectDrawerMaxRowHeight: Math.max(
+            0,
+            ...[...document.querySelectorAll("#projectRailList .project-rail-item")]
+              .filter(visible)
+              .map((element) => Math.round(element.getBoundingClientRect().height)),
+          ),
+          projectDrawerRowCount: [...document.querySelectorAll("#projectRailList .project-rail-item")].filter(visible).length,
           mainWorkflowOnly: !document.querySelector("#detailsToggle") && !document.querySelector("#workflowDashboardToggle"),
           railCloseControls: document.querySelector("#railCloseButton")?.getAttribute("aria-controls") || "",
           railCloseVisible: visible(document.querySelector("#railCloseButton")),
@@ -895,6 +902,22 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           autoParameterSourceCount: [...document.querySelectorAll(".parameter-source")].filter(visible).length,
           criticalHelpLabelCount: [...document.querySelectorAll(".help-label[data-tooltip], #adaptiveParameterSummary [data-tooltip]")].filter(visible).length,
           visibleGoalCardCount: [...document.querySelectorAll(".goal-card-grid > .goal-card")].filter(visible).length,
+          activeGoalCardChrome: (() => {
+            const active = document.querySelector(".goal-card-grid > .goal-card.is-active");
+            if (!active || !visible(active)) return null;
+            const style = getComputedStyle(active);
+            const outlineWidth = Number.parseFloat(style.outlineWidth || "0") || 0;
+            const borderTopWidth = Number.parseFloat(style.borderTopWidth || "0") || 0;
+            const borderLeftWidth = Number.parseFloat(style.borderLeftWidth || "0") || 0;
+            const boxShadow = style.boxShadow || "";
+            return {
+              outlineWidth,
+              borderTopWidth,
+              borderLeftWidth,
+              boxShadow,
+              hasSideStripe: /inset\s+[34]px\s+0/.test(boxShadow),
+            };
+          })(),
           advancedTaskPanelVisible: visible(document.querySelector(".advanced-task-panel")),
           workflowSummaryCount: document.querySelectorAll("#workflowStepSummary .step-summary-card").length,
           workflowPrimaryLabel: document.querySelector("#workflowPrimaryButton")?.textContent?.trim() || "",
@@ -1268,6 +1291,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (state === "project-drawer-open" && (stateValue.sidebarCollapsed || !stateValue.projectDrawerVisible || stateValue.projectDrawerButtonExpanded !== "true" || stateValue.sidebarContentAriaHidden === "true" || stateValue.sidebarContentInert)) {
       failures.push(`${viewport.name}/${state}: project drawer should open with visible, interactive project controls`);
     }
+    if (state === "project-drawer-open" && stateValue.projectDrawerRowCount > 0 && stateValue.projectDrawerMaxRowHeight > 64) {
+      failures.push(`${viewport.name}/${state}: project drawer rows should be compact navigation rows, not ${stateValue.projectDrawerMaxRowHeight}px project cards`);
+    }
     if (
       state === "project-drawer-open" &&
       viewport.width > 900 &&
@@ -1314,7 +1340,13 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       failures.push(`${viewport.name}/${state}: goal step should start with Continue to source, no back action, and preview not ready`);
     }
     if (state === "workflow-goal" && stateValue.visibleGoalCardCount !== 4) {
-      failures.push(`${viewport.name}/${state}: first goal screen should show four storyboard primary goal cards before advanced tasks`);
+      failures.push(`${viewport.name}/${state}: first goal screen should show four compact primary task rows before advanced tasks`);
+    }
+    if (state === "workflow-goal" && stateValue.activeGoalCardChrome) {
+      const chrome = stateValue.activeGoalCardChrome;
+      if (chrome.outlineWidth > 0 || chrome.borderTopWidth > 1 || chrome.borderLeftWidth > 1 || chrome.hasSideStripe) {
+        failures.push(`${viewport.name}/${state}: active goal should read as a compact task row, not a framed or striped card`);
+      }
     }
     if (stateValue.journeyPhaseCount !== 10) {
       failures.push(`${viewport.name}/${state}: journey should expose ten workflow phases including Reuse`);
