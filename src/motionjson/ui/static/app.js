@@ -722,6 +722,18 @@ const MotionJSONUI = (() => {
         };
       }
       const blocksNewRun = jobRunning;
+      const providerBlocksRun = requiresModel && Boolean(activeReadiness.complete) && Boolean(snapshot.providerBlocked || snapshot.providerTone === "is-bad");
+      if (providerBlocksRun) {
+        return {
+          id: activeStep,
+          primaryLabel: "Fix model setup",
+          primaryAction: "continue_after_video",
+          enabled: true,
+          blockedReason: modelSetup.message || "Prepare one compatible model connection before running extraction.",
+          successAdvanceTo: "provider_settings",
+          backTarget: "source_video",
+        };
+      }
       return {
         id: activeStep,
         primaryLabel: fastFramePick ? "Scan keyframe" : primaryRunLabelForPreset(selectedPreset),
@@ -946,7 +958,7 @@ const MotionJSONUI = (() => {
         primaryLabel: base.primaryLabel,
         enabled: base.enabled,
         blockedReason: base.blockedReason,
-        primaryAction: "run_prepared_workflow",
+        primaryAction: base.primaryAction,
         backTarget: requiresModel ? "provider_settings" : "source_video",
       };
     }

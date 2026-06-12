@@ -1477,14 +1477,23 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         failures.push(`${viewport.name}/${state}: preflight fixture should use a prepared source instead of the source-required gate`);
       }
     }
-    if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Run trace") {
-      failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should label the primary CTA as Run trace`);
+    if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Fix model setup") {
+      failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should route provider-blocked runs back to model setup`);
     }
     if (state === "prepare-sam3-text" && stateValue.workflowPrimaryLabel !== "Run search") {
       failures.push(`${viewport.name}/${state}: SAM3 text prepare should label the primary CTA as Run search`);
     }
-    if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && stateValue.workflowPrimaryLabel !== "Run scene sweep") {
+    if (["prepare-sam3-trace-all", "prepare-sam3-trace-all-runtime-ready"].includes(state) && stateValue.workflowPrimaryLabel !== "Run scene sweep") {
       failures.push(`${viewport.name}/${state}: SAM3 trace-all prepare should label the primary CTA as Run scene sweep`);
+    }
+    if (state === "prepare-sam3-trace-all-missing-runtime" && stateValue.workflowPrimaryLabel !== "Fix model setup") {
+      failures.push(`${viewport.name}/${state}: missing SAM3 runtime should route back to model setup instead of offering a scene sweep`);
+    }
+    if (
+      ["prepare-sam3-single", "prepare-sam3-trace-all-missing-runtime"].includes(state) &&
+      /^Run|^Scan/i.test(stateValue.workflowPrimaryLabel)
+    ) {
+      failures.push(`${viewport.name}/${state}: provider-blocked target state must not advertise a run CTA`);
     }
     if (state === "prepare-sam3-single" && (stateValue.pointToolVisible || !stateValue.boxToolVisible || !stateValue.viewerToolbarVisible || stateValue.maskProviderFieldVisible)) {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should show box-only prompting and hide mask-provider internals`);
