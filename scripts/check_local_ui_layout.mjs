@@ -942,6 +942,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           reviewCandidateSlotText: document.querySelector("#reviewCandidateSectionSlot")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           studioReviewHeadingBox: elementBox("#studioReviewPanel .studio-review-heading"),
           viewerPanelBox: elementBox(".viewer-panel"),
+          wizardPanelBox: elementBox(".wizard-panel"),
           reviewToolsVisible: visible(document.querySelector(".review-tools-panel")),
           reviewToolsText: document.querySelector(".review-tools-panel")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           reviewToolsBox: elementBox(".review-tools-panel"),
@@ -1381,6 +1382,16 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (stateValue.criticalHelpLabelCount < 4 || stateValue.autoParameterSourceCount < 4) {
         failures.push(`${viewport.name}/${state}: critical parameter help labels and auto/override statuses should remain visible`);
       }
+    }
+    if (
+      ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) &&
+      viewport.width >= 1200 &&
+      stateValue.viewerPanelBox &&
+      stateValue.wizardPanelBox &&
+      stateValue.wizardPanelBox.left > stateValue.viewerPanelBox.left + 8 &&
+      stateValue.wizardPanelBox.top < stateValue.viewerPanelBox.bottom - 8
+    ) {
+      failures.push(`${viewport.name}/${state}: target controls should stack inline below the source frame, not in a right-side setup rail`);
     }
     if (state === "prepare-sam3-trace-all-runtime-ready" && /SAM3_LOCAL_MODEL|sam3-local:/.test(stateValue.providerWarningText)) {
       failures.push(`${viewport.name}/${state}: scene sweep should not show the advanced sam3-local checkpoint warning`);

@@ -5706,13 +5706,15 @@ body {
 
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace-grid {
   display: grid;
-  max-width: 1160px;
+  max-width: 1080px;
   margin: 0 auto;
-  grid-template-columns: minmax(420px, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "viewer wizard"
-    "viewer config";
-  gap: 18px;
+    "targetHead"
+    "targetFields"
+    "viewer"
+    "config";
+  gap: 12px;
   align-items: start;
 }
 
@@ -5721,7 +5723,7 @@ body {
 }
 
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel {
-  grid-area: wizard;
+  display: contents;
 }
 
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-panel {
@@ -5736,8 +5738,66 @@ body {
 }
 
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-stage {
-  min-height: 420px;
+  height: clamp(220px, 28vh, 300px);
+  min-height: 0;
   border-radius: 8px;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel > .panel-heading {
+  grid-area: targetHead;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin: 0;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--workflow-line);
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-fields {
+  grid-area: targetFields;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) #providerWarning {
+  grid-area: auto;
+  margin: 0;
+  border-radius: 0;
+  background: color-mix(in oklab, var(--bad) 9%, transparent);
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) #adaptiveParameterSummary {
+  grid-area: auto;
+  margin: 0;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--workflow-line);
+  border-bottom: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .adaptive-chip-grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .adaptive-chip {
+  padding: 8px 10px;
+  border: 0;
+  border-left: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .adaptive-chip:first-child {
+  border-left: 0;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .guided-control-group {
+  border: 0;
+  border-bottom: 1px solid var(--workflow-line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .source-required-stage {
@@ -5928,9 +5988,20 @@ body {
   .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
+      "targetHead"
+      "targetFields"
       "viewer"
-      "wizard"
       "config";
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-fields,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .adaptive-chip-grid,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .guided-quality-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-stage {
+    height: clamp(180px, 28vh, 240px);
   }
 }
 
