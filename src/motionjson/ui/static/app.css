@@ -8442,7 +8442,6 @@ body {
   outline-offset: 2px;
 }
 
-.journey-collapse:focus,
 .journey-collapse:focus-visible {
   outline-color: var(--focus);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--focus) 18%, transparent);
@@ -8496,10 +8495,14 @@ body {
   background: #f3f7fb;
 }
 
-.journey-nav-list button:focus,
 .journey-nav-list button:focus-visible {
-  outline: 2px solid var(--focus);
+  outline: 2px solid #7d8b9a;
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(125, 139, 154, 0.14);
+}
+
+.journey-nav-list .is-active button:focus-visible {
+  outline-color: var(--focus);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--focus) 18%, transparent);
 }
 

@@ -5451,6 +5451,10 @@ const MotionJSONUI = (() => {
     const reviewedTracks = asArray(reviewTracks).filter(isTrackExportIncluded);
     const allStaticFallbackCount = asArray(reviewTracks).filter(trackUsesStaticKeyframeFallback).length;
     const movingCount = reviewedTracks.filter((track) => !trackUsesStaticKeyframeFallback(track) && trackMotionMetrics(track).moving).length;
+    const selectedReviewCopy = `${includedCount} reviewed object${includedCount === 1 ? "" : "s"} selected`;
+    const movingReviewCopy = movingCount
+      ? `${movingCount} moving track${movingCount === 1 ? "" : "s"} verified`
+      : "no moving tracks verified";
 
     if (!lifecycle) {
       return {
@@ -5529,7 +5533,10 @@ const MotionJSONUI = (() => {
         tone: "ready",
         badge: "Ready",
         title: `Ready to export ${includedCount} reviewed object${includedCount === 1 ? "" : "s"}`,
-        detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} passed validation and will be written to the handoff artifacts.`,
+        detail:
+          movingCount === includedCount
+            ? `${movingCount} moving track${movingCount === 1 ? "" : "s"} passed validation and will be written to the handoff artifacts.`
+            : `${selectedReviewCopy}; ${movingReviewCopy}. The validated package will preserve that distinction in the handoff artifacts.`,
         nextAction: "Export MotionJSON",
       };
     }
@@ -5546,7 +5553,10 @@ const MotionJSONUI = (() => {
       tone: "warn",
       badge: "Validate next",
       title: `Validate ${includedCount} reviewed object${includedCount === 1 ? "" : "s"}`,
-      detail: `${movingCount || includedCount} moving track${(movingCount || includedCount) === 1 ? "" : "s"} ${(movingCount || includedCount) === 1 ? "is" : "are"} selected. Validate once to confirm the final MotionJSON package.`,
+      detail:
+        movingCount === includedCount
+          ? `${movingCount} moving track${movingCount === 1 ? " is" : "s are"} selected. Validate once to confirm the final MotionJSON package.`
+          : `${selectedReviewCopy}; ${movingReviewCopy}. Validate once to confirm the final MotionJSON package.`,
       nextAction: "Validate export",
     };
   }
@@ -5882,13 +5892,16 @@ const MotionJSONUI = (() => {
 
     function workflowStepButton(stepId = state.activeWorkflowStep) {
       const normalized = normalizeWorkflowStepId(stepId);
+      const buttons = [...document.querySelectorAll("[data-workflow-step]")].filter((button) => button.dataset.workflowStep === normalized);
+      if (normalized === "review_export" && state.activeJourneyPhase) {
+        const phaseButton = buttons.find((button) => button.closest("#journeyNav") && button.dataset.journeyPhase === state.activeJourneyPhase);
+        if (phaseButton) return phaseButton;
+      }
       return (
-        [...document.querySelectorAll("[data-workflow-step]")]
-          .filter((button) => button.dataset.workflowStep === normalized)
-          .sort((a, b) => {
-            const priority = (button) => (button.closest("#journeyNav") ? -2 : button.closest("#studioProgressStepper") ? -1 : 1);
-            return priority(a) - priority(b);
-          })[0] || null
+        buttons.sort((a, b) => {
+          const priority = (button) => (button.closest("#journeyNav") ? -2 : button.closest("#studioProgressStepper") ? -1 : 1);
+          return priority(a) - priority(b);
+        })[0] || null
       );
     }
 

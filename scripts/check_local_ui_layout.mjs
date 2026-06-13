@@ -846,6 +846,7 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           journeyNavClientWidth: document.querySelector("#journeyNav")?.clientWidth || 0,
           activeJourneyOffsetLeft: document.querySelector("#journeyNav [data-journey-phase].is-active")?.closest("li")?.offsetLeft || 0,
           activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
+          focusedJourneyPhase: document.activeElement?.closest?.("#journeyNav [data-journey-phase]")?.dataset?.journeyPhase || "",
           journeyPhaseCount: document.querySelectorAll("#journeyNav [data-journey-phase]").length,
           workspaceBox: elementBox("#workspaceMain"),
           workspaceGridBox: elementBox(".workspace-grid"),
@@ -1356,6 +1357,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
     if (stateValue.journeyPhaseOrder.join(",") !== expectedJourneyOrder) {
       failures.push(`${viewport.name}/${state}: journey order should be ${expectedJourneyOrder}`);
     }
+    if (stateValue.focusedJourneyPhase && stateValue.activeJourneyPhase && stateValue.focusedJourneyPhase !== stateValue.activeJourneyPhase) {
+      failures.push(`${viewport.name}/${state}: focused journey phase should match active phase, focused ${stateValue.focusedJourneyPhase}, active ${stateValue.activeJourneyPhase}`);
+    }
     if (stateValue.viewportWidth <= 720 && stateValue.topbarActionClipping) {
       failures.push(`${viewport.name}/${state}: mobile command bar should not clip status, help, or settings controls`);
     }
@@ -1778,6 +1782,10 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (stateValue.reviewCandidateSlotVisible && /Track selected|not background|coverage/i.test(stateValue.reviewCandidateSlotText)) {
         failures.push(`${viewport.name}/${state}: export screen should not show candidate filter/track controls ahead of the export gate`);
+      }
+      const decisionCountMismatch = stateValue.studioExportDecisionText.match(/Validate\s+(\d+)\s+reviewed objects?.*?(\d+)\s+moving tracks?\s+(?:is|are)\s+selected/i);
+      if (decisionCountMismatch && decisionCountMismatch[1] !== decisionCountMismatch[2]) {
+        failures.push(`${viewport.name}/${state}: export readiness copy should distinguish selected reviewed objects from verified moving tracks`);
       }
       if (viewport.width <= 1180 && stateValue.reviewToolsVisible && stateValue.studioExportCardVisible) {
         const exportTop = stateValue.studioExportCardBox?.top ?? 0;
