@@ -6217,6 +6217,63 @@ body {
   }
 }
 
+@media (max-width: 620px) {
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace {
+    padding-bottom: 140px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace-grid {
+    gap: 8px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel > .panel-heading,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel > .panel-heading {
+    gap: 8px !important;
+    margin-bottom: 8px !important;
+    padding-bottom: 8px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel > .panel-heading .panel-note,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel > .panel-heading .panel-note {
+    display: none !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-fields {
+    gap: 8px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-toolbar {
+    gap: 6px !important;
+    margin-bottom: 4px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .tool-button {
+    min-height: 36px !important;
+    padding-right: 10px !important;
+    padding-left: 10px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-stage {
+    height: clamp(132px, 38vw, 156px) !important;
+    min-height: 0 !important;
+    border-radius: 7px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-status {
+    min-height: 18px !important;
+    font-size: 11px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .timeline-controls {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) #markKeyframeButton {
+    grid-column: 1 / -1 !important;
+  }
+}
+
 /* Final storyboard overrides. Keep these last so older shell rules cannot hide the project rail. */
 .app-shell,
 .app-shell.is-sidebar-collapsed,

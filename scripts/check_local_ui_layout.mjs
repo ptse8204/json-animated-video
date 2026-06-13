@@ -900,6 +900,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           keyframeScanChooserVisible: visible(document.querySelector("#keyframeScanChooser")),
           scanFrameChoiceText: document.querySelector("#scanFrameChoice")?.textContent?.trim() || "",
           scanFrameHintText: document.querySelector("#scanFrameHint")?.textContent?.trim().replace(/\\s+/g, " ") || "",
+          targetViewerStageBox: elementBox("#viewerStage"),
+          targetTimelineControlsBox: elementBox(".timeline-controls"),
           autoParameterSourceCount: [...document.querySelectorAll(".parameter-source")].filter(visible).length,
           criticalHelpLabelCount: [...document.querySelectorAll(".help-label[data-tooltip], #adaptiveParameterSummary [data-tooltip]")].filter(visible).length,
           visibleGoalCardCount: [...document.querySelectorAll(".goal-card-grid > .goal-card")].filter(visible).length,
@@ -1614,6 +1616,15 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       stateValue.wizardPanelBox.top < stateValue.viewerPanelBox.bottom - 8
     ) {
       failures.push(`${viewport.name}/${state}: target controls should stack inline below the source frame, not in a right-side setup rail`);
+    }
+    if (["prepare-sam3-single", "prepare-pick-frame"].includes(state) && viewport.width <= 620) {
+      const footerTop = stateValue.commandFooterBox?.top || stateValue.viewportHeight;
+      if (!stateValue.targetTimelineControlsBox || stateValue.targetTimelineControlsBox.top >= footerTop - 8) {
+        failures.push(`${viewport.name}/${state}: mobile target frame scrubber should be visible above the command footer`);
+      }
+      if (!stateValue.targetViewerStageBox || stateValue.targetViewerStageBox.height > Math.max(168, stateValue.viewportHeight * 0.22)) {
+        failures.push(`${viewport.name}/${state}: mobile target viewer should stay compact enough to leave room for frame controls`);
+      }
     }
     if (state === "prepare-sam3-trace-all-runtime-ready" && /SAM3_LOCAL_MODEL|sam3-local:/.test(stateValue.providerWarningText)) {
       failures.push(`${viewport.name}/${state}: scene sweep should not show the advanced sam3-local checkpoint warning`);
