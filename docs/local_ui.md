@@ -12,6 +12,8 @@ python3 -m motionjson.cli ui --host 127.0.0.1 --port 8766
 python3 -m motionjson.cli ui --help
 ```
 
+Windows PowerShell users can use `py -3 -m motionjson.cli ui --no-open --debug-mock`.
+
 Defaults:
 
 - SQLite DB: `.motionjson/backend.sqlite`
@@ -43,6 +45,7 @@ The normal local flow is:
 7. export reviewed selected objects.
 
 Raw JSON, logs, artifacts, and advanced provider controls should remain available for technical users without dominating the nontechnical path.
+The First Run checklist surfaces local runtime readiness before extraction, and the Run monitor keeps job progress, logs, and generated artifacts visible after a run starts.
 
 ## API Route Categories
 

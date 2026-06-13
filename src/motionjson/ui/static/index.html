@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="/ui/app.css" />
   </head>
   <body>
-    <a class="skip-link" href="#workspaceMain">Skip to workspace</a>
+    <a id="skipToWorkspaceLink" class="skip-link" href="#workspaceMain" data-ui-action="skip-to-workspace">Skip to workspace</a>
     <main class="app-shell" data-testid="local-ui-shell">
       <aside id="workspaceSidebar" class="sidebar" aria-label="Workspace navigation">
         <div class="brand">
@@ -157,12 +157,12 @@
             <span id="providerIdentityChip" class="status-chip is-muted">Provider pending</span>
             <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer-toggle" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
-            <button class="command-icon-button" type="button" aria-label="Help">?</button>
-            <button class="command-icon-button" type="button" aria-label="Settings">&#9881;</button>
+            <button id="helpButton" class="command-icon-button" type="button" data-ui-action="open-help" aria-label="Open help and diagnostics">?</button>
+            <button id="settingsButton" class="command-icon-button" type="button" data-ui-action="open-settings" aria-label="Open project settings">&#9881;</button>
           </div>
         </header>
 
-        <section class="guided-start panel" data-workflow-panel="choose_goal" aria-label="Task setup" data-testid="workflow-goal-panel">
+        <section id="stageGoal" class="guided-start panel" data-stage-root="goal" data-workflow-panel="choose_goal" aria-label="Task setup" data-testid="workflow-goal-panel">
           <div class="guided-start-header">
             <div>
               <h2>What do you want to do?</h2>
@@ -269,10 +269,10 @@
           </div>
         </section>
 
-        <section id="mainJobCenter" class="job-center-panel run-cockpit panel" data-workflow-panel="run_monitor" aria-label="Extraction cockpit" data-testid="run-cockpit">
+        <section id="mainJobCenter" class="job-center-panel run-cockpit panel" data-stage-root="run" data-workflow-panel="run_monitor" aria-label="Extraction cockpit" data-testid="run-cockpit">
           <div class="job-center-heading run-cockpit-heading">
             <div>
-              <p class="section-kicker">Job Center</p>
+              <p class="section-kicker">Run monitor</p>
               <h2>Extraction cockpit</h2>
               <p id="runCockpitSubtitle" class="panel-note">Start a run to trace reusable motion objects from the source video.</p>
             </div>
@@ -431,7 +431,7 @@
 
         <div id="runPlanAlert" class="warning-box is-ready run-alert-panel" data-workflow-panel="validate_run" data-testid="run-plan-alert" role="status"></div>
 
-        <section id="modelSetupPanel" class="model-setup-panel panel" data-workflow-panel="provider_settings" aria-label="Model setup" data-testid="model-setup-panel">
+        <section id="modelSetupPanel" class="model-setup-panel panel" data-stage-root="model" data-workflow-panel="provider_settings" aria-label="Model setup" data-testid="model-setup-panel">
           <div class="model-setup-heading">
             <div>
               <p class="section-kicker">Model setup</p>
@@ -446,7 +446,7 @@
         </section>
 
         <section class="workspace-grid">
-          <article class="panel viewer-panel" data-workflow-panel="prompt_preview review_candidates correct_tracks export" aria-label="Video viewer">
+          <article id="stageTarget" class="panel viewer-panel" data-stage-root="target" data-workflow-panel="prompt_preview review_candidates correct_tracks export" aria-label="Video viewer">
             <div class="panel-heading">
               <div>
                 <h2>Preview and prompts</h2>
@@ -524,7 +524,7 @@
             </div>
           </article>
 
-          <article id="studioReviewPanel" class="panel studio-review-panel" data-workflow-panel="review_candidates correct_tracks export" aria-label="Review all objects">
+          <article id="studioReviewPanel" class="panel studio-review-panel" data-stage-root="review" data-workflow-panel="review_candidates correct_tracks export" aria-label="Review all objects">
             <div class="studio-review-heading">
               <div>
                 <p id="studioReviewModeKicker" class="section-kicker">Review</p>
@@ -552,7 +552,7 @@
               <div id="studioRuntimeProof" class="studio-runtime-proof" aria-live="polite"></div>
               <div id="studioSelectedTrackDetail" class="track-detail"></div>
             </section>
-            <div class="studio-export-card" id="studioExportCard" aria-label="Export checklist">
+            <div class="studio-export-card" id="studioExportCard" data-stage-root="export" aria-label="Export checklist">
               <div class="studio-export-heading">
                 <div>
                   <strong>Export checklist</strong>
@@ -562,7 +562,7 @@
               </div>
               <div id="studioExportDecision" class="export-decision-slot" aria-live="polite"></div>
               <div id="studioExportIncludedObjects" class="studio-export-included-list" aria-live="polite"></div>
-              <div id="studioExportReuseGuide" class="studio-export-reuse-guide" aria-live="polite" hidden></div>
+              <div id="studioExportReuseGuide" class="studio-export-reuse-guide" data-stage-root="reuse" aria-live="polite" hidden></div>
               <div id="studioExportChecklist" class="studio-export-checklist" aria-live="polite"></div>
               <div class="studio-export-actions">
                 <button id="studioValidateExportButton" type="button">Validate again</button>
@@ -586,7 +586,7 @@
               </div>
             </section>
             <div id="studioObjectList" class="studio-object-list" aria-live="polite"></div>
-            <div id="reviewCorrectionSectionSlot" class="review-inline-slot" aria-label="Corrections"></div>
+            <div id="reviewCorrectionSectionSlot" class="review-inline-slot" data-stage-root="correct" aria-label="Corrections"></div>
             <div id="reviewArtifactSectionSlot" class="review-inline-slot" aria-label="Review artifacts"></div>
             <div id="reviewLibrarySectionSlot" class="review-inline-slot" aria-label="Asset library"></div>
             <div class="studio-segment-gate">
@@ -598,7 +598,7 @@
             </div>
           </article>
 
-          <article class="panel setup-panel" data-workflow-panel="project_video source_video" aria-label="Project and video setup">
+          <article id="stageSource" class="panel setup-panel" data-stage-root="source" data-workflow-panel="project_video source_video" aria-label="Project and video setup">
             <div class="panel-heading">
               <div>
                 <h2 id="setupPanelTitle">Add a video</h2>
@@ -632,7 +632,7 @@
                     <span>New project name</span>
                     <input id="projectName" type="text" value="MotionJSON project" required />
                   </label>
-                  <button type="submit">Create project</button>
+                  <button id="createProjectButton" type="submit" data-ui-action="create-project">Create project</button>
                 </form>
               </div>
             </details>
@@ -918,7 +918,7 @@
             </div>
           </article>
 
-          <article class="panel config-panel" data-workflow-panel="validate_run" aria-label="Config preview">
+          <article id="stagePreflight" class="panel config-panel" data-stage-root="preflight" data-workflow-panel="validate_run" aria-label="Config preview">
             <div class="panel-heading">
               <div>
                 <h2 id="configPanelTitle">Validate then run</h2>
@@ -1300,7 +1300,7 @@
                 <span>Tag</span>
                 <input id="libraryTagFilter" type="text" value="" />
               </label>
-              <button type="submit">Search</button>
+              <button id="librarySearchButton" type="submit" data-ui-action="search-library">Search</button>
             </form>
             <div class="library-save-controls">
               <label>
@@ -1323,7 +1323,7 @@
                   <span>Collection</span>
                   <input id="libraryCollectionTitle" type="text" value="Local brand collection" />
                 </label>
-                <button type="submit">Create</button>
+                <button id="createLibraryCollectionButton" type="submit" data-ui-action="create-library-collection">Create</button>
               </form>
               <label>
                 <span>Add to collection</span>
@@ -1336,7 +1336,7 @@
                 <span>Creator pack</span>
                 <input id="libraryPackTitle" type="text" value="Creator-approved pack" />
               </label>
-              <button type="submit">Create pack</button>
+              <button id="createLibraryPackButton" type="submit" data-ui-action="create-library-pack">Create pack</button>
             </form>
             <div id="libraryError" class="warning-box" hidden></div>
             <div id="libraryArtifactNotice" class="empty-state" hidden></div>

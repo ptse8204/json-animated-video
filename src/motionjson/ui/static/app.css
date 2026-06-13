@@ -5773,7 +5773,24 @@ body {
   grid-area: config;
 }
 
-.app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel,
+.app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .config-panel {
+  display: none !important;
+}
+
+.app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .prompt-summary {
+  display: none !important;
+}
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .wizard-panel > .advanced-panel {
+    display: none !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) #traceEverythingDisclosure,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) #advancedParametersDisclosure {
+    display: none !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-panel,
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .wizard-panel,
 .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .config-panel {
   margin: 0;
@@ -6218,6 +6235,23 @@ body {
 }
 
 @media (max-width: 620px) {
+  .workflow-footer,
+  .app-shell.is-journey-collapsed .workflow-footer {
+    box-shadow: 0 -16px 0 0 var(--ui-v3-bg), 0 -26px 18px rgba(245, 247, 249, 0.92), 0 12px 28px rgba(26, 35, 43, 0.08);
+  }
+
+  .app-shell:not(.is-workflow-dashboard)::after {
+    content: "";
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 22;
+    height: 106px;
+    pointer-events: none;
+    background: var(--ui-v3-bg);
+  }
+
   .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .workspace {
     padding-bottom: 140px !important;
   }
@@ -6245,6 +6279,19 @@ body {
   .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .viewer-toolbar {
     gap: 6px !important;
     margin-bottom: 4px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .viewer-panel {
+    padding-bottom: 28px !important;
+  }
+
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .timeline-marker-track,
+  .app-shell.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) .timeline-marker-list {
+    display: none !important;
+  }
+
+  .app-shell.is-prepare-form-first.is-workflow-step-prompt-preview:not(.is-preflight-workbench):not(.is-workflow-dashboard) #markKeyframeButton {
+    display: none !important;
   }
 
   .app-shell.is-workflow-step-prompt-preview:not(.is-workflow-dashboard) .tool-button {
@@ -8970,7 +9017,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   border-color: var(--ui-v3-line-strong);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.98);
+  background: #ffffff;
 }
 
 .app-shell.is-journey-collapsed .workflow-footer {
@@ -9820,6 +9867,7 @@ body {
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 10px 28px rgba(31, 41, 55, 0.11);
+  overflow: hidden;
   pointer-events: auto;
 }
 
@@ -11461,21 +11509,21 @@ body {
     text-indent: 0;
   }
 
-  .command-icon-button[aria-label="Help"] {
+  #helpButton.command-icon-button {
     grid-column: 3 / 4 !important;
     grid-row: 1 !important;
   }
 
-  .command-icon-button[aria-label="Help"]::after {
+  #helpButton.command-icon-button::after {
     content: "?";
   }
 
-  .command-icon-button[aria-label="Settings"] {
+  #settingsButton.command-icon-button {
     grid-column: 4 / 5 !important;
     grid-row: 1 !important;
   }
 
-  .command-icon-button[aria-label="Settings"]::after {
+  #settingsButton.command-icon-button::after {
     content: "\2699";
   }
 
@@ -11510,17 +11558,21 @@ body {
     grid-row: 2 !important;
   }
 
-  .app-shell.is-workflow-step-provider-settings .command-icon-button[aria-label="Help"],
-  .app-shell.is-workflow-step-provider-settings .command-icon-button[aria-label="Settings"] {
+  .app-shell.is-workflow-step-provider-settings #helpButton.command-icon-button,
+  .app-shell.is-workflow-step-provider-settings #settingsButton.command-icon-button {
     grid-row: 2 !important;
   }
 
   .workflow-footer,
   .app-shell.is-journey-collapsed .workflow-footer {
-    right: 14px !important;
+    right: 0 !important;
     bottom: 0 !important;
-    left: 14px !important;
-    padding: 8px !important;
+    left: 0 !important;
+    padding: 14px 14px 8px !important;
+    border-right: 0 !important;
+    border-bottom: 0 !important;
+    border-left: 0 !important;
+    border-radius: 0 !important;
   }
 
   .workflow-footer-actions {

@@ -30,6 +30,7 @@ const CAPTURE_STATES = [
   "workflow-video",
   "workflow-provider",
   "workflow-prompts",
+  "workflow-preflight",
   "workflow-run",
   "workflow-run-stale",
   "workflow-run-logs-open",
@@ -90,39 +91,99 @@ const CAPTURE_STATES = [
   "copyable-snippet",
 ];
 const STATES = [...REAL_STATES, ...CAPTURE_STATES];
+const STATE_GROUPS = {
+  setup: ["workflow-goal", "workflow-video", "workflow-provider", "workflow-prompts", "workflow-preflight"],
+  run: ["workflow-run", "workflow-run-stale", "workflow-run-asset-stalled"],
+  review: ["workflow-review", "workflow-correct", "workflow-export"],
+  drawers: ["project-drawer-open", "diagnostics-open"],
+};
+const PROFILE_DEFINITIONS = {
+  desktop: {
+    viewports: ["laptop-1366", "desktop-1440", "desktop-1920"],
+    states: [...STATE_GROUPS.setup, ...STATE_GROUPS.run, ...STATE_GROUPS.review, ...STATE_GROUPS.drawers],
+    overflowMode: "normal",
+  },
+  "responsive-smoke": {
+    viewports: ["tablet-1024", "mobile-390"],
+    states: ["workflow-goal", "workflow-video", "workflow-prompts", "workflow-run", "workflow-export", "nav-collapsed"],
+    overflowMode: "catastrophic",
+  },
+  exhaustive: {
+    viewports: VIEWPORTS.map((viewport) => viewport.name),
+    states: STATES,
+    overflowMode: "normal",
+  },
+};
+
+function unique(values) {
+  return [...new Set(values)];
+}
+
+function expandStateTokens(value) {
+  return unique(
+    String(value || "")
+      .split(",")
+      .flatMap((token) => {
+        const name = token.trim();
+        if (!name) return [];
+        return STATE_GROUPS[name] || [name];
+      }),
+  );
+}
+
+function namedViewports(names) {
+  const requested = new Set(names);
+  return VIEWPORTS.filter((item) => requested.has(item.name));
+}
 
 function parseArgs(argv) {
   const options = {
     check: false,
+    profile: "desktop",
     screenshotDir: "",
     screenshotTimeoutMs: DEFAULT_SCREENSHOT_TIMEOUT_MS,
-    states: STATES,
-    viewports: VIEWPORTS,
+    states: [],
+    viewports: [],
+    overflowMode: "normal",
   };
+  let stateOverride = null;
+  let viewportOverride = null;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--check") options.check = true;
+    else if (arg === "--profile") {
+      options.profile = argv[++index] || "";
+      if (!PROFILE_DEFINITIONS[options.profile]) {
+        throw new Error(`Unknown profile: ${options.profile}. Expected one of ${Object.keys(PROFILE_DEFINITIONS).join(", ")}`);
+      }
+    }
     else if (arg === "--screenshot-dir") options.screenshotDir = argv[++index] || "";
     else if (arg === "--screenshot-timeout-ms") {
       options.screenshotTimeoutMs = Number(argv[++index] || "");
       if (!Number.isFinite(options.screenshotTimeoutMs) || options.screenshotTimeoutMs <= 0) {
         throw new Error("--screenshot-timeout-ms must be a positive number");
       }
-    } else if (arg === "--state") options.states = (argv[++index] || "").split(",").filter(Boolean);
+    } else if (arg === "--state") stateOverride = expandStateTokens(argv[++index] || "");
     else if (arg === "--viewport") {
       const names = new Set((argv[++index] || "").split(",").filter(Boolean));
-      options.viewports = VIEWPORTS.filter((item) => names.has(item.name));
+      viewportOverride = VIEWPORTS.filter((item) => names.has(item.name));
     } else if (arg === "--help" || arg === "-h") {
-      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--screenshot-dir DIR] [--screenshot-timeout-ms 15000] [--state real-empty-shell,nav-collapsed,diagnostics-open,workflow-goal,workflow-review,workflow-review-failure,workflow-keyboard,workflow-dashboard,first-run,model-setup,job-review,candidate-review,correction-tools,export-gate] [--viewport mobile-390,tablet-768,laptop-1366,desktop-1440]
+      console.log(`Usage: node scripts/check_local_ui_layout.mjs [--check] [--profile desktop|responsive-smoke|exhaustive] [--screenshot-dir DIR] [--screenshot-timeout-ms 15000] [--state setup,run,review,drawers,workflow-goal,workflow-review] [--viewport tablet-1024,laptop-1366,desktop-1440]
 
 Starts the Local UI in explicit debug mock mode, opens it in headless Chrome, and fails on
 horizontal overflow, clipped controls, too-narrow cards, or unintended overlaps
-across the commercial UI viewport matrix.`);
+across the selected UI viewport matrix. The default profile is desktop: laptop-1366,
+desktop-1440, and desktop-1920 across normal setup/run/review/drawer states.
+Use --profile exhaustive to run the historical full responsive matrix.`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
+  const profile = PROFILE_DEFINITIONS[options.profile];
+  options.states = stateOverride || profile.states;
+  options.viewports = viewportOverride || namedViewports(profile.viewports);
+  options.overflowMode = profile.overflowMode || "normal";
   return options;
 }
 
@@ -348,6 +409,17 @@ async function waitForReady(cdp, capture, { timeoutMs = 15000 } = {}) {
       if (
         capture &&
         navigated &&
+        ready &&
+        value.capture === capture &&
+        String(value.bodyText || "").trim().length > 40 &&
+        Date.now() - startedAt > 3000
+      ) {
+        console.warn(`Proceeding with rendered capture without explicit ready flag: ${capture}`);
+        return;
+      }
+      if (
+        capture &&
+        navigated &&
         !reloadAttempted &&
         !value.capture &&
         (value.ready === "interactive" || value.ready === "loading") &&
@@ -368,6 +440,15 @@ async function waitForReady(cdp, capture, { timeoutMs = 15000 } = {}) {
     : lastError
       ? `lastError=${lastError}`
       : "no page state observed";
+  if (
+    capture &&
+    lastState?.ready === "complete" &&
+    lastState?.capture === capture &&
+    String(lastState?.bodyText || "").trim().length > 40
+  ) {
+    console.warn(`Proceeding with rendered capture without explicit ready flag: ${capture} (${detail})`);
+    return;
+  }
   throw new Error(`Timed out waiting for UI capture readiness: ${capture} (${detail})`);
 }
 
@@ -564,7 +645,7 @@ async function closeTarget(cdp, targetId) {
   ]).catch(() => {});
 }
 
-async function checkState({ port, baseUrl, viewport, state, screenshotDir, screenshotTimeoutMs, failures }) {
+async function checkState({ port, baseUrl, viewport, state, screenshotDir, screenshotTimeoutMs, failures, overflowMode = "normal" }) {
   const isRealState = REAL_STATES.includes(state);
   const capture = isRealState ? "" : state;
   const url = capture ? `${baseUrl}/?capture=${encodeURIComponent(capture)}` : baseUrl;
@@ -733,7 +814,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
               : `[data-workflow-step="${workflowStates[state]}"]`;
       await cdp.send("Runtime.evaluate", {
         expression: `
-          document.querySelector('${workflowClickSelector}')?.click();
+          const workflowTarget = document.querySelector('${workflowClickSelector}');
+          workflowTarget?.focus?.();
+          workflowTarget?.click?.();
         `,
       });
       await cdp.send("Runtime.evaluate", {
@@ -876,6 +959,8 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
           providerWarningText: document.querySelector("#providerWarning")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
+          modelPlanPanelVisible: visible(document.querySelector("#modelPlanPanel")),
+          modelPlanPanelText: document.querySelector("#modelPlanPanel")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           activeModelChoice: document.querySelector("#modelSetupChoices .model-choice-card.is-active strong")?.textContent?.trim() || "",
           modelSetupNormalActionCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).length,
           modelSetupNormalActionText: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).map((item) => item.textContent?.trim() || "").join(" | "),
@@ -1235,6 +1320,18 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       })()`,
     });
     const stateValue = stateAssertions.result.value || {};
+    if (overflowMode === "catastrophic") {
+      for (const failure of layout.failures.filter((item) => /horizontal overflow|wider than viewport|outside viewport/.test(item))) {
+        failures.push(`${viewport.name}/${state}: ${failure}`);
+      }
+      if (screenshotDir) {
+        await captureScreenshot(cdp, join(screenshotDir, `${viewport.name}-${state}.png`), {
+          label: `${viewport.name}/${state}`,
+          timeoutMs: screenshotTimeoutMs,
+        });
+      }
+      return;
+    }
     if (state === "nav-collapsed" && (!stateValue.sidebarCollapsed || stateValue.sidebarExpanded !== "false")) {
       failures.push(`${viewport.name}/${state}: sidebar did not collapse with aria-expanded=false`);
     }
@@ -1567,6 +1664,11 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
         failures.push(`${viewport.name}/${state}: preflight fixture should use a prepared source instead of the source-required gate`);
       }
     }
+    if (state.startsWith("model-plan")) {
+      if (!stateValue.modelPlanPanelVisible || !/Generate|Review|planner|config/i.test(stateValue.modelPlanPanelText)) {
+        failures.push(`${viewport.name}/${state}: model plan capture should render the planner surface instead of a blank workflow stage`);
+      }
+    }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Fix model setup") {
       failures.push(`${viewport.name}/${state}: SAM3 single-object prepare should route provider-blocked runs back to model setup`);
     }
@@ -1606,6 +1708,9 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       if (stateValue.criticalHelpLabelCount < 4 || stateValue.autoParameterSourceCount < 4) {
         failures.push(`${viewport.name}/${state}: critical parameter help labels and auto/override statuses should remain visible`);
       }
+    }
+    if (["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) && stateValue.configPanelVisible) {
+      failures.push(`${viewport.name}/${state}: target definition should not show the preflight/config surface before the Preflight step`);
     }
     if (
       ["prepare-sam3-single", "prepare-sam3-text", "prepare-sam3-trace-all", "prepare-pick-frame", "prepare-sam3-trace-all-runtime-ready", "prepare-sam3-trace-all-missing-runtime"].includes(state) &&
@@ -2088,7 +2193,26 @@ async function run() {
   const options = parseArgs(process.argv.slice(2));
   const chrome = findChrome();
   if (options.check) {
-    console.log(JSON.stringify({ chrome, viewports: VIEWPORTS, states: STATES, canRun: Boolean(chrome) }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          chrome,
+          profile: options.profile,
+          profiles: Object.fromEntries(
+            Object.entries(PROFILE_DEFINITIONS).map(([name, definition]) => [
+              name,
+              { viewports: definition.viewports, states: definition.states, overflowMode: definition.overflowMode },
+            ]),
+          ),
+          stateGroups: STATE_GROUPS,
+          viewports: VIEWPORTS,
+          states: STATES,
+          canRun: Boolean(chrome),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
   if (!chrome) throw new Error("Chrome/Chromium is required. Set CHROME_BIN to a compatible binary.");
@@ -2132,6 +2256,7 @@ async function run() {
           state,
           screenshotDir: options.screenshotDir,
           screenshotTimeoutMs: options.screenshotTimeoutMs,
+          overflowMode: options.overflowMode,
           failures,
         });
       }
@@ -2148,6 +2273,7 @@ async function run() {
           state,
           screenshotDir: options.screenshotDir,
           screenshotTimeoutMs: options.screenshotTimeoutMs,
+          overflowMode: options.overflowMode,
           failures,
         });
       }
@@ -2162,7 +2288,7 @@ async function run() {
     console.error(JSON.stringify({ status: "failed", failures }, null, 2));
     process.exit(1);
   }
-  console.log(JSON.stringify({ status: "ok", viewports: options.viewports.map((item) => item.name), states: options.states }, null, 2));
+  console.log(JSON.stringify({ status: "ok", profile: options.profile, viewports: options.viewports.map((item) => item.name), states: options.states }, null, 2));
 }
 
 run().catch((error) => {

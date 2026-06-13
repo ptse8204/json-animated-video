@@ -28,6 +28,7 @@ import {
   journeyReadinessFromSnapshot,
   normalizeJourneyPhaseId,
   normalizeWorkflowStepId,
+  workflowRestoredStepFromSnapshot,
   workflowNextStepId,
   workflowScreenForStep,
   workflowStepForScreen,
@@ -153,6 +154,8 @@ assert.deepEqual(WORKFLOW_STEPS.map((step) => step.id), [
 assert.equal(normalizeWorkflowStepId("not-real"), "choose_goal");
 assert.equal(workflowNextStepId("review_export", 1), "review_export");
 assert.equal(workflowNextStepId("choose_goal", -1), "choose_goal");
+assert.equal(workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "source_video"), "source_video");
+assert.equal(workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "provider_settings"), "source_video");
 assert.equal(workflowScreenForStep("provider_settings"), "model");
 assert.equal(workflowStepForScreen("review"), "review_export");
 assert.equal(workflowScreenForStep("candidate_selection"), "select");

@@ -73,8 +73,8 @@ assert.equal(ui.normalizeWorkflowStepId("bad-step"), "choose_goal");
 assert.equal(ui.workflowNextStepId("source_video", 1), "provider_settings");
 assert.equal(ui.workflowNextStepId("source_video", -1), "choose_goal");
 assert.equal(ui.workflowNextStepId("prompt_preview", 1), "candidate_selection");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "choose_goal");
-assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "choose_goal");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object" }, "review_export"), "source_video");
+assert.equal(ui.workflowRestoredStepFromSnapshot({ selectedPreset: "motion_foreground", selectedProjectId: "project_1" }, "review_export"), "source_video");
 assert.equal(
   ui.workflowRestoredStepFromSnapshot({ selectedPreset: "trace_one_object", selectedProjectId: "project_1", selectedVideoId: "video_1" }, "review_export"),
   "source_video",
@@ -183,8 +183,22 @@ const readyPrepareContract = ui.workflowStepContractFromSnapshot(
   },
   "prompt_preview",
 );
-assert.equal(readyPrepareContract.primaryLabel, "Run scene sweep");
+assert.equal(readyPrepareContract.primaryLabel, "Continue to preflight");
+assert.equal(readyPrepareContract.primaryAction, "continue_to_preflight");
 assert.equal(readyPrepareContract.enabled, true);
+const readyPreflightContract = ui.workflowStepContractFromSnapshot(
+  {
+    selectedPreset: "trace_all_objects",
+    activeJourneyPhase: "preflight",
+    selectedVideoId: "video_1",
+    providerName: "SAM3 local",
+    promptCount: 0,
+  },
+  "prompt_preview",
+);
+assert.equal(readyPreflightContract.primaryLabel, "Run scene sweep");
+assert.equal(readyPreflightContract.primaryAction, "run_prepared_workflow");
+assert.equal(readyPreflightContract.enabled, true);
 const failedRunContract = ui.workflowStepContractFromSnapshot(
   {
     selectedPreset: "trace_all_objects",

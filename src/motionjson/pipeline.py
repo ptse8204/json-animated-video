@@ -1189,6 +1189,8 @@ def _extract_object(
             "exportValidationReasonCodes": materialization_reason_codes,
             "reviewRequired": True,
         }
+    if auto_label_metadata:
+        discovery = {**discovery, **auto_label_metadata}
     sprite_path = object_dir / f"spritesheet.{sprite_format}"
     sprite_meta = None
     spritesheet_elapsed_ms: float | None = None
@@ -1327,12 +1329,6 @@ def _extract_object(
     track.metadata["discovery"] = discovery
     track.metadata["quality"] = quality
     track.metadata["recommendedOutput"] = route
-    if auto_label_metadata:
-        discovery = {**discovery, **auto_label_metadata}
-        obj["discovery"] = discovery
-        object_manifest["discovery"] = discovery
-        object_motion["discovery"] = discovery
-        layer["discovery"] = discovery
     return obj, layer, object_motion, detailed_frames, provider_performance, track
 
 

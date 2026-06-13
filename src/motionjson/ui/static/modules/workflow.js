@@ -228,6 +228,7 @@ export function isFailedJobStatus(status) {
 
 export function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = "choose_goal") {
   const selectedPreset = snapshot.selectedPreset || "trace_one_object";
+  const normalizedStep = normalizeWorkflowStepId(requestedStep);
   const hasRunData = Boolean(snapshot.selectedJobId || toInteger(snapshot.candidateCount, 0) || toInteger(snapshot.trackCount, 0));
   if (selectedPreset === "review_existing") {
     return snapshot.selectedJobId ? "review_export" : "choose_goal";
@@ -243,9 +244,10 @@ export function workflowRestoredStepFromSnapshot(snapshot = {}, requestedStep = 
     }
   }
   if (!hasRunData) {
-    if (!snapshot.selectedVideoId) return "choose_goal";
+    if (!snapshot.selectedVideoId) {
+      return workflowStepIndex(normalizedStep) <= workflowStepIndex("source_video") ? normalizedStep : "source_video";
+    }
   }
-  const normalizedStep = normalizeWorkflowStepId(requestedStep);
   const readiness = workflowReadinessFromSnapshot(snapshot);
   const requestedIndex = workflowStepIndex(normalizedStep);
   for (let index = 0; index < requestedIndex; index += 1) {

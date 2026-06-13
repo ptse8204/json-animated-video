@@ -721,6 +721,7 @@ const MotionJSONUI = (() => {
           backTarget: "source_video",
         };
       }
+      const preflightActive = snapshot.activeJourneyPhase === "preflight";
       const blocksNewRun = jobRunning;
       const providerBlocksRun = requiresModel && Boolean(activeReadiness.complete) && Boolean(snapshot.providerBlocked || snapshot.providerTone === "is-bad");
       if (providerBlocksRun) {
@@ -732,6 +733,19 @@ const MotionJSONUI = (() => {
           blockedReason: modelSetup.message || "Prepare one compatible model connection before running extraction.",
           successAdvanceTo: "provider_settings",
           backTarget: "source_video",
+        };
+      }
+      if (!preflightActive) {
+        return {
+          id: activeStep,
+          primaryLabel: "Continue to preflight",
+          primaryAction: "continue_to_preflight",
+          enabled: Boolean(activeReadiness.complete) && !blocksNewRun,
+          blockedReason: blocksNewRun
+            ? "Wait for the current run to finish before preparing another run."
+            : activeReadiness.message || "Define the target object before preflight.",
+          successAdvanceTo: "prompt_preview",
+          backTarget: requiresModel ? "provider_settings" : "source_video",
         };
       }
       return {
@@ -5893,7 +5907,7 @@ const MotionJSONUI = (() => {
     function workflowStepButton(stepId = state.activeWorkflowStep) {
       const normalized = normalizeWorkflowStepId(stepId);
       const buttons = [...document.querySelectorAll("[data-workflow-step]")].filter((button) => button.dataset.workflowStep === normalized);
-      if (normalized === "review_export" && state.activeJourneyPhase) {
+      if ((normalized === "review_export" || normalized === "prompt_preview") && state.activeJourneyPhase) {
         const phaseButton = buttons.find((button) => button.closest("#journeyNav") && button.dataset.journeyPhase === state.activeJourneyPhase);
         if (phaseButton) return phaseButton;
       }
@@ -5952,6 +5966,7 @@ const MotionJSONUI = (() => {
       const staticFallbackCount = state.reviewTracks.filter((track) => isTrackExportIncluded(track) && trackUsesStaticKeyframeFallback(track)).length;
       return {
         selectedPreset: state.selectedPreset,
+        activeJourneyPhase: state.activeJourneyPhase,
         presetLabel: currentPresetLabel(),
         selectedProjectId: state.selectedProjectId,
         projectName: project?.name || "",
@@ -6259,7 +6274,11 @@ const MotionJSONUI = (() => {
         .split(/\s+/)
         .filter(Boolean);
       const aliases =
-        stepId === "review_export"
+        stepId === "prompt_preview"
+          ? state.activeJourneyPhase === "preflight"
+            ? ["validate_run"]
+            : ["prompt_preview"]
+          : stepId === "review_export"
           ? state.reviewExportSubscreen === "export"
             ? ["export"]
             : state.activeJourneyPhase === "correct"
@@ -6273,7 +6292,10 @@ const MotionJSONUI = (() => {
       const steps = String(element.dataset.workflowFragment || "")
         .split(/\s+/)
         .filter(Boolean);
-      const aliases = WORKFLOW_FRAGMENT_STEP_ALIASES[stepId] || [stepId];
+      const aliases =
+        stepId === "prompt_preview" && state.activeJourneyPhase === "preflight"
+          ? ["validate_run"]
+          : WORKFLOW_FRAGMENT_STEP_ALIASES[stepId] || [stepId];
       return aliases.some((alias) => steps.includes(alias));
     }
 
@@ -6291,6 +6313,7 @@ const MotionJSONUI = (() => {
       const showReviewDetails = !showAll && activeStep === "review_export" && (showFailureDetails || (postRun.candidateCount > 0 && postRun.trackCount === 0));
       const sourceRequiredBeforePrompt = activeStep === "prompt_preview" && state.selectedPreset !== "review_existing" && !selectedVideo();
       const preflightWorkbench = activeStep === "prompt_preview" && state.activeJourneyPhase === "preflight" && !sourceRequiredBeforePrompt;
+      const modelPlanCapture = document.documentElement.dataset.capture?.startsWith("model-plan") === true;
       shell?.classList.toggle("is-workflow-dashboard", showAll);
       shell?.classList.toggle("is-review-export-screen-review", activeStep === "review_export" && state.reviewExportSubscreen !== "export");
       shell?.classList.toggle("is-review-export-screen-export", exportSubscreen);
@@ -6312,7 +6335,8 @@ const MotionJSONUI = (() => {
         const hiddenInSimpleMode =
           !showAll &&
           (
-            ["studioBottomCta", "runPlanAlert", "modelPlanPanel", "postRunGuide"].includes(panel.id) ||
+            ["studioBottomCta", "runPlanAlert", "postRunGuide"].includes(panel.id) ||
+            (panel.id === "modelPlanPanel" && !modelPlanCapture) ||
             (panel.id === "mainJobCenter" && activeStep !== "run_monitor") ||
             (panel.id === "modelSetupPanel" && !goalRequiresModel(state.selectedPreset))
           );
@@ -6393,10 +6417,28 @@ const MotionJSONUI = (() => {
       const screenContract = screenContractFromSnapshot(snapshot, activeStep);
       const stepContract = workflowStepContractFromSnapshot(snapshot, activeStep);
       const activeStepDef = WORKFLOW_STEPS.find((step) => step.id === activeStep) || WORKFLOW_STEPS[0];
+      const activePhase = journeyPhaseForWorkflowStep(activeStep, {
+        activeJourneyPhase: state.activeJourneyPhase,
+        reviewExportSubscreen: state.reviewExportSubscreen,
+        exportResultReady: snapshot.exportResultReady,
+      });
+      const activePhaseDef = JOURNEY_PHASES.find((phase) => phase.id === activePhase);
+      const phaseDescriptions = {
+        goal: "Choose the object-layer job before setup details appear.",
+        source: "Add a local video or open an existing result without exposing private paths.",
+        target: "Define the object, frame, prompt, or discovery mode before the run is allowed.",
+        model: "Confirm the recommended local, no-model, or explicitly consented hosted path.",
+        preflight: "Validate source, target, provider, locality, frame budget, artifacts, and blockers before extraction starts.",
+        run: "Watch phase progress, live evidence, health, usage, events, and recovery actions.",
+        review: "Inspect candidates and produced tracks before anything becomes export-ready.",
+        correct: "Relabel, range-edit, merge, split, or repair reviewed tracks with saved state feedback.",
+        export: "Validate reviewed moving objects and package the MotionJSON object layer.",
+        reuse: "Open the exported preview and copy the handoff steps for apps, Remotion, or renderers.",
+      };
       const activeStepReadiness = readiness[activeStep] || {};
       const contract = {
-        title: activeStepDef.title,
-        description: activeStepDef.description,
+        title: activePhaseDef?.label || activeStepDef.title,
+        description: phaseDescriptions[activePhase] || activeStepDef.description,
         statusLabel: activeStepReadiness.complete ? "Ready" : screenContract.statusLabel,
         statusTone: activeStepReadiness.complete ? "is-ready" : screenContract.statusTone,
         primaryLabel: stepContract.primaryLabel,
@@ -6502,6 +6544,7 @@ const MotionJSONUI = (() => {
       if (nextStep !== state.activeWorkflowStep) state.railOpenedByUser = false;
       if (nextStep !== "prompt_preview" && nextStep !== "review_export" && nextStep !== state.activeWorkflowStep) state.activeJourneyPhase = "";
       state.activeWorkflowStep = nextStep;
+      if (nextStep === "prompt_preview" && !state.activeJourneyPhase) state.activeJourneyPhase = "target";
       if (nextStep !== "review_export") state.reviewExportSubscreen = "review";
       else if (!state.activeJourneyPhase || state.activeJourneyPhase === "export") state.activeJourneyPhase = state.reviewExportSubscreen === "export" ? "export" : "review";
       if (persist) storage.set(SHELL_STORAGE_KEYS.workflowStep, state.activeWorkflowStep);
@@ -6721,6 +6764,10 @@ const MotionJSONUI = (() => {
         } else if (contract.primaryAction === "continue_after_video") {
           setWorkflowStep(contract.successAdvanceTo, { focusStep: true });
         } else if (contract.primaryAction === "continue_to_prepare") {
+          state.activeJourneyPhase = "target";
+          setWorkflowStep("prompt_preview", { focusStep: true });
+        } else if (contract.primaryAction === "continue_to_preflight") {
+          state.activeJourneyPhase = "preflight";
           setWorkflowStep("prompt_preview", { focusStep: true });
         } else if (contract.primaryAction === "open_result") {
           $("#importMotionJsonForm")?.requestSubmit();
@@ -6841,6 +6888,11 @@ const MotionJSONUI = (() => {
       });
       $("#workflowBackButton")?.addEventListener("click", () => {
         const contract = workflowStepContractFromSnapshot(workflowSnapshot(), state.activeWorkflowStep);
+        if (state.activeWorkflowStep === "prompt_preview" && state.activeJourneyPhase === "preflight") {
+          state.activeJourneyPhase = "target";
+          setWorkflowStep("prompt_preview", { focusStep: true });
+          return;
+        }
         if (state.activeWorkflowStep === "review_export" && state.reviewExportSubscreen === "export") {
           setReviewExportSubscreen("review", { focus: true });
           return;
@@ -14199,6 +14251,12 @@ const MotionJSONUI = (() => {
           renderJobReview();
         }
         renderModelPlanPanel();
+        if (modelPlanPanel) {
+          modelPlanPanel.hidden = false;
+          modelPlanPanel.classList.remove("is-workflow-hidden");
+          modelPlanPanel.removeAttribute("aria-hidden");
+          if ("inert" in modelPlanPanel) modelPlanPanel.inert = false;
+        }
       } else if (capture === "first-run" || capture === "preview-failed") {
         if (shell) {
           shell.style.display = "grid";
@@ -15036,7 +15094,26 @@ const MotionJSONUI = (() => {
       }
     }
 
+    function openHelpAndDiagnostics() {
+      state.railOpenedByUser = true;
+      setRailCollapsed(false, { persist: false });
+      $("#usageInspectorDisclosure")?.setAttribute("open", "");
+      $("#diagnosticsRail")?.focus?.({ preventScroll: true });
+      $("#diagnosticsSummary")?.setAttribute("aria-expanded", "true");
+      setRunAlert("Help opened in the inspector. Usage, diagnostics, logs, and local safety status stay in this panel.", "warning-box is-ready");
+      renderWorkflowStepper();
+    }
+
+    function openProjectSettings() {
+      setSidebarCollapsed(false, { persist: false });
+      const preferences = $("#workspacePreferencesForm");
+      preferences?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      (preferences?.querySelector?.("select, button, input") || preferences)?.focus?.({ preventScroll: true });
+    }
+
     $("#refreshButton").addEventListener("click", refreshAll);
+    $("#helpButton")?.addEventListener("click", openHelpAndDiagnostics);
+    $("#settingsButton")?.addEventListener("click", openProjectSettings);
     $("#workspaceRecent").addEventListener("click", (event) => {
       const button = event.target.closest("[data-preset]");
       if (!button) return;
