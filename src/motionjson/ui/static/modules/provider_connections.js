@@ -167,6 +167,21 @@ export const MODEL_CONNECTIONS = [
     advanced: true,
   },
   {
+    id: "evolink-planner",
+    providerId: "evolink",
+    productPathId: "evolink-planner",
+    engine: "llm",
+    locality: "hosted",
+    displayLabel: "EvoLink planner",
+    workflow: "Text intent planning",
+    title: "EvoLink planner",
+    capabilities: ["planning", "labels", "hosted"],
+    supportedGoals: ["trace_one_object", "trace_all_objects", "auto_object_proposals", "text_detector", "find_moving_things", "import_masks"],
+    recommendation: "Hosted text-only planning through EvoLink's OpenAI-compatible chat endpoint.",
+    nextAction: "Link EVOLINK_API_KEY and confirm hosted cost/privacy before running",
+    profileId: "",
+  },
+  {
     id: "no_model_cpu_workflow",
     providerId: "mock",
     productPathId: "no_model_cpu_workflow",
@@ -190,7 +205,13 @@ export const MODEL_CONNECTION_PRIORITY = {
   trace_all_objects: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   pick_objects_from_frame: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
-  text_detector: ["sam3-hosted:motionjson-colab-sam3-session", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  text_detector: [
+    "sam3-hosted:motionjson-colab-sam3-session",
+    "sam3-hosted:roboflow-sam3-pcs",
+    "sam3-hosted:custom-sam3-compatible",
+    "sam3-hosted:fal-sam3-image",
+    "evolink-planner",
+  ],
 };
 
 export const ADVANCED_MODEL_CONNECTIONS = {
@@ -212,6 +233,7 @@ export function providerIdFromConnectionId(connectionId) {
   if (id === "sam3_tracker_scene_sweep") return "sam3-local";
   if (id === "hosted_sam3_concept_text") return "sam3-hosted";
   if (id === "advanced_local_sam3_concept_exemplar") return "sam3-local";
+  if (id === "evolink-planner") return "evolink";
   if (id === "no_model_cpu_workflow") return "mock";
   if (id.startsWith("sam2-hosted:")) return "sam2-hosted";
   if (id.startsWith("sam3-hosted:")) return "sam3-hosted";
@@ -227,6 +249,7 @@ export function engineFromProviderId(providerId) {
   const id = String(providerId || "");
   if (id.includes("sam3")) return "sam3";
   if (id.includes("sam2")) return "sam2";
+  if (id === "evolink") return "llm";
   if (id.includes("motion")) return "motion";
   if (id.includes("external")) return "external_masks";
   return id ? "no_model" : "";
@@ -235,6 +258,7 @@ export function engineFromProviderId(providerId) {
 export function localityFromProviderId(providerId) {
   const id = String(providerId || "");
   if (id.includes("hosted")) return "hosted";
+  if (id === "evolink") return "hosted";
   if (MODEL_FREE_PRESETS.has(id) || ["mock", "threshold", "motion", "external"].includes(id)) return "no_model";
   return id ? "local" : "";
 }
@@ -250,6 +274,7 @@ export function providerLabel(providerId, profileId = "") {
   if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
   if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
   if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";
+  if (providerId === "evolink") return "EvoLink planner";
   return {
     mock: "Mock no-model",
     threshold: "Color threshold",

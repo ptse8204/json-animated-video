@@ -1012,6 +1012,7 @@ def provider_capabilities(
     )
     hosted_profile_dependency_ready = True if hosted_profile_dependency is None else _module_available(hosted_profile_dependency)
     sam3_profile_dependency_ready = True if sam3_profile_dependency is None else _module_available(sam3_profile_dependency)
+    evolink_settings = dict((provider_settings or {}).get("evolink", {}))
     openrouter_settings = dict((provider_settings or {}).get("openrouter", {}))
     hosted_allow_network_effective = bool(hosted_allow_network or hosted_settings.get("allow_hosted"))
     sam3_hosted_allow_network_effective = bool(hosted_allow_network or sam3_hosted_settings.get("allow_hosted"))
@@ -1038,6 +1039,7 @@ def provider_capabilities(
         if not transformers_installed or sam3_tracker_video_installed
         else str(sam3_tracker_video_status.get("message") or "SAM3 Tracker Video propagation is unavailable.")
     )
+    evolink_key = _settings_presence_config("EVOLINK_API_KEY", provider_settings, "evolink", "api_key_configured")
     openrouter_key = _settings_presence_config("OPENROUTER_API_KEY", provider_settings, "openrouter", "api_key_configured")
     text_detector_installed = _module_available("groundingdino")
     text_detector_model = _path_config_status("TEXT_DETECTOR_MODEL")
@@ -1253,6 +1255,15 @@ def provider_capabilities(
         sam3_hosted_status = "ready"
     else:
         sam3_hosted_status = "not_configured"
+
+    evolink_configured = bool(evolink_key["configured"])
+    evolink_base_url_valid = evolink_settings.get("base_url_valid", True) is not False
+    if not evolink_base_url_valid:
+        evolink_status = "invalid_configuration"
+    elif evolink_configured:
+        evolink_status = "ready"
+    else:
+        evolink_status = "not_configured"
 
     openrouter_configured = bool(openrouter_key["configured"])
     openrouter_settings_only = bool(openrouter_settings.get("settings_only"))
@@ -1652,6 +1663,38 @@ def provider_capabilities(
             },
         ),
         ProviderCapability(
+            name="evolink",
+            kind="llm_provider",
+            available=evolink_configured and evolink_base_url_valid,
+            configured=evolink_configured and evolink_base_url_valid,
+            installed=True,
+            runnable=bool(evolink_configured and evolink_base_url_valid),
+            status=evolink_status,
+            supports=["llm", "planning", "labels"],
+            reasons=[
+                reason
+                for reason in (
+                    None if evolink_key["configured"] else "EVOLINK_API_KEY is not set.",
+                    None if evolink_base_url_valid else "EVOLINK_BASE_URL must be an http:// or https:// URL.",
+                )
+                if reason
+            ],
+            install_hint="Set EVOLINK_API_KEY only for hosted text planning. EvoLink is not a segmentation provider.",
+            no_model_safe=False,
+            network_required=True,
+            needs_credentials=True,
+            mock_available=True,
+            optional_extra=None,
+            checks=[_check("api_key_env", "ok" if evolink_key["configured"] else "missing", evolink_key["env"], evolink_key["configured"])],
+            metadata={
+                "apiKeyEnv": evolink_key,
+                "credentialSource": evolink_key.get("source"),
+                "baseUrlSource": evolink_settings.get("base_url_source"),
+                "selectedModel": evolink_settings.get("selected_model"),
+                "segmentationProvider": False,
+            },
+        ),
+        ProviderCapability(
             name="openrouter",
             kind="llm_provider",
             available=openrouter_configured and openrouter_base_url_valid and not openrouter_settings_only,
@@ -2029,6 +2072,7 @@ def build_capability_report(
             "sam2-hosted",
             "sam3-hosted",
             "sam3-auto-masks",
+            "evolink",
             "openrouter",
             "sam_auto_masks",
             "text_detector",

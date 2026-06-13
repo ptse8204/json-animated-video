@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 
 from motionjson.model_connectors import (
+    EvoLinkPlanningConnector,
     FakeModelConnector,
     ModelConnectorRegistry,
     ModelPlanResult,
@@ -50,7 +51,10 @@ def create_project_video_and_job(app: LocalUIApp) -> tuple[dict, dict, dict]:
     return project, video, job_body["job"]
 
 
-def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
+def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path, monkeypatch):
+    monkeypatch.delenv("EVOLINK_API_KEY", raising=False)
+    monkeypatch.delenv("EVOLINK_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("EVOLINK_BASE_URL", raising=False)
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
 
     status, health = api(app, "GET", "/api/health")
@@ -77,6 +81,11 @@ def test_local_ui_model_provider_routes_are_no_network_and_redacted(tmp_path):
     assert openai["readiness"]["status"] == "missing_key"
     assert openai["readiness"]["runnable"] is False
     assert openai["readiness"]["networkAttempted"] is False
+    evolink = model_provider_by_id(providers, "evolink-planner")
+    assert evolink["settingsProviderId"] == "evolink"
+    assert evolink["readiness"]["status"] == "missing_key"
+    assert evolink["readiness"]["runnable"] is False
+    assert evolink["readiness"]["networkAttempted"] is False
 
     status, tested = api(app, "POST", "/api/model-providers/fake-local-planner/test", {"apiKey": "sk-test-secret-123456"})
     assert status == 200
@@ -244,6 +253,63 @@ def test_openai_model_provider_requires_settings_opt_in_and_per_request_ack(tmp_
     assert secret not in json.dumps(failed)
 
 
+def test_evolink_model_provider_requires_settings_opt_in_and_per_request_ack(tmp_path, monkeypatch):
+    monkeypatch.delenv("EVOLINK_API_KEY", raising=False)
+    monkeypatch.delenv("EVOLINK_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("EVOLINK_BASE_URL", raising=False)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "evl-model-secret-123456"
+
+    status, saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {
+            "providerId": "evolink",
+            "apiKey": secret,
+            "allowHosted": True,
+            "selectedModel": "__custom__",
+            "customModelId": "gpt-5.1",
+        },
+    )
+    assert status == 200
+    assert secret not in json.dumps(saved)
+
+    status, body = api(app, "GET", "/api/model-providers/evolink-planner")
+    assert status == 200
+    readiness = body["readiness"]
+    assert readiness["status"] == "ready"
+    assert readiness["configured"] is True
+    assert readiness["hostedCallsAllowed"] is True
+    assert readiness["runnable"] is True
+    assert readiness["effectiveModel"] == "gpt-5.1"
+    assert secret not in json.dumps(body)
+
+    status, failed = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {"providerId": "evolink-planner", "request": {"goal": "Find by description", "prompt": "red ball"}},
+    )
+    assert status == 400
+    assert "allowNetwork=true" in failed["error"]
+    assert secret not in json.dumps(failed)
+
+    status, failed = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "evolink-planner",
+            "allowNetwork": True,
+            "request": {"goal": "Find by description", "prompt": "red ball"},
+        },
+    )
+    assert status == 400
+    assert "acknowledgeCostPrivacy=true" in failed["error"]
+    assert secret not in json.dumps(failed)
+
+
 def test_openai_model_run_uses_server_secret_with_mocked_transport_and_redacts_response(tmp_path):
     app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
     secret = "sk-openai-runtime-secret-123456"
@@ -278,6 +344,7 @@ def test_openai_model_run_uses_server_secret_with_mocked_transport_and_redacts_r
     app.model_connectors = ModelConnectorRegistry(
         [
             FakeModelConnector(),
+            EvoLinkPlanningConnector(),
             OpenAIPlanningConnector(transport=transport),
             OpenRouterSettingsModelConnector(),
         ]
@@ -317,6 +384,84 @@ def test_openai_model_run_uses_server_secret_with_mocked_transport_and_redacts_r
     assert "sk-or-v1-do-not-send" not in encoded_response
     assert body["modelRun"]["status"] == "succeeded"
     assert body["modelRun"]["result"]["providerId"] == "openai-planner"
+    assert body["modelRun"]["result"]["validation"]["valid"] is True
+    assert body["modelRun"]["result"]["runConfig"]["discovery"]["mode"] == "text_detector"
+
+
+def test_evolink_model_run_uses_server_secret_with_mocked_chat_transport_and_redacts_response(tmp_path, monkeypatch):
+    monkeypatch.delenv("EVOLINK_API_KEY", raising=False)
+    monkeypatch.delenv("EVOLINK_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("EVOLINK_BASE_URL", raising=False)
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "evl-runtime-secret-123456"
+    captured = {}
+
+    def transport(url, payload, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"goal":"find_objects_from_text","objectLabels":["red ball"],'
+                            '"objectId":"red_ball","textPrompt":"red ball",'
+                            '"suggestedKeyframes":[0],'
+                            '"providerPlan":{"discoveryProvider":"text_detector","maskProvider":"mock",'
+                            '"trackingMode":"selected_only","rationale":"Use a text detector."},'
+                            '"troubleshooting":["Review candidates before export."]}'
+                        )
+                    }
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+        }
+
+    app.model_connectors = ModelConnectorRegistry(
+        [
+            FakeModelConnector(),
+            EvoLinkPlanningConnector(transport=transport),
+            OpenAIPlanningConnector(),
+            OpenRouterSettingsModelConnector(),
+        ]
+    )
+    status, _saved = api(
+        app,
+        "POST",
+        "/api/provider-settings",
+        {"providerId": "evolink", "apiKey": secret, "allowHosted": True},
+    )
+    assert status == 200
+
+    status, body = api(
+        app,
+        "POST",
+        "/api/model-runs",
+        {
+            "providerId": "evolink-planner",
+            "allowNetwork": True,
+            "acknowledgeCostPrivacy": True,
+            "request": {
+                "goal": "Find by description",
+                "prompt": "red ball api_key=sk-or-v1-do-not-send-123456",
+                "sourcePath": "/Users/alice/private/movie.mp4",
+            },
+        },
+    )
+
+    assert status == 200
+    assert captured["url"] == "https://direct.evolink.ai/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == f"Bearer {secret}"
+    encoded_payload = json.dumps(captured["payload"])
+    assert "sk-or-v1-do-not-send" not in encoded_payload
+    assert "/Users/alice" not in encoded_payload
+    encoded_response = json.dumps(body)
+    assert secret not in encoded_response
+    assert "sk-or-v1-do-not-send" not in encoded_response
+    assert body["modelRun"]["status"] == "succeeded"
+    assert body["modelRun"]["result"]["providerId"] == "evolink-planner"
     assert body["modelRun"]["result"]["validation"]["valid"] is True
     assert body["modelRun"]["result"]["runConfig"]["discovery"]["mode"] == "text_detector"
 

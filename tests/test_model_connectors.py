@@ -9,6 +9,7 @@ from motionjson.backend.auth import register_user
 from motionjson.backend.db import initialize_database
 from motionjson.config import ExtractionRunConfig
 from motionjson.model_connectors import (
+    EvoLinkPlanningConnector,
     FakeModelConnector,
     ModelConnectorError,
     ModelConnectorRegistry,
@@ -160,12 +161,88 @@ def test_openai_planning_connector_requires_network_opt_in_before_transport():
     assert called is False
 
 
+def test_evolink_planning_connector_uses_openai_compatible_chat_completions_with_mocked_transport():
+    captured = {}
+
+    def transport(url, payload, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"goal":"find_objects_from_text","objectLabels":["red ball"],'
+                            '"objectId":"red_ball","textPrompt":"red ball",'
+                            '"suggestedKeyframes":[0,2],'
+                            '"providerPlan":{"discoveryProvider":"text_detector","maskProvider":"mock",'
+                            '"trackingMode":"selected_only","rationale":"Use text candidates first."},'
+                            '"troubleshooting":["Review candidates before export."]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    connector = EvoLinkPlanningConnector(
+        api_key="evl-test-secret-123456",
+        model="gpt-5.2",
+        transport=transport,
+        timeout=11,
+        allow_network=True,
+    )
+    request = ModelPlanRequest.from_dict(
+        {
+            "goal": "Find by description",
+            "prompt": "red ball api_key=sk-or-v1-do-not-send-123456",
+            "sourcePath": "/Users/alice/private/movie.mp4",
+            "videoId": "asset_123",
+            "projectId": "project_123",
+            "maxFrames": 8,
+        }
+    )
+
+    result = connector.plan(request)
+    encoded_payload = str(captured["payload"])
+
+    assert captured["url"] == "https://direct.evolink.ai/v1/chat/completions"
+    assert captured["headers"]["Authorization"] == "Bearer evl-test-secret-123456"
+    assert captured["payload"]["model"] == "gpt-5.2"
+    assert captured["payload"]["response_format"] == {"type": "json_object"}
+    assert "sk-or-v1-do-not-send" not in encoded_payload
+    assert "/Users/alice" not in encoded_payload
+    assert result.validation["valid"] is True
+    assert result.provider_plan["reasoningProvider"] == "evolink-planner"
+    assert result.privacy["framesLeaveDevice"] is False
+    assert result.run_config["discovery"]["mode"] == "text_detector"
+    assert result.run_config["provider"]["name"] == "mock"
+    ExtractionRunConfig.from_dict(result.run_config)
+
+
+def test_evolink_planning_connector_requires_network_opt_in_before_transport():
+    called = False
+
+    def transport(url, payload, headers, timeout):
+        nonlocal called
+        called = True
+        return {}
+
+    connector = EvoLinkPlanningConnector(api_key="evl-test-secret-123456", transport=transport)
+
+    with pytest.raises(ModelConnectorError, match="does not make hosted calls by default"):
+        connector.plan(ModelPlanRequest.from_dict({"goal": "Cut out one object"}))
+
+    assert called is False
+
+
 def test_model_connector_registry_exposes_fake_default_and_settings_provider():
     registry = ModelConnectorRegistry()
 
     assert registry.default_provider_id() == "fake-local-planner"
     provider_ids = [connector.provider.id for connector in registry.list()]
-    assert provider_ids == ["fake-local-planner", "openai-planner", "openrouter-planner"]
+    assert provider_ids == ["fake-local-planner", "evolink-planner", "openai-planner", "openrouter-planner"]
 
 
 def test_volatile_model_run_store_tracks_events_and_cancellation():

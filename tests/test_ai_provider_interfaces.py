@@ -151,6 +151,11 @@ def test_fallback_segmentation_rejects_openrouter_as_segmentation():
         FallbackSegmentationProvider([("openrouter", MockSegmentationProvider())])
 
 
+def test_fallback_segmentation_rejects_evolink_as_segmentation():
+    with pytest.raises(ValueError):
+        FallbackSegmentationProvider([("evolink", MockSegmentationProvider())])
+
+
 def test_segmentation_mask_provider_uses_batch_hook():
     provider = SegmentationMaskProvider(MockSegmentationProvider(box=(0, 0, 2, 2)))
     info = VideoInfo(width=4, height=4, source_fps=12, sample_fps=12, total_source_frames=2)

@@ -151,7 +151,7 @@ const MotionJSONUI = (() => {
       description: "Layer timing, keyframes, and JSON transform checks before handoff.",
     },
   ];
-  const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "openai-planner", "openrouter-planner"];
+  const MODEL_CONNECTOR_PROVIDER_ORDER = ["fake-local-planner", "evolink-planner", "openai-planner", "openrouter-planner"];
   const BUNDLED_DEMO_VIDEO_PATH = "examples/demo_red_ball.mp4";
   const LIBRARY_SAVEABLE_ARTIFACT_KINDS = new Set([
     "cutout",
