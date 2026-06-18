@@ -50,6 +50,11 @@ Use the checked-in notebooks when you want ready Colab surfaces:
   local SAM3 cells, and the real Local UI launch. It supports Roboflow SAM3,
   Replicate SAM2 video, Fal SAM3 image, and custom SAM-compatible provider
   profiles only after explicit opt-in.
+- [Colab SAM remote API](../notebooks/colab_sam_remote_api.ipynb)
+  [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_sam_remote_api.ipynb):
+  starts an authenticated temporary SAM2/SAM3 API that the Local UI can use as
+  a hosted Colab runtime through Provider Settings. Start the tunnel only after
+  generating a runtime token, and treat the uploaded video as hosted data.
 - [Colab red-ball CLI demo](../notebooks/colab_red_ball_cli_demo.ipynb)
   [![Open in Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ptse8204/json-animated-video/blob/main/notebooks/colab_red_ball_cli_demo.ipynb):
   runs

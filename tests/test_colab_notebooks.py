@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PROVIDER_NOTEBOOK = ROOT / "notebooks" / "colab_ui_provider_connect_demo.ipynb"
+REMOTE_API_NOTEBOOK = ROOT / "notebooks" / "colab_sam_remote_api.ipynb"
 PUBLIC_TUNNEL_MARKERS = ("ngrok", "localtunnel", "lt --port", "cloudflared", "trycloudflare", "serveo")
 SECRET_VALUE_RE = re.compile(r"(sk-[A-Za-z0-9._~-]{12,}|hf_[A-Za-z0-9]{12,}|Bearer\s+[A-Za-z0-9._~+/=-]{12,})")
 
@@ -185,3 +186,20 @@ def test_provider_connect_notebook_preserves_hosted_sam3_path() -> None:
     assert "If you prefer hosted SAM3, configure it from Model setup." in source
     assert "Hosted SAM3 users can skip local readiness failures" in source
     assert "do not require local SAM3 package or checkpoint cells" in source
+
+
+def test_colab_sam_remote_api_notebook_is_authenticated_and_tunnel_gated() -> None:
+    source = _joined_source(REMOTE_API_NOTEBOOK)
+
+    assert "ThreadingHTTPServer" in source
+    assert "Authorization" in source
+    assert "Bearer {API_TOKEN}" in source
+    assert "START_CLOUDFLARE_TUNNEL = False" in source
+    assert "cloudflared" in source
+    assert "\"/sam2/session\"" in source
+    assert "\"/sam2/segment\"" in source
+    assert "\"/sam3/session\"" in source
+    assert "\"/sam3\"" in source
+    assert "sessionId" in source
+    assert "useVideoSession" not in source
+    assert not SECRET_VALUE_RE.search(source)

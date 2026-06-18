@@ -981,6 +981,16 @@ const hostedSam2Config = ui.buildRunConfig({
 assert.equal(hostedSam2Config.provider.sam2.hosted_config.profile, "replicate-sam2-video");
 assert.equal(hostedSam2Config.provider.sam2.hosted_allow_network, true);
 assert.equal(JSON.stringify(hostedSam2Config).includes("replicate-profile-secret"), false);
+const colabSam2Config = ui.buildRunConfig({
+  preset: "trace_one_object",
+  maskProvider: "sam2-hosted",
+  objectId: "object_0",
+  prompts: [{ kind: "box", frame_index: 0, object_id: "object_0", label: "selected object", data: { x: 1, y: 2, w: 3, h: 4 } }],
+  hostedSam2ProfileId: "motionjson-colab-sam2-session",
+  hostedSam2AllowHosted: true,
+});
+assert.equal(colabSam2Config.provider.sam2.hosted_config.profile, "motionjson-colab-sam2-session");
+assert.equal(colabSam2Config.provider.sam2.hosted_config.useVideoSession, true);
 const hostedSam2Contract = ui.providerContractForInput({
   preset: "trace_one_object",
   modelConnectionId: "sam2-hosted:replicate-sam2-video",
@@ -1007,6 +1017,16 @@ assert.equal(hostedSam3Config.discovery.config.providerPreference, "sam3-hosted"
 assert.equal(hostedSam3Config.discovery.config.hostedProfile, "roboflow-sam3-pcs");
 assert.equal(hostedSam3Config.discovery.config.allowNetwork, true);
 assert.equal(hostedSam3Config.provider.sam3.hosted_config.profile, "roboflow-sam3-pcs");
+const colabSam3Config = ui.buildRunConfig({
+  preset: "text_detector",
+  modelConnectionId: "sam3-hosted:motionjson-colab-sam3-session",
+  textPrompt: "red ball",
+  hostedSam3ProfileId: "motionjson-colab-sam3-session",
+  hostedSam3AllowHosted: true,
+});
+assert.equal(colabSam3Config.discovery.config.hostedProfile, "motionjson-colab-sam3-session");
+assert.equal(colabSam3Config.discovery.config.useVideoSession, true);
+assert.equal(colabSam3Config.provider.sam3.hosted_config.useVideoSession, true);
 const hostedSam3BlockedConfig = ui.buildRunConfig({
   preset: "text_detector",
   modelConnectionId: "sam3-hosted:roboflow-sam3-pcs",
@@ -1350,10 +1370,10 @@ for (const fixture of PROVIDER_STATE_FIXTURES) {
 }
 
 const compatibleConnectionExpectations = {
-  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
-  text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
-  pick_objects_from_frame: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
-  trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
+  trace_one_object: ["sam2-local", "sam2-hosted:motionjson-colab-sam2-session", "sam2-hosted:replicate-sam2-video"],
+  text_detector: ["sam3-hosted:motionjson-colab-sam3-session", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  pick_objects_from_frame: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
+  trace_all_objects: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   motion_foreground: [],
   external_masks: [],
 };
@@ -1368,7 +1388,7 @@ for (const [preset, expectedIds] of Object.entries(compatibleConnectionExpectati
 
 assert.deepEqual(
   ui.compatibleModelConnectionsForPreset("trace_one_object", { includeAdvanced: true }).map((connection) => connection.id),
-  ["sam2-local", "sam2-hosted:replicate-sam2-video", "advanced_local_sam3_concept_exemplar", "sam3-hosted:custom-sam3-compatible"],
+  ["sam2-local", "sam2-hosted:motionjson-colab-sam2-session", "sam2-hosted:replicate-sam2-video", "advanced_local_sam3_concept_exemplar", "sam3-hosted:custom-sam3-compatible"],
   "SAM3 one-object connections stay available only in the Advanced model list",
 );
 

@@ -98,6 +98,29 @@ SAM2_HOSTED_PROFILES: list[dict[str, Any]] = [
         "supportsAutoMasks": False,
         "supportsTracking": True,
     },
+    {
+        "id": "motionjson-colab-sam2-session",
+        "name": "Colab SAM2 video session",
+        "runtime": "motionjson-colab-sam2-session",
+        "providerId": "sam2-hosted",
+        "credentialFields": [{"name": "api_key", "label": "Colab bearer token", "env": "HOSTED_SEGMENTATION_API_KEY", "required": True}],
+        "endpointField": {"name": "endpoint", "label": "Colab SAM2 segment URL", "env": "HOSTED_SEGMENTATION_URL", "required": True},
+        "defaultModel": "auto",
+        "modelOptions": [{"id": "auto", "label": "Colab runtime default"}, {"id": CUSTOM_MODEL_ID, "label": "Custom Colab SAM2 model id"}],
+        "docs": "notebooks/colab_sam_remote_api.ipynb",
+        "setupGuide": {
+            "recommendedFor": "Full Local UI testing against a temporary Colab GPU runtime.",
+            "setupSummary": "Run the Colab SAM remote API notebook, copy the /sam2/segment tunnel URL and bearer token, then enable hosted opt-in.",
+        },
+        "warning": "Uploads the selected video to your temporary Colab runtime through the tunnel.",
+        "supportedGoals": ["trace_one_object"],
+        "supportedPromptTypes": ["point", "box"],
+        "supportsConcept": False,
+        "supportsExemplar": False,
+        "supportsAutoMasks": False,
+        "supportsTracking": True,
+        "useVideoSession": True,
+    },
 ]
 
 SAM3_HOSTED_PROFILES: list[dict[str, Any]] = [
@@ -163,6 +186,29 @@ SAM3_HOSTED_PROFILES: list[dict[str, Any]] = [
         "supportsExemplar": True,
         "supportsAutoMasks": True,
         "supportsTracking": True,
+    },
+    {
+        "id": "motionjson-colab-sam3-session",
+        "name": "Colab SAM3 video session",
+        "runtime": "motionjson-colab-sam3-session",
+        "providerId": "sam3-hosted",
+        "credentialFields": [{"name": "api_key", "label": "Colab bearer token", "env": "SAM3_HOSTED_API_KEY", "required": True}],
+        "endpointField": {"name": "endpoint", "label": "Colab SAM3 URL", "env": "SAM3_HOSTED_URL", "required": True},
+        "defaultModel": "auto",
+        "modelOptions": [{"id": "auto", "label": "Colab runtime default"}, {"id": CUSTOM_MODEL_ID, "label": "Custom Colab SAM3 model id"}],
+        "docs": "notebooks/colab_sam_remote_api.ipynb",
+        "setupGuide": {
+            "recommendedFor": "Full Local UI testing for SAM3 concept, exemplar, scene sweep, and tracking against Colab.",
+            "setupSummary": "Run the Colab SAM remote API notebook, copy the /sam3 tunnel URL and bearer token, then enable hosted opt-in.",
+        },
+        "warning": "Uploads the selected video to your temporary Colab runtime through the tunnel.",
+        "supportedGoals": ["trace_one_object", "trace_all_objects", "text_detector"],
+        "supportedPromptTypes": ["box"],
+        "supportsConcept": True,
+        "supportsExemplar": True,
+        "supportsAutoMasks": True,
+        "supportsTracking": True,
+        "useVideoSession": True,
     },
 ]
 
@@ -2120,6 +2166,14 @@ def hosted_sam3_smoke_test(
                 transport=transport,
             )
             smoke = client.smoke_test()
+        elif provider_id == "sam2-hosted":
+            smoke = _hosted_sam2_json_smoke(
+                endpoint=endpoint,
+                api_key=api_key,
+                model=model,
+                timeout_seconds=timeout_seconds,
+                transport=transport,
+            )
         elif provider_id == "sam3-hosted" and profile_id == "roboflow-sam3-pcs":
             client = RoboflowSAM3ConceptBackend(
                 endpoint=endpoint,
@@ -2193,6 +2247,39 @@ def hosted_sam3_smoke_test(
         "timeoutSeconds": timeout_seconds,
         "retries": retries,
         "smokeTest": redact_secret_payload(smoke),
+    }
+
+
+def _hosted_sam2_json_smoke(
+    *,
+    endpoint: str,
+    api_key: str,
+    model: str,
+    timeout_seconds: float,
+    transport: Any | None,
+) -> dict[str, Any]:
+    payload = {"task": "sam2_smoke_test", "model": model or "auto"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    if transport is not None:
+        try:
+            response = transport.post_json(endpoint, payload, headers=headers, timeout_seconds=timeout_seconds)
+        except TypeError:
+            response = transport.post_json(endpoint, payload, headers=headers)
+    else:
+        from urllib import request
+
+        req = request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        with request.urlopen(req, timeout=timeout_seconds) as raw_response:  # noqa: S310 - explicit hosted smoke path.
+            response = json.loads(raw_response.read().decode("utf-8"))
+    if not isinstance(response, Mapping):
+        raise ValueError("Hosted SAM2 smoke response must be a JSON object.")
+    return {
+        "format": "motionjson.sam2_hosted_smoke.v0.1",
+        "status": str(response.get("status") or "ok"),
+        "providerName": "sam2-hosted",
+        "networkAttempted": True,
+        "model": model or "auto",
+        "responseSchema": "sam2-compatible",
     }
 
 

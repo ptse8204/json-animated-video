@@ -651,6 +651,7 @@ class HostedSAM2SegmentationProvider:
     video_metadata: VideoInfo | None = field(default=None, init=False)
     _endpoint: str | None = field(default=None, init=False)
     _token: str | None = field(default=None, init=False)
+    _session_id: str | None = field(default=None, init=False)
     provider_name: str = "sam2-hosted"
 
     def prepare(self, video_metadata: VideoInfo) -> None:
@@ -816,6 +817,10 @@ class HostedSAM2SegmentationProvider:
             "config": dict(self.config or {}),
             "video": self._metadata_for_request(),
         }
+        session_id = self._ensure_video_session()
+        if session_id:
+            payload.pop("source_video", None)
+            payload["sessionId"] = session_id
         if self.client is not None:
             if hasattr(self.client, "segment_frame"):
                 return self.client.segment_frame(**payload)
@@ -827,6 +832,40 @@ class HostedSAM2SegmentationProvider:
             raise ProviderConfigError("sam2-hosted is not configured with a client, transport, or endpoint.")
         headers = {"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"}
         return self.transport.post_json(self._endpoint, payload, headers=headers)
+
+    def _ensure_video_session(self) -> str | None:
+        if not _truthy_config(self.config or {}, "useVideoSession"):
+            return None
+        if self._session_id:
+            return self._session_id
+        if not self.allow_network:
+            raise ProviderConfigError("sam2-hosted video sessions require --sam2-hosted-allow-network before uploading video.")
+        if self.transport is None:
+            raise ProviderConfigError("sam2-hosted video sessions require a JSON transport.")
+        endpoint = _session_endpoint(self.config or {}, self._endpoint, "/sam2/session")
+        if not endpoint:
+            raise ProviderConfigError("sam2-hosted video sessions require a sessionEndpoint or hosted endpoint.")
+        headers = {"Authorization": f"Bearer {self._token}", "Content-Type": "application/json"}
+        response = self.transport.post_json(
+            endpoint,
+            {
+                "task": "sam2_create_session",
+                "model": (self.config or {}).get("model") or "auto",
+                "video": _video_upload_payload(
+                    self.source_video,
+                    max_bytes=_int_config(self.config or {}, "maxSessionUploadBytes", 80 * 1024 * 1024),
+                ),
+                "metadata": self._metadata_for_request(),
+            },
+            headers=headers,
+        )
+        if not isinstance(response, Mapping):
+            raise ProviderExecutionError("Hosted SAM2 session response must be a JSON object.")
+        session_id = str(response.get("sessionId") or response.get("session_id") or "").strip()
+        if not session_id:
+            raise ProviderExecutionError("Hosted SAM2 session response must include sessionId.")
+        self._session_id = session_id
+        return session_id
 
     def _extract_mask(self, response: Mapping[str, Any] | np.ndarray) -> np.ndarray:
         if isinstance(response, np.ndarray):
@@ -865,6 +904,51 @@ class HostedSAM2SegmentationProvider:
             "sample_fps": self.video_metadata.sample_fps,
             "total_source_frames": self.video_metadata.total_source_frames,
         }
+
+
+def _truthy_config(config: Mapping[str, Any], key: str) -> bool:
+    value = config.get(key)
+    if value is None:
+        value = config.get(key[:1].lower() + key[1:])
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _int_config(config: Mapping[str, Any], key: str, default: int) -> int:
+    try:
+        return int(config.get(key, config.get(key[:1].lower() + key[1:], default)) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _session_endpoint(config: Mapping[str, Any], endpoint: str | None, fallback_path: str) -> str:
+    explicit = str(config.get("sessionEndpoint") or config.get("session_endpoint") or "").strip()
+    if explicit:
+        return explicit
+    base = str(endpoint or "").strip()
+    if not base:
+        return ""
+    if base.endswith("/segment"):
+        return f"{base[:-len('/segment')]}/session"
+    if base.endswith("/sam3"):
+        return f"{base[:-len('/sam3')]}/sam3/session"
+    return base.rstrip("/") + fallback_path
+
+
+def _video_upload_payload(source_video: str | Path, *, max_bytes: int) -> dict[str, Any]:
+    path = Path(source_video)
+    data = path.read_bytes()
+    if len(data) > max_bytes:
+        raise ProviderConfigError(
+            f"Hosted video session upload is {len(data)} bytes, above maxSessionUploadBytes={max_bytes}."
+        )
+    return {
+        "format": "base64",
+        "filename": path.name or "video",
+        "sizeBytes": len(data),
+        "data": base64.b64encode(data).decode("ascii"),
+    }
 
 
 class _UrlLibJsonTransport:

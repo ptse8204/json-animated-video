@@ -89,7 +89,9 @@ def test_provider_registry_api_is_public_safe_and_listed_in_health(tmp_path):
     assert "providers" in payload
     assert "workflows" in payload
     assert provider_by_id("sam3-hosted:roboflow-sam3-pcs")["providerId"] == "sam3-hosted"
+    assert provider_by_id("sam3-hosted:motionjson-colab-sam3-session")["providerId"] == "sam3-hosted"
     assert provider_by_id("sam2-hosted:replicate-sam2-video")["providerId"] == "sam2-hosted"
+    assert provider_by_id("sam2-hosted:motionjson-colab-sam2-session")["providerId"] == "sam2-hosted"
     assert provider_by_id("openrouter-planner")["kind"] == "planning_provider"
     assert provider_by_id("openrouter-planner")["locality"] == "settings_only"
     _assert_public_safe(payload)

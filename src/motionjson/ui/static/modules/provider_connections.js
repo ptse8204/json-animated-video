@@ -50,6 +50,21 @@ export const MODEL_CONNECTIONS = [
     nextAction: "Link Replicate API token",
   },
   {
+    id: "sam2-hosted:motionjson-colab-sam2-session",
+    providerId: "sam2-hosted",
+    productPathId: "sam2_prompt_tracking",
+    profileId: "motionjson-colab-sam2-session",
+    engine: "sam2",
+    locality: "hosted",
+    displayLabel: "Colab SAM2 runtime",
+    workflow: "Trace one object",
+    title: "Colab SAM2 video session",
+    capabilities: ["point", "box", "tracking", "hosted"],
+    supportedGoals: ["trace_one_object"],
+    recommendation: "Use a temporary Colab runtime as the SAM2 backend for full UI testing.",
+    nextAction: "Paste Colab tunnel URL and bearer token",
+  },
+  {
     id: "sam3-local",
     providerId: "sam3-local",
     productPathId: "sam3_tracker_scene_sweep",
@@ -111,6 +126,21 @@ export const MODEL_CONNECTIONS = [
     nextAction: "Link endpoint and API key",
   },
   {
+    id: "sam3-hosted:motionjson-colab-sam3-session",
+    providerId: "sam3-hosted",
+    productPathId: "hosted_sam3_concept_text",
+    profileId: "motionjson-colab-sam3-session",
+    engine: "sam3",
+    locality: "hosted",
+    displayLabel: "Colab SAM3 runtime",
+    workflow: "Colab SAM3",
+    title: "Colab SAM3 video session",
+    capabilities: ["concept", "box", "tracking", "auto_masks", "hosted"],
+    supportedGoals: ["trace_one_object", "trace_all_objects", "auto_object_proposals", "pick_objects_from_frame", "text_detector"],
+    recommendation: "Use a temporary Colab runtime as the SAM3 backend for full UI testing.",
+    nextAction: "Paste Colab tunnel URL and bearer token",
+  },
+  {
     id: "advanced_local_sam3_concept_exemplar",
     providerId: "sam3-local",
     productPathId: "advanced_local_sam3_concept_exemplar",
@@ -156,11 +186,11 @@ export const MODEL_CONNECTIONS = [
 export const MODEL_FREE_PRESETS = new Set(["motion_foreground", "external_masks", "review_existing"]);
 
 export const MODEL_CONNECTION_PRIORITY = {
-  trace_one_object: ["sam2-local", "sam2-hosted:replicate-sam2-video"],
-  trace_all_objects: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
-  pick_objects_from_frame: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
+  trace_one_object: ["sam2-local", "sam2-hosted:motionjson-colab-sam2-session", "sam2-hosted:replicate-sam2-video"],
+  trace_all_objects: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
+  pick_objects_from_frame: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"],
   auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"],
-  text_detector: ["sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
+  text_detector: ["sam3-hosted:motionjson-colab-sam3-session", "sam3-hosted:roboflow-sam3-pcs", "sam3-hosted:custom-sam3-compatible", "sam3-hosted:fal-sam3-image"],
 };
 
 export const ADVANCED_MODEL_CONNECTIONS = {
@@ -212,9 +242,11 @@ export function localityFromProviderId(providerId) {
 export function providerLabel(providerId, profileId = "") {
   if (providerId === "sam2-local") return "SAM2 local";
   if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
+  if (providerId === "sam2-hosted" && profileId === "motionjson-colab-sam2-session") return "Colab SAM2 runtime";
   if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
   if (providerId === "sam2-hosted") return "Hosted SAM2";
   if (providerId === "sam3-local") return "SAM3 Scene Sweep runtime";
+  if (providerId === "sam3-hosted" && profileId === "motionjson-colab-sam3-session") return "Colab SAM3 runtime";
   if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
   if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
   if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";

@@ -485,6 +485,7 @@ def _hosted_sam3_discovery_runtime(
     runtime_config = {
         **public_config,
         "apiKey": settings.get("api_key"),
+        "apiKeySource": "server_settings" if settings.get("api_key") else "",
         "endpoint": settings.get("endpoint"),
     }
     from motionjson.providers.hosted_sam import hosted_sam3_backend_from_config
@@ -517,6 +518,9 @@ def _apply_sam3_provider_runtime(run_config: ExtractionRunConfig, discovery_conf
     hosted_model = str(sam3_config.hosted_config.get("model") or "").strip()
     if hosted_model and "model" not in config:
         config["model"] = hosted_model
+    for key in ("useVideoSession", "sessionEndpoint", "maxSessionUploadBytes"):
+        if key in sam3_config.hosted_config and key not in config:
+            config[key] = sam3_config.hosted_config[key]
     return config
 
 

@@ -160,5 +160,5 @@ def test_advanced_discover_objects_has_compatible_model_connections():
     static_js = js + "\n" + provider_connections
 
     assert 'auto_object_proposals: ["sam2-hf-auto-masks", "sam2-local"]' in static_js
-    assert 'pick_objects_from_frame: ["sam3-local", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"]' in static_js
+    assert 'pick_objects_from_frame: ["sam3-local", "sam3-hosted:motionjson-colab-sam3-session", "sam2-hf-auto-masks", "no_model_cpu_workflow", "sam3-hosted:custom-sam3-compatible"]' in static_js
     assert 'presetId === "auto_object_proposals"' in js

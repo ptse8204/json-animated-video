@@ -1591,6 +1591,7 @@ const MotionJSONUI = (() => {
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "roboflow-sam3-pcs" : null,
+        useVideoSession: hosted && (input.profileId || input.hostedSam3ProfileId) === "motionjson-colab-sam3-session",
         model: hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || null,
         sam3ModelPath: input.localSam3ModelPath || null,
         sam3Device: input.localSam3Device || input.device || "cuda",
@@ -1611,6 +1612,7 @@ const MotionJSONUI = (() => {
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" : null,
+        useVideoSession: hosted && (input.profileId || input.hostedSam3ProfileId) === "motionjson-colab-sam3-session",
         model: hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || null,
         sam3ModelPath: input.localSam3ModelPath || null,
         sam3Device: input.localSam3Device || input.device || "cuda",
@@ -1641,6 +1643,7 @@ const MotionJSONUI = (() => {
         providerPreference: hosted ? "sam3-hosted" : "sam3-local",
         hosted,
         hostedProfile: hosted ? input.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" : null,
+        useVideoSession: hosted && (input.profileId || input.hostedSam3ProfileId) === "motionjson-colab-sam3-session",
         sam3Device: input.localSam3Device || input.device || "cuda",
         frameIndex: toInteger(scanKeyframes[0], toInteger(input.currentFrame, 0)),
         scanFrameIndex: fastFramePick ? scanFrameIndex : null,
@@ -1746,7 +1749,7 @@ const MotionJSONUI = (() => {
     const effectiveKeyframes = fastFramePick ? [scanFrameIndex] : keyframes;
     const device = input.device && input.device !== "auto" ? input.device : null;
     const modelName = input.modelName && input.modelName !== "auto" ? input.modelName : null;
-    const hostedSam2ProfileId = input.hostedSam2ProfileId || "replicate-sam2-video";
+    const hostedSam2ProfileId = input.hostedSam2ProfileId || (maskProvider === "sam2-hosted" ? enginePlan.profileId : "") || "replicate-sam2-video";
     const objects = [
       {
         object_id: objectId,
@@ -1782,6 +1785,7 @@ const MotionJSONUI = (() => {
           hosted_config: {
             ...(modelName ? { model: modelName } : {}),
             ...(maskProvider === "sam2-hosted" ? { profile: hostedSam2ProfileId, hostedProfile: hostedSam2ProfileId } : {}),
+            ...(maskProvider === "sam2-hosted" && hostedSam2ProfileId === "motionjson-colab-sam2-session" ? { useVideoSession: true } : {}),
           },
           hosted_allow_network: maskProvider === "sam2-hosted" ? Boolean(input.hostedSam2AllowHosted) : false,
         },
@@ -1794,6 +1798,7 @@ const MotionJSONUI = (() => {
           endpoint_env: "SAM3_HOSTED_URL",
           hosted_config: {
             ...(maskProvider === "sam3-hosted" ? { profile: enginePlan.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible", hostedProfile: enginePlan.profileId || input.hostedSam3ProfileId || "custom-sam3-compatible" } : {}),
+            ...(maskProvider === "sam3-hosted" && (enginePlan.profileId || input.hostedSam3ProfileId) === "motionjson-colab-sam3-session" ? { useVideoSession: true } : {}),
             ...(maskProvider === "sam3-hosted" && input.hostedSam3Model ? { model: input.hostedSam3Model } : {}),
           },
           hosted_allow_network: maskProvider === "sam3-hosted" ? Boolean(input.hostedSam3AllowHosted) : false,

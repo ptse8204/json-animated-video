@@ -438,6 +438,7 @@ export function buildRunConfig(input) {
   const outputDir = input.outputDir || `out/motionjson-ui/${objectId}`;
   const enginePlan = guidedEnginePlan(input, preset);
   const providerName = enginePlan.providerName;
+  const hostedSam2ProfileId = input.hostedSam2ProfileId || (providerName === "sam2-hosted" ? enginePlan.profileId : "") || "replicate-sam2-video";
   const discoveryMode = enginePlan.discoveryMode;
   const prompts = (input.prompts || []).map((prompt) =>
     promptToConfig(prompt, {
@@ -475,6 +476,7 @@ export function buildRunConfig(input) {
       discoveryConfig.hosted = hosted;
       discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "roboflow-sam3-pcs" : null;
       discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+      if (hosted && input.hostedSam3ProfileId === "motionjson-colab-sam3-session") discoveryConfig.useVideoSession = true;
       discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
       discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
       discoveryConfig.allowNetwork = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
@@ -491,6 +493,7 @@ export function buildRunConfig(input) {
     discoveryConfig.hosted = hosted;
     discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;
     discoveryConfig.model = hosted ? input.hostedSam3Model || null : input.localSam3ModelPath || advanced.localSam3ModelPath || null;
+    if (hosted && input.hostedSam3ProfileId === "motionjson-colab-sam3-session") discoveryConfig.useVideoSession = true;
     discoveryConfig.sam3ModelPath = input.localSam3ModelPath || advanced.localSam3ModelPath || null;
     discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
     discoveryConfig.frameIndex = Number(advanced.keyframe || 0);
@@ -510,6 +513,7 @@ export function buildRunConfig(input) {
     discoveryConfig.hosted = hosted;
     discoveryConfig.hostedProfile = hosted ? input.hostedSam3ProfileId || "custom-sam3-compatible" : null;
     if (hosted) discoveryConfig.model = input.hostedSam3Model || null;
+    if (hosted && input.hostedSam3ProfileId === "motionjson-colab-sam3-session") discoveryConfig.useVideoSession = true;
     else discoveryConfig.sam3TrackerModel = sam3TrackerModelForInput(input, advanced);
     discoveryConfig.sam3Device = input.localSam3Device || advanced.localSam3Device || advanced.device || "cuda";
     discoveryConfig.allowNetwork = hosted ? Boolean(input.hostedSam3AllowHosted) : false;
@@ -587,8 +591,9 @@ export function buildRunConfig(input) {
         hosted_config:
           providerName === "sam2-hosted"
             ? {
-                profile: input.hostedSam2ProfileId || "replicate-sam2-video",
-                hostedProfile: input.hostedSam2ProfileId || "replicate-sam2-video",
+                profile: hostedSam2ProfileId,
+                hostedProfile: hostedSam2ProfileId,
+                ...(hostedSam2ProfileId === "motionjson-colab-sam2-session" ? { useVideoSession: true } : {}),
                 ...(advanced.model && advanced.model !== "auto" ? { model: advanced.model } : {}),
               }
             : {},
@@ -606,6 +611,7 @@ export function buildRunConfig(input) {
             ? {
                 profile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
                 hostedProfile: input.hostedSam3ProfileId || "roboflow-sam3-pcs",
+                ...(input.hostedSam3ProfileId === "motionjson-colab-sam3-session" ? { useVideoSession: true } : {}),
                 ...(input.hostedSam3Model ? { model: input.hostedSam3Model } : {}),
               }
             : {},

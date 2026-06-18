@@ -239,10 +239,10 @@ def test_local_ui_provider_settings_defaults_are_redacted_and_sam_first(tmp_path
     assert openrouter["readiness"]["status"] == "missing_key"
     sam2_hosted = provider_by_id(payload, "sam2-hosted")
     assert sam2_hosted["settings"]["hostedProfileId"] == "replicate-sam2-video"
-    assert {profile["id"] for profile in sam2_hosted["hostedProfiles"]} >= {"replicate-sam2-video", "custom-sam2-compatible"}
+    assert {profile["id"] for profile in sam2_hosted["hostedProfiles"]} >= {"replicate-sam2-video", "custom-sam2-compatible", "motionjson-colab-sam2-session"}
     sam3_hosted = provider_by_id(payload, "sam3-hosted")
     assert sam3_hosted["settings"]["hostedProfileId"] == "roboflow-sam3-pcs"
-    assert {profile["id"] for profile in sam3_hosted["hostedProfiles"]} >= {"roboflow-sam3-pcs", "fal-sam3-image", "custom-sam3-compatible"}
+    assert {profile["id"] for profile in sam3_hosted["hostedProfiles"]} >= {"roboflow-sam3-pcs", "fal-sam3-image", "custom-sam3-compatible", "motionjson-colab-sam3-session"}
     assert "apiKey" not in json.dumps(payload)
 
 
@@ -274,6 +274,7 @@ def test_sam_goal_capabilities_are_declared_for_guided_ui():
     sam3_hosted = provider_by_id(catalog, "sam3-hosted")
     roboflow = next(profile for profile in sam3_hosted["hostedProfiles"] if profile["id"] == "roboflow-sam3-pcs")
     custom = next(profile for profile in sam3_hosted["hostedProfiles"] if profile["id"] == "custom-sam3-compatible")
+    colab = next(profile for profile in sam3_hosted["hostedProfiles"] if profile["id"] == "motionjson-colab-sam3-session")
 
     assert "trace_one_object" in sam2_local["supportedGoals"]
     assert sam2_local["supportsTracking"] is True
@@ -288,6 +289,8 @@ def test_sam_goal_capabilities_are_declared_for_guided_ui():
     assert roboflow["supportsAutoMasks"] is False
     assert custom["supportsExemplar"] is True
     assert custom["supportsTracking"] is True
+    assert colab["useVideoSession"] is True
+    assert colab["supportsAutoMasks"] is True
 
 
 def test_local_sam_settings_persist_and_diagnose_without_raw_values(tmp_path):
@@ -2082,6 +2085,46 @@ def test_hosted_sam2_smoke_supports_replicate_profile_without_raw_secret(tmp_pat
     assert result["hostedProfileId"] == "replicate-sam2-video"
     assert result["smokeTest"]["providerName"] == "replicate-sam2-video"
     assert secret not in encoded
+
+
+def test_hosted_sam2_colab_profile_uses_generic_json_smoke_without_raw_secret(tmp_path):
+    app = LocalUIApp(db_path=tmp_path / "backend.sqlite", storage_root=tmp_path / "storage", mock_mode=True)
+    secret = "colab-sam2-secret-abcdef123456"
+    status, _headers, _body = app.handle(
+        "POST",
+        "/api/provider-settings",
+        body=json.dumps(
+            {
+                "providerId": "sam2-hosted",
+                "hostedProfileId": "motionjson-colab-sam2-session",
+                "apiKey": secret,
+                "endpoint": "https://colab.example.test/sam2/segment",
+                "selectedModel": "auto",
+                "allowHosted": True,
+            }
+        ).encode("utf-8"),
+    )
+    assert status == 200
+
+    conn = app.connection()
+    try:
+        user = app._local_user(conn)
+        transport = FakeHostedSAM3Transport()
+        result = hosted_sam3_smoke_test(
+            conn,
+            user_id=user["id"],
+            payload={"providerId": "sam2-hosted", "allowNetwork": True, "allowHosted": True, "acknowledgeCostPrivacy": True},
+            transport=transport,
+        )
+    finally:
+        conn.close()
+
+    encoded = json.dumps(result, sort_keys=True)
+    assert result["providerId"] == "sam2-hosted"
+    assert result["hostedProfileId"] == "motionjson-colab-sam2-session"
+    assert result["smokeTest"]["providerName"] == "sam2-hosted"
+    assert secret not in encoded
+    assert transport.calls[0]["payload"]["task"] == "sam2_smoke_test"
 
 
 def test_hosted_sam3_smoke_uses_server_saved_secret_and_redacts_response(tmp_path):

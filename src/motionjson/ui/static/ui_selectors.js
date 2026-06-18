@@ -143,9 +143,11 @@ export function effortPresetDefaults(effortPreset = "balanced") {
 function providerLabel(providerId, profileId = "") {
   if (providerId === "sam2-local") return "SAM2 local";
   if (providerId === "sam2-hf-auto-masks") return "SAM2 HF automatic masks";
+  if (providerId === "sam2-hosted" && profileId === "motionjson-colab-sam2-session") return "Colab SAM2 runtime";
   if (providerId === "sam2-hosted" && profileId === "replicate-sam2-video") return "Replicate SAM2 video";
   if (providerId === "sam2-hosted") return "Hosted SAM2";
   if (providerId === "sam3-local") return "SAM3 Scene Sweep runtime";
+  if (providerId === "sam3-hosted" && profileId === "motionjson-colab-sam3-session") return "Colab SAM3 runtime";
   if (providerId === "sam3-hosted" && profileId === "roboflow-sam3-pcs") return "Roboflow SAM3";
   if (providerId === "sam3-hosted" && profileId === "fal-sam3-image") return "Fal SAM3 image";
   if (providerId === "sam3-hosted") return "Custom SAM3 endpoint";

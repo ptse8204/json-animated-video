@@ -2036,6 +2036,10 @@ class HostedSAM3DiscoveryBackend:
     api_key_env: str = "SAM3_HOSTED_API_KEY"
     model_env: str = "SAM3_HOSTED_MODEL"
     provider_name: str = "sam3-hosted"
+    use_video_session: bool = False
+    session_endpoint: str | None = None
+    max_session_upload_bytes: int = 80 * 1024 * 1024
+    _session_id: str | None = field(default=None, init=False)
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "HostedSAM3DiscoveryBackend":
@@ -2049,9 +2053,10 @@ class HostedSAM3DiscoveryBackend:
         )
         timeout = config.get("timeoutSeconds", config.get("timeout_seconds", 60.0))
         retries = config.get("retries", config.get("retry_count", 1))
+        server_side_key = config.get("apiKey") if config.get("apiKeySource") == "server_settings" else None
         return cls(
             endpoint=config.get("sam3HostedEndpoint") or config.get("sam3_hosted_endpoint") or config.get("endpoint"),
-            api_key=None,
+            api_key=str(server_side_key or "").strip() or None,
             model=str(model or "auto"),
             allow_network=_bool_config(config, "allowNetwork", False)
             or _bool_config(config, "allowHostedNetwork", False)
@@ -2061,6 +2066,9 @@ class HostedSAM3DiscoveryBackend:
             or _bool_config(config, "hostedCostPrivacyAcknowledged", False),
             timeout_seconds=_float_or_default(timeout, 60.0),
             retries=max(0, int(_float_or_default(retries, 1.0))),
+            use_video_session=_bool_config(config, "useVideoSession", False),
+            session_endpoint=str(config.get("sessionEndpoint") or config.get("session_endpoint") or "").strip() or None,
+            max_session_upload_bytes=max(1, int(_float_or_default(config.get("maxSessionUploadBytes", config.get("max_session_upload_bytes", 80 * 1024 * 1024)), 80 * 1024 * 1024))),
         )
 
     def setup_status(self) -> dict[str, Any]:
@@ -2146,6 +2154,10 @@ class HostedSAM3DiscoveryBackend:
             "mask": _encoded_mask(mask),
             "video": _video_metadata(video),
         }
+        session_id = self._ensure_video_session(video)
+        if session_id:
+            payload["sessionId"] = session_id
+            payload.pop("sourceVideo", None)
         response = self._call_hosted(payload)
         records = normalize_sam3_output(response)
         masks = _first_mask_sequence(records)
@@ -2166,6 +2178,7 @@ class HostedSAM3DiscoveryBackend:
     ) -> list[dict[str, Any]]:
         frame_index = min(max(0, frame_index), max(0, len(video.frames) - 1))
         frame = video.frames[frame_index]
+        session_id = self._ensure_video_session(video)
         payload = {
             "task": task,
             "prompt": prompt,
@@ -2176,6 +2189,8 @@ class HostedSAM3DiscoveryBackend:
             "video": _video_metadata(video),
             "maxCandidates": config.get("maxCandidates") or config.get("max_candidates") or config.get("maxCandidatesPerKeyframe"),
         }
+        if session_id:
+            payload["sessionId"] = session_id
         response = self._call_hosted(payload)
         records = normalize_sam3_output(response)
         if not records:
@@ -2222,6 +2237,41 @@ class HostedSAM3DiscoveryBackend:
 
     def _resolve_model(self) -> str:
         return str(self.model or os.environ.get(self.model_env) or "auto").strip() or "auto"
+
+    def _ensure_video_session(self, video: Any) -> str | None:
+        if not self.use_video_session:
+            return None
+        if self._session_id:
+            return self._session_id
+        self._ensure_network_allowed()
+        endpoint = self.session_endpoint or _derive_session_endpoint(self._resolve_endpoint(), "/sam3/session")
+        if not endpoint or not _valid_http_url(endpoint):
+            raise ProviderConfigError("sam3-hosted video sessions require a valid sessionEndpoint or hosted endpoint.")
+        token = self._resolve_api_key()
+        if not token:
+            raise ProviderConfigError(f"sam3-hosted requires auth in {self.api_key_env}; no token was read.")
+        response = _post_json(
+            self.transport or _UrlLibJsonTransport(timeout_seconds=self.timeout_seconds),
+            endpoint,
+            {
+                "task": "sam3_create_session",
+                "model": self._resolve_model(),
+                "video": _video_upload_payload(
+                    getattr(video, "path", ""),
+                    max_bytes=self.max_session_upload_bytes,
+                ),
+                "metadata": _video_metadata(video),
+            },
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout_seconds=self.timeout_seconds,
+        )
+        if not isinstance(response, Mapping):
+            raise ProviderExecutionError("Hosted SAM3 session response must be a JSON object.")
+        session_id = str(response.get("sessionId") or response.get("session_id") or "").strip()
+        if not session_id:
+            raise ProviderExecutionError("Hosted SAM3 session response must include sessionId.")
+        self._session_id = session_id
+        return session_id
 
 
 class _UrlLibJsonTransport:
@@ -2273,6 +2323,32 @@ def _encoded_mask(mask: np.ndarray) -> dict[str, Any]:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return {"format": "png_base64", "data": base64.b64encode(buffer.getvalue()).decode("ascii")}
+
+
+def _derive_session_endpoint(endpoint: str, fallback_path: str) -> str:
+    base = str(endpoint or "").strip()
+    if not base:
+        return ""
+    if base.endswith("/sam3"):
+        return f"{base[:-len('/sam3')]}/sam3/session"
+    if base.endswith("/segment"):
+        return f"{base[:-len('/segment')]}/session"
+    return base.rstrip("/") + fallback_path
+
+
+def _video_upload_payload(source_video: str | Path, *, max_bytes: int) -> dict[str, Any]:
+    path = Path(source_video)
+    data = path.read_bytes()
+    if len(data) > max_bytes:
+        raise ProviderConfigError(
+            f"Hosted video session upload is {len(data)} bytes, above maxSessionUploadBytes={max_bytes}."
+        )
+    return {
+        "format": "base64",
+        "filename": path.name or "video",
+        "sizeBytes": len(data),
+        "data": base64.b64encode(data).decode("ascii"),
+    }
 
 
 def _synthetic_smoke_frame() -> np.ndarray:

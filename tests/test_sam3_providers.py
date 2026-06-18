@@ -407,6 +407,26 @@ def test_hosted_sam3_smoke_rejects_empty_candidate_response():
         backend.smoke_test(prompt="object")
 
 
+def test_hosted_sam3_from_config_accepts_explicit_server_side_key_marker():
+    secret = "hosted-sam3-secret-abcdef"
+    transport = FakeHostedSAM3Transport({"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.9]})
+    backend = HostedSAM3DiscoveryBackend.from_config(
+        {
+            "endpoint": "https://provider.example.test/sam3",
+            "apiKey": secret,
+            "apiKeySource": "server_settings",
+            "allowNetwork": True,
+            "acknowledgeCostPrivacy": True,
+        }
+    )
+    backend.transport = transport
+
+    result = backend.smoke_test(prompt="object")
+
+    assert result["status"] == "ok"
+    assert transport.calls[0]["headers"]["Authorization"] == f"Bearer {secret}"
+
+
 def test_hosted_sam3_from_config_does_not_read_api_keys_from_run_config(monkeypatch):
     monkeypatch.delenv("SAM3_HOSTED_API_KEY", raising=False)
     backend = HostedSAM3DiscoveryBackend.from_config(
@@ -420,6 +440,45 @@ def test_hosted_sam3_from_config_does_not_read_api_keys_from_run_config(monkeypa
 
     with pytest.raises(ProviderConfigError, match="requires auth"):
         backend.smoke_test(prompt="object")
+
+
+def test_hosted_sam3_colab_video_session_uploads_once_and_reuses_session(tmp_path):
+    video_path = tmp_path / "tiny.mp4"
+    video_path.write_bytes(b"fake-video")
+    source = VideoSource(
+        path=video_path,
+        info=VideoInfo(width=16, height=12, source_fps=12, sample_fps=12, total_source_frames=3),
+        frames=frames(3),
+    )
+
+    def response(payload):
+        if payload["task"] == "sam3_create_session":
+            return {"sessionId": "sam3-session-1"}
+        return {"masks": [mask_at(3)], "boxes": [[3, 2, 5, 5]], "scores": [0.91], "labels": ["red ball"]}
+
+    transport = FakeHostedSAM3Transport(response)
+    backend = HostedSAM3DiscoveryBackend(
+        endpoint="https://colab.example.test/sam3",
+        api_key="colab-token",
+        model="auto",
+        allow_network=True,
+        acknowledge_cost_privacy=True,
+        transport=transport,
+        use_video_session=True,
+    )
+
+    first = backend.discover_concept(source, {"concept": "red ball"})
+    second = backend.discover_concept(source, {"concept": "red ball"})
+
+    assert first[0]["label"] == "red ball"
+    assert second[0]["score"] == 0.91
+    session_calls = [call for call in transport.calls if call["payload"]["task"] == "sam3_create_session"]
+    concept_calls = [call for call in transport.calls if call["payload"]["task"] == "sam3_concept"]
+    assert len(session_calls) == 1
+    assert len(concept_calls) == 2
+    assert session_calls[0]["url"] == "https://colab.example.test/sam3/session"
+    assert session_calls[0]["payload"]["video"]["filename"] == "tiny.mp4"
+    assert concept_calls[0]["payload"]["sessionId"] == "sam3-session-1"
 
 
 def test_sam3_concept_can_use_hosted_backend_when_explicitly_configured(tmp_path):

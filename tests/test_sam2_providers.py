@@ -1,10 +1,13 @@
 import builtins
+import base64
+import io
 import sys
 import types
 from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from motionjson.cli import build_parser, build_provider
 from motionjson.providers.base import BatchSegmentationRequest, ProviderConfigError, ProviderExecutionError
@@ -389,6 +392,21 @@ class FakeReplicateTransport:
         return {"black_white_masks": [first, second]}
 
 
+class FakeSAM2SessionTransport:
+    def __init__(self):
+        self.calls = []
+
+    def post_json(self, url, payload, *, headers=None):
+        self.calls.append({"url": url, "payload": payload, "headers": headers or {}})
+        if url.endswith("/session"):
+            return {"sessionId": "sam2-session-1"}
+        mask = np.zeros((4, 5), dtype=np.uint8)
+        mask[1:3, 2:4] = 255
+        buffer = io.BytesIO()
+        Image.fromarray(mask).save(buffer, format="PNG")
+        return {"mask_png_base64": base64.b64encode(buffer.getvalue()).decode("ascii")}
+
+
 def test_hosted_sam2_provider_uses_injected_client_without_env_or_network(monkeypatch):
     monkeypatch.delenv("HOSTED_SEGMENTATION_API_KEY", raising=False)
     client = FakeHostedClient()
@@ -439,6 +457,54 @@ def test_hosted_sam2_replicate_profile_requires_network_acknowledgement():
     provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
 
     with pytest.raises(ProviderConfigError, match="allowNetwork=true"):
+        provider.segment(0, np.zeros((4, 5, 3), dtype=np.uint8))
+
+
+def test_hosted_sam2_colab_video_session_uploads_once_and_reuses_session(tmp_path):
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake-video")
+    transport = FakeSAM2SessionTransport()
+    provider = HostedSAM2SegmentationProvider(
+        source_video=video_path,
+        endpoint="https://colab.example.test/sam2/segment",
+        api_key="colab-token",
+        config={"profile": "motionjson-colab-sam2-session", "useVideoSession": True},
+        prompt_box=(2, 1, 2, 2),
+        transport=transport,
+        allow_network=True,
+    )
+    provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
+
+    first = provider.segment(0, np.zeros((4, 5, 3), dtype=np.uint8))
+    second = provider.segment(1, np.zeros((4, 5, 3), dtype=np.uint8))
+
+    assert first.sum() == 4 * 255
+    assert second.sum() == 4 * 255
+    session_calls = [call for call in transport.calls if call["url"].endswith("/session")]
+    segment_calls = [call for call in transport.calls if call["url"].endswith("/segment")]
+    assert len(session_calls) == 1
+    assert len(segment_calls) == 2
+    assert session_calls[0]["payload"]["video"]["filename"] == "input.mp4"
+    assert session_calls[0]["payload"]["video"]["data"]
+    assert segment_calls[0]["payload"]["sessionId"] == "sam2-session-1"
+    assert "source_video" not in segment_calls[0]["payload"]
+
+
+def test_hosted_sam2_colab_video_session_requires_network_opt_in(tmp_path):
+    video_path = tmp_path / "input.mp4"
+    video_path.write_bytes(b"fake-video")
+    provider = HostedSAM2SegmentationProvider(
+        source_video=video_path,
+        endpoint="https://colab.example.test/sam2/segment",
+        api_key="colab-token",
+        config={"profile": "motionjson-colab-sam2-session", "useVideoSession": True},
+        prompt_box=(2, 1, 2, 2),
+        transport=FakeSAM2SessionTransport(),
+        allow_network=False,
+    )
+    provider.prepare(VideoInfo(width=5, height=4, source_fps=12, sample_fps=12, total_source_frames=2))
+
+    with pytest.raises(ProviderConfigError, match="video sessions require"):
         provider.segment(0, np.zeros((4, 5, 3), dtype=np.uint8))
 
 

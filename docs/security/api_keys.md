@@ -18,7 +18,8 @@ The Local UI Provider settings panel currently covers:
   SAM2 package/model setup is diagnosed locally and does not use an API key.
 - `sam2-hosted`: hosted profile, model choice, API key, optional endpoint, and
   hosted-call opt-in. Built-in profiles include Replicate SAM2 video and a
-  custom SAM2-compatible endpoint.
+  custom SAM2-compatible endpoint. The Colab SAM2 video-session profile uses
+  the same server-side key storage with a temporary tunnel endpoint.
 - `openai`: model choice and API key for hosted plan generation. It is not a
   segmentation provider and never receives frames from the UI-MODEL-04
   connector.
@@ -38,7 +39,9 @@ The Local UI Provider settings panel currently covers:
   hosted-call opt-in. Built-in profiles include Roboflow SAM3 concept
   segmentation, Fal SAM3 image, and a custom SAM3-compatible endpoint. Setup
   tests validate fields locally, do not send frames or make network calls, and
-  require a separate explicit opt-in for hosted smoke tests.
+  require a separate explicit opt-in for hosted smoke tests. The Colab SAM3
+  video-session profile is for temporary UI testing against the remote API
+  notebook.
 
 ![Provider settings panel](../design/screenshots/phase-03b/laptop-1366-provider-settings.png)
 
