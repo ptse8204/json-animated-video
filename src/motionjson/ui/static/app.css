@@ -11075,6 +11075,7 @@ body {
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) .studio-partial-diagnostic,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCorrectionSectionSlot,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewCandidateSectionSlot,
+.app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewLibrarySectionSlot,
 .app-shell.is-review-export-screen-export:not(.is-workflow-dashboard) #reviewArtifactSectionSlot {
   display: none !important;
 }

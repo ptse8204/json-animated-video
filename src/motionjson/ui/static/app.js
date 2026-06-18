@@ -1316,6 +1316,7 @@ const MotionJSONUI = (() => {
     const providerName = String(mapping.providerName || "").trim();
     const discoveryMode = String(mapping.discoveryMode || "").trim();
     if (!providerName || !discoveryMode) return null;
+    if (!input.debugMockMode && goalRequiresModel(presetName) && providerName === "mock") return null;
     return {
       providerName,
       discoveryMode,
@@ -2919,6 +2920,13 @@ const MotionJSONUI = (() => {
   function collectRawFormState($) {
     const preset = PRESETS[state.selectedPreset] || PRESETS.auto_object_proposals;
     const frameIndex = state.video.currentFrame || toInteger($("#frameSlider").value, 0);
+    const selectedConnectionId = selectedModelSetupConnectionId(state.selectedPreset);
+    const selectedConnectionProvider = providerIdFromConnectionId(selectedConnectionId);
+    const selectedMaskProvider = $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold";
+    const maskProvider =
+      !state.health?.mockMode && goalRequiresModel(state.selectedPreset) && selectedMaskProvider === "mock"
+        ? selectedConnectionProvider || "sam2-local"
+        : selectedMaskProvider;
     const hostedSam2Provider = providerSettingsById("sam2-hosted");
     const hostedSam3Provider = providerSettingsById("sam3-hosted");
     const localSam2Provider = providerSettingsById("sam2-local");
@@ -2944,10 +2952,10 @@ const MotionJSONUI = (() => {
       keyframes: state.keyframes,
       prompts: state.prompts,
       strokes: state.strokes,
-      modelConnectionId: selectedModelSetupConnectionId(state.selectedPreset),
+      modelConnectionId: selectedConnectionId,
       modelSetupSelectionMode: state.modelSetupSelectionMode,
       modelSetupRecommendation: modelSetupRecommendationForPreset(state.selectedPreset),
-      maskProvider: $("#maskProviderSelect").value || preset.maskProvider || state.runDefaults?.defaults?.maskProvider || "threshold",
+      maskProvider,
       textDiscoveryProvider: $("#textDiscoveryProviderSelect")?.value || "sam3-hosted",
       allowLegacyTextDetector: false,
       debugMockMode: Boolean(state.health?.mockMode),
@@ -14990,6 +14998,9 @@ const MotionJSONUI = (() => {
           excludedObjectIds: state.exportResult.excludedObjectIds,
         };
         if (response.review) state.jobReview = response.review;
+        state.reviewExportSubscreen = "export";
+        state.activeWorkflowStep = "review_export";
+        state.activeJourneyPhase = "reuse";
         await refreshSelectedJobReview();
       } catch (error) {
         state.exportResult = {

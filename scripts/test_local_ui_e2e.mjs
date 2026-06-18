@@ -111,12 +111,8 @@ test("browser completes mock/no-model run, review correction, and export", { ski
       const toggle = document.querySelector("[data-track-export]");
       if (toggle && !toggle.checked) toggle.click();
     });
-    await page.clickTestId("validate-export");
-    await page.waitForText('[data-testid="export-status"], #exportDecision, #exportStatusSummary', /valid|ready|reviewed|export/i);
-    const canExport = await page.evaluate(() => !document.querySelector('[data-testid="export-motionjson"]')?.disabled);
-    assert.equal(canExport, true, "export button is enabled after validation");
-    await page.clickTestId("export-motionjson");
-    await page.waitFor(() => document.querySelectorAll("[data-export-handoff-url]").length > 0, "export handoff cards include public URLs");
+    await validateReviewedObjectsThroughVisibleWorkflow(page, /valid|ready|reviewed|export/i);
+    await exportReviewedObjectsThroughVisibleWorkflow(page, "export handoff cards include public URLs");
     const urls = await page.evaluate(() => [...document.querySelectorAll("[data-export-handoff-url]")].map((item) => item.dataset.exportHandoffUrl || ""));
     assert.ok(urls.length, "exported handoff URLs are present");
     assert.ok(urls.every((url) => /^\/api\/(?:artifacts|jobs|assets)\//.test(url)), `handoff URLs are local/public-safe: ${urls.join(", ")}`);
@@ -124,15 +120,18 @@ test("browser completes mock/no-model run, review correction, and export", { ski
   });
 });
 
-test("browser starts real no-model motion foreground run without capture or debug mode", { skip: chromeSkip, timeout: 90_000 }, async () => {
+test("browser starts real no-model motion foreground run, reviews, exports without capture or debug mode", { skip: chromeSkip, timeout: 90_000 }, async () => {
   await withTemporaryUi({ debugMock: false }, async () => {
     await withPage(async (page) => {
       const health = await requestJson("GET", `${baseUrl}/api/health`);
       assert.equal(health.mockMode, false, "real UI smoke must not run in debug mock mode");
       await openFreshUi(page);
-      await page.clickTestId("goal-motion-foreground");
-      await page.clickTestId("workflow-primary");
-      await page.clickTestId("use-demo-video");
+      const capture = await page.evaluate(() => document.documentElement.dataset.capture || new URL(location.href).searchParams.get("capture") || "");
+      assert.equal(capture, "", "real UI smoke must not use capture fixtures");
+      await revealAdvancedTasks(page);
+      await page.clickVisibleTestId("goal-motion-foreground");
+      await page.clickVisibleTestId("workflow-primary");
+      await page.clickVisibleTestId("use-demo-video");
       await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected");
       const { projectId } = await selectedProjectVideo(page);
       const beforeJobs = await listJobs(projectId);
@@ -145,9 +144,77 @@ test("browser starts real no-model motion foreground run without capture or debu
       assert.match(String(job.provider || job.maskProvider || job.type || ""), /motion|extract/i);
       await page.click("#refreshButton");
       await page.click(`[data-job-id="${job.id}"]`);
-      await page.click('[data-workflow-step="review_export"]');
+      await enterReviewThroughVisibleWorkflow(page);
       await page.waitFor(() => document.querySelectorAll("[data-track-row]").length > 0, "real motion foreground review tracks rendered");
+      await page.evaluate(() => {
+        const toggle = document.querySelector("[data-track-export]");
+        if (toggle && !toggle.checked) toggle.click();
+      });
+      await validateReviewedObjectsThroughVisibleWorkflow(page, /valid|ready|reviewed|export/i);
+      await exportReviewedObjectsThroughVisibleWorkflow(page, "real export handoff cards include public URLs");
+      const urls = await page.evaluate(() => [...document.querySelectorAll("[data-export-handoff-url]")].map((item) => item.dataset.exportHandoffUrl || ""));
+      assert.ok(urls.length, "real exported handoff URLs are present");
+      assert.ok(urls.every((url) => /^\/api\/(?:artifacts|jobs|assets)\//.test(url)), `real handoff URLs are local/public-safe: ${urls.join(", ")}`);
+      await assertExportScreenOwnsViewport(page);
       await assertJobCanvasPreviewNonblank(page, job.id);
+      await page.assertNoConsoleErrors();
+    });
+  });
+});
+
+test("browser completes visible model-present flow through review and export without debug mode or capture fixtures", { skip: chromeSkip, timeout: 90_000 }, async () => {
+  await withTemporaryUi({ debugMock: false }, async () => {
+    await withPage(async (page) => {
+      const health = await requestJson("GET", `${baseUrl}/api/health`);
+      assert.equal(health.mockMode, false, "model-present UI flow must not run in debug mock mode");
+      await openFreshUi(page);
+      await installReadySam2ModelAndFakeJob(page);
+      await page.click("#refreshButton");
+      const capture = await page.evaluate(() => document.documentElement.dataset.capture || new URL(location.href).searchParams.get("capture") || "");
+      assert.equal(capture, "", "model-present UI flow must not use capture fixtures");
+
+      await page.clickVisibleTestId("workflow-primary");
+      await page.clickVisibleTestId("use-demo-video");
+      await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected");
+      await waitForWorkflowPrimary(page, /Continue to model/i);
+      await page.clickVisibleTestId("workflow-primary");
+      await page.waitForVisible('[data-testid="model-setup-panel"]');
+      await waitForWorkflowPrimary(page, /Continue to target/i);
+      await page.clickVisibleTestId("workflow-primary");
+      await page.waitForVisible("#overlayCanvas");
+      await page.clickElementCenter("#overlayCanvas");
+      await page.waitFor(() => /positive_point|point prompt|1 prompt/i.test(document.body.textContent || ""), "visible point prompt added");
+      await waitForWorkflowPrimary(page, /Continue to preflight/i);
+      await page.clickVisibleTestId("workflow-primary");
+      await waitForWorkflowPrimary(page, /Run trace|Start extraction|Start tracking|Run extraction/i);
+      const preflightConfig = await page.evaluate(() => JSON.parse(document.querySelector("#configPreview")?.textContent || "{}"));
+      assert.equal(preflightConfig.provider.name, "sam2-local", `preflight config should use SAM2, got ${JSON.stringify({
+        provider: preflightConfig.provider?.name,
+        discovery: preflightConfig.discovery?.mode,
+        prompts: preflightConfig.prompts?.length,
+      })}`);
+      await page.clickVisibleTestId("workflow-primary");
+
+      await page.waitFor(() => Boolean(window.__motionJsonModelPresentJobPayloads?.length), "model-present job request captured");
+      const payload = await page.evaluate(() => window.__motionJsonModelPresentJobPayloads.at(-1));
+      assert.equal(payload.runConfig.provider.name, "sam2-local", "model-present UI starts the configured SAM2 provider");
+      assert.ok(payload.runConfig.prompts.length > 0, "model-present run includes the user prompt drawn in the visible viewer");
+      await page.waitForText("body", /e2e_sam2_ready_job|Extraction cockpit|Run monitor/i);
+      await enterReviewThroughVisibleWorkflow(page);
+      await page.waitFor(() => document.querySelectorAll("[data-track-row]").length > 0, "model-present review tracks rendered");
+      const reviewSnapshot = await page.evaluate(() => ({
+        tracks: [...document.querySelectorAll("[data-track-row]")].map((row) => row.textContent || ""),
+        exportDisabled: document.querySelector('[data-testid="export-motionjson"]')?.disabled === true,
+      }));
+      assert.equal(reviewSnapshot.tracks.length, 1, "model-present flow renders the returned SAM2 review track");
+      assert.match(reviewSnapshot.tracks.join("\n"), /E2E SAM2 red ball|sam2-local|moving/i);
+      assert.equal(reviewSnapshot.exportDisabled, false, "model-present export is not blocked before validation when a materialized moving track exists");
+      await validateReviewedObjectsThroughVisibleWorkflow(page, /valid|ready|MotionJSON validation passed/i);
+      await exportReviewedObjectsThroughVisibleWorkflow(page, "model-present export handoff cards include public URLs");
+      const urls = await page.evaluate(() => [...document.querySelectorAll("[data-export-handoff-url]")].map((item) => item.dataset.exportHandoffUrl || ""));
+      assert.ok(urls.length, "model-present exported handoff URLs are present");
+      assert.ok(urls.every((url) => /^\/api\/(?:artifacts|jobs|assets)\//.test(url)), `model-present handoff URLs are local/public-safe: ${urls.join(", ")}`);
+      await assertExportScreenOwnsViewport(page);
       await page.assertNoConsoleErrors();
     });
   });
@@ -287,20 +354,143 @@ async function seedDemoProject(name = "E2E MotionJSON Project") {
 }
 
 async function waitForWorkflowPrimary(page, labelPattern) {
-  await page.waitFor(
+  try {
+    await page.waitFor(
+      (source, flags) => {
+        const visible = (element) => {
+          const box = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
+        };
+        const pattern = new RegExp(source, flags);
+        return [...document.querySelectorAll('[data-testid="workflow-primary"]')].some(
+          (button) => visible(button) && !button.disabled && pattern.test(button.textContent || ""),
+        );
+      },
+      `workflow primary ${labelPattern}`,
+      20_000,
+      labelPattern.source,
+      labelPattern.flags,
+    );
+  } catch (error) {
+    const snapshot = await page.evaluate(() => ({
+      primaryText: document.querySelector('[data-testid="workflow-primary"]')?.textContent?.trim() || "",
+      primaryDisabled: document.querySelector('[data-testid="workflow-primary"]')?.disabled === true,
+      activeJourneyPhase: document.querySelector("#journeyNav [data-journey-phase].is-active")?.dataset.journeyPhase || "",
+      activeWorkflowStep: document.querySelector("[data-workflow-step][aria-current='step']")?.dataset.workflowStep || "",
+      footerHint: document.querySelector("#workflowFooterHint")?.textContent?.trim() || "",
+      footerReason: document.querySelector("#workflowFooterReason")?.textContent?.trim() || "",
+      configStatus: document.querySelector("#configStatus")?.textContent?.trim() || "",
+      runAlert: document.querySelector("#runPlanAlert")?.textContent?.trim().replace(/\s+/g, " ").slice(0, 800) || "",
+    }));
+    error.message = `${error.message}. Workflow snapshot: ${JSON.stringify(snapshot)}`;
+    throw error;
+  }
+}
+
+async function hasTestId(page, testId) {
+  return page.evaluate((id) => Boolean(document.querySelector(`[data-testid="${id}"]`)), testId);
+}
+
+async function revealAdvancedTasks(page) {
+  await page.clickVisible("details.advanced-task-panel > summary");
+  await page.waitForVisible('[data-testid="goal-motion-foreground"]');
+}
+
+async function assertExportScreenOwnsViewport(page) {
+  const state = await page.evaluate(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
+    };
+    return {
+      exportCardVisible: visible(document.querySelector("#studioExportCard")),
+      librarySlotVisible: visible(document.querySelector("#reviewLibrarySectionSlot")),
+      handoffUrlCount: document.querySelectorAll("[data-export-handoff-url]").length,
+    };
+  });
+  assert.equal(state.exportCardVisible, true, `export screen should show the export/handoff card: ${JSON.stringify(state)}`);
+  assert.equal(state.librarySlotVisible, false, `export screen should not be occupied by the asset library slot: ${JSON.stringify(state)}`);
+  assert.ok(state.handoffUrlCount > 0, "export screen exposes handoff URLs");
+}
+
+async function workflowPrimaryText(page) {
+  return page.evaluate(() => {
+    const visible = (element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
+    };
+    const button = [...document.querySelectorAll('[data-testid="workflow-primary"]')].find((item) => visible(item));
+    return button?.textContent?.trim() || "";
+  });
+}
+
+async function workflowPrimaryMatches(page, labelPattern) {
+  return page.evaluate(
     (source, flags) => {
-      const button = document.querySelector('[data-testid="workflow-primary"]');
-      return Boolean(button && !button.disabled && new RegExp(source, flags).test(button.textContent || ""));
+      const visible = (element) => {
+        const box = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
+      };
+      const pattern = new RegExp(source, flags);
+      return [...document.querySelectorAll('[data-testid="workflow-primary"]')].some(
+        (item) => visible(item) && !item.disabled && pattern.test(item.textContent || ""),
+      );
     },
-    `workflow primary ${labelPattern}`,
-    20_000,
     labelPattern.source,
     labelPattern.flags,
   );
 }
 
-async function hasTestId(page, testId) {
-  return page.evaluate((id) => Boolean(document.querySelector(`[data-testid="${id}"]`)), testId);
+async function clickVisibleWorkflowPrimary(page, labelPattern = null) {
+  const box = await page.evaluate((source, flags) => {
+    const visible = (element) => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return box.width > 0 && box.height > 0 && style.display !== "none" && style.visibility !== "hidden" && !element.hidden;
+    };
+    const pattern = source ? new RegExp(source, flags) : null;
+    const button = [...document.querySelectorAll('[data-testid="workflow-primary"]')].find(
+      (item) => visible(item) && !item.disabled && (!pattern || pattern.test(item.textContent || "")),
+    );
+    if (!button) throw new Error("No visible enabled workflow primary button");
+    button.scrollIntoView({ block: "center", inline: "center" });
+    const rect = button.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }, labelPattern?.source || "", labelPattern?.flags || "");
+  await page.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", clickCount: 1 });
+  await page.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x, y: box.y, button: "left", clickCount: 1 });
+  await delay(80);
+}
+
+async function enterReviewThroughVisibleWorkflow(page) {
+  await waitForWorkflowPrimary(page, /Continue to review|Validate reviewed objects|Validate export|Validate again/i);
+  if (await workflowPrimaryMatches(page, /Continue to review/i)) {
+    await clickVisibleWorkflowPrimary(page, /Continue to review/i);
+  }
+  await waitForWorkflowPrimary(page, /Validate reviewed objects|Validate export|Validate again/i);
+  await page.waitFor(() => document.querySelectorAll("[data-track-row]").length > 0, "review tracks rendered");
+}
+
+async function validateReviewedObjectsThroughVisibleWorkflow(page, statusPattern) {
+  await waitForWorkflowPrimary(page, /Validate reviewed objects|Validate export|Validate again/i);
+  await clickVisibleWorkflowPrimary(page, /Validate reviewed objects|Validate export|Validate again/i);
+  await page.waitForText('[data-testid="export-status"], #exportDecision, #exportStatusSummary, #exportStatus', statusPattern);
+  await waitForWorkflowPrimary(page, /Continue to export|Export MotionJSON/i);
+  if (await workflowPrimaryMatches(page, /Continue to export/i)) {
+    await clickVisibleWorkflowPrimary(page, /Continue to export/i);
+  }
+  await waitForWorkflowPrimary(page, /Export MotionJSON/i);
+}
+
+async function exportReviewedObjectsThroughVisibleWorkflow(page, handoffLabel) {
+  await waitForWorkflowPrimary(page, /Export MotionJSON/i);
+  await clickVisibleWorkflowPrimary(page, /Export MotionJSON/i);
+  await page.waitFor(() => document.querySelectorAll("[data-export-handoff-url]").length > 0, handoffLabel);
 }
 
 async function revealModelSetupOptions(page) {
@@ -446,6 +636,348 @@ async function createMockJobFromBrowser(page, projectId, videoId) {
   );
   assert.ok(response.job?.id, "browser-created mock job has an id");
   return response;
+}
+
+async function installReadySam2ModelAndFakeJob(page) {
+  await page.evaluate(() => {
+    window.__motionJsonModelPresentJobPayloads = [];
+    const originalFetch = window.fetch.bind(window);
+    const nowIso = () => new Date().toISOString();
+    let modelPresentJob = null;
+    const fakeTrack = () => ({
+      objectId: "object_0",
+      label: "E2E SAM2 red ball",
+      source: "sam2-local",
+      providerName: "sam2-local",
+      trackingProvider: "sam2-local",
+      confidence: 0.94,
+      frameCount: 3,
+      visibleFrameCount: 3,
+      exportStatus: "accepted",
+      exportIncluded: true,
+      exportable: true,
+      trackClass: "moving_object",
+      maskQuality: { qualityStatus: "good" },
+      frames: [
+        {
+          frame: 0,
+          sourceFrameIndex: 0,
+          sampleIndex: 0,
+          bbox: [78, 58, 88, 88],
+          polygon: [
+            [78, 58],
+            [166, 58],
+            [166, 146],
+            [78, 146],
+          ],
+          visible: true,
+          maskArea: 7744,
+          outlineStatus: "mask_outline",
+          outlineSource: "segmentation_contour",
+        },
+        {
+          frame: 1,
+          sourceFrameIndex: 1,
+          sampleIndex: 1,
+          bbox: [98, 63, 88, 88],
+          polygon: [
+            [98, 63],
+            [186, 63],
+            [186, 151],
+            [98, 151],
+          ],
+          visible: true,
+          maskArea: 7744,
+          outlineStatus: "mask_outline",
+          outlineSource: "segmentation_contour",
+        },
+        {
+          frame: 2,
+          sourceFrameIndex: 2,
+          sampleIndex: 2,
+          bbox: [121, 68, 88, 88],
+          polygon: [
+            [121, 68],
+            [209, 68],
+            [209, 156],
+            [121, 156],
+          ],
+          visible: true,
+          maskArea: 7744,
+          outlineStatus: "mask_outline",
+          outlineSource: "segmentation_contour",
+        },
+      ],
+    });
+    const fakeReview = () => ({
+      format: "motionjson.review.v0.1",
+      source: { frameCount: 3, width: 320, height: 180 },
+      tracks: [fakeTrack()],
+      objects: [
+        {
+          objectId: "object_0",
+          id: "object_0",
+          label: "E2E SAM2 red ball",
+          rightsSummary: { status: "local_test_asset", notes: ["E2E browser-only SAM2 review fixture."] },
+        },
+      ],
+      export: { includedObjectIds: ["object_0"], excludedObjectIds: [] },
+      timeline: {
+        format: "motionjson.review_timeline.v0.1",
+        frameCount: 3,
+        markers: [
+          { id: "e2e-object-start", kind: "tracked_object", frameIndex: 0, objectId: "object_0", label: "E2E SAM2 red ball", status: "accepted" },
+          { id: "e2e-object-end", kind: "tracked_object", frameIndex: 2, objectId: "object_0", label: "E2E SAM2 red ball", status: "accepted" },
+        ],
+      },
+    });
+    const fakeValidation = () => ({
+      ok: true,
+      checked: 1,
+      issueCount: 0,
+      issues: [],
+      summary: "E2E SAM2 moving track validates for MotionJSON export.",
+    });
+    const fakeObjectLayerPack = () => ({
+      objectCount: 1,
+      snippets: {
+        plainJs: "const scene = await fetch('/api/artifacts/e2e_sam2_scene/content').then((response) => response.json());",
+        remotion: "import scene from './scene_graph.json';",
+      },
+    });
+    const fakeExportAssets = () => [
+      {
+        id: "e2e_sam2_scene",
+        kind: "validated_motionjson_scene",
+        contentUrl: "/api/artifacts/e2e_sam2_scene/content",
+        path: "scene_graph.json",
+        metadata: { rel_path: "exports/e2e_sam2/scene_graph.json" },
+      },
+      {
+        id: "e2e_sam2_pack",
+        kind: "object_layer_pack",
+        contentUrl: "/api/artifacts/e2e_sam2_pack/content",
+        path: "object_layer_pack.json",
+        metadata: { rel_path: "exports/e2e_sam2/object_layer_pack.json" },
+      },
+      {
+        id: "e2e_sam2_remotion",
+        kind: "remotion_plan",
+        contentUrl: "/api/artifacts/e2e_sam2_remotion/content",
+        path: "remotion_export_plan.json",
+        metadata: { rel_path: "exports/e2e_sam2/remotion_export_plan.json" },
+      },
+      {
+        id: "e2e_sam2_website",
+        kind: "website_package",
+        contentUrl: "/api/artifacts/e2e_sam2_website/content",
+        path: "website_package.zip",
+        metadata: { rel_path: "exports/e2e_sam2/website_package.zip" },
+      },
+      {
+        id: "e2e_sam2_bundle",
+        kind: "motionjson_export_zip",
+        contentUrl: "/api/artifacts/e2e_sam2_bundle/content",
+        path: "motionjson_export.zip",
+        metadata: { rel_path: "exports/e2e_sam2/motionjson_export.zip" },
+      },
+    ];
+    const fakeArtifacts = () => ({
+      artifacts: [
+        {
+          id: "e2e_sam2_track_summary",
+          kind: "track_summary",
+          path: "track_summary.json",
+          metadata: { provider: "sam2-local", trackCount: 1, rel_path: "review/track_summary.json" },
+        },
+      ],
+      review: fakeReview(),
+    });
+    const fakeJob = (body = {}) => ({
+      id: "e2e_sam2_ready_job",
+      projectId: body.projectId,
+      videoId: body.videoId,
+      status: "succeeded",
+      provider: "sam2-local",
+      maskProvider: "sam2-local",
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      runConfig: body.runConfig,
+      result: {
+        objects: 1,
+        frames: 3,
+        tracks: [fakeTrack()],
+        trackSummary: { tracks: [fakeTrack()] },
+      },
+    });
+    const readyProvider = (provider) => {
+      if (!provider || provider.id !== "sam2-local") return provider;
+      return {
+        ...provider,
+        available: true,
+        configured: true,
+        runnable: true,
+        status: "ready",
+        reasons: [],
+        readiness: {
+          ...(provider.readiness || {}),
+          configured: true,
+          ready: true,
+          runnable: true,
+          status: "ready",
+          message: "E2E SAM2 runtime ready.",
+        },
+        setupState: {
+          ...(provider.setupState || {}),
+          status: "ready",
+          label: "Ready",
+          message: "E2E SAM2 runtime ready.",
+        },
+        runtimeProof: {
+          ...(provider.runtimeProof || {}),
+          allowsRun: true,
+          proofStatus: "verified",
+          runtime: { deviceActual: "cpu", acceleratorKind: "cpu" },
+        },
+        runtimeVerification: {
+          ...(provider.runtimeVerification || {}),
+          verified: true,
+          proofStatus: "verified",
+          runtime: { deviceActual: "cpu", acceleratorKind: "cpu" },
+        },
+        settings: {
+          ...(provider.settings || {}),
+          sam2CheckpointPath: "/tmp/e2e-sam2-checkpoint.pt",
+          sam2ModelConfigPath: "/tmp/e2e-sam2-config.yaml",
+          sam2Device: "cpu",
+        },
+      };
+    };
+    const readyCapability = (provider) => {
+      if (!provider || provider.name !== "sam2-local") return provider;
+      return {
+        ...provider,
+        available: true,
+        configured: true,
+        runnable: true,
+        status: "ready",
+        reasons: [],
+      };
+    };
+    const jsonResponse = (payload, init = {}) =>
+      new Response(JSON.stringify(payload), {
+        status: init.status || 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    window.fetch = async (...args) => {
+      const request = args[0];
+      const url = new URL(typeof request === "string" ? request : request.url, location.origin);
+      const method = String(args[1]?.method || request?.method || "GET").toUpperCase();
+
+      if (url.pathname === "/api/run-config/validate" && method === "POST") {
+        const body = JSON.parse(args[1]?.body || "{}");
+        return jsonResponse({ valid: true, errors: [], warnings: [], runConfig: body.runConfig });
+      }
+
+      if (url.pathname === "/api/model-setup/recommendation" && method === "GET") {
+        return jsonResponse({
+          format: "motionjson.model_setup_recommendation.v0.1",
+          goal: url.searchParams.get("goal") || "trace_one_object",
+          requiresModelSetup: true,
+          selectedConnectionId: "sam2-local",
+          selectedProviderId: "sam2-local",
+          selectedCapabilityId: "sam2-local",
+          title: "SAM2 prompt tracking",
+          subtitle: "E2E SAM2 runtime ready.",
+          status: "ready",
+          primaryAction: { id: "continue", label: "Continue to run" },
+          requiredInputs: [],
+          optionalInputs: [],
+          advancedInputs: [],
+          runtimeBadges: [
+            { id: "hardware", label: "CPU", status: "ok" },
+            { id: "runtime", label: "Runtime ready", status: "ok" },
+            { id: "model", label: "SAM2 checkpoint/config", status: "ok" },
+            { id: "proof", label: "Proof verified", status: "ok" },
+          ],
+          whyThis: "E2E SAM2 runtime ready.",
+          warnings: [],
+          alternatives: [],
+          runConfigMapping: { providerName: "sam2-local", discoveryMode: "manual_prompt" },
+        });
+      }
+
+      if (url.pathname === "/api/jobs" && method === "POST") {
+        const body = JSON.parse(args[1]?.body || "{}");
+        window.__motionJsonModelPresentJobPayloads.push(body);
+        modelPresentJob = fakeJob(body);
+        return jsonResponse({
+          job: modelPresentJob,
+        });
+      }
+
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job") {
+        return jsonResponse({ job: modelPresentJob || fakeJob() });
+      }
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/events") {
+        return jsonResponse({
+          events: [
+            { id: "e2e-started", kind: "job_started", message: "SAM2 tracking started", createdAt: nowIso() },
+            { id: "e2e-succeeded", kind: "job_succeeded", message: "SAM2 masks and tracks ready", createdAt: nowIso() },
+          ],
+        });
+      }
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/artifacts") return jsonResponse(fakeArtifacts());
+      if (url.pathname === "/api/artifacts" && url.searchParams.get("jobId") === "e2e_sam2_ready_job") return jsonResponse(fakeArtifacts());
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/review-tools") return jsonResponse({ tools: [] });
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/corrections") {
+        return jsonResponse({ jobId: "e2e_sam2_ready_job", history: [], trackEdits: {} });
+      }
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/validate" && method === "POST") {
+        return jsonResponse({
+          validation: fakeValidation(),
+          includedObjectIds: ["object_0"],
+          excludedObjectIds: [],
+          objectLayerPack: fakeObjectLayerPack(),
+        });
+      }
+      if (url.pathname === "/api/jobs/e2e_sam2_ready_job/exports" && method === "POST") {
+        return jsonResponse({
+          export: {
+            jobId: "e2e_sam2_ready_job",
+            validation: fakeValidation(),
+            includedObjectIds: ["object_0"],
+            excludedObjectIds: [],
+            assets: fakeExportAssets(),
+            objectLayerPack: fakeObjectLayerPack(),
+          },
+          review: fakeReview(),
+        });
+      }
+
+      const response = await originalFetch(...args);
+      if (url.pathname === "/api/jobs" && method === "GET" && modelPresentJob) {
+        const payload = await response.clone().json().catch(() => ({ jobs: [] }));
+        const jobs = (payload.jobs || []).filter((job) => job?.id !== modelPresentJob.id);
+        return jsonResponse({ ...payload, jobs: [modelPresentJob, ...jobs] });
+      }
+      if (url.pathname === "/api/progress" && method === "GET" && modelPresentJob) {
+        const payload = await response.clone().json().catch(() => ({ progress: [] }));
+        const progress = (payload.progress || []).filter((job) => job?.id !== modelPresentJob.id);
+        return jsonResponse({ ...payload, progress: [modelPresentJob, ...progress] });
+      }
+      if (url.pathname === "/api/provider-settings") {
+        const payload = await response.clone().json();
+        return jsonResponse({ ...payload, providers: (payload.providers || []).map(readyProvider) });
+      }
+      if (url.pathname === "/api/capabilities") {
+        const payload = await response.clone().json();
+        return jsonResponse({ ...payload, providers: (payload.providers || []).map(readyCapability) });
+      }
+      return response;
+    };
+  });
 }
 
 async function installModelRunCapture(page) {
@@ -743,6 +1275,7 @@ async function withPage(run) {
     await cdp.send("Network.enable");
     await cdp.send("Runtime.enable");
     await cdp.send("Log.enable").catch(() => {});
+    await page.setViewport(1440, 900);
     await run(page);
   } finally {
     cdp.close();
@@ -860,8 +1393,34 @@ class BrowserPage {
     await delay(80);
   }
 
+  async clickVisible(selector) {
+    await this.waitForVisible(selector);
+    await this.click(selector);
+  }
+
   async clickTestId(testId) {
     await this.click(testIdSelector(testId));
+  }
+
+  async clickVisibleTestId(testId) {
+    await this.clickVisible(testIdSelector(testId));
+  }
+
+  async clickElementCenter(selector) {
+    const box = await this.evaluate((css) => {
+      const element = document.querySelector(css);
+      if (!element) throw new Error(`Missing selector ${css}`);
+      element.scrollIntoView({ block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      if (rect.width <= 0 || rect.height <= 0 || style.display === "none" || style.visibility === "hidden" || element.hidden) {
+        throw new Error(`Selector ${css} is not visible`);
+      }
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }, selector);
+    await this.cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", clickCount: 1 });
+    await this.cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x, y: box.y, button: "left", clickCount: 1 });
+    await delay(80);
   }
 
   async setValue(selector, value) {
