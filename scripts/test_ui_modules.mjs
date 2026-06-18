@@ -106,8 +106,8 @@ assert.equal(freshState.modelSetupRecommendations.pick_objects_from_frame.select
 assert.deepEqual(JOURNEY_PHASES.map((phase) => phase.id), [
   "goal",
   "source",
-  "model",
   "target",
+  "model",
   "preflight",
   "run",
   "review",

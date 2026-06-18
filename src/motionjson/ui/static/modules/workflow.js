@@ -79,16 +79,16 @@ export const JOURNEY_PHASES = [
     question: "Which video am I extracting from?",
   },
   {
-    id: "model",
-    label: "Model",
-    workflowStep: "provider_settings",
-    question: "Can the recommended model path run?",
-  },
-  {
     id: "target",
     label: "Target",
     workflowStep: "prompt_preview",
     question: "What object should be traced?",
+  },
+  {
+    id: "model",
+    label: "Model",
+    workflowStep: "provider_settings",
+    question: "Can the recommended model path run?",
   },
   {
     id: "preflight",

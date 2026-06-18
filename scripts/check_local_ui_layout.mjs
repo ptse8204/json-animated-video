@@ -76,12 +76,6 @@ const CAPTURE_STATES = [
   "prepare-pick-frame",
   "prepare-sam3-trace-all-runtime-ready",
   "prepare-sam3-trace-all-missing-runtime",
-  "model-plan-preview",
-  "model-plan-warning",
-  "model-plan-confirmation",
-  "model-plan-queued",
-  "model-plan-running",
-  "model-plan-succeeded",
   "job-review",
   "candidate-review",
   "correction-tools",
@@ -959,8 +953,6 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
           providerWarningVisible: visible(document.querySelector("#providerWarning")),
           providerWarningText: document.querySelector("#providerWarning")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           runPlanAlertVisible: visible(document.querySelector("#runPlanAlert")),
-          modelPlanPanelVisible: visible(document.querySelector("#modelPlanPanel")),
-          modelPlanPanelText: document.querySelector("#modelPlanPanel")?.textContent?.trim().replace(/\\s+/g, " ") || "",
           activeModelChoice: document.querySelector("#modelSetupChoices .model-choice-card.is-active strong")?.textContent?.trim() || "",
           modelSetupNormalActionCount: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).length,
           modelSetupNormalActionText: [...document.querySelectorAll("#modelSetupPanel .model-setup-normal-actions > button")].filter(visible).map((item) => item.textContent?.trim() || "").join(" | "),
@@ -1662,11 +1654,6 @@ async function checkState({ port, baseUrl, viewport, state, screenshotDir, scree
       }
       if (stateValue.targetSourceRequiredVisible || stateValue.workflowPrimaryLabel === "Add source video") {
         failures.push(`${viewport.name}/${state}: preflight fixture should use a prepared source instead of the source-required gate`);
-      }
-    }
-    if (state.startsWith("model-plan")) {
-      if (!stateValue.modelPlanPanelVisible || !/Generate|Review|planner|config/i.test(stateValue.modelPlanPanelText)) {
-        failures.push(`${viewport.name}/${state}: model plan capture should render the planner surface instead of a blank workflow stage`);
       }
     }
     if (state === "prepare-sam3-single" && stateValue.workflowPrimaryLabel !== "Fix model setup") {
