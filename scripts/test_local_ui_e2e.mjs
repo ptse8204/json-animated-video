@@ -124,6 +124,35 @@ test("browser completes mock/no-model run, review correction, and export", { ski
   });
 });
 
+test("browser starts real no-model motion foreground run without capture or debug mode", { skip: chromeSkip, timeout: 90_000 }, async () => {
+  await withTemporaryUi({ debugMock: false }, async () => {
+    await withPage(async (page) => {
+      const health = await requestJson("GET", `${baseUrl}/api/health`);
+      assert.equal(health.mockMode, false, "real UI smoke must not run in debug mock mode");
+      await openFreshUi(page);
+      await page.clickTestId("goal-motion-foreground");
+      await page.clickTestId("workflow-primary");
+      await page.clickTestId("use-demo-video");
+      await page.waitFor(() => document.querySelector('[data-testid="video-select"]')?.value, "demo video selected");
+      const { projectId } = await selectedProjectVideo(page);
+      const beforeJobs = await listJobs(projectId);
+      const beforeIds = new Set(beforeJobs.map((job) => job.id));
+      const created = await clickPrimaryUntilNewJob(page, projectId, beforeIds);
+      const job = await waitForJob((item) => item.id === created.id && item.status === "succeeded", "real motion foreground job to succeed", {
+        projectId,
+        timeoutMs: 60_000,
+      });
+      assert.match(String(job.provider || job.maskProvider || job.type || ""), /motion|extract/i);
+      await page.click("#refreshButton");
+      await page.click(`[data-job-id="${job.id}"]`);
+      await page.click('[data-workflow-step="review_export"]');
+      await page.waitFor(() => document.querySelectorAll("[data-track-row]").length > 0, "real motion foreground review tracks rendered");
+      await assertJobCanvasPreviewNonblank(page, job.id);
+      await page.assertNoConsoleErrors();
+    });
+  });
+});
+
 test("browser shows hosted opt-in blocker and changes readiness after local save", { skip: chromeSkip, timeout: E2E_TIMEOUT_MS }, async () => {
   await withPage(async (page) => {
     const secret = "rf-e2e-hosted-key-123456";
@@ -319,6 +348,58 @@ async function selectedProjectVideo(page) {
   return result;
 }
 
+async function clickPrimaryUntilNewJob(page, projectId, beforeIds) {
+  let lastButton = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await page.waitFor(
+      () => {
+        const button = document.querySelector('[data-testid="workflow-primary"]');
+        return Boolean(button && !button.disabled);
+      },
+      "workflow primary enabled",
+      20_000,
+    );
+    lastButton = await page.evaluate(() => document.querySelector('[data-testid="workflow-primary"]')?.textContent?.trim() || "");
+    await page.clickTestId("workflow-primary");
+    const deadline = Date.now() + 3_000;
+    while (Date.now() < deadline) {
+      const created = (await listJobs(projectId)).find((job) => !beforeIds.has(job.id));
+      if (created) return created;
+      await delay(250);
+    }
+  }
+  throw new Error(`No real extraction job appeared after workflow-primary clicks; last button: ${lastButton || "<none>"}`);
+}
+
+async function assertJobCanvasPreviewNonblank(page, jobId) {
+  const tools = await requestJson("GET", `${baseUrl}/api/jobs/${encodeURIComponent(jobId)}/review-tools`);
+  const canvas = (tools.tools || []).find((tool) => tool.toolId === "canvas_player");
+  assert.equal(canvas?.status, "ready", `canvas player should be ready for ${jobId}`);
+  await page.goto(`${baseUrl}${canvas.url}`);
+  await page.waitFor(
+    () => {
+      const canvas = document.querySelector("canvas");
+      return Boolean(canvas && canvas.width > 0 && canvas.height > 0);
+    },
+    "preview canvas mounted",
+    20_000,
+  );
+  await page.waitFor(
+    () => {
+      const canvas = document.querySelector("canvas");
+      const ctx = canvas?.getContext("2d");
+      if (!canvas || !ctx) return false;
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let index = 3; index < data.length; index += 4) {
+        if (data[index] > 0) return true;
+      }
+      return false;
+    },
+    "preview canvas has visible pixels",
+    20_000,
+  );
+}
+
 async function assertSecretAbsent(page, secret) {
   const snapshot = await page.evaluate((value) => {
     const inputValues = [...document.querySelectorAll("input, textarea")]
@@ -456,31 +537,46 @@ function waitForLine(child, pattern, timeoutMs = 20_000) {
   });
 }
 
-async function startUi(tmpRoot) {
+async function startUi(tmpRoot, { debugMock = true } = {}) {
   const python = pythonCommand();
+  const args = [
+    ...python.args,
+    "-m",
+    "motionjson.cli",
+    "ui",
+    "--no-open",
+    ...(debugMock ? ["--debug-mock"] : []),
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "0",
+    "--db",
+    join(tmpRoot, "backend.sqlite"),
+    "--storage-root",
+    join(tmpRoot, "storage"),
+  ];
   const child = spawn(
     python.command,
-    [
-      ...python.args,
-      "-m",
-      "motionjson.cli",
-      "ui",
-      "--no-open",
-      "--debug-mock",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      "0",
-      "--db",
-      join(tmpRoot, "backend.sqlite"),
-      "--storage-root",
-      join(tmpRoot, "storage"),
-    ],
+    args,
     { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] },
   );
   child.stderr.on("data", (chunk) => process.stderr.write(chunk));
   const line = await waitForLine(child, "MotionJSON UI:");
   return { child, baseUrl: line.split("MotionJSON UI:", 2)[1].trim().replace(/\/$/, "") };
+}
+
+async function withTemporaryUi(options, run) {
+  const oldBaseUrl = baseUrl;
+  const tempRoot = await mkdtemp(join(tmpdir(), "motionjson-real-ui-e2e-"));
+  const server = await startUi(tempRoot, options);
+  try {
+    baseUrl = server.baseUrl;
+    await run();
+  } finally {
+    baseUrl = oldBaseUrl;
+    await stopProcess(server.child);
+    await removeTempRoot(tempRoot);
+  }
 }
 
 function freePort() {
@@ -817,8 +913,8 @@ async function listJobs(projectId = "") {
   return body.jobs || [];
 }
 
-async function waitForJob(predicate, description, { projectId = "" } = {}) {
-  const deadline = Date.now() + 30_000;
+async function waitForJob(predicate, description, { projectId = "", timeoutMs = 30_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
   let latestJobs = [];
   while (Date.now() < deadline) {
     const jobs = await listJobs(projectId);

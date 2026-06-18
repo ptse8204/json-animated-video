@@ -100,8 +100,8 @@
         <ol id="journeyNavList" class="journey-nav-list">
           <li><button type="button" data-workflow-step="choose_goal" data-journey-phase="goal"><span class="journey-dot" aria-hidden="true"></span><strong>Goal</strong><small>Choose the job</small></button></li>
           <li><button type="button" data-workflow-step="source_video" data-journey-phase="source"><span class="journey-dot" aria-hidden="true"></span><strong>Source</strong><small>Add video</small></button></li>
-          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="target"><span class="journey-dot" aria-hidden="true"></span><strong>Target</strong><small>Define object</small></button></li>
           <li><button type="button" data-workflow-step="provider_settings" data-journey-phase="model"><span class="journey-dot" aria-hidden="true"></span><strong>Model</strong><small>Prepare provider</small></button></li>
+          <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="target"><span class="journey-dot" aria-hidden="true"></span><strong>Target</strong><small>Define object</small></button></li>
           <li><button type="button" data-workflow-step="prompt_preview" data-journey-phase="preflight"><span class="journey-dot" aria-hidden="true"></span><strong>Preflight</strong><small>Confirm run</small></button></li>
           <li><button type="button" data-workflow-step="run_monitor" data-journey-phase="run"><span class="journey-dot" aria-hidden="true"></span><strong>Run</strong><small>Watch output</small></button></li>
           <li><button type="button" data-workflow-step="review_export" data-review-subscreen="review" data-journey-phase="review"><span class="journey-dot" aria-hidden="true"></span><strong>Review</strong><small>Keep tracks</small></button></li>
@@ -154,7 +154,8 @@
           </ol>
           <div class="topbar-actions">
             <span id="apiStatus" class="status-chip">Checking API</span>
-            <span id="providerIdentityChip" class="status-chip is-muted">Provider pending</span>
+            <span id="providerIdentityChip" class="status-chip is-muted" hidden>Provider pending</span>
+            <button id="modelSetupQuickButton" class="status-chip is-muted model-quick-action" type="button" hidden>Change model</button>
             <button id="diagnosticsSummary" class="status-chip is-muted inspector-toggle" type="button" data-testid="usage-drawer-toggle" aria-controls="diagnosticsRail" aria-expanded="false">Main workflow</button>
             <button id="refreshButton" class="primary-action" type="button">Refresh</button>
             <button id="helpButton" class="command-icon-button" type="button" data-ui-action="open-help" aria-label="Open help and diagnostics">?</button>

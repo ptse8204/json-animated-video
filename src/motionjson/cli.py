@@ -17,6 +17,7 @@ from .exporters.remotion import write_remotion_plan
 from .exporters.scene_graph import write_json
 from .exporters.website_package import export_website_package
 from .job_artifacts import JobCanceled, LocalJobRun
+from .mask_fitness import validate_mask_fitness
 from .masks import ExternalMaskProvider, MotionMaskProvider, SAM2Provider, ThresholdMaskProvider
 from .pipeline import ObjectExtractionSpec, run_multi_object_pipeline, run_pipeline, write_profiled_outputs
 from .providers.mask_cache import MaskCache
@@ -198,6 +199,9 @@ def build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate", help="Validate a MotionJSON file or output directory")
     validate.add_argument("path", type=str, help="MotionJSON JSON file or output directory")
     validate.add_argument("--object-id", type=str, default="object_0", help="Object id to require when validating an output directory")
+    mask_fitness = sub.add_parser("mask-fitness", help="Validate mask/cutout/render geometry for an output directory")
+    mask_fitness.add_argument("out_dir", type=str, help="MotionJSON extraction output directory")
+    mask_fitness.add_argument("--object-id", type=str, default=None, help="Optional object id to check")
     correct = sub.add_parser("correct", help="Apply deterministic mask corrections to an existing extraction")
     add_correct_args(correct)
     export = sub.add_parser("export", help="Export final video, object alpha video, website package, or adapter plan")
@@ -692,6 +696,14 @@ def run_validate(args: argparse.Namespace) -> None:
     raise SystemExit(1)
 
 
+def run_mask_fitness(args: argparse.Namespace) -> dict[str, Any]:
+    report = validate_mask_fitness(args.out_dir, object_id=args.object_id)
+    print(json.dumps(report, indent=2, sort_keys=True))
+    if not report["ok"]:
+        raise SystemExit(1)
+    return report
+
+
 def _default_corrected_out_dir(source: Path) -> Path:
     return source.with_name(f"{source.name}_corrected")
 
@@ -1007,7 +1019,7 @@ def run_ui(args: argparse.Namespace) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] not in {"extract", "validate", "correct", "export", "benchmark", "backend", "ui"} and not argv[0].startswith("-"):
+    if argv and argv[0] not in {"extract", "validate", "mask-fitness", "correct", "export", "benchmark", "backend", "ui"} and not argv[0].startswith("-"):
         args = _legacy_extract_parser().parse_args(argv)
         run_extract(args)
         return
@@ -1019,6 +1031,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "validate":
         run_validate(args)
+        return
+    if args.command == "mask-fitness":
+        run_mask_fitness(args)
         return
     if args.command == "correct":
         run_correct(args)

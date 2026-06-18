@@ -79,16 +79,16 @@ export const JOURNEY_PHASES = [
     question: "Which video am I extracting from?",
   },
   {
-    id: "target",
-    label: "Target",
-    workflowStep: "prompt_preview",
-    question: "What object should be traced?",
-  },
-  {
     id: "model",
     label: "Model",
     workflowStep: "provider_settings",
     question: "Can the recommended model path run?",
+  },
+  {
+    id: "target",
+    label: "Target",
+    workflowStep: "prompt_preview",
+    question: "What object should be traced?",
   },
   {
     id: "preflight",
@@ -378,8 +378,8 @@ export function journeyReadinessFromSnapshot(snapshot = {}, readiness = workflow
   return {
     goal: readiness.choose_goal,
     source: readiness.source_video,
-    target: readiness.prompt_preview,
     model: readiness.provider_settings,
+    target: readiness.prompt_preview,
     preflight: {
       status: snapshot.backendValidated ? "done" : readiness.prompt_preview?.status || "needs-action",
       complete: Boolean(snapshot.backendValidated || snapshot.selectedJobId),

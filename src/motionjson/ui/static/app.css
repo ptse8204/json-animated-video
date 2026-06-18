@@ -8834,6 +8834,7 @@ body {
 
 #apiStatus.status-chip,
 #providerIdentityChip.status-chip,
+#modelSetupQuickButton.status-chip,
 #diagnosticsSummary.status-chip,
 .command-icon-button {
   display: inline-flex;
@@ -8861,6 +8862,7 @@ body {
 }
 
 #providerIdentityChip.status-chip.is-warn,
+#modelSetupQuickButton.status-chip.is-warn,
 #diagnosticsSummary.status-chip.is-warn {
   border-color: #efd083;
   background: var(--ui-v3-amber-soft);
@@ -8893,6 +8895,7 @@ body {
 }
 
 #apiStatus.status-chip,
+#modelSetupQuickButton.status-chip,
 #diagnosticsSummary.status-chip {
   flex: 0 0 auto;
 }
@@ -8903,6 +8906,15 @@ body {
   max-width: min(320px, 28vw);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+#providerIdentityChip.status-chip[hidden],
+#modelSetupQuickButton.status-chip[hidden] {
+  display: none !important;
+}
+
+#modelSetupQuickButton.status-chip {
+  cursor: pointer;
 }
 
 .sidebar {
@@ -9175,6 +9187,7 @@ body {
 
   #apiStatus.status-chip,
   #providerIdentityChip.status-chip,
+  #modelSetupQuickButton.status-chip,
   #diagnosticsSummary.status-chip,
   .command-icon-button {
     width: 100%;
@@ -9184,6 +9197,10 @@ body {
   }
 
   #diagnosticsSummary.status-chip {
+    grid-column: 1 / -1;
+  }
+
+  #modelSetupQuickButton.status-chip {
     grid-column: 1 / -1;
   }
 
@@ -11469,6 +11486,7 @@ body {
 
   #apiStatus.status-chip,
   #providerIdentityChip.status-chip,
+  #modelSetupQuickButton.status-chip,
   #diagnosticsSummary.status-chip,
   .command-icon-button {
     width: auto !important;
@@ -11490,6 +11508,11 @@ body {
   #diagnosticsSummary.status-chip {
     grid-column: 2 / 3 !important;
     grid-row: 1 !important;
+  }
+
+  #modelSetupQuickButton.status-chip {
+    grid-column: 1 / 3 !important;
+    grid-row: 2 !important;
   }
 
   .command-icon-button {

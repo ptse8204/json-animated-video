@@ -6426,8 +6426,8 @@ const MotionJSONUI = (() => {
       const phaseDescriptions = {
         goal: "Choose the object-layer job before setup details appear.",
         source: "Add a local video or open an existing result without exposing private paths.",
-        target: "Define the object, frame, prompt, or discovery mode before the run is allowed.",
         model: "Confirm the recommended local, no-model, or explicitly consented hosted path.",
+        target: "Define the object, frame, prompt, or discovery mode before the run is allowed.",
         preflight: "Validate source, target, provider, locality, frame budget, artifacts, and blockers before extraction starts.",
         run: "Watch phase progress, live evidence, health, usage, events, and recovery actions.",
         review: "Inspect candidates and produced tracks before anything becomes export-ready.",
@@ -6966,7 +6966,33 @@ const MotionJSONUI = (() => {
       }
     }
 
+    function shellProviderStatusRelevant() {
+      const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
+      return ["provider_settings", "prompt_preview", "candidate_selection", "run_monitor", "review_export"].includes(activeStep);
+    }
+
+    function workflowShellSummary() {
+      const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
+      const snapshot = workflowSnapshot();
+      const readiness = workflowReadinessFromSnapshot(snapshot);
+      const stepReadiness = readiness[activeStep] || {};
+      const activePhase = journeyPhaseForWorkflowStep(activeStep, {
+        activeJourneyPhase: state.activeJourneyPhase,
+        reviewExportSubscreen: state.reviewExportSubscreen,
+        exportResultReady: snapshot.exportResultReady,
+      });
+      const phaseLabel =
+        JOURNEY_PHASES.find((phase) => phase.id === activePhase)?.label ||
+        WORKFLOW_STEPS.find((step) => step.id === activeStep)?.label ||
+        "Workflow";
+      if (stepReadiness.status === "blocked") return { label: `${phaseLabel} blocked`, tone: "is-bad" };
+      if (stepReadiness.status === "needs-action") return { label: `${phaseLabel} needed`, tone: stepReadiness.tone || "is-warn" };
+      if (stepReadiness.complete) return { label: `${phaseLabel} ready`, tone: "is-neutral" };
+      return { label: phaseLabel, tone: stepReadiness.tone || "is-muted" };
+    }
+
     function shellDiagnosticSummary() {
+      const providerRelevant = shellProviderStatusRelevant();
       const providerWarning = $("#providerWarning");
       const providerText = providerWarning?.textContent?.trim() || "";
       const providerBad = providerWarning?.classList.contains("is-bad");
@@ -6977,12 +7003,12 @@ const MotionJSONUI = (() => {
       );
       const activeCount = state.jobs.filter(isActiveJob).length;
       if (rootErrors.length) return { label: `${rootErrors.length} setup issue${rootErrors.length === 1 ? "" : "s"}`, tone: "is-bad" };
-      if (providerBad) return { label: "Provider blocked", tone: "is-bad" };
+      if (providerRelevant && providerBad) return { label: "Provider blocked", tone: "is-bad" };
       if (diagnostics.some((item) => item.severity === "bad")) return { label: "Run failure details", tone: "is-bad" };
-      if (providerWarn) return { label: "Provider warning", tone: "is-warn" };
+      if (providerRelevant && providerWarn) return { label: "Provider warning", tone: "is-warn" };
       if (diagnostics.length) return { label: `${diagnostics.length} diagnostic${diagnostics.length === 1 ? "" : "s"}`, tone: "is-warn" };
       if (activeCount) return { label: `${activeCount} active run${activeCount === 1 ? "" : "s"}`, tone: "is-neutral" };
-      return { label: "Main workflow", tone: "is-muted" };
+      return workflowShellSummary();
     }
 
     function renderShellIndicators() {
@@ -7010,9 +7036,10 @@ const MotionJSONUI = (() => {
           (selectedSource?.id ? "Registered video" : "No video selected");
         sourceChip.querySelector("strong").textContent = sourceName;
       }
+      const activeStep = normalizeWorkflowStepId(state.activeWorkflowStep);
+      const enginePlan = guidedEnginePlan(collectFormState($));
       const providerChip = $("#providerIdentityChip");
       if (providerChip) {
-        const enginePlan = guidedEnginePlan(collectFormState($));
         const label = enginePlan.displayLabel || enginePlan.providerName || "Provider pending";
         const locality = enginePlan.locality ? ` - ${enginePlan.locality}` : "";
         const fullLabel = `${label}${locality}`;
@@ -7021,10 +7048,23 @@ const MotionJSONUI = (() => {
           .replace(/\s+-\s+no_model\b/gi, "")
           .replace(/\s+/g, " ")
           .trim() || "Provider";
-        providerChip.textContent = fullLabel;
+        providerChip.textContent = shortLabel;
         providerChip.title = fullLabel;
+        providerChip.setAttribute("aria-label", fullLabel);
         providerChip.dataset.shortLabel = shortLabel.length > 22 ? `${shortLabel.slice(0, 21).trim()}...` : shortLabel;
         providerChip.className = `status-chip ${enginePlan.locality === "hosted" ? "is-warn" : label === "Provider pending" ? "is-muted" : "is-neutral"}`;
+        providerChip.hidden = activeStep !== "provider_settings";
+      }
+      const modelSetupQuickButton = $("#modelSetupQuickButton");
+      if (modelSetupQuickButton) {
+        const showQuickModel =
+          goalRequiresModel(state.selectedPreset) &&
+          ["prompt_preview", "candidate_selection", "run_monitor", "review_export"].includes(activeStep);
+        const modelLabel = enginePlan.displayLabel || enginePlan.providerName || "selected model";
+        modelSetupQuickButton.hidden = !showQuickModel;
+        modelSetupQuickButton.textContent = "Change model";
+        modelSetupQuickButton.title = showQuickModel ? `Change model setup (${modelLabel})` : "Change model setup";
+        modelSetupQuickButton.className = `status-chip model-quick-action ${enginePlan.locality === "hosted" ? "is-warn" : "is-muted"}`;
       }
       const summary = $("#diagnosticsSummary");
       if (summary) {
@@ -15159,6 +15199,7 @@ const MotionJSONUI = (() => {
     $("#chooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
     $("#mainChooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
     $("#runRecoveryChooseModelButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
+    $("#modelSetupQuickButton")?.addEventListener("click", () => prepareNewGuidedRun("provider_settings"));
     $("#validateExportButton").addEventListener("click", validateSelectedExport);
     $("#exportMotionJsonButton").addEventListener("click", exportSelectedMotionJson);
     $("#exportPresetSelect").addEventListener("change", applyExportPresetDefaults);
