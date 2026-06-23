@@ -601,6 +601,35 @@ PROVIDER_DEFINITIONS: list[dict[str, Any]] = [
         "docs": "docs/discovery_providers.md",
     },
     {
+        "id": "evolink",
+        "name": "EvoLink planning",
+        "capabilityName": "evolink",
+        "kind": "llm_provider",
+        "locality": "hosted",
+        "implemented": True,
+        "runsInLocalWorker": False,
+        "credentialRequired": True,
+        "credentialFields": [
+            {"name": "api_key", "label": "API key", "env": "EVOLINK_API_KEY", "required": True},
+        ],
+        "baseUrlField": {"name": "base_url", "label": "Base URL", "env": "EVOLINK_BASE_URL", "required": False},
+        "modelOptions": [
+            {"id": "gpt-5.2", "label": "GPT-5.2"},
+            {"id": "gpt-5.1", "label": "GPT-5.1"},
+            {"id": "gemini-3.1-flash-lite-preview", "label": "Gemini 3.1 Flash Lite Preview"},
+            {"id": "deepseek-v4-flash", "label": "DeepSeek V4 Flash"},
+            {"id": CUSTOM_MODEL_ID, "label": "Custom EvoLink model id"},
+        ],
+        "defaultModel": "gpt-5.2",
+        "customModelAllowed": True,
+        "capabilities": ["intent parsing", "run planning", "labels", "troubleshooting"],
+        "hardware": "Remote provider",
+        "cost": {"status": "unknown_provider_cost", "label": "Provider billed"},
+        "privacy": "Text prompts and redacted project context are sent to EvoLink only after hosted calls are explicitly enabled.",
+        "warning": "EvoLink planning proposes run configs only. It is not a segmentation or mask provider.",
+        "docs": "docs/local_ui.md",
+    },
+    {
         "id": "openrouter",
         "name": "OpenRouter LLM/VLM",
         "capabilityName": "openrouter",
@@ -3281,6 +3310,7 @@ def _runtime_effective_model(
 ) -> str:
     effective_model = _effective_model(definition, settings)
     env_defaults = {
+        "evolink": "EVOLINK_DEFAULT_MODEL",
         "openrouter": "OPENROUTER_DEFAULT_MODEL",
         "openai": "OPENAI_DEFAULT_MODEL",
         "sam3-hosted": "SAM3_HOSTED_MODEL",

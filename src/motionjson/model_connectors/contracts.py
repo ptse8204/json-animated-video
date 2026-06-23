@@ -21,6 +21,7 @@ MODEL_PLAN_FORMAT = "motionjson.model_plan.v0.1"
 MODEL_RUN_FORMAT = "motionjson.model_run.v0.1"
 MODEL_RUN_STATUSES = {"pending", "running", "cancel_requested", "canceled", "succeeded", "failed"}
 OpenAIResponsesTransport = Callable[[str, Mapping[str, Any], Mapping[str, str], float], Mapping[str, Any]]
+OpenAICompatibleChatTransport = Callable[[str, Mapping[str, Any], Mapping[str, str], float], Mapping[str, Any]]
 
 GOAL_ALIASES = {
     "cut_out_one_object": "trace_one_object",
@@ -136,6 +137,24 @@ def _urllib_openai_responses_transport(
         raise ModelConnectorError(redact_secret_text(f"OpenAI request failed with HTTP {exc.code}: {body}")) from exc
     except urllib.error.URLError as exc:
         raise ModelConnectorError(redact_secret_text(f"OpenAI request failed: {exc.reason}")) from exc
+
+
+def _urllib_openai_compatible_chat_transport(
+    url: str,
+    payload: Mapping[str, Any],
+    headers: Mapping[str, str],
+    timeout: float,
+) -> Mapping[str, Any]:
+    data = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers=dict(headers), method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise ModelConnectorError(redact_secret_text(f"OpenAI-compatible chat request failed with HTTP {exc.code}: {body}")) from exc
+    except urllib.error.URLError as exc:
+        raise ModelConnectorError(redact_secret_text(f"OpenAI-compatible chat request failed: {exc.reason}")) from exc
 
 
 @dataclass(frozen=True)
@@ -751,7 +770,7 @@ class OpenAIPlanningConnector:
             raise ModelConnectorError(
                 "openai-planner does not make hosted calls by default; pass allowNetwork=true with cost/privacy acknowledgement."
             )
-        transport = self.transport or _urllib_openai_responses_transport
+        transport = self.transport or _urllib_openai_compatible_chat_transport
         payload = self._request_payload(request)
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         response = transport(f"{self.base_url}/responses", payload, headers, self.timeout)
@@ -915,9 +934,150 @@ class OpenRouterSettingsModelConnector:
         )
 
 
+class EvoLinkPlanningConnector(OpenAIPlanningConnector):
+    provider = ModelProviderDefinition(
+        id="evolink-planner",
+        label="EvoLink planner",
+        locality="hosted",
+        implemented=True,
+        network_required=True,
+        hosted_calls_required=True,
+        credential_required=True,
+        settings_provider_id="evolink",
+        description="Server-side EvoLink OpenAI-compatible chat planner for reviewable MotionJSON extraction plans.",
+    )
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        transport: OpenAICompatibleChatTransport | None = None,
+        timeout: float = 45.0,
+        allow_network: bool = False,
+    ):
+        self.api_key = api_key
+        self.base_url = _clean_base_url(base_url or "https://direct.evolink.ai/v1")
+        self.model = model or "gpt-5.2"
+        self.transport = transport
+        self.timeout = timeout
+        self.allow_network = allow_network
+
+    def with_runtime_settings(
+        self,
+        settings: Mapping[str, Any],
+        *,
+        allow_network: bool = False,
+    ) -> "EvoLinkPlanningConnector":
+        return EvoLinkPlanningConnector(
+            api_key=str(settings.get("api_key") or "") or self.api_key,
+            base_url=str(settings.get("base_url") or "") or self.base_url,
+            model=str(settings.get("selected_model") or "") or self.model,
+            transport=self.transport,
+            timeout=self.timeout,
+            allow_network=allow_network,
+        )
+
+    def readiness(self) -> dict[str, Any]:
+        return {
+            "status": "ready",
+            "runnable": True,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "EvoLink planner can run after server settings, hosted opt-in, and per-request confirmation.",
+        }
+
+    def test(self, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        return {
+            "format": "motionjson.model_provider_test.v0.1",
+            "providerId": self.provider.id,
+            "status": "configured",
+            "ready": False,
+            "networkAttempted": False,
+            "hostedCallsRequired": True,
+            "message": "EvoLink planner setup check is no-network; model runs require explicit hosted confirmation.",
+        }
+
+    def estimate(self, request: ModelPlanRequest) -> ModelEstimate:
+        units = max(1, min(len((request.prompt or request.text_prompt or "").split()) // 24 + 1, 12))
+        return ModelEstimate(
+            provider_id=self.provider.id,
+            status="unknown_provider_cost",
+            hosted_calls_required=True,
+            frames_leave_device=False,
+            estimated_units=units,
+            message="EvoLink planner sends text intent and redacted context only; provider billing depends on the selected model.",
+        )
+
+    def plan(self, request: ModelPlanRequest) -> ModelPlanResult:
+        if not self.api_key:
+            raise ModelConnectorError("EVOLINK_API_KEY is required for evolink-planner.")
+        if not self.allow_network:
+            raise ModelConnectorError(
+                "evolink-planner does not make hosted calls by default; pass allowNetwork=true with cost/privacy acknowledgement."
+            )
+        transport = self.transport or _urllib_openai_responses_transport
+        payload = self._request_payload(request)
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        response = transport(f"{self.base_url}/chat/completions", payload, headers, self.timeout)
+        proposed = _parse_openai_plan_payload(response)
+        return self._plan_result(request, proposed)
+
+    def _request_payload(self, request: ModelPlanRequest) -> dict[str, Any]:
+        safe_context = {
+            "goal": request.goal,
+            "prompt": _hosted_safe_text(request.prompt),
+            "objectLabel": _hosted_safe_text(request.object_label),
+            "objectId": _slug(_hosted_safe_text(request.object_id), request.object_id or "object_0"),
+            "textPrompt": _hosted_safe_text(request.text_prompt),
+            "hasRegisteredVideo": bool(request.video_id),
+            "hasSourcePath": bool(request.source_path),
+            "maxFrames": request.max_frames,
+            "maxObjects": request.max_objects,
+            "sampleFps": request.sample_fps,
+        }
+        return {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": OPENAI_PLANNING_INSTRUCTIONS},
+                {"role": "user", "content": json.dumps(safe_context, sort_keys=True)},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+
+    def _plan_result(self, request: ModelPlanRequest, proposed: Mapping[str, Any]) -> ModelPlanResult:
+        result = super()._plan_result(request, proposed)
+        return ModelPlanResult(
+            provider_id=self.provider.id,
+            request=result.request,
+            goal=result.goal,
+            provider_plan=result.provider_plan,
+            privacy={
+                "framesLeaveDevice": False,
+                "hostedCallsRequired": True,
+                "summary": "Only the text intent and redacted project context were sent to EvoLink.",
+            },
+            estimated_cost=self.estimate(result.request).to_dict(),
+            run_config=result.run_config,
+            validation=result.validation,
+            requires_user_confirmation=result.requires_user_confirmation,
+            status=result.status,
+            messages=[
+                "EvoLink proposed a plan; MotionJSON generated and validated the run config inside the Runtime API.",
+                *result.messages[1:],
+            ],
+        )
+
+
 class ModelConnectorRegistry:
     def __init__(self, connectors: list[ModelConnector] | None = None):
-        items = connectors or [FakeModelConnector(), OpenAIPlanningConnector(), OpenRouterSettingsModelConnector()]
+        items = connectors or [
+            FakeModelConnector(),
+            EvoLinkPlanningConnector(),
+            OpenAIPlanningConnector(),
+            OpenRouterSettingsModelConnector(),
+        ]
         self._connectors = {connector.provider.id: connector for connector in items}
 
     def list(self) -> list[ModelConnector]:

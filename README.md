@@ -396,6 +396,7 @@ a component today.
 | `no_model_cpu_workflow` | Yes | CPU-only smoke checks and simple fallbacks | Groups mock, threshold, motion, and imported-mask workflows. No GPU, model cache, hosted provider, or runtime proof is required. |
 | `text_detector` | Optional/scaffolded | Text-guided candidates | Text becomes detector candidates before segmentation. |
 | `class_detector` | Optional/scaffolded | Known-class candidates | Requires configured detector model. |
+| `evolink-planner` | Optional hosted | Text intent to reviewable run plan | Uses EvoLink's OpenAI-compatible chat endpoint after hosted opt-in and per-request cost/privacy acknowledgement. Not a segmentation provider. |
 | `openrouter` | Optional | LLM/VLM reasoning or labels | Not a segmentation provider. |
 | `openai-planner` | Optional | Text intent to reviewable run plan | Uses server-side OpenAI settings only after hosted opt-in and per-request cost/privacy acknowledgement. Not a segmentation provider. |
 

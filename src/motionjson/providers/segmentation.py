@@ -11,7 +11,7 @@ from ..video import VideoInfo
 from .base import BatchSegmentationProvider, BatchSegmentationRequest, ProviderAttempt, SegmentationProvider
 
 
-REJECTED_SEGMENTATION_PROVIDER_NAMES = {"openrouter", "llm", "vlm"}
+REJECTED_SEGMENTATION_PROVIDER_NAMES = {"evolink", "evolink-planner", "openrouter", "llm", "vlm"}
 
 
 def _elapsed_ms(start: float) -> float:

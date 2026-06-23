@@ -202,9 +202,12 @@ def test_config_and_worker_policy_are_registry_backed():
 
     assert ALLOWED_EXTRACT_MASK_PROVIDERS == worker_extract_provider_ids()
     assert payload["workerPolicy"]["allowedExtractMaskProviders"] == sorted(ALLOWED_EXTRACT_MASK_PROVIDERS)
+    assert "evolink" in REJECTED_SEGMENTATION_ALIASES
     assert "openrouter" in REJECTED_SEGMENTATION_ALIASES
     assert "openai" in REJECTED_SEGMENTATION_ALIASES
     assert "sam2" in REJECTED_SEGMENTATION_ALIASES
+    assert "evolink" not in ALLOWED_EXTRACT_MASK_PROVIDERS
+    assert "evolink-planner" not in ALLOWED_EXTRACT_MASK_PROVIDERS
     assert "openrouter" not in ALLOWED_EXTRACT_MASK_PROVIDERS
     assert "openai" not in ALLOWED_EXTRACT_MASK_PROVIDERS
     assert "openrouter-planner" not in ALLOWED_EXTRACT_MASK_PROVIDERS
@@ -266,15 +269,20 @@ def test_hosted_and_settings_only_policy_is_explicit():
     sam2_hosted = provider_by_id("sam2-hosted")
     sam3_hosted = provider_by_id("sam3-hosted")
     openrouter = provider_by_id("openrouter-planner")
+    evolink = provider_by_id("evolink-planner")
     openai = provider_by_id("openai-planner")
     text_detector = provider_by_id("text_detector")
     class_detector = provider_by_id("class_detector")
 
-    for entry in (sam2_hosted, sam3_hosted, openai):
+    for entry in (sam2_hosted, sam3_hosted, evolink, openai):
         assert entry["locality"] == "hosted"
         assert any(support["requiresHostedOptIn"] for support in entry["workflowSupport"].values())
-        assert entry["providerId"] not in {"openai", "openai-planner"} or entry["workerEligible"] is False
+        assert entry["providerId"] not in {"evolink", "evolink-planner", "openai", "openai-planner"} or entry["workerEligible"] is False
 
+    assert evolink["settingsProviderId"] == "evolink"
+    assert evolink["implemented"] is True
+    assert evolink["workerEligible"] is False
+    assert evolink["validationPolicy"] == "hosted_opt_in_required"
     assert openrouter["locality"] == "settings_only"
     assert openrouter["implemented"] is False
     assert openrouter["workerEligible"] is False
